@@ -30,6 +30,16 @@ export interface SocialMention {
   url: string;
 }
 
+export interface SocialDirectMessage {
+  id: string;
+  threadId: string;
+  participantId: string;
+  authorName: string;
+  authorHandle: string;
+  content: string;
+  createdAt: Date;
+}
+
 export interface EngagementMetrics {
   likes: number;
   replies: number;
@@ -56,6 +66,15 @@ export interface SocialClient {
 
   /** Fetch recent mentions of the authenticated account. */
   getMentions(limit?: number): Promise<SocialMention[]>;
+
+  /** Fetch recent direct messages if the platform supports inbox messaging. */
+  listDirectMessages?(limit?: number): Promise<SocialDirectMessage[]>;
+
+  /** Send a direct message if the platform supports inbox messaging. */
+  sendDirectMessage?(recipientId: string, content: string, replyToId?: string): Promise<SocialReply>;
+
+  /** Whether direct-message send/read is supported for this platform/client. */
+  supportsDirectMessages?(): boolean;
 
   /** Fetch engagement metrics for a published post. */
   getAnalytics(postId: string): Promise<EngagementMetrics>;

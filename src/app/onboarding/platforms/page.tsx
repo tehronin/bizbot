@@ -6,6 +6,7 @@ import { useState } from "react";
 export default function OnboardingPlatformsPage() {
   const [twitterUserId, setTwitterUserId] = useState("");
   const [facebookPageId, setFacebookPageId] = useState("");
+  const [instagramBusinessAccountId, setInstagramBusinessAccountId] = useState("");
 
   async function save(): Promise<void> {
     await fetch("/api/settings", {
@@ -15,6 +16,9 @@ export default function OnboardingPlatformsPage() {
         env: {
           TWITTER_USER_ID: twitterUserId,
           FACEBOOK_PAGE_ID: facebookPageId,
+          META_PAGE_ID: facebookPageId,
+          INSTAGRAM_BUSINESS_ACCOUNT_ID: instagramBusinessAccountId,
+          META_INSTAGRAM_ACCOUNT_ID: instagramBusinessAccountId,
         },
       }),
     });
@@ -31,7 +35,8 @@ export default function OnboardingPlatformsPage() {
         <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>platform ids</div>
         <div className="space-y-3 mb-6">
           <input value={twitterUserId} onChange={(event) => setTwitterUserId(event.target.value)} placeholder="TWITTER_USER_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-          <input value={facebookPageId} onChange={(event) => setFacebookPageId(event.target.value)} placeholder="FACEBOOK_PAGE_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+          <input value={facebookPageId} onChange={(event) => setFacebookPageId(event.target.value)} placeholder="FACEBOOK_PAGE_ID / META_PAGE_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+          <input value={instagramBusinessAccountId} onChange={(event) => setInstagramBusinessAccountId(event.target.value)} placeholder="INSTAGRAM_BUSINESS_ACCOUNT_ID / META_INSTAGRAM_ACCOUNT_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
         </div>
         <div className="flex gap-3">
           <button onClick={() => void save()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>save</button>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 interface SettingsResponse {
   settings: Array<{ key: string; value: string }>;
+  env?: Record<string, string>;
 }
 
 interface ApprovalsResponse {
@@ -11,7 +12,7 @@ interface ApprovalsResponse {
 }
 
 export default function Header() {
-  const [provider, setProvider] = useState("openai");
+  const [provider, setProvider] = useState("ollama");
   const [pending, setPending] = useState(0);
   const [now, setNow] = useState(() => new Date());
 
@@ -24,7 +25,8 @@ export default function Header() {
     fetch("/api/settings")
       .then((res) => res.json() as Promise<SettingsResponse>)
       .then((data) => {
-        const activeProvider = data.settings.find((entry) => entry.key === "ACTIVE_LLM_PROVIDER")?.value;
+        const activeProvider = data.env?.ACTIVE_LLM_PROVIDER
+          ?? data.settings.find((entry) => entry.key === "ACTIVE_LLM_PROVIDER")?.value;
         if (activeProvider) {
           setProvider(activeProvider);
         }

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BizBot</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101213;
+        --panel: #171a1c;
+        --border: #2a2f34;
+        --text: #e7ecef;
+        --muted: #8c979f;
+        --accent: #9fb3c8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top, rgba(159, 179, 200, 0.12), transparent 40%),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, system-ui, sans-serif;
+      }
+
+      main {
+        width: min(520px, calc(100vw - 48px));
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent), var(--panel);
+        padding: 28px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 14px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+        font-size: 14px;
+      }
+
+      .bar {
+        margin-top: 18px;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.06);
+        overflow: hidden;
+      }
+
+      .bar::after {
+        content: "";
+        display: block;
+        width: 35%;
+        height: 100%;
+        background: var(--accent);
+        animation: load 1.2s linear infinite;
+      }
+
+      @keyframes load {
+        from { transform: translateX(-100%); }
+        to { transform: translateX(320%); }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Starting BizBot</h1>
+      <p>The packaged app is launching the bundled Next runtime. If this screen does not advance, verify that `node` is installed on the machine running the desktop build.</p>
+      <div class="bar" aria-hidden="true"></div>
+    </main>
+  </body>
+</html>

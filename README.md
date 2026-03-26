@@ -23,12 +23,15 @@ Current code status:
 - Dashboard and onboarding UI are implemented
 - Agent tool registry and function-calling flow are implemented
 - Prisma schema, Docker Compose, and runtime configuration are present
+- inbox, DM sync, and server-owned heartbeat service are implemented
 
 Current runtime status:
 
 - full end-to-end execution still requires Docker and service setup on another machine
 - social provider credentials still need to be added in a real `.env`
 - database migrations / startup need to be run on the target machine
+- packaged Tauri builds now stage a Next standalone server into app resources and launch it via the system `node` runtime
+- social inbox processing now supports mentions plus DM ingestion, but live credentialed validation is still pending
 
 ## Product Goals
 
@@ -67,6 +70,8 @@ Primary goals:
 - post content to supported platforms
 - reply to posts
 - fetch mentions
+- ingest direct messages into a unified inbox
+- draft, approve, resend, and dismiss inbox replies
 - fetch analytics
 
 Currently modeled platforms:
@@ -80,6 +85,7 @@ Currently modeled platforms:
 - submit posts for review
 - fetch pending approvals
 - approve or reject queued content
+- queue top-level social posts automatically when autonomy requires approval
 - preserve a path for future auto-approval rules
 
 ### Memory and Knowledge
@@ -88,6 +94,14 @@ Currently modeled platforms:
 - graph-based context in Memgraph
 - conversation storage for session continuity
 - hybrid context-building for agent prompts
+- optional local knowledge-folder retrieval with embedding-backed indexing
+
+### Autonomous Operations
+
+- autonomy presets for manual-only, reply-only, approval-gated, and wide-open behavior
+- process-owned heartbeat loop that syncs inbox items, publishes ready posts, and processes replies
+- root-mounted service bootstrap for desktop/web app startup
+- runtime status endpoint for provider, embeddings, autonomy, knowledge, and heartbeat visibility
 
 ### Browser Capability
 
@@ -167,6 +181,7 @@ The project is split into four main layers.
 ### Dashboard Pages
 
 - `/chat`
+- `/inbox`
 - `/posts`
 - `/approvals`
 - `/analytics`
@@ -183,12 +198,20 @@ The project is split into four main layers.
 ## Implemented API Routes
 
 - `POST /api/agent`
+- `GET /api/agent/heartbeat`
+- `POST /api/agent/heartbeat`
+- `GET /api/agent/heartbeat/service`
+- `POST /api/agent/heartbeat/service`
 - `GET /api/analytics`
 - `GET /api/approvals`
 - `PATCH /api/approvals/[id]`
 - `GET /api/files`
 - `POST /api/files`
 - `DELETE /api/files`
+- `GET /api/inbox`
+- `POST /api/inbox`
+- `PATCH /api/inbox/[id]`
+- `GET /api/llm`
 - `GET /api/onboarding`
 - `POST /api/onboarding`
 - `GET /api/posts`
@@ -213,6 +236,7 @@ Main Prisma models include:
 - `ScheduleRule`
 - `AnalyticsSnapshot`
 - `Setting`
+- `InboxMessage`
 - `BrowserSession`
 - `BrowserAction`
 
@@ -220,6 +244,7 @@ This gives the app a clean operational model for:
 
 - content creation
 - review state
+- inbound social inbox processing
 - memory and context
 - policies
 - browser auditability
@@ -264,6 +289,12 @@ Important groups:
 - `MEMGRAPH_USER`
 - `MEMGRAPH_PASSWORD`
 
+For the Docker defaults in this repo, `DATABASE_URL` should match:
+
+```bash
+postgresql://bizbot:bizbot_local@localhost:5432/bizbot
+```
+
 ### LLM Providers
 
 - `ACTIVE_LLM_PROVIDER`
@@ -275,19 +306,63 @@ Important groups:
 - `OLLAMA_MODEL`
 - `GOOGLE_AI_API_KEY`
 - `GOOGLE_MODEL`
+- `EMBEDDING_PROVIDER`
+- `EMBEDDING_MODEL`
+- `EMBEDDING_DIMENSIONS`
+- `LLM_TEMPERATURE`
+- `LLM_MAX_TOKENS`
+- `BIZBOT_AUTONOMY_PRESET`
+- `BIZBOT_AGENT_HEARTBEAT_SECONDS`
+- `BIZBOT_KNOWLEDGE_ENABLED`
+- `BIZBOT_KNOWLEDGE_PATH`
 - `MINIMAX_API_KEY`
 - `MINIMAX_BASE_URL`
 - `MINIMAX_MODEL`
+
+Recommended local-first split for this repo:
+
+- `ACTIVE_LLM_PROVIDER=ollama`
+- `OLLAMA_MODEL=gemma3`
+- `EMBEDDING_PROVIDER=google`
+- `EMBEDDING_MODEL=gemini-embedding-001`
+
+The current pgvector schema expects 1536-dimensional embeddings, so the Google embedding path requests a 1536-dimension output to stay compatible with the existing database layout.
+
+If you switch embeddings to a local Ollama model, that model must produce vectors that match `EMBEDDING_DIMENSIONS` or memory writes will fail with a dimension mismatch error. The current migration creates `vector(1536)`.
+
+### Agent Autonomy And Local Knowledge
+
+- `BIZBOT_AUTONOMY_PRESET=manual_only|reply_only|approval_all_posts|wide_open`
+- `BIZBOT_AGENT_HEARTBEAT_SECONDS=300`
+- `BIZBOT_KNOWLEDGE_ENABLED=true|false`
+- `BIZBOT_KNOWLEDGE_PATH=knowledge`
+
+Current autonomy behavior:
+
+- `manual_only`: research, drafting, memory, and document retrieval only
+- `reply_only`: may send replies directly, but may not originate new top-level posts
+- `approval_all_posts`: may draft new posts, but top-level posts are queued for approval before publish
+- `wide_open`: may publish and reply without approval
+
+Current knowledge behavior:
+
+- BizBot always uses recent conversation, saved vector memory, and graph context when available
+- if `BIZBOT_KNOWLEDGE_ENABLED=true`, BizBot also searches text documents under `workspace/<BIZBOT_KNOWLEDGE_PATH>` and injects matching snippets into the prompt context
+- this is lightweight local document retrieval, not a separate ingestion worker
 
 ### Social Platforms
 
 - `TWITTER_APP_KEY`
 - `TWITTER_APP_SECRET`
+- `TWITTER_CLIENT_ID` (legacy alias, still accepted)
+- `TWITTER_CLIENT_SECRET` (legacy alias, still accepted)
 - `TWITTER_ACCESS_TOKEN`
 - `TWITTER_ACCESS_TOKEN_SECRET`
 - `TWITTER_USER_ID`
 - `FACEBOOK_PAGE_ID`
 - `INSTAGRAM_BUSINESS_ACCOUNT_ID`
+- `META_PAGE_ID` (legacy alias, still accepted)
+- `META_INSTAGRAM_ACCOUNT_ID` (legacy alias, still accepted)
 - `META_ACCESS_TOKEN`
 
 ### Local Workspace
@@ -332,6 +407,14 @@ npm run dev
 npm run tauri:dev
 ```
 
+### Build Packaged Tauri App
+
+```bash
+npm run tauri:build
+```
+
+The packaged desktop path currently assumes the target machine has `node` available on `PATH`. The Tauri build now bundles the Next standalone payload into `src-tauri/resources` during `beforeBuildCommand`, then starts that server at app launch.
+
 ## Docker Runtime
 
 This repository is designed around Docker-based infrastructure.
@@ -360,14 +443,16 @@ Verified here:
 - TypeScript compilation
 - Next.js production build
 - implementation of the app structure and routes
+- inbox action wiring and heartbeat-service build integration
 
 Not verified here:
 
 - Docker service startup
 - live Postgres connection
 - live Memgraph connection
-- end-to-end Tauri runtime with backing services
+- end-to-end Tauri runtime with backing services on a machine that has Rust/Cargo and Node available
 - real credentialed social platform calls
+- live DM send / receive validation against Twitter or Meta accounts
 
 That separation is intentional. This repo is in a state suitable for upload and continuation on a machine with Docker and the proper runtime environment.
 
@@ -377,6 +462,29 @@ That separation is intentional. This repo is in a state suitable for upload and 
 - social platform integrations are implemented structurally but still need real credentials and live testing
 - browser-assisted social actions remain experimental and policy-sensitive
 - the file route produces a Turbopack tracing warning because of filesystem access patterns, but the app still builds successfully
+- the heartbeat service is process-bound inside the Next/Tauri app process, not a durable external worker
+- inbox ingestion currently uses polling, not platform webhooks or durable cursors
+- multi-account social tenancy is not implemented yet; platform IDs are effectively singleton per network
+
+## Stop Point
+
+This is the current handoff point for the repo.
+
+Implemented through this checkpoint:
+
+- Tauri packaged builds now stage and launch the Next standalone server from bundled resources
+- chat and embeddings are configurable independently, with Ollama chat plus Google embeddings as the recommended local-first default
+- autonomy presets, local knowledge-folder retrieval, and runtime status visibility are in place
+- inbox schema, inbox dashboard, inbox action routes, and DM-capable social abstractions are implemented
+- Twitter and Meta adapters now include DM send/read scaffolding
+- the old dashboard-driven heartbeat loop has been replaced by a root-mounted service bootstrap and server-owned interval
+
+Still pending after this checkpoint:
+
+- live end-to-end validation with real provider credentials
+- webhook or cursor-based inbox ingestion for production-grade reliability
+- a durable background worker outside the app process if true always-on automation is required
+- stronger outbound moderation / policy gating for autonomous DM sends
 
 ## Security Notes
 
@@ -404,11 +512,13 @@ Recommended continuation order:
 
 1. bring up Docker services
 2. run Prisma schema sync / migration commands
-3. seed initial settings and platform rows if needed
+3. apply the inbox SQL migration and confirm the `InboxMessage` schema is live
 4. verify onboarding flow with a live database
 5. verify agent tool execution end-to-end
-6. verify social providers individually
-7. verify Tauri desktop packaging
+6. verify Twitter mentions and DM flows with real credentials
+7. verify Facebook / Instagram mentions and DM flows with real credentials
+8. verify Tauri desktop packaging on the target machine
+9. decide whether to keep the process-bound heartbeat or move scheduling into a Tauri-side or external worker
 
 ## License / Ownership
 

@@ -4,6 +4,7 @@
  */
 
 import { NextRequest } from "next/server";
+import { buildAutonomySystemPrompt, getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { buildContext, saveMessage, getOrCreateConversation } from "@/lib/agent/memory";
 import { chatComplete, type LLMProvider } from "@/lib/agent/kernel";
 import { getAllToolDefinitions, executeTool } from "@/lib/agent/plugins";
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest) {
 
     const userId = "local-user";
     const resolvedConversationId = await getOrCreateConversation(conversationId, userId);
+    const runtimeConfig = getAgentRuntimeConfig();
 
     const contextBlock = await buildContext(message, resolvedConversationId, userId);
     const messages: ChatMessage[] = [
@@ -32,6 +34,7 @@ export async function POST(req: NextRequest) {
         role: "system",
         content:
           "You are BizBot, a local desktop social media agent. Use tools when they improve correctness, prefer deterministic tool outputs over guessing, and keep responses operational."
+          + ` ${buildAutonomySystemPrompt(runtimeConfig)}`
           + (contextBlock ? `\n\nContext:\n${contextBlock}` : ""),
       },
       { role: "user", content: message },
@@ -39,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     await saveMessage(resolvedConversationId, "USER", message, { userId });
 
-    const tools = getAllToolDefinitions();
+    const tools = getAllToolDefinitions(runtimeConfig);
     let round = 0;
 
     while (round < MAX_TOOL_ROUNDS) {

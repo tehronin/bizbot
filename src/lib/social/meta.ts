@@ -8,6 +8,7 @@
 import axios, { AxiosInstance } from "axios";
 import type {
   SocialClient,
+  SocialDirectMessage,
   SocialPost,
   SocialReply,
   SocialMention,
@@ -18,12 +19,115 @@ import { RateLimitError, sleep } from "./types";
 
 const GRAPH_BASE = "https://graph.facebook.com/v21.0";
 
+interface MetaConversationEdgeResponse {
+  data?: Array<{
+    id: string;
+    updated_time?: string;
+  }>;
+}
+
+interface MetaConversationMessagesResponse {
+  id: string;
+  messages?: {
+    data?: Array<{
+      id: string;
+      created_time?: string;
+    }>;
+  };
+}
+
+interface MetaMessageDetailResponse {
+  id: string;
+  created_time?: string;
+  from?: {
+    id?: string;
+    username?: string;
+    name?: string;
+  };
+  to?: {
+    data?: Array<{
+      id?: string;
+      username?: string;
+      name?: string;
+    }>;
+  };
+  message?: string;
+  reply_to?: {
+    mid?: string;
+  };
+}
+
+function getMetaPageId(): string {
+  return process.env.FACEBOOK_PAGE_ID ?? process.env.META_PAGE_ID ?? "";
+}
+
+function getInstagramBusinessAccountId(): string {
+  return process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID ?? process.env.META_INSTAGRAM_ACCOUNT_ID ?? "";
+}
+
 function buildAxios(): AxiosInstance {
   return axios.create({
     baseURL: GRAPH_BASE,
     params: { access_token: process.env.META_ACCESS_TOKEN },
     timeout: 30_000,
   });
+}
+
+async function listMetaDirectMessages(
+  http: AxiosInstance,
+  pageId: string,
+  platform: "messenger" | "instagram",
+  localAccountId: string,
+  limit: number,
+): Promise<SocialDirectMessage[]> {
+  const conversationResponse = await withRetry(() =>
+    http.get<MetaConversationEdgeResponse>(`/${pageId}/conversations`, {
+      params: {
+        platform,
+        fields: "id,updated_time",
+        limit: Math.min(25, limit),
+      },
+    }),
+  );
+
+  const results: SocialDirectMessage[] = [];
+
+  for (const conversation of conversationResponse.data.data ?? []) {
+    const conversationDetail = await withRetry(() =>
+      http.get<MetaConversationMessagesResponse>(`/${conversation.id}`, {
+        params: { fields: "messages.limit(10)" },
+      }),
+    );
+
+    for (const messageRef of conversationDetail.data.messages?.data ?? []) {
+      const message = await withRetry(() =>
+        http.get<MetaMessageDetailResponse>(`/${messageRef.id}`, {
+          params: { fields: "id,created_time,from,to,message,reply_to" },
+        }),
+      );
+
+      const fromId = message.data.from?.id ?? "";
+      if (!message.data.message || fromId.length === 0 || fromId === localAccountId) {
+        continue;
+      }
+
+      results.push({
+        id: message.data.id,
+        threadId: conversation.id,
+        participantId: fromId,
+        authorName: message.data.from?.name ?? message.data.from?.username ?? fromId,
+        authorHandle: message.data.from?.username ?? fromId,
+        content: message.data.message,
+        createdAt: message.data.created_time ? new Date(message.data.created_time) : new Date(),
+      });
+
+      if (results.length >= limit) {
+        return results;
+      }
+    }
+  }
+
+  return results;
 }
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
@@ -58,12 +162,16 @@ export class FacebookClient implements SocialClient {
     this.http = buildAxios();
   }
 
+  supportsDirectMessages(): boolean {
+    return this.isConnected();
+  }
+
   isConnected(): boolean {
-    return !!(process.env.META_ACCESS_TOKEN && process.env.META_PAGE_ID);
+    return !!(process.env.META_ACCESS_TOKEN && getMetaPageId());
   }
 
   async post(input: PostInput): Promise<SocialPost> {
-    const pageId = process.env.META_PAGE_ID!;
+    const pageId = getMetaPageId();
     const response = await withRetry(() =>
       this.http.post(`/${pageId}/feed`, {
         message: input.content,
@@ -90,7 +198,7 @@ export class FacebookClient implements SocialClient {
   }
 
   async getMentions(limit = 20): Promise<SocialMention[]> {
-    const pageId = process.env.META_PAGE_ID!;
+    const pageId = getMetaPageId();
     const response = await withRetry(() =>
       this.http.get(`/${pageId}/tagged`, {
         params: { fields: "id,from,message,created_time,permalink_url", limit },
@@ -137,6 +245,26 @@ export class FacebookClient implements SocialClient {
 
     return { likes, replies: 0, shares: 0, impressions };
   }
+
+  async listDirectMessages(limit = 20): Promise<SocialDirectMessage[]> {
+    return listMetaDirectMessages(this.http, getMetaPageId(), "messenger", getMetaPageId(), limit);
+  }
+
+  async sendDirectMessage(recipientId: string, content: string, _replyToId?: string): Promise<SocialReply> {
+    const response = await withRetry(() =>
+      this.http.post(`/${getMetaPageId()}/messages`, {
+        recipient: { id: recipientId },
+        messaging_type: "RESPONSE",
+        message: { text: content },
+      }),
+    );
+    return {
+      id: response.data.message_id,
+      content,
+      inReplyToId: recipientId,
+      publishedAt: new Date(),
+    };
+  }
 }
 
 // ─── Instagram Business Client ───────────────────────────────────────────────
@@ -149,15 +277,19 @@ export class InstagramClient implements SocialClient {
     this.http = buildAxios();
   }
 
+  supportsDirectMessages(): boolean {
+    return this.isConnected() && getMetaPageId().length > 0;
+  }
+
   isConnected(): boolean {
     return !!(
       process.env.META_ACCESS_TOKEN &&
-      process.env.META_INSTAGRAM_ACCOUNT_ID
+      getInstagramBusinessAccountId()
     );
   }
 
   async post(input: PostInput): Promise<SocialPost> {
-    const igId = process.env.META_INSTAGRAM_ACCOUNT_ID!;
+    const igId = getInstagramBusinessAccountId();
 
     // Step 1: Create media container
     const mediaResponse = await withRetry(() =>
@@ -196,7 +328,7 @@ export class InstagramClient implements SocialClient {
   }
 
   async getMentions(limit = 20): Promise<SocialMention[]> {
-    const igId = process.env.META_INSTAGRAM_ACCOUNT_ID!;
+    const igId = getInstagramBusinessAccountId();
     const response = await withRetry(() =>
       this.http.get(`/${igId}/tags`, {
         params: { fields: "id,from,text,timestamp", limit },
@@ -236,6 +368,26 @@ export class InstagramClient implements SocialClient {
       likes: data.likes_count?.values?.[0]?.value ?? 0,
       replies: data.comments_count?.values?.[0]?.value ?? 0,
       shares: data.saved?.values?.[0]?.value ?? 0,
+    };
+  }
+
+  async listDirectMessages(limit = 20): Promise<SocialDirectMessage[]> {
+    return listMetaDirectMessages(this.http, getMetaPageId(), "instagram", getInstagramBusinessAccountId(), limit);
+  }
+
+  async sendDirectMessage(recipientId: string, content: string, replyToId?: string): Promise<SocialReply> {
+    const response = await withRetry(() =>
+      this.http.post("/me/messages", {
+        recipient: { id: recipientId },
+        message: { text: content },
+        ...(replyToId ? { reply_to: { mid: replyToId } } : {}),
+      }),
+    );
+    return {
+      id: response.data.message_id,
+      content,
+      inReplyToId: replyToId ?? recipientId,
+      publishedAt: new Date(),
     };
   }
 }

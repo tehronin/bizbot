@@ -23,6 +23,11 @@ import type { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/messages
 
 export type LLMProvider = "openai" | "anthropic" | "ollama" | "google" | "minimax";
 
+export interface GenerationConfig {
+  maxTokens: number;
+  temperature: number;
+}
+
 export interface LLMResponse {
   content: string;
   provider: LLMProvider;
@@ -41,6 +46,41 @@ function getOpenAIClient(baseURL?: string, apiKey?: string): OpenAI {
 
 function getAnthropicClient(): Anthropic {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
+}
+
+function parseNumericEnv(raw: string | undefined, fallback: number): number {
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function getActiveProvider(provider?: LLMProvider): LLMProvider {
+  return provider ?? (process.env.ACTIVE_LLM_PROVIDER as LLMProvider) ?? "ollama";
+}
+
+export function getModelForProvider(provider: LLMProvider): string {
+  switch (provider) {
+    case "openai":
+      return process.env.OPENAI_MODEL ?? "gpt-4o";
+    case "anthropic":
+      return process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-20241022";
+    case "ollama":
+      return process.env.OLLAMA_MODEL ?? "gemma3";
+    case "google":
+      return process.env.GOOGLE_MODEL ?? "gemini-2.0-flash";
+    case "minimax":
+      return process.env.MINIMAX_MODEL ?? "abab6.5s-chat";
+  }
+}
+
+export function getGenerationConfig(): GenerationConfig {
+  return {
+    maxTokens: Math.max(64, Math.trunc(parseNumericEnv(process.env.LLM_MAX_TOKENS, 4096))),
+    temperature: Math.min(2, Math.max(0, parseNumericEnv(process.env.LLM_TEMPERATURE, 0.2))),
+  };
 }
 
 function toOpenAITools(tools: ToolDefinition<object, ToolExecutionResult>[] | undefined) {
@@ -181,16 +221,18 @@ export async function chatComplete(
   provider?: LLMProvider,
   tools?: ToolDefinition<object, ToolExecutionResult>[],
 ): Promise<LLMResponse> {
-  const activeProvider: LLMProvider =
-    provider ?? (process.env.ACTIVE_LLM_PROVIDER as LLMProvider) ?? "openai";
+  const activeProvider = getActiveProvider(provider);
+  const generation = getGenerationConfig();
 
   switch (activeProvider) {
     case "openai": {
       const client = getOpenAIClient();
-      const model = process.env.OPENAI_MODEL ?? "gpt-4o";
+      const model = getModelForProvider("openai");
       const response = await client.chat.completions.create({
         model,
         messages: toOpenAIMessages(messages),
+        temperature: generation.temperature,
+        max_tokens: generation.maxTokens,
         ...(tools ? { tools: toOpenAITools(tools) } : {}),
       });
       const responseMessage = response.choices[0].message;
@@ -204,11 +246,12 @@ export async function chatComplete(
 
     case "anthropic": {
       const client = getAnthropicClient();
-      const model = process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-20241022";
+      const model = getModelForProvider("anthropic");
       const systemMsg = messages.find((m) => m.role === "system")?.content;
       const response = await client.messages.create({
         model,
-        max_tokens: 4096,
+        max_tokens: generation.maxTokens,
+        temperature: generation.temperature,
         ...(systemMsg ? { system: systemMsg } : {}),
         messages: toAnthropicMessages(messages),
         ...(tools
@@ -231,10 +274,12 @@ export async function chatComplete(
         process.env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
         "ollama",
       );
-      const model = process.env.OLLAMA_MODEL ?? "llama3.2";
+      const model = getModelForProvider("ollama");
       const response = await client.chat.completions.create({
         model,
         messages: toOpenAIMessages(messages),
+        temperature: generation.temperature,
+        max_tokens: generation.maxTokens,
         ...(tools ? { tools: toOpenAITools(tools) } : {}),
       });
       const responseMessage = response.choices[0].message;
@@ -252,10 +297,12 @@ export async function chatComplete(
         "https://generativelanguage.googleapis.com/v1beta/openai/",
         process.env.GOOGLE_AI_API_KEY,
       );
-      const model = process.env.GOOGLE_MODEL ?? "gemini-2.0-flash";
+      const model = getModelForProvider("google");
       const response = await client.chat.completions.create({
         model,
         messages: toOpenAIMessages(messages),
+        temperature: generation.temperature,
+        max_tokens: generation.maxTokens,
         ...(tools ? { tools: toOpenAITools(tools) } : {}),
       });
       const responseMessage = response.choices[0].message;
@@ -273,10 +320,12 @@ export async function chatComplete(
         process.env.MINIMAX_BASE_URL ?? "https://api.minimax.chat/v1",
         process.env.MINIMAX_API_KEY,
       );
-      const model = process.env.MINIMAX_MODEL ?? "abab6.5s-chat";
+      const model = getModelForProvider("minimax");
       const response = await client.chat.completions.create({
         model,
         messages: toOpenAIMessages(messages),
+        temperature: generation.temperature,
+        max_tokens: generation.maxTokens,
         ...(tools ? { tools: toOpenAITools(tools) } : {}),
       });
       const responseMessage = response.choices[0].message;

@@ -7,6 +7,7 @@
  */
 
 import { db } from "@/lib/db";
+import { searchKnowledgeDocuments } from "@/lib/agent/knowledge";
 import type { JsonObject } from "@/lib/agent/tools";
 import { searchMemories, storeMemoryEmbedding } from "@/lib/embeddings/search";
 import { searchGraph } from "@/lib/graph/queries";
@@ -129,6 +130,17 @@ export async function buildContext(
     }
   } catch {
     // Memgraph may not be available
+  }
+
+  try {
+    const knowledgeResults = await searchKnowledgeDocuments(userMessage, 3);
+    if (knowledgeResults.length > 0) {
+      parts.push(
+        "Company docs:\n" + knowledgeResults.map((doc) => `- ${doc.path}: ${doc.snippet}`).join("\n"),
+      );
+    }
+  } catch {
+    // Local knowledge folder may not exist yet
   }
 
   return parts.join("\n\n");

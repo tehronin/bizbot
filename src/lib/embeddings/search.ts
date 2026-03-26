@@ -24,7 +24,7 @@ export async function searchMemories(
   limit = 5,
   category?: string,
 ): Promise<MemorySearchResult[]> {
-  const embedding = await embed(query);
+  const embedding = await embed(query, "query");
   const embeddingStr = formatEmbedding(embedding);
 
   const categoryFilter = category ? `AND m."category" = '${category}'` : "";
@@ -57,7 +57,7 @@ export async function storeMemoryEmbedding(
   memoryId: string,
   text: string,
 ): Promise<void> {
-  const embedding = await embed(text);
+  const embedding = await embed(text, "document");
   const embeddingStr = formatEmbedding(embedding);
 
   await db.$executeRawUnsafe(

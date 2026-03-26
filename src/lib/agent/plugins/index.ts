@@ -4,6 +4,8 @@
  */
 
 import type { JsonObject, ToolDefinition, ToolExecutionResult } from "@/lib/agent/tools";
+import type { AgentRuntimeConfig } from "@/lib/agent/runtime";
+import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { approvalPlugin } from "./ApprovalPlugin";
 import { browserPlugin } from "./BrowserPlugin";
 import { contentPlugin } from "./ContentPlugin";
@@ -35,8 +37,22 @@ const toolRegistry: ToolDefinition<object, ToolExecutionResult>[] = [
   ...browserPlugin.tools,
 ].map((tool) => tool as ToolDefinition<object, ToolExecutionResult>);
 
-export function getAllToolDefinitions(): ToolDefinition<object, ToolExecutionResult>[] {
-  return [...toolRegistry];
+function canExposeTool(name: string, config: AgentRuntimeConfig): boolean {
+  if (config.autonomyPreset === "manual_only") {
+    return name !== "social_post" && name !== "social_reply";
+  }
+
+  if (config.autonomyPreset === "reply_only") {
+    return name !== "social_post";
+  }
+
+  return true;
+}
+
+export function getAllToolDefinitions(
+  config: AgentRuntimeConfig = getAgentRuntimeConfig(),
+): ToolDefinition<object, ToolExecutionResult>[] {
+  return toolRegistry.filter((tool) => canExposeTool(tool.name, config));
 }
 
 export async function executeTool(

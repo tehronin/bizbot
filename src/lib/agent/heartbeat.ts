@@ -1,0 +1,567 @@
+import {
+  InboxChannelType,
+  InboxStatus,
+  type InboxMessage,
+  PostStatus,
+  PlatformType,
+  type Platform,
+  type Prisma,
+} from "@prisma/client";
+import { db } from "@/lib/db";
+import { buildContext, getOrCreateConversation, saveMessage } from "@/lib/agent/memory";
+import { chatComplete } from "@/lib/agent/kernel";
+import { ensureKnowledgeEmbeddingsIndexed } from "@/lib/agent/knowledge";
+import { getAgentCapabilities, getAgentRuntimeConfig } from "@/lib/agent/runtime";
+import { getPlatformNameForType, getSocialClientForPlatformType } from "@/lib/social/clients";
+
+interface HeartbeatRunSummary {
+  indexedKnowledge: boolean;
+  knowledgeChunks: number;
+  importedInboxItems: number;
+  publishedPosts: number;
+  repliedItems: number;
+  draftedDirectMessages: number;
+  failedActions: number;
+}
+
+type InboxItemWithPlatform = InboxMessage & {
+  platform: Platform;
+};
+
+type InboxMetadata = {
+  participantId?: string;
+  threadUrl?: string;
+  messageUrl?: string;
+  error?: string;
+};
+
+const MANAGED_PLATFORMS: Array<{ id: string; type: PlatformType }> = [
+  { id: "twitter", type: PlatformType.TWITTER },
+  { id: "facebook", type: PlatformType.FACEBOOK },
+  { id: "instagram", type: PlatformType.INSTAGRAM },
+];
+
+const globalForHeartbeat = globalThis as typeof globalThis & {
+  bizbotHeartbeatActive?: boolean;
+  bizbotHeartbeatInterval?: ReturnType<typeof setInterval>;
+  bizbotHeartbeatSeconds?: number;
+};
+
+function parseInboxMetadata(value: Prisma.JsonValue | null): InboxMetadata {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const candidate = value as Record<string, Prisma.JsonValue>;
+  return {
+    participantId: typeof candidate.participantId === "string" ? candidate.participantId : undefined,
+    threadUrl: typeof candidate.threadUrl === "string" ? candidate.threadUrl : undefined,
+    messageUrl: typeof candidate.messageUrl === "string" ? candidate.messageUrl : undefined,
+    error: typeof candidate.error === "string" ? candidate.error : undefined,
+  };
+}
+
+function mergeInboxMetadata(
+  currentValue: Prisma.JsonValue | null,
+  patch: Partial<InboxMetadata>,
+): Prisma.InputJsonValue {
+  return {
+    ...parseInboxMetadata(currentValue),
+    ...patch,
+  };
+}
+
+async function setHeartbeatSetting(key: string, value: string): Promise<void> {
+  await db.setting.upsert({
+    where: { key },
+    update: { value },
+    create: { key, value },
+  });
+}
+
+async function upsertPlatform(platformId: string, platformType: PlatformType, connected: boolean): Promise<Platform> {
+  return db.platform.upsert({
+    where: { id: platformId },
+    update: {
+      type: platformType,
+      displayName: platformId,
+      connected,
+    },
+    create: {
+      id: platformId,
+      type: platformType,
+      displayName: platformId,
+      connected,
+    },
+  });
+}
+
+async function syncInboxFromMentions(): Promise<number> {
+  let imported = 0;
+
+  for (const managedPlatform of MANAGED_PLATFORMS) {
+    const client = getSocialClientForPlatformType(managedPlatform.type);
+    const platform = await upsertPlatform(managedPlatform.id, managedPlatform.type, client.isConnected());
+    if (!client.isConnected()) {
+      continue;
+    }
+
+    const mentions = await client.getMentions(20);
+    for (const mention of mentions) {
+      const existing = await db.inboxMessage.findUnique({
+        where: {
+          platformId_externalId: {
+            platformId: platform.id,
+            externalId: mention.id,
+          },
+        },
+        select: { id: true },
+      });
+
+      await db.inboxMessage.upsert({
+        where: {
+          platformId_externalId: {
+            platformId: platform.id,
+            externalId: mention.id,
+          },
+        },
+        update: {
+          authorName: mention.authorName,
+          authorHandle: mention.authorHandle,
+          content: mention.content,
+          receivedAt: mention.createdAt,
+          metadata: mergeInboxMetadata(null, { messageUrl: mention.url }),
+        },
+        create: {
+          platformId: platform.id,
+          channelType: InboxChannelType.SOCIAL_MENTION,
+          externalId: mention.id,
+          threadId: mention.id,
+          authorName: mention.authorName,
+          authorHandle: mention.authorHandle,
+          content: mention.content,
+          receivedAt: mention.createdAt,
+          metadata: mergeInboxMetadata(null, { messageUrl: mention.url }),
+        },
+      });
+
+      if (!existing) {
+        imported += 1;
+      }
+    }
+  }
+
+  return imported;
+}
+
+async function syncInboxFromDirectMessages(): Promise<number> {
+  let imported = 0;
+
+  for (const managedPlatform of MANAGED_PLATFORMS) {
+    const client = getSocialClientForPlatformType(managedPlatform.type);
+    const platform = await upsertPlatform(managedPlatform.id, managedPlatform.type, client.isConnected());
+    if (!client.isConnected() || !client.supportsDirectMessages?.() || !client.listDirectMessages) {
+      continue;
+    }
+
+    const directMessages = await client.listDirectMessages(20);
+    for (const message of directMessages) {
+      const existing = await db.inboxMessage.findUnique({
+        where: {
+          platformId_externalId: {
+            platformId: platform.id,
+            externalId: message.id,
+          },
+        },
+        select: { id: true },
+      });
+
+      await db.inboxMessage.upsert({
+        where: {
+          platformId_externalId: {
+            platformId: platform.id,
+            externalId: message.id,
+          },
+        },
+        update: {
+          authorName: message.authorName,
+          authorHandle: message.authorHandle,
+          content: message.content,
+          threadId: message.threadId,
+          receivedAt: message.createdAt,
+          metadata: mergeInboxMetadata(null, {
+            participantId: message.participantId,
+          }),
+        },
+        create: {
+          platformId: platform.id,
+          channelType: InboxChannelType.DIRECT_MESSAGE,
+          externalId: message.id,
+          threadId: message.threadId,
+          authorName: message.authorName,
+          authorHandle: message.authorHandle,
+          content: message.content,
+          receivedAt: message.createdAt,
+          metadata: mergeInboxMetadata(null, {
+            participantId: message.participantId,
+          }),
+        },
+      });
+
+      if (!existing) {
+        imported += 1;
+      }
+    }
+  }
+
+  return imported;
+}
+
+async function publishReadyPosts(): Promise<number> {
+  const readyPosts = await db.post.findMany({
+    where: {
+      OR: [
+        {
+          status: PostStatus.SCHEDULED,
+          scheduledAt: { lte: new Date() },
+        },
+        {
+          status: PostStatus.APPROVED,
+          OR: [{ scheduledAt: null }, { scheduledAt: { lte: new Date() } }],
+        },
+      ],
+    },
+    include: { platform: true },
+    orderBy: { scheduledAt: "asc" },
+    take: 20,
+  });
+
+  let published = 0;
+
+  for (const post of readyPosts) {
+    try {
+      const client = getSocialClientForPlatformType(post.platform.type);
+      if (!client.isConnected()) {
+        continue;
+      }
+
+      const result = await client.post({ content: post.content, mediaUrls: post.mediaUrls });
+      await db.post.update({
+        where: { id: post.id },
+        data: {
+          status: PostStatus.PUBLISHED,
+          externalId: result.id,
+          publishedAt: result.publishedAt ?? new Date(),
+        },
+      });
+      published += 1;
+    } catch (error) {
+      await db.post.update({
+        where: { id: post.id },
+        data: { status: PostStatus.FAILED },
+      });
+      console.error("[heartbeat publish]", error);
+    }
+  }
+
+  return published;
+}
+
+async function generateReplyDraft(item: InboxItemWithPlatform): Promise<string> {
+  if (item.replyContent) {
+    return item.replyContent;
+  }
+
+  const platformName = getPlatformNameForType(item.platform.type);
+  const context = await buildContext(item.content, undefined, "local-user");
+  const conversationId = await getOrCreateConversation(undefined, "local-user");
+  const response = await chatComplete([
+    {
+      role: "system",
+      content:
+        `You are BizBot preparing an automated ${item.channelType === InboxChannelType.DIRECT_MESSAGE ? "direct-message" : "social"} reply for ${platformName}. `
+        + "Keep it concise, on-brand, and safe. Return only the reply body with no preamble."
+        + (context ? `\n\nContext:\n${context}` : ""),
+    },
+    {
+      role: "user",
+      content: `Incoming message from ${item.authorHandle ?? item.authorName ?? "unknown sender"}:\n${item.content}`,
+    },
+  ]);
+
+  await saveMessage(conversationId, "USER", item.content, {
+    source: "inbox",
+    inboxMessageId: item.id,
+  });
+  await saveMessage(conversationId, "ASSISTANT", response.content, {
+    source: "inbox-reply-draft",
+    inboxMessageId: item.id,
+  });
+
+  await db.inboxMessage.update({
+    where: { id: item.id },
+    data: {
+      replyContent: response.content,
+      processedAt: new Date(),
+    },
+  });
+
+  return response.content;
+}
+
+async function sendInboxReply(item: InboxItemWithPlatform, replyContent: string): Promise<void> {
+  const client = getSocialClientForPlatformType(item.platform.type);
+
+  if (item.channelType === InboxChannelType.DIRECT_MESSAGE) {
+    if (!client.supportsDirectMessages?.() || !client.sendDirectMessage) {
+      await db.inboxMessage.update({
+        where: { id: item.id },
+        data: {
+          status: InboxStatus.DRAFTED,
+          replyContent,
+          processedAt: new Date(),
+        },
+      });
+      return;
+    }
+
+    const metadata = parseInboxMetadata(item.metadata);
+    const recipientId = metadata.participantId ?? item.threadId;
+    if (!recipientId) {
+      throw new Error(`Missing DM recipient for inbox item ${item.id}`);
+    }
+
+    const reply = await client.sendDirectMessage(recipientId, replyContent, item.externalId);
+    await db.inboxMessage.update({
+      where: { id: item.id },
+      data: {
+        status: InboxStatus.REPLIED,
+        replyContent,
+        replyPostId: reply.id,
+        processedAt: new Date(),
+      },
+    });
+    return;
+  }
+
+  const reply = await client.reply(item.threadId ?? item.externalId, replyContent);
+  await db.inboxMessage.update({
+    where: { id: item.id },
+    data: {
+      status: InboxStatus.REPLIED,
+      replyContent,
+      replyPostId: reply.id,
+      processedAt: new Date(),
+    },
+  });
+}
+
+async function setInboxFailure(item: InboxItemWithPlatform, error: unknown): Promise<void> {
+  await db.inboxMessage.update({
+    where: { id: item.id },
+    data: {
+      status: InboxStatus.FAILED,
+      processedAt: new Date(),
+      metadata: mergeInboxMetadata(item.metadata, { error: String(error) }),
+    },
+  });
+}
+
+async function getInboxItemOrThrow(id: string): Promise<InboxItemWithPlatform> {
+  const item = await db.inboxMessage.findUnique({
+    where: { id },
+    include: { platform: true },
+  });
+
+  if (!item) {
+    throw new Error(`Inbox item not found: ${id}`);
+  }
+
+  return item;
+}
+
+export async function draftInboxReply(id: string): Promise<InboxItemWithPlatform> {
+  const item = await getInboxItemOrThrow(id);
+  await db.inboxMessage.update({
+    where: { id },
+    data: { status: InboxStatus.PROCESSING },
+  });
+
+  try {
+    const replyContent = await generateReplyDraft(item);
+    await db.inboxMessage.update({
+      where: { id },
+      data: {
+        status: InboxStatus.DRAFTED,
+        replyContent,
+        processedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    await setInboxFailure(item, error);
+    throw error;
+  }
+
+  return getInboxItemOrThrow(id);
+}
+
+export async function approveInboxReply(id: string): Promise<InboxItemWithPlatform> {
+  let item = await getInboxItemOrThrow(id);
+  await db.inboxMessage.update({
+    where: { id },
+    data: { status: InboxStatus.PROCESSING },
+  });
+
+  try {
+    const replyContent = await generateReplyDraft(item);
+    item = await getInboxItemOrThrow(id);
+    await sendInboxReply(item, replyContent);
+  } catch (error) {
+    await setInboxFailure(item, error);
+    throw error;
+  }
+
+  return getInboxItemOrThrow(id);
+}
+
+export async function resendDraftedInboxReply(id: string): Promise<InboxItemWithPlatform> {
+  return approveInboxReply(id);
+}
+
+export async function dismissInboxMessage(id: string): Promise<InboxItemWithPlatform> {
+  await db.inboxMessage.update({
+    where: { id },
+    data: {
+      status: InboxStatus.DISMISSED,
+      processedAt: new Date(),
+    },
+  });
+
+  return getInboxItemOrThrow(id);
+}
+
+async function processInbox(): Promise<{ replied: number; drafted: number; failed: number }> {
+  const runtime = getAgentRuntimeConfig();
+  const capabilities = getAgentCapabilities(runtime);
+  if (!capabilities.canReplyDirectly || capabilities.replyScope === "none") {
+    return { replied: 0, drafted: 0, failed: 0 };
+  }
+
+  const eligibleChannelTypes = capabilities.replyScope === "direct_messages_only"
+    ? [InboxChannelType.DIRECT_MESSAGE]
+    : [InboxChannelType.DIRECT_MESSAGE, InboxChannelType.SOCIAL_MENTION];
+
+  const openItems = await db.inboxMessage.findMany({
+    where: {
+      status: InboxStatus.OPEN,
+      channelType: { in: eligibleChannelTypes },
+    },
+    include: { platform: true },
+    orderBy: { receivedAt: "asc" },
+    take: 10,
+  });
+
+  let replied = 0;
+  let drafted = 0;
+  let failed = 0;
+
+  for (const item of openItems) {
+    await db.inboxMessage.update({
+      where: { id: item.id },
+      data: { status: InboxStatus.PROCESSING },
+    });
+
+    try {
+      const replyContent = await generateReplyDraft(item);
+      const refreshed = await getInboxItemOrThrow(item.id);
+      await sendInboxReply(refreshed, replyContent);
+
+      const finalItem = await getInboxItemOrThrow(item.id);
+      if (finalItem.status === InboxStatus.DRAFTED) {
+        drafted += 1;
+      } else {
+        replied += 1;
+      }
+    } catch (error) {
+      failed += 1;
+      await setInboxFailure(item, error);
+      console.error("[heartbeat inbox]", error);
+    }
+  }
+
+  return { replied, drafted, failed };
+}
+
+export async function runAgentHeartbeat(): Promise<HeartbeatRunSummary> {
+  if (globalForHeartbeat.bizbotHeartbeatActive) {
+    return {
+      indexedKnowledge: false,
+      knowledgeChunks: 0,
+      importedInboxItems: 0,
+      publishedPosts: 0,
+      repliedItems: 0,
+      draftedDirectMessages: 0,
+      failedActions: 0,
+    };
+  }
+
+  globalForHeartbeat.bizbotHeartbeatActive = true;
+  await setHeartbeatSetting("agent_last_heartbeat_started_at", new Date().toISOString());
+
+  try {
+    const knowledge = await ensureKnowledgeEmbeddingsIndexed();
+    const importedMentions = await syncInboxFromMentions();
+    const importedDirectMessages = await syncInboxFromDirectMessages();
+    const publishedPosts = await publishReadyPosts();
+    const inbox = await processInbox();
+
+    const summary: HeartbeatRunSummary = {
+      indexedKnowledge: knowledge.indexed,
+      knowledgeChunks: knowledge.chunkCount,
+      importedInboxItems: importedMentions + importedDirectMessages,
+      publishedPosts,
+      repliedItems: inbox.replied,
+      draftedDirectMessages: inbox.drafted,
+      failedActions: inbox.failed,
+    };
+
+    await setHeartbeatSetting("agent_last_heartbeat_finished_at", new Date().toISOString());
+    await setHeartbeatSetting("agent_last_heartbeat_summary", JSON.stringify(summary));
+    return summary;
+  } finally {
+    globalForHeartbeat.bizbotHeartbeatActive = false;
+  }
+}
+
+export function getHeartbeatServiceState(): { running: boolean; heartbeatSeconds: number | null } {
+  return {
+    running: Boolean(globalForHeartbeat.bizbotHeartbeatInterval),
+    heartbeatSeconds: globalForHeartbeat.bizbotHeartbeatSeconds ?? null,
+  };
+}
+
+export async function startHeartbeatService(): Promise<{ started: boolean; heartbeatSeconds: number }> {
+  const heartbeatSeconds = Math.max(15, getAgentRuntimeConfig().heartbeatSeconds);
+
+  if (globalForHeartbeat.bizbotHeartbeatInterval && globalForHeartbeat.bizbotHeartbeatSeconds === heartbeatSeconds) {
+    return { started: false, heartbeatSeconds };
+  }
+
+  if (globalForHeartbeat.bizbotHeartbeatInterval) {
+    clearInterval(globalForHeartbeat.bizbotHeartbeatInterval);
+  }
+
+  globalForHeartbeat.bizbotHeartbeatSeconds = heartbeatSeconds;
+  globalForHeartbeat.bizbotHeartbeatInterval = setInterval(() => {
+    void runAgentHeartbeat().catch((error) => {
+      console.error("[heartbeat service]", error);
+    });
+  }, heartbeatSeconds * 1000);
+
+  void runAgentHeartbeat().catch((error) => {
+    console.error("[heartbeat bootstrap]", error);
+  });
+
+  await setHeartbeatSetting("agent_heartbeat_service_started_at", new Date().toISOString());
+  return { started: true, heartbeatSeconds };
+}

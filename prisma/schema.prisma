@@ -36,6 +36,7 @@ model Platform {
 
   posts            Post[]
   analyticsSnapshots AnalyticsSnapshot[]
+  inboxMessages    InboxMessage[]
 }
 
 enum PlatformType {
@@ -192,6 +193,44 @@ model Setting {
   key       String   @unique
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ─────────────────── INBOX ───────────────────
+model InboxMessage {
+  id            String           @id @default(cuid())
+  platform      Platform         @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  platformId    String
+  channelType   InboxChannelType
+  status        InboxStatus      @default(OPEN)
+  externalId    String
+  threadId      String?
+  authorName    String?
+  authorHandle  String?
+  content       String
+  replyContent  String?
+  replyPostId   String?
+  metadata      Json?
+  receivedAt    DateTime
+  processedAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([platformId, externalId])
+  @@index([status, channelType, receivedAt])
+}
+
+enum InboxChannelType {
+  SOCIAL_MENTION
+  DIRECT_MESSAGE
+}
+
+enum InboxStatus {
+  OPEN
+  PROCESSING
+  DRAFTED
+  REPLIED
+  DISMISSED
+  FAILED
 }
 
 // ─────────────────── BROWSER SESSIONS ───────────────────

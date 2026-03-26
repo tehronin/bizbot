@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "build:web": "next build",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "tauri:prepare-resources": "node scripts/prepare-tauri-resources.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
