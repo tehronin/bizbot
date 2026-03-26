@@ -1,0 +1,235 @@
+// BizBot — Local Desktop Social Media Agent
+// Prisma schema with pgvector support
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────── USER ───────────────────
+model User {
+  id          String   @id @default(cuid())
+  name        String   @default("User")
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  conversations Conversation[]
+  posts         Post[]
+  memories      Memory[]
+}
+
+// ─────────────────── PLATFORMS ───────────────────
+model Platform {
+  id               String         @id @default(cuid())
+  type             PlatformType
+  displayName      String
+  username         String?
+  connected        Boolean        @default(false)
+  useBrowserMode   Boolean        @default(false) // experimental opt-in
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  posts            Post[]
+  analyticsSnapshots AnalyticsSnapshot[]
+}
+
+enum PlatformType {
+  TWITTER
+  FACEBOOK
+  INSTAGRAM
+}
+
+// ─────────────────── POSTS ───────────────────
+model Post {
+  id          String      @id @default(cuid())
+  content     String
+  mediaUrls   String[]    @default([])
+  platform    Platform    @relation(fields: [platformId], references: [id])
+  platformId  String
+  author      User        @relation(fields: [authorId], references: [id])
+  authorId    String
+  status      PostStatus  @default(DRAFT)
+  externalId  String?     // ID from the social platform after publishing
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  approval    PostApproval?
+  analytics   AnalyticsSnapshot[]
+}
+
+enum PostStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+// ─────────────────── APPROVALS ───────────────────
+model PostApproval {
+  id          String         @id @default(cuid())
+  post        Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId      String         @unique
+  status      ApprovalStatus @default(PENDING)
+  decidedAt   DateTime?
+  autoApproveRule String?    // name of the rule that auto-approved, if any
+  notes       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  AUTO_APPROVED
+}
+
+// ─────────────────── CONVERSATIONS ───────────────────
+model Conversation {
+  id        String    @id @default(cuid())
+  title     String?
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  messages  Message[]
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  role           MessageRole
+  content        String
+  metadata       Json?        // tool calls, action cards, etc.
+  createdAt      DateTime     @default(now())
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+// ─────────────────── MEMORY ───────────────────
+// pgvector stored via raw SQL; embedding field is unsupported at Prisma level
+model Memory {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  key       String
+  value     String
+  category  String   @default("general") // e.g. preference, fact, topic
+  // embedding vector(1536) — managed via raw SQL (pgvector unsupported in Prisma)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, category])
+}
+
+// ─────────────────── POLICIES ───────────────────
+model Policy {
+  id          String     @id @default(cuid())
+  name        String
+  type        PolicyType
+  description String?
+  rules       Json       // flexible rule storage
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+enum PolicyType {
+  GUARDRAIL        // banned words, topic restrictions
+  BRAND_VOICE      // tone & persona enforcement
+  BROWSER_ALLOWLIST // URL access control
+  SCHEDULE         // posting schedule limits
+  AUTO_APPROVE     // auto-approval conditions
+}
+
+// ─────────────────── SCHEDULE RULES ───────────────────
+model ScheduleRule {
+  id           String       @id @default(cuid())
+  platformType PlatformType
+  maxPerDay    Int          @default(5)
+  timeWindows  Json         // [{start: "09:00", end: "17:00"}]
+  timezone     String       @default("UTC")
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+// ─────────────────── ANALYTICS ───────────────────
+model AnalyticsSnapshot {
+  id          String   @id @default(cuid())
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId      String
+  platform    Platform @relation(fields: [platformId], references: [id])
+  platformId  String
+  likes       Int      @default(0)
+  replies     Int      @default(0)
+  shares      Int      @default(0)
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  capturedAt  DateTime @default(now())
+}
+
+// ─────────────────── SETTINGS ───────────────────
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────── BROWSER SESSIONS ───────────────────
+model BrowserSession {
+  id        String   @id @default(cuid())
+  domain    String   @unique
+  cookies   Json     // stored cookie jar
+  storage   Json?    // localStorage snapshot
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────── BROWSER ACTIONS (audit log) ───────────────────
+model BrowserAction {
+  id           String              @id @default(cuid())
+  url          String
+  actionType   BrowserActionType
+  description  String
+  status       BrowserActionStatus @default(PENDING)
+  screenshotPath String?
+  result       String?
+  createdAt    DateTime            @default(now())
+  decidedAt    DateTime?
+}
+
+enum BrowserActionType {
+  NAVIGATE
+  SCREENSHOT
+  EXTRACT
+  FILL_FORM
+  CLICK
+  DOWNLOAD
+}
+
+enum BrowserActionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  FAILED
+}

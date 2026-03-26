@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/* ── Stealth palette ── no pure blacks, sharp corners ── */
+:root {
+  --bg-base:     #0e0e14;
+  --bg-surface:  #13131b;
+  --bg-raised:   #181822;
+  --bg-hover:    #1e1e2c;
+  --border:      #22222e;
+  --border-sub:  #1a1a26;
+
+  --text-primary: #c4c4d4;
+  --text-dim:     #707088;
+  --text-muted:   #484860;
+
+  --accent:      #5b6af0;
+  --accent-dim:  #2c3070;
+  --accent-glow: rgba(91,106,240,0.15);
+
+  --danger:      #d94f4f;
+  --success:     #3a8c5c;
+
+  --background: var(--bg-base);
+  --foreground: var(--text-primary);
+}
+
+@theme inline {
+  --color-background: var(--bg-base);
+  --color-foreground: var(--text-primary);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  /* flatten all radius tokens */
+  --radius:    0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-full: 0px;
+}
+
+* {
+  border-radius: 0 !important;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+code, pre, kbd {
+  font-family: var(--font-mono), monospace;
+}
+
+/* Subtle scrollbars */
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-track  { background: var(--bg-base); }
+::-webkit-scrollbar-thumb  { background: var(--border); }
+::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+/* Selection */
+::selection { background: var(--accent-dim); color: var(--text-primary); }

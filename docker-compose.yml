@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: bizbot_postgres
+    environment:
+      POSTGRES_USER: bizbot
+      POSTGRES_PASSWORD: bizbot_local
+      POSTGRES_DB: bizbot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bizbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  memgraph:
+    image: memgraph/memgraph-platform:latest
+    container_name: bizbot_memgraph
+    ports:
+      - "7687:7687"   # Bolt protocol
+      - "7474:3000"   # Memgraph Lab (remapped to avoid Next.js port conflict)
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+      - memgraph_log:/var/log/memgraph
+    environment:
+      MEMGRAPH_USER: ""
+      MEMGRAPH_PASSWORD: ""
+    healthcheck:
+      test: ["CMD", "echo", "RETURN 1;" , "|", "mgconsole"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  postgres_data:
+  memgraph_data:
+  memgraph_log:

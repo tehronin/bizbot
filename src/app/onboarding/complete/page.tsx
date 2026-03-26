@@ -1,0 +1,30 @@
+"use client";
+
+import Link from "next/link";
+
+export default function OnboardingCompletePage() {
+  async function finish(): Promise<void> {
+    await fetch("/api/onboarding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ completed: true, step: "complete" }),
+    });
+    window.location.href = "/chat";
+  }
+
+  return (
+    <main className="min-h-screen flex items-center justify-center px-6" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
+      <section className="w-full max-w-2xl border p-8" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+        <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>complete</div>
+        <h1 className="text-3xl mb-4">Setup checkpoint reached</h1>
+        <p className="text-sm mb-6" style={{ color: "var(--text-dim)" }}>
+          Your local agent is configured enough to start drafting, queueing, and reviewing content.
+        </p>
+        <div className="flex gap-3">
+          <button onClick={() => void finish()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>enter dashboard</button>
+          <Link href="/settings" className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>settings</Link>
+        </div>
+      </section>
+    </main>
+  );
+}
