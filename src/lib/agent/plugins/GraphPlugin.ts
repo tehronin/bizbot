@@ -1,7 +1,7 @@
 /** GraphPlugin — Query and update the Memgraph knowledge graph. */
 
 import { upsertTopic, upsertEntity, linkEntityToTopic, searchGraph, getContextForPost } from "@/lib/graph/queries";
-import type { JsonObject, ToolDefinition } from "@/lib/agent/tools";
+import { defineTool, registerTool, type JsonObject, type ToolDefinition } from "@/lib/agent/tools";
 
 interface TopicArgs {
   name: string;
@@ -26,7 +26,7 @@ interface ContextArgs {
 
 export const graphPlugin = {
   tools: [
-    {
+    registerTool(defineTool({
       name: "graph_upsert_topic",
       description: "Add or update a topic node in the knowledge graph.",
       parameters: {
@@ -41,8 +41,8 @@ export const graphPlugin = {
         await upsertTopic(name, description);
         return { upserted: true, name };
       },
-    } satisfies ToolDefinition<TopicArgs, JsonObject>,
-    {
+    } satisfies ToolDefinition<TopicArgs, JsonObject>)),
+    registerTool(defineTool({
       name: "graph_upsert_entity",
       description: "Add or update an entity node (person, company, product, etc.).",
       parameters: {
@@ -59,8 +59,8 @@ export const graphPlugin = {
         await upsertEntity(id, type, name, properties ?? {});
         return { upserted: true, id };
       },
-    } satisfies ToolDefinition<EntityArgs, JsonObject>,
-    {
+    } satisfies ToolDefinition<EntityArgs, JsonObject>)),
+    registerTool(defineTool({
       name: "graph_search",
       description: "Search the knowledge graph by name or description.",
       parameters: {
@@ -75,8 +75,8 @@ export const graphPlugin = {
         const results = await searchGraph(query, limit ?? 10);
         return { results };
       },
-    } satisfies ToolDefinition<GraphSearchArgs, JsonObject>,
-    {
+    } satisfies ToolDefinition<GraphSearchArgs, JsonObject>)),
+    registerTool(defineTool({
       name: "graph_get_context",
       description: "Get knowledge graph context for a list of topics (for enriching content).",
       parameters: {
@@ -90,6 +90,6 @@ export const graphPlugin = {
         const context = await getContextForPost(topics);
         return { context };
       },
-    } satisfies ToolDefinition<ContextArgs, JsonObject>,
+    } satisfies ToolDefinition<ContextArgs, JsonObject>)),
   ],
 };

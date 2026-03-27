@@ -12,6 +12,7 @@ import { buildContext, getOrCreateConversation, saveMessage } from "@/lib/agent/
 import { chatComplete } from "@/lib/agent/kernel";
 import { ensureKnowledgeEmbeddingsIndexed } from "@/lib/agent/knowledge";
 import { getAgentCapabilities, getAgentRuntimeConfig } from "@/lib/agent/runtime";
+import { runDueCompetitorChecks } from "@/lib/competitors/monitor";
 import { getPlatformNameForType, getSocialClientForPlatformType } from "@/lib/social/clients";
 
 interface HeartbeatRunSummary {
@@ -22,6 +23,8 @@ interface HeartbeatRunSummary {
   repliedItems: number;
   draftedDirectMessages: number;
   failedActions: number;
+  competitorChecks: number;
+  competitorChanges: number;
 }
 
 type InboxItemWithPlatform = InboxMessage & {
@@ -34,6 +37,12 @@ type InboxMetadata = {
   messageUrl?: string;
   error?: string;
 };
+
+interface ProcessInboxSummary {
+  replied: number;
+  drafted: number;
+  failed: number;
+}
 
 const MANAGED_PLATFORMS: Array<{ id: string; type: PlatformType }> = [
   { id: "twitter", type: PlatformType.TWITTER },
@@ -67,6 +76,50 @@ function mergeInboxMetadata(
     ...parseInboxMetadata(currentValue),
     ...patch,
   };
+}
+
+function formatErrorMessage(error: Error | string | null | undefined): string {
+  if (!error) {
+    return "Unknown error";
+  }
+
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function claimInboxMessage(id: string, statuses: InboxStatus[]): Promise<boolean> {
+  const result = await db.inboxMessage.updateMany({
+    where: {
+      id,
+      status: { in: statuses },
+    },
+    data: {
+      status: InboxStatus.PROCESSING,
+      processedAt: new Date(),
+    },
+  });
+
+  return result.count === 1;
+}
+
+async function claimPostForPublishing(id: string, now: Date): Promise<boolean> {
+  const result = await db.post.updateMany({
+    where: {
+      id,
+      OR: [
+        {
+          status: PostStatus.SCHEDULED,
+          scheduledAt: { lte: now },
+        },
+        {
+          status: PostStatus.APPROVED,
+          OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
+        },
+      ],
+    },
+    data: { status: PostStatus.PUBLISHING },
+  });
+
+  return result.count === 1;
 }
 
 async function setHeartbeatSetting(key: string, value: string): Promise<void> {
@@ -216,16 +269,17 @@ async function syncInboxFromDirectMessages(): Promise<number> {
 }
 
 async function publishReadyPosts(): Promise<number> {
+  const now = new Date();
   const readyPosts = await db.post.findMany({
     where: {
       OR: [
         {
           status: PostStatus.SCHEDULED,
-          scheduledAt: { lte: new Date() },
+          scheduledAt: { lte: now },
         },
         {
           status: PostStatus.APPROVED,
-          OR: [{ scheduledAt: null }, { scheduledAt: { lte: new Date() } }],
+          OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
         },
       ],
     },
@@ -243,9 +297,14 @@ async function publishReadyPosts(): Promise<number> {
         continue;
       }
 
+      const claimed = await claimPostForPublishing(post.id, now);
+      if (!claimed) {
+        continue;
+      }
+
       const result = await client.post({ content: post.content, mediaUrls: post.mediaUrls });
-      await db.post.update({
-        where: { id: post.id },
+      await db.post.updateMany({
+        where: { id: post.id, status: PostStatus.PUBLISHING },
         data: {
           status: PostStatus.PUBLISHED,
           externalId: result.id,
@@ -254,8 +313,8 @@ async function publishReadyPosts(): Promise<number> {
       });
       published += 1;
     } catch (error) {
-      await db.post.update({
-        where: { id: post.id },
+      await db.post.updateMany({
+        where: { id: post.id, status: PostStatus.PUBLISHING },
         data: { status: PostStatus.FAILED },
       });
       console.error("[heartbeat publish]", error);
@@ -354,13 +413,13 @@ async function sendInboxReply(item: InboxItemWithPlatform, replyContent: string)
   });
 }
 
-async function setInboxFailure(item: InboxItemWithPlatform, error: unknown): Promise<void> {
+async function setInboxFailure(item: InboxItemWithPlatform, error: Error | string): Promise<void> {
   await db.inboxMessage.update({
     where: { id: item.id },
     data: {
       status: InboxStatus.FAILED,
       processedAt: new Date(),
-      metadata: mergeInboxMetadata(item.metadata, { error: String(error) }),
+      metadata: mergeInboxMetadata(item.metadata, { error: formatErrorMessage(error) }),
     },
   });
 }
@@ -380,10 +439,10 @@ async function getInboxItemOrThrow(id: string): Promise<InboxItemWithPlatform> {
 
 export async function draftInboxReply(id: string): Promise<InboxItemWithPlatform> {
   const item = await getInboxItemOrThrow(id);
-  await db.inboxMessage.update({
-    where: { id },
-    data: { status: InboxStatus.PROCESSING },
-  });
+  const claimed = await claimInboxMessage(id, [InboxStatus.OPEN, InboxStatus.FAILED]);
+  if (!claimed) {
+    return getInboxItemOrThrow(id);
+  }
 
   try {
     const replyContent = await generateReplyDraft(item);
@@ -396,7 +455,7 @@ export async function draftInboxReply(id: string): Promise<InboxItemWithPlatform
       },
     });
   } catch (error) {
-    await setInboxFailure(item, error);
+    await setInboxFailure(item, formatErrorMessage(error instanceof Error ? error : String(error)));
     throw error;
   }
 
@@ -405,17 +464,17 @@ export async function draftInboxReply(id: string): Promise<InboxItemWithPlatform
 
 export async function approveInboxReply(id: string): Promise<InboxItemWithPlatform> {
   let item = await getInboxItemOrThrow(id);
-  await db.inboxMessage.update({
-    where: { id },
-    data: { status: InboxStatus.PROCESSING },
-  });
+  const claimed = await claimInboxMessage(id, [InboxStatus.OPEN, InboxStatus.DRAFTED, InboxStatus.FAILED]);
+  if (!claimed) {
+    return getInboxItemOrThrow(id);
+  }
 
   try {
     const replyContent = await generateReplyDraft(item);
     item = await getInboxItemOrThrow(id);
     await sendInboxReply(item, replyContent);
   } catch (error) {
-    await setInboxFailure(item, error);
+    await setInboxFailure(item, formatErrorMessage(error instanceof Error ? error : String(error)));
     throw error;
   }
 
@@ -438,7 +497,7 @@ export async function dismissInboxMessage(id: string): Promise<InboxItemWithPlat
   return getInboxItemOrThrow(id);
 }
 
-async function processInbox(): Promise<{ replied: number; drafted: number; failed: number }> {
+async function processInbox(): Promise<ProcessInboxSummary> {
   const runtime = getAgentRuntimeConfig();
   const capabilities = getAgentCapabilities(runtime);
   if (!capabilities.canReplyDirectly || capabilities.replyScope === "none") {
@@ -464,10 +523,10 @@ async function processInbox(): Promise<{ replied: number; drafted: number; faile
   let failed = 0;
 
   for (const item of openItems) {
-    await db.inboxMessage.update({
-      where: { id: item.id },
-      data: { status: InboxStatus.PROCESSING },
-    });
+    const claimed = await claimInboxMessage(item.id, [InboxStatus.OPEN]);
+    if (!claimed) {
+      continue;
+    }
 
     try {
       const replyContent = await generateReplyDraft(item);
@@ -482,12 +541,16 @@ async function processInbox(): Promise<{ replied: number; drafted: number; faile
       }
     } catch (error) {
       failed += 1;
-      await setInboxFailure(item, error);
+      await setInboxFailure(item, formatErrorMessage(error instanceof Error ? error : String(error)));
       console.error("[heartbeat inbox]", error);
     }
   }
 
   return { replied, drafted, failed };
+}
+
+export async function processInboxNow(): Promise<ProcessInboxSummary> {
+  return processInbox();
 }
 
 export async function runAgentHeartbeat(): Promise<HeartbeatRunSummary> {
@@ -500,6 +563,8 @@ export async function runAgentHeartbeat(): Promise<HeartbeatRunSummary> {
       repliedItems: 0,
       draftedDirectMessages: 0,
       failedActions: 0,
+      competitorChecks: 0,
+      competitorChanges: 0,
     };
   }
 
@@ -512,6 +577,7 @@ export async function runAgentHeartbeat(): Promise<HeartbeatRunSummary> {
     const importedDirectMessages = await syncInboxFromDirectMessages();
     const publishedPosts = await publishReadyPosts();
     const inbox = await processInbox();
+    const competitor = await runDueCompetitorChecks();
 
     const summary: HeartbeatRunSummary = {
       indexedKnowledge: knowledge.indexed,
@@ -520,7 +586,9 @@ export async function runAgentHeartbeat(): Promise<HeartbeatRunSummary> {
       publishedPosts,
       repliedItems: inbox.replied,
       draftedDirectMessages: inbox.drafted,
-      failedActions: inbox.failed,
+      failedActions: inbox.failed + competitor.failed,
+      competitorChecks: competitor.checked,
+      competitorChanges: competitor.changed,
     };
 
     await setHeartbeatSetting("agent_last_heartbeat_finished_at", new Date().toISOString());

@@ -2,7 +2,7 @@
 
 import { remember, recall } from "@/lib/agent/memory";
 import type { MemoryEntry } from "@/lib/agent/memory";
-import type { ToolDefinition } from "@/lib/agent/tools";
+import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
 
 interface RememberArgs {
   key: string;
@@ -17,7 +17,7 @@ interface RecallArgs {
 
 export const memoryPlugin = {
   tools: [
-    {
+    registerTool(defineTool({
       name: "memory_remember",
       description: "Store a key-value fact in long-term memory.",
       parameters: {
@@ -33,8 +33,8 @@ export const memoryPlugin = {
         await remember(key, value, category ?? "general");
         return { stored: true, key, value };
       },
-    } satisfies ToolDefinition<RememberArgs, { stored: boolean; key: string; value: string }>,
-    {
+    } satisfies ToolDefinition<RememberArgs, { stored: boolean; key: string; value: string }>)),
+    registerTool(defineTool({
       name: "memory_recall",
       description: "Recall memories semantically similar to a query.",
       parameters: {
@@ -49,6 +49,6 @@ export const memoryPlugin = {
         const results = await recall(query, limit ?? 5);
         return { memories: results };
       },
-    } satisfies ToolDefinition<RecallArgs, { memories: MemoryEntry[] }>,
+    } satisfies ToolDefinition<RecallArgs, { memories: MemoryEntry[] }>)),
   ],
 };

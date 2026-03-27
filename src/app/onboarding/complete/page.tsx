@@ -18,8 +18,13 @@ export default function OnboardingCompletePage() {
         <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>complete</div>
         <h1 className="text-3xl mb-4">Setup checkpoint reached</h1>
         <p className="text-sm mb-6" style={{ color: "var(--text-dim)" }}>
-          Your local agent is configured enough to start drafting, queueing, and reviewing content.
+          Your local agent is configured enough to start drafting, queueing, reviewing, and receiving webhook-driven inbox events. Treat Settings as the place to extend this when future features add new operational requirements.
         </p>
+        <div className="space-y-2 text-xs leading-6 mb-6" style={{ color: "var(--text-dim)" }}>
+          <div>Review the settings page before going live with real accounts.</div>
+          <div>Meta webhook verification depends on the verify token you saved during onboarding.</div>
+          <div>Workspace and knowledge folder paths now affect document retrieval and file tools.</div>
+        </div>
         <div className="flex gap-3">
           <button onClick={() => void finish()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>enter dashboard</button>
           <Link href="/settings" className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>settings</Link>

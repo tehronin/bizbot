@@ -1,7 +1,7 @@
 /** FilePlugin — Read, write, and list files in the workspace folder. */
 
 import { deleteFile, listFiles, readFile, writeFile } from "@/lib/files/workspace";
-import type { ToolDefinition } from "@/lib/agent/tools";
+import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
 
 interface FileListArgs {
   subdir?: string;
@@ -22,7 +22,7 @@ interface FileDeleteArgs {
 
 export const filePlugin = {
   tools: [
-    {
+    registerTool(defineTool({
       name: "file_list",
       description: "List files in the workspace folder.",
       parameters: {
@@ -34,8 +34,8 @@ export const filePlugin = {
       execute: async ({ subdir }: FileListArgs) => {
         return { files: listFiles(subdir ?? ".") };
       },
-    } satisfies ToolDefinition<FileListArgs, { files: ReturnType<typeof listFiles> }>,
-    {
+    } satisfies ToolDefinition<FileListArgs, { files: ReturnType<typeof listFiles> }>)),
+    registerTool(defineTool({
       name: "file_read",
       description: "Read the contents of a file in the workspace.",
       parameters: {
@@ -48,8 +48,8 @@ export const filePlugin = {
       execute: async ({ path }: FileReadArgs) => {
         return { content: readFile(path) };
       },
-    } satisfies ToolDefinition<FileReadArgs, { content: string }>,
-    {
+    } satisfies ToolDefinition<FileReadArgs, { content: string }>)),
+    registerTool(defineTool({
       name: "file_write",
       description: "Write or overwrite a file in the workspace.",
       parameters: {
@@ -64,8 +64,8 @@ export const filePlugin = {
         writeFile(path, content);
         return { written: true, path };
       },
-    } satisfies ToolDefinition<FileWriteArgs, { written: boolean; path: string }>,
-    {
+    } satisfies ToolDefinition<FileWriteArgs, { written: boolean; path: string }>)),
+    registerTool(defineTool({
       name: "file_delete",
       description: "Delete a file from the workspace.",
       parameters: {
@@ -79,6 +79,6 @@ export const filePlugin = {
         deleteFile(path);
         return { deleted: true, path };
       },
-    } satisfies ToolDefinition<FileDeleteArgs, { deleted: boolean; path: string }>,
+    } satisfies ToolDefinition<FileDeleteArgs, { deleted: boolean; path: string }>)),
   ],
 };

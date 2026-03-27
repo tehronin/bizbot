@@ -10,6 +10,8 @@ BizBot is a local-first desktop social media agent for automated customer engage
 - **Approval workflow** — posts can be auto-published or routed through a human approval queue depending on autonomy preset
 - **Unified inbox** — social mentions and DMs from all platforms land in a single inbox with status tracking (open → processing → drafted → replied → dismissed)
 - **Knowledge-backed context** — drop product docs, FAQs, or sales materials into the `knowledge/` folder and the agent uses them when composing replies
+- **Multi-agent routing** — requests are routed into specialist lanes for DM handling, content creation, analytics reporting, or browser research
+- **Competitor monitoring** — scheduled browser watches can track public competitor pages and summarize detected changes
 
 ## Current Status
 
@@ -18,7 +20,10 @@ BizBot is a local-first desktop social media agent for automated customer engage
 - `npm run dev` launches the full stack (Next.js + BullMQ worker) via a single unified supervisor
 - PostgreSQL, Redis, and Memgraph run via Docker Compose
 - Google Gemini is the active LLM provider (chat: `gemini-3-flash-preview`, embeddings: `gemini-embedding-2-preview`)
+- Google Gemini now runs through the native official Google GenAI SDK (`@google/genai`) with support for Search grounding and code execution
 - Heartbeat worker syncs inbox, publishes scheduled posts, and processes open DMs every 5 minutes
+- Meta webhook receiver is available at `/api/webhooks/meta` for real-time Messenger / Instagram ingestion
+- Agent chat now streams routing decisions, tool calls, tool results, and final output live in the UI
 - Health endpoint at `/api/llm` reports full system status
 - Next.js 16.2.1 production build passes (standalone output for Tauri packaging)
 - Tauri v2 desktop packaging pipeline is wired and staged
@@ -65,6 +70,7 @@ The agent exposes typed function-calling tools organized as plugins:
 | Schedule | `schedule_post`, `schedule_list`, `schedule_cancel` |
 | Approval | `approval_submit`, `approval_get_pending`, `approval_decide` |
 | Browser | web navigation, screenshot, text/link extraction |
+| Competitor | `competitor_watch_create`, `competitor_watch_list`, `competitor_watch_check`, `competitor_watch_pause` |
 
 ### Autonomy Presets
 
@@ -103,6 +109,15 @@ A BullMQ-based background worker runs on a configurable interval (default: 5 min
 3. Syncs DMs from all platforms into the inbox
 4. Publishes approved/scheduled posts that are due
 5. Auto-processes open inbox items (generates and sends replies)
+6. Runs due competitor watches and records detected content changes
+
+### Tier 2 Intelligence Upgrades
+
+- **Native Gemini harness** via `@google/genai` with native function-calling config, Google Search grounding, and code execution
+- **Streaming execution** via server-sent events from `/api/agent`
+- **Meta webhooks** for real-time inbound Messenger / Instagram ingestion via `/api/webhooks/meta`
+- **Multi-agent routing** with specialist lanes: DM handler, content creator, analytics reporter, browser researcher
+- **Competitor monitor** with watch management APIs, heartbeat scheduling, and browser-based change summaries
 
 ### Browser Capability
 
@@ -131,6 +146,7 @@ A BullMQ-based background worker runs on a configurable interval (default: 5 min
 | Graph | Memgraph via `neo4j-driver` |
 | Cache/Queue | Redis 7 |
 | AI SDKs | OpenAI, Anthropic, Axios (Meta/MiniMax) |
+| Gemini SDK | `@google/genai` |
 | Social | Twitter API v2, Meta Graph API v21.0 |
 | Browser | Playwright |
 | Bundling | esbuild (worker), Next.js standalone (server) |
@@ -181,6 +197,11 @@ A BullMQ-based background worker runs on a configurable interval (default: 5 min
 - `GET /api/analytics`
 - `GET /api/approvals`
 - `PATCH /api/approvals/[id]`
+- `GET /api/competitors`
+- `POST /api/competitors`
+- `GET /api/competitors/[id]`
+- `PATCH /api/competitors/[id]`
+- `POST /api/competitors/[id]/check`
 - `GET /api/files`
 - `POST /api/files`
 - `DELETE /api/files`
@@ -196,10 +217,12 @@ A BullMQ-based background worker runs on a configurable interval (default: 5 min
 - `PATCH /api/settings`
 - `GET /api/social/[platform]`
 - `POST /api/social/[platform]`
+- `GET /api/webhooks/meta`
+- `POST /api/webhooks/meta`
 
 ## Data Model
 
-16 Prisma models: `User`, `Platform`, `Post`, `PostApproval`, `Conversation`, `Message`, `Memory`, `Policy`, `ScheduleRule`, `AnalyticsSnapshot`, `Setting`, `InboxMessage`, `BrowserSession`, `BrowserAction`
+18 Prisma models: `User`, `Platform`, `Post`, `PostApproval`, `Conversation`, `Message`, `Memory`, `Policy`, `ScheduleRule`, `AnalyticsSnapshot`, `Setting`, `InboxMessage`, `BrowserSession`, `BrowserAction`, `CompetitorWatch`, `CompetitorSnapshot`
 
 ## Repository Structure
 
@@ -212,6 +235,7 @@ bizbot/
     lib/
       agent/                  Kernel, tools, plugins, heartbeat, knowledge
       browser/                Playwright engine, safety, sessions
+      competitors/            Competitor watch scheduler and change summaries
       embeddings/             Embedding generation and vector search
       files/                  Workspace file helpers
       graph/                  Memgraph client
@@ -302,6 +326,7 @@ Redis uses the default `localhost:6379` (no env var needed for defaults).
 | `BIZBOT_AGENT_HEARTBEAT_SECONDS` | Worker poll interval (default: `300`) |
 | `BIZBOT_KNOWLEDGE_ENABLED` | Enable knowledge folder indexing (default: `true`) |
 | `BIZBOT_KNOWLEDGE_PATH` | Subfolder under workspace (default: `knowledge`) |
+| `BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY` | If `true`, process webhook-ingested inbox items immediately |
 
 ### Social Platforms
 
@@ -310,6 +335,7 @@ Redis uses the default `localhost:6379` (no env var needed for defaults).
 | `META_ACCESS_TOKEN` | Facebook + Instagram (Graph API) |
 | `FACEBOOK_PAGE_ID` | Facebook Page ID |
 | `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram Business Account ID |
+| `META_WEBHOOK_VERIFY_TOKEN` | Verification token for Meta webhook subscription |
 | `TWITTER_APP_KEY`, `TWITTER_APP_SECRET` | Twitter API credentials |
 | `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_TOKEN_SECRET` | Twitter user tokens |
 | `TWITTER_USER_ID` | Twitter user ID for mention timeline |
@@ -332,7 +358,7 @@ Redis uses the default `localhost:6379` (no env var needed for defaults).
 - Social platform integrations are implemented but require real API credentials and live testing
 - Facebook Messenger DM access requires Meta App Review for production use
 - Browser-based social adapters are experimental (Facebook post only, no Instagram browser adapter)
-- Inbox ingestion uses polling, not webhooks
+- Meta webhooks are implemented, but Twitter/X real-time webhooks are still pending external API availability/access
 - No canned/template response system yet — all replies are LLM-generated
 - Multi-account social tenancy is not implemented; platform IDs are single-account
 - `ScheduleRule` model exists but max-per-day enforcement is not yet wired into the publish pipeline

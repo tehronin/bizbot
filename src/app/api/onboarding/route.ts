@@ -7,11 +7,15 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 
 const ONBOARDING_SETTING = "onboarding_completed";
+const ONBOARDING_STEP_SETTING = "onboarding_step";
 
 export async function GET() {
-  const row = await db.setting.findUnique({ where: { key: ONBOARDING_SETTING } });
-  const completed = row?.value === "true";
-  return Response.json({ completed });
+  const [completedRow, stepRow] = await Promise.all([
+    db.setting.findUnique({ where: { key: ONBOARDING_SETTING } }),
+    db.setting.findUnique({ where: { key: ONBOARDING_STEP_SETTING } }),
+  ]);
+  const completed = completedRow?.value === "true";
+  return Response.json({ completed, step: stepRow?.value ?? null });
 }
 
 export async function POST(req: NextRequest) {

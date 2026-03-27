@@ -1,7 +1,7 @@
 /** SchedulePlugin — Create, list, and cancel scheduled posts. */
 
 import { db } from "@/lib/db";
-import type { ToolDefinition } from "@/lib/agent/tools";
+import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
 
 interface SchedulePostArgs {
   platformId: string;
@@ -18,7 +18,7 @@ interface ScheduleCancelArgs {
 
 export const schedulePlugin = {
   tools: [
-    {
+    registerTool(defineTool({
       name: "schedule_post",
       description: "Schedule a post for future publishing.",
       parameters: {
@@ -48,8 +48,8 @@ export const schedulePlugin = {
           scheduledAt: post.scheduledAt?.toISOString() ?? scheduledAt,
         };
       },
-    } satisfies ToolDefinition<SchedulePostArgs, { scheduled: boolean; postId: string; scheduledAt: string }>,
-    {
+    } satisfies ToolDefinition<SchedulePostArgs, { scheduled: boolean; postId: string; scheduledAt: string }>)),
+    registerTool(defineTool({
       name: "schedule_list",
       description: "List all scheduled posts.",
       parameters: { type: "object", properties: {} },
@@ -69,8 +69,8 @@ export const schedulePlugin = {
           })),
         };
       },
-    } satisfies ToolDefinition<ScheduleListArgs, { scheduledPosts: Array<{ id: string; content: string; platformId: string; scheduledAt: string | null; status: string }> }>,
-    {
+    } satisfies ToolDefinition<ScheduleListArgs, { scheduledPosts: Array<{ id: string; content: string; platformId: string; scheduledAt: string | null; status: string }> }>)),
+    registerTool(defineTool({
       name: "schedule_cancel",
       description: "Cancel a scheduled post.",
       parameters: {
@@ -85,6 +85,6 @@ export const schedulePlugin = {
         });
         return { cancelled: true, postId };
       },
-    } satisfies ToolDefinition<ScheduleCancelArgs, { cancelled: boolean; postId: string }>,
+    } satisfies ToolDefinition<ScheduleCancelArgs, { cancelled: boolean; postId: string }>)),
   ],
 };

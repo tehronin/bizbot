@@ -8,7 +8,7 @@ import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { TwitterClient } from "@/lib/social/twitter";
 import { FacebookClient, InstagramClient } from "@/lib/social/meta";
 import type { EngagementMetrics, SocialClient, SocialMention, SocialPost, SocialReply } from "@/lib/social/types";
-import type { ToolDefinition } from "@/lib/agent/tools";
+import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
 
 type PlatformName = "twitter" | "facebook" | "instagram";
 
@@ -104,7 +104,7 @@ async function queuePostForApproval(platform: PlatformName, content: string, med
 
 export const socialPlugin = {
   tools: [
-    {
+    registerTool(defineTool({
       name: "social_post",
       description: "Post content to a social media platform (twitter, facebook, instagram). Content will be queued for approval first.",
       parameters: {
@@ -128,8 +128,8 @@ export const socialPlugin = {
         const client = getClient(platform);
         return client.post({ content, mediaUrls });
       },
-    } satisfies ToolDefinition<SocialPostArgs, SocialPost | QueuedApprovalResult>,
-    {
+    } satisfies ToolDefinition<SocialPostArgs, SocialPost | QueuedApprovalResult>)),
+    registerTool(defineTool({
       name: "social_reply",
       description: "Reply to an existing post on a social platform.",
       parameters: {
@@ -150,8 +150,8 @@ export const socialPlugin = {
         const client = getClient(platform);
         return client.reply(postId, content);
       },
-    } satisfies ToolDefinition<SocialReplyArgs, SocialReply>,
-    {
+    } satisfies ToolDefinition<SocialReplyArgs, SocialReply>)),
+    registerTool(defineTool({
       name: "social_get_mentions",
       description: "Get recent mentions of the account on a platform.",
       parameters: {
@@ -166,8 +166,8 @@ export const socialPlugin = {
         const client = getClient(platform);
         return client.getMentions(limit ?? 20);
       },
-    } satisfies ToolDefinition<SocialMentionsArgs, SocialMention[]>,
-    {
+    } satisfies ToolDefinition<SocialMentionsArgs, SocialMention[]>)),
+    registerTool(defineTool({
       name: "social_get_analytics",
       description: "Get engagement analytics for a published post.",
       parameters: {
@@ -182,6 +182,6 @@ export const socialPlugin = {
         const client = getClient(platform);
         return client.getAnalytics(postId);
       },
-    } satisfies ToolDefinition<SocialAnalyticsArgs, EngagementMetrics>,
+    } satisfies ToolDefinition<SocialAnalyticsArgs, EngagementMetrics>)),
   ],
 };

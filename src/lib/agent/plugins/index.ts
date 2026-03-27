@@ -3,11 +3,12 @@
  * Each plugin is a set of named functions the agent can call via tool use.
  */
 
-import type { JsonObject, ToolDefinition, ToolExecutionResult } from "@/lib/agent/tools";
+import type { JsonObject, RegisteredToolDefinition, ToolDescriptor, ToolExecutionResult } from "@/lib/agent/tools";
 import type { AgentRuntimeConfig } from "@/lib/agent/runtime";
 import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { approvalPlugin } from "./ApprovalPlugin";
 import { browserPlugin } from "./BrowserPlugin";
+import { competitorPlugin } from "./CompetitorPlugin";
 import { contentPlugin } from "./ContentPlugin";
 import { filePlugin } from "./FilePlugin";
 import { graphPlugin } from "./GraphPlugin";
@@ -18,6 +19,7 @@ import { socialPlugin } from "./SocialPlugin";
 export {
   approvalPlugin,
   browserPlugin,
+  competitorPlugin,
   contentPlugin,
   filePlugin,
   graphPlugin,
@@ -26,7 +28,7 @@ export {
   socialPlugin,
 };
 
-const toolRegistry: ToolDefinition<object, ToolExecutionResult>[] = [
+const toolRegistry: RegisteredToolDefinition[] = [
   ...socialPlugin.tools,
   ...contentPlugin.tools,
   ...memoryPlugin.tools,
@@ -35,7 +37,8 @@ const toolRegistry: ToolDefinition<object, ToolExecutionResult>[] = [
   ...schedulePlugin.tools,
   ...approvalPlugin.tools,
   ...browserPlugin.tools,
-].map((tool) => tool as ToolDefinition<object, ToolExecutionResult>);
+  ...competitorPlugin.tools,
+];
 
 function canExposeTool(name: string, config: AgentRuntimeConfig): boolean {
   if (config.autonomyPreset === "manual_only") {
@@ -51,8 +54,10 @@ function canExposeTool(name: string, config: AgentRuntimeConfig): boolean {
 
 export function getAllToolDefinitions(
   config: AgentRuntimeConfig = getAgentRuntimeConfig(),
-): ToolDefinition<object, ToolExecutionResult>[] {
-  return toolRegistry.filter((tool) => canExposeTool(tool.name, config));
+): ToolDescriptor[] {
+  return toolRegistry
+    .filter((tool) => canExposeTool(tool.name, config))
+    .map(({ name, description, parameters }) => ({ name, description, parameters }));
 }
 
 export async function executeTool(

@@ -32,7 +32,9 @@ interface KnowledgeFile {
 
 function resolveKnowledgeRoot(relativeFolder: string): string {
   const workspaceRoot = getWorkspacePath();
-  const resolved = path.resolve(workspaceRoot, relativeFolder || ".");
+  const resolved = relativeFolder && relativeFolder !== "."
+    ? path.resolve(workspaceRoot, relativeFolder)
+    : workspaceRoot;
   if (!resolved.startsWith(workspaceRoot + path.sep) && resolved !== workspaceRoot) {
     throw new Error("Knowledge path escapes workspace root");
   }

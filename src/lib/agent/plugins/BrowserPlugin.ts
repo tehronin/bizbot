@@ -7,7 +7,7 @@ import {
   extractLinks,
 } from "@/lib/browser/engine";
 import { checkUrlAllowed } from "@/lib/browser/safety";
-import type { ToolDefinition } from "@/lib/agent/tools";
+import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
 
 interface NavigateArgs {
   url: string;
@@ -31,7 +31,7 @@ interface ExtractLinksArgs {
 
 export const browserPlugin = {
   tools: [
-    {
+    registerTool(defineTool({
       name: "browser_navigate",
       description: "Navigate to a URL and return the full page HTML.",
       parameters: {
@@ -50,8 +50,8 @@ export const browserPlugin = {
         const page = await navigatePage(url);
         return { url, title: page.result.title, text: page.result.text };
       },
-    } satisfies ToolDefinition<NavigateArgs, { error: string } | { url: string; title: string; text: string }>,
-    {
+    } satisfies ToolDefinition<NavigateArgs, { error: string } | { url: string; title: string; text: string }>)),
+    registerTool(defineTool({
       name: "browser_screenshot",
       description: "Take a screenshot of a URL and save it to the workspace.",
       parameters: {
@@ -70,8 +70,8 @@ export const browserPlugin = {
         const savedPath = await screenshotPage(url, filename);
         return { url, savedPath };
       },
-    } satisfies ToolDefinition<ScreenshotArgs, { error: string } | { url: string; savedPath: string }>,
-    {
+    } satisfies ToolDefinition<ScreenshotArgs, { error: string } | { url: string; savedPath: string }>)),
+    registerTool(defineTool({
       name: "browser_extract_text",
       description: "Extract visible text from a page, optionally scoped to a CSS selector.",
       parameters: {
@@ -90,8 +90,8 @@ export const browserPlugin = {
         const extracted = await extractText(url, selector);
         return { url, text: extracted.text.slice(0, 10_000) };
       },
-    } satisfies ToolDefinition<ExtractTextArgs, { error: string } | { url: string; text: string }>,
-    {
+    } satisfies ToolDefinition<ExtractTextArgs, { error: string } | { url: string; text: string }>)),
+    registerTool(defineTool({
       name: "browser_extract_links",
       description: "Extract all hyperlinks from a page, with optional URL filter substring.",
       parameters: {
@@ -110,6 +110,6 @@ export const browserPlugin = {
         const extracted = await extractLinks(url, filter);
         return { url, links: extracted.links };
       },
-    } satisfies ToolDefinition<ExtractLinksArgs, { error: string } | { url: string; links: Array<{ text: string; href: string }> }>,
+    } satisfies ToolDefinition<ExtractLinksArgs, { error: string } | { url: string; links: Array<{ text: string; href: string }> }>)),
   ],
 };

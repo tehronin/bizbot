@@ -9,14 +9,19 @@
  * wrapper via their respective APIs.
  */
 
-import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
-import type {
+import { GoogleGenAI, FunctionCallingConfigMode, createPartFromFunctionResponse, type Content, type FunctionDeclaration } from "@google/genai";
+import OpenAI from "openai";
+import {
   ChatMessage,
   JsonObject,
+  JsonValue,
+  ToolDescriptor,
   ToolCall,
-  ToolDefinition,
   ToolExecutionResult,
+  isJsonObject,
+  isJsonValue,
+  parseToolArguments,
 } from "@/lib/agent/tools";
 import type { FunctionParameters } from "openai/resources/shared";
 import type { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/messages/messages";
@@ -33,6 +38,16 @@ export interface LLMResponse {
   provider: LLMProvider;
   model: string;
   toolCalls: ToolCall[];
+  metadata?: JsonObject;
+  providerState?: JsonObject;
+}
+
+export interface ChatRequestOptions {
+  enableGoogleSearch?: boolean;
+  enableGoogleCodeExecution?: boolean;
+  forceFunctionCall?: boolean;
+  includeServerSideToolInvocations?: boolean;
+  agentProfile?: string;
 }
 
 // ─── Provider-specific clients ───────────────────────────────────────────────
@@ -46,6 +61,12 @@ function getOpenAIClient(baseURL?: string, apiKey?: string): OpenAI {
 
 function getAnthropicClient(): Anthropic {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
+}
+
+function getGoogleClient(): GoogleGenAI {
+  return new GoogleGenAI({
+    apiKey: process.env.GOOGLE_AI_API_KEY ?? process.env.GEMINI_API_KEY ?? "",
+  });
 }
 
 function parseNumericEnv(raw: string | undefined, fallback: number): number {
@@ -83,7 +104,7 @@ export function getGenerationConfig(): GenerationConfig {
   };
 }
 
-function toOpenAITools(tools: ToolDefinition<object, ToolExecutionResult>[] | undefined) {
+function toOpenAITools(tools: ToolDescriptor[] | undefined) {
   return tools?.map((tool) => ({
     type: "function" as const,
     function: {
@@ -92,6 +113,150 @@ function toOpenAITools(tools: ToolDefinition<object, ToolExecutionResult>[] | un
       parameters: tool.parameters as FunctionParameters,
     },
   }));
+}
+
+function tryParseToolResponse(content: string): JsonObject {
+  try {
+    return parseToolArguments(content);
+  } catch {
+    // fall through
+  }
+
+  return { output: content };
+}
+
+function isGoogleContent(value: JsonValue): value is JsonObject & Content {
+  if (!isJsonObject(value)) {
+    return false;
+  }
+
+  if (!("parts" in value) || !Array.isArray(value.parts)) {
+    return false;
+  }
+
+  if ("role" in value && typeof value.role !== "string") {
+    return false;
+  }
+
+  return true;
+}
+
+function getStoredGoogleContent(message: ChatMessage): Content | undefined {
+  const candidate = message.role === "assistant" ? message.providerState?.googleContent : undefined;
+  return candidate && isGoogleContent(candidate) ? candidate : undefined;
+}
+
+function serializeGoogleContent(content: Content | undefined): JsonObject | undefined {
+  if (!content) {
+    return undefined;
+  }
+
+  return isJsonValue(content) && isGoogleContent(content) ? content : undefined;
+}
+
+function toToolArguments(value: JsonValue | object | null | undefined): JsonObject {
+  return value && isJsonValue(value) && isJsonObject(value) ? value : {};
+}
+
+function toToolArgumentsFromProvider(value: object | JsonValue | null | undefined): JsonObject {
+  return toToolArguments(value);
+}
+
+function toGoogleFunctionDeclarations(
+  tools: ToolDescriptor[] | undefined,
+): FunctionDeclaration[] | undefined {
+  return tools?.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    parametersJsonSchema: tool.parameters,
+  }));
+}
+
+function toGoogleContents(messages: ChatMessage[]): Content[] {
+  const contents: Content[] = [];
+
+  for (const message of messages) {
+    if (message.role === "system") {
+      continue;
+    }
+
+    if (message.role === "user") {
+      contents.push({ role: "user", parts: [{ text: message.content }] });
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      const storedContent = getStoredGoogleContent(message);
+      if (storedContent) {
+        contents.push(storedContent);
+        continue;
+      }
+
+      const parts: NonNullable<Content["parts"]> = [];
+      if (message.content) {
+        parts.push({ text: message.content });
+      }
+      for (const toolCall of message.toolCalls ?? []) {
+        parts.push({
+          functionCall: {
+            id: toolCall.id,
+            name: toolCall.name,
+            args: toolCall.arguments,
+          },
+        });
+      }
+      contents.push({ role: "model", parts });
+      continue;
+    }
+
+    contents.push({
+      role: "user",
+      parts: [
+        createPartFromFunctionResponse(
+          message.toolCallId,
+          message.name,
+          tryParseToolResponse(message.content),
+        ),
+      ],
+    });
+  }
+
+  return contents;
+}
+
+function extractGoogleMetadata(response: {
+  executableCode?: string;
+  codeExecutionResult?: string;
+  candidates?: Array<{
+    groundingMetadata?: {
+      webSearchQueries?: string[];
+      groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+    };
+  }>;
+}): JsonObject | undefined {
+  const metadata: JsonObject = {};
+  const grounding = response.candidates?.[0]?.groundingMetadata;
+
+  if (grounding?.webSearchQueries?.length) {
+    metadata.googleSearchQueries = grounding.webSearchQueries.join(", ");
+  }
+
+  const sources = grounding?.groundingChunks
+    ?.map((chunk) => chunk.web?.uri)
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  if (sources?.length) {
+    metadata.groundedSourceUrls = sources;
+  }
+
+  if (response.executableCode) {
+    metadata.executableCode = response.executableCode;
+  }
+
+  if (response.codeExecutionResult) {
+    metadata.codeExecutionResult = response.codeExecutionResult;
+  }
+
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 function toOpenAIMessages(messages: ChatMessage[]): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
@@ -139,7 +304,7 @@ function parseOpenAIToolCalls(
     return [{
       id: toolCall.id,
       name: toolCall.function.name,
-      arguments: JSON.parse(toolCall.function.arguments) as JsonObject,
+      arguments: parseToolArguments(toolCall.function.arguments),
     }];
   });
 }
@@ -161,7 +326,7 @@ function parseAnthropicResponse(response: Anthropic.Messages.Message): {
       toolCalls.push({
         id: block.id,
         name: block.name,
-        arguments: block.input as JsonObject,
+        arguments: toToolArgumentsFromProvider(block.input as object | JsonValue | null | undefined),
       });
     }
   }
@@ -219,7 +384,8 @@ function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] 
 export async function chatComplete(
   messages: ChatMessage[],
   provider?: LLMProvider,
-  tools?: ToolDefinition<object, ToolExecutionResult>[],
+  tools?: ToolDescriptor[],
+  options?: ChatRequestOptions,
 ): Promise<LLMResponse> {
   const activeProvider = getActiveProvider(provider);
   const generation = getGenerationConfig();
@@ -233,7 +399,9 @@ export async function chatComplete(
         messages: toOpenAIMessages(messages),
         temperature: generation.temperature,
         max_tokens: generation.maxTokens,
+        ...(tools ? { parallel_tool_calls: true } : {}),
         ...(tools ? { tools: toOpenAITools(tools) } : {}),
+        ...(options?.forceFunctionCall && tools ? { tool_choice: "required" as const } : {}),
       });
       const responseMessage = response.choices[0].message;
       return {
@@ -254,6 +422,7 @@ export async function chatComplete(
         temperature: generation.temperature,
         ...(systemMsg ? { system: systemMsg } : {}),
         messages: toAnthropicMessages(messages),
+        ...(options?.forceFunctionCall && tools ? { tool_choice: { type: "any" as const } } : {}),
         ...(tools
           ? {
               tools: tools.map((tool) => ({
@@ -280,7 +449,9 @@ export async function chatComplete(
         messages: toOpenAIMessages(messages),
         temperature: generation.temperature,
         max_tokens: generation.maxTokens,
+        ...(tools ? { parallel_tool_calls: true } : {}),
         ...(tools ? { tools: toOpenAITools(tools) } : {}),
+        ...(options?.forceFunctionCall && tools ? { tool_choice: "required" as const } : {}),
       });
       const responseMessage = response.choices[0].message;
       return {
@@ -292,25 +463,51 @@ export async function chatComplete(
     }
 
     case "google": {
-      // Google AI exposes an OpenAI-compatible endpoint
-      const client = getOpenAIClient(
-        "https://generativelanguage.googleapis.com/v1beta/openai/",
-        process.env.GOOGLE_AI_API_KEY,
-      );
+      const client = getGoogleClient();
       const model = getModelForProvider("google");
-      const response = await client.chat.completions.create({
+      const functionDeclarations = toGoogleFunctionDeclarations(tools);
+      const response = await client.models.generateContent({
         model,
-        messages: toOpenAIMessages(messages),
-        temperature: generation.temperature,
-        max_tokens: generation.maxTokens,
-        ...(tools ? { tools: toOpenAITools(tools) } : {}),
+        contents: toGoogleContents(messages),
+        config: {
+          systemInstruction: messages.find((message) => message.role === "system")?.content,
+          temperature: generation.temperature,
+          maxOutputTokens: generation.maxTokens,
+          tools: [
+            ...(functionDeclarations?.length
+              ? [{ functionDeclarations }]
+              : []),
+            ...(options?.enableGoogleSearch ? [{ googleSearch: {} }] : []),
+            ...(options?.enableGoogleCodeExecution ? [{ codeExecution: {} }] : []),
+          ],
+          ...(functionDeclarations?.length
+            ? {
+                toolConfig: {
+                  functionCallingConfig: {
+                    mode: options?.forceFunctionCall
+                      ? FunctionCallingConfigMode.ANY
+                      : FunctionCallingConfigMode.AUTO,
+                  },
+                  includeServerSideToolInvocations:
+                    options?.includeServerSideToolInvocations ?? true,
+                },
+              }
+            : {}),
+        },
       });
-      const responseMessage = response.choices[0].message;
       return {
-        content: responseMessage.content ?? "",
+        content: response.text ?? "",
         provider: "google",
         model,
-        toolCalls: parseOpenAIToolCalls(responseMessage),
+        toolCalls: (response.functionCalls ?? []).map((toolCall) => ({
+          id: toolCall.id ?? `${toolCall.name ?? "tool"}-${crypto.randomUUID()}`,
+          name: toolCall.name ?? "unknown_tool",
+          arguments: toToolArguments(toolCall.args ?? {}),
+        })),
+        metadata: extractGoogleMetadata(response),
+        providerState: response.candidates?.[0]?.content
+          ? { googleContent: serializeGoogleContent(response.candidates[0].content) ?? {} }
+          : undefined,
       };
     }
 
@@ -326,7 +523,9 @@ export async function chatComplete(
         messages: toOpenAIMessages(messages),
         temperature: generation.temperature,
         max_tokens: generation.maxTokens,
+        ...(tools ? { parallel_tool_calls: true } : {}),
         ...(tools ? { tools: toOpenAITools(tools) } : {}),
+        ...(options?.forceFunctionCall && tools ? { tool_choice: "required" as const } : {}),
       });
       const responseMessage = response.choices[0].message;
       return {

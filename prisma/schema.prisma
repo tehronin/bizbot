@@ -71,6 +71,7 @@ enum PostStatus {
   APPROVED
   REJECTED
   SCHEDULED
+  PUBLISHING
   PUBLISHED
   FAILED
 }
@@ -254,6 +255,43 @@ model BrowserAction {
   result       String?
   createdAt    DateTime            @default(now())
   decidedAt    DateTime?
+}
+
+model CompetitorWatch {
+  id                String              @id @default(cuid())
+  name              String
+  url               String
+  platformHint      PlatformType?
+  extractSelector   String?
+  notes             String?
+  active            Boolean             @default(true)
+  checkEveryMinutes Int                 @default(60)
+  lastCheckedAt     DateTime?
+  lastChangedAt     DateTime?
+  lastHash          String?
+  lastSummary       String?
+  lastError         String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  snapshots         CompetitorSnapshot[]
+
+  @@index([active, lastCheckedAt])
+}
+
+model CompetitorSnapshot {
+  id             String           @id @default(cuid())
+  watch          CompetitorWatch  @relation(fields: [watchId], references: [id], onDelete: Cascade)
+  watchId        String
+  changeDetected Boolean          @default(false)
+  summary        String
+  excerpt        String
+  links          Json?
+  contentHash    String
+  createdAt      DateTime         @default(now())
+
+  @@index([watchId, createdAt])
+  @@unique([watchId, contentHash])
 }
 
 enum BrowserActionType {

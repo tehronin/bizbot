@@ -3,6 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Standalone output for Tauri sidecar packaging
   output: "standalone",
+  outputFileTracingExcludes: {
+    "*": [
+      "workspace/**/*",
+      "**/workspace/**/*",
+      ".next/**/*",
+    ],
+  },
   // Disable x-powered-by header for security
   poweredByHeader: false,
   // Allow images from social platforms

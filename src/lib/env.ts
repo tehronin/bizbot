@@ -4,9 +4,12 @@
  */
 
 import fs from "fs";
+import path from "path";
 import { resolveFromAppHome } from "@/lib/runtime-paths";
 
-const ENV_PATH = resolveFromAppHome(".env");
+function getEnvPath(): string {
+  return path.resolve(/* turbopackIgnore: true */ resolveFromAppHome(), ".env");
+}
 
 /** Parse the .env file into a key-value map (skips comments & blank lines). */
 function parseEnv(content: string): Record<string, string> {
@@ -53,8 +56,9 @@ function serializeEnv(original: string, updates: Record<string, string>): string
 
 /** Read all env variables from the .env file. */
 export function readEnv(): Record<string, string> {
-  if (!fs.existsSync(ENV_PATH)) return {};
-  const content = fs.readFileSync(ENV_PATH, "utf-8");
+  const envPath = getEnvPath();
+  if (!fs.existsSync(envPath)) return {};
+  const content = fs.readFileSync(envPath, "utf-8");
   return parseEnv(content);
 }
 
@@ -62,12 +66,13 @@ export function readEnv(): Record<string, string> {
  *  Existing keys are updated in-place; new keys are appended.
  *  Values are always quoted. */
 export function writeEnv(updates: Record<string, string>): void {
-  const existing = fs.existsSync(ENV_PATH)
-    ? fs.readFileSync(ENV_PATH, "utf-8")
+  const envPath = getEnvPath();
+  const existing = fs.existsSync(envPath)
+    ? fs.readFileSync(envPath, "utf-8")
     : "";
   const serialized = serializeEnv(existing, updates);
-  fs.mkdirSync(resolveFromAppHome(), { recursive: true });
-  fs.writeFileSync(ENV_PATH, serialized, "utf-8");
+  fs.mkdirSync(path.dirname(envPath), { recursive: true });
+  fs.writeFileSync(envPath, serialized, "utf-8");
 }
 
 /** Return a masked version of env values for safe display in the UI.

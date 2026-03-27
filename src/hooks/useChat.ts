@@ -3,13 +3,78 @@
 import { useState, useTransition } from "react";
 
 export interface ChatEntry {
-  role: "user" | "assistant";
+  id: string;
+  role: "user" | "assistant" | "status" | "tool";
   content: string;
 }
 
 interface AgentResponse {
   reply: string;
   conversationId: string;
+}
+
+interface AgentStreamEvent {
+  type: "meta" | "status" | "tool_call" | "tool_result" | "assistant_message" | "done" | "error";
+  conversationId?: string;
+  content?: string;
+  message?: string;
+  reply?: string;
+  error?: string;
+  name?: string;
+}
+
+function createEntry(role: ChatEntry["role"], content: string): ChatEntry {
+  return {
+    id: `${role}-${crypto.randomUUID()}`,
+    role,
+    content,
+  };
+}
+
+function appendStreamEntries(
+  current: ChatEntry[],
+  event: AgentStreamEvent,
+): ChatEntry[] {
+  switch (event.type) {
+    case "status":
+      return [...current, createEntry("status", event.message ?? "Working...")];
+    case "tool_call":
+      return [...current, createEntry("tool", `Calling ${event.name ?? "tool"}...`)];
+    case "tool_result":
+      return [...current, createEntry("tool", `${event.name ?? "tool"} completed.`)];
+    case "assistant_message":
+      return [...current, createEntry("assistant", event.content ?? "")];
+    case "error":
+      return [...current, createEntry("assistant", `Request failed: ${event.error ?? "Unknown error"}`)];
+    default:
+      return current;
+  }
+}
+
+function parseSsePayload(buffer: string): {
+  events: AgentStreamEvent[];
+  remainder: string;
+} {
+  const blocks = buffer.split("\n\n");
+  const remainder = blocks.pop() ?? "";
+  const events: AgentStreamEvent[] = [];
+
+  for (const block of blocks) {
+    const dataLine = block
+      .split("\n")
+      .find((line) => line.startsWith("data: "));
+    if (!dataLine) {
+      continue;
+    }
+
+    try {
+      events.push(JSON.parse(dataLine.slice(6)) as AgentStreamEvent);
+    } catch {
+      // ignore malformed event
+    }
+  }
+
+  return { events, remainder };
 }
 
 export function useChat() {
@@ -21,23 +86,46 @@ export function useChat() {
     const trimmed = input.trim();
     if (!trimmed) return;
 
-    setMessages((current) => [...current, { role: "user", content: trimmed }]);
+    setMessages((current) => [...current, createEntry("user", trimmed)]);
 
     startTransition(() => {
       fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, conversationId: conversationId ?? undefined }),
+        body: JSON.stringify({ message: trimmed, conversationId: conversationId ?? undefined, stream: true }),
       })
-        .then((res) => res.json() as Promise<AgentResponse>)
-        .then((data) => {
-          setConversationId(data.conversationId);
-          setMessages((current) => [...current, { role: "assistant", content: data.reply }]);
+        .then(async (res) => {
+          if (!res.ok || !res.body) {
+            const payload = await (res.json() as Promise<Partial<AgentResponse> & { error?: string }>);
+            throw new Error(payload.error ?? "Request failed");
+          }
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            const parsed = parseSsePayload(buffer);
+            buffer = parsed.remainder;
+
+            for (const event of parsed.events) {
+              if (event.conversationId) {
+                setConversationId(event.conversationId);
+              }
+              setMessages((current) => appendStreamEntries(current, event));
+            }
+          }
         })
         .catch((error: Error) => {
           setMessages((current) => [
             ...current,
-            { role: "assistant", content: `Request failed: ${error.message}` },
+            createEntry("assistant", `Request failed: ${error.message}`),
           ]);
         });
     });

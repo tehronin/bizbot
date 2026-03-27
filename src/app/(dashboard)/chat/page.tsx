@@ -19,13 +19,27 @@ export default function ChatPage() {
               Ask BizBot to draft, schedule, inspect analytics, or recall brand context.
             </div>
           )}
-          {messages.map((message, index) => (
+          {messages.map((message) => (
             <div
-              key={`${message.role}-${index}`}
+              key={message.id}
               className="border px-4 py-3 whitespace-pre-wrap"
               style={{
-                borderColor: message.role === "user" ? "var(--accent-dim)" : "var(--border)",
-                background: message.role === "user" ? "rgba(91,106,240,0.08)" : "var(--bg-raised)",
+                borderColor:
+                  message.role === "user"
+                    ? "var(--accent-dim)"
+                    : message.role === "status"
+                      ? "rgba(255,255,255,0.08)"
+                      : message.role === "tool"
+                        ? "rgba(91,106,240,0.18)"
+                        : "var(--border)",
+                background:
+                  message.role === "user"
+                    ? "rgba(91,106,240,0.08)"
+                    : message.role === "status"
+                      ? "rgba(255,255,255,0.03)"
+                      : message.role === "tool"
+                        ? "rgba(91,106,240,0.05)"
+                        : "var(--bg-raised)",
               }}
             >
               <div className="text-[10px] uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>

@@ -4,7 +4,7 @@
 
 import { chatComplete } from "@/lib/agent/kernel";
 import { evaluateContent } from "@/lib/policies/engine";
-import type { ToolDefinition } from "@/lib/agent/tools";
+import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
 import type { PolicyResult } from "@/lib/policies/engine";
 
 type ContentPlatform = "twitter" | "facebook" | "instagram";
@@ -27,7 +27,7 @@ interface PolicyArgs {
 
 export const contentPlugin = {
   tools: [
-    {
+    registerTool(defineTool({
       name: "content_draft",
       description: "Draft social media content for a given topic, platform, and tone.",
       parameters: {
@@ -59,8 +59,8 @@ export const contentPlugin = {
         ]);
         return { draft: result.content, characterCount: result.content.length };
       },
-    } satisfies ToolDefinition<DraftArgs, { draft: string; characterCount: number }>,
-    {
+    } satisfies ToolDefinition<DraftArgs, { draft: string; characterCount: number }>)),
+    registerTool(defineTool({
       name: "content_refine",
       description: "Refine existing content based on feedback or instructions.",
       parameters: {
@@ -78,8 +78,8 @@ export const contentPlugin = {
         ]);
         return { refined: result.content };
       },
-    } satisfies ToolDefinition<RefineArgs, { refined: string }>,
-    {
+    } satisfies ToolDefinition<RefineArgs, { refined: string }>)),
+    registerTool(defineTool({
       name: "content_check_policy",
       description: "Check if content passes all active policies before posting.",
       parameters: {
@@ -92,6 +92,6 @@ export const contentPlugin = {
       execute: async ({ content }: PolicyArgs) => {
         return evaluateContent(content);
       },
-    } satisfies ToolDefinition<PolicyArgs, PolicyResult>,
+    } satisfies ToolDefinition<PolicyArgs, PolicyResult>)),
   ],
 };

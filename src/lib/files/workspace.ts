@@ -7,11 +7,19 @@
 
 import fs from "fs";
 import path from "path";
-import { getAppHomeDir } from "@/lib/runtime-paths";
+import { getDefaultWorkspaceDirname, getAppHomeDir, resolveFromAppHome } from "@/lib/runtime-paths";
 
 function getWorkspaceRoot(): string {
-  const envPath = process.env.BIZBOT_WORKSPACE_PATH ?? "./workspace";
-  const resolved = path.resolve(/* turbopackIgnore: true */ getAppHomeDir(), /* turbopackIgnore: true */ envPath);
+  const envPath = process.env.BIZBOT_WORKSPACE_PATH?.trim();
+  const resolved = !envPath
+    ? resolveFromAppHome(getDefaultWorkspaceDirname())
+    : path.isAbsolute(envPath)
+      ? path.resolve(/* turbopackIgnore: true */ envPath)
+      : path.resolve(
+        /* turbopackIgnore: true */ getAppHomeDir(),
+        /* turbopackIgnore: true */ getDefaultWorkspaceDirname(),
+        /* turbopackIgnore: true */ envPath,
+      );
   if (!fs.existsSync(resolved)) {
     fs.mkdirSync(resolved, { recursive: true });
   }
@@ -40,11 +48,12 @@ export interface FileInfo {
 /** List files and directories in a workspace subdirectory. */
 export function listFiles(subdir = "."): FileInfo[] {
   const dir = safePath(subdir);
+  const workspaceRoot = getWorkspaceRoot();
   if (!fs.existsSync(dir)) return [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   return entries.map((entry) => {
-    const entryPath = path.join(dir, entry.name);
-    const relativePath = path.relative(getWorkspaceRoot(), entryPath);
+    const entryPath = path.join(/* turbopackIgnore: true */ dir, /* turbopackIgnore: true */ entry.name);
+    const relativePath = path.relative(workspaceRoot, entryPath);
     if (entry.isDirectory()) {
       return { name: entry.name, path: relativePath, type: "directory" as const };
     }

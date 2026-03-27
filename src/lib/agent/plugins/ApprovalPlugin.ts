@@ -1,7 +1,7 @@
 /** ApprovalPlugin — Submit posts for review and decide on approvals. */
 
 import { db } from "@/lib/db";
-import type { ToolDefinition } from "@/lib/agent/tools";
+import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
 
 interface ApprovalSubmitArgs {
   postId: string;
@@ -18,7 +18,7 @@ interface ApprovalDecideArgs {
 
 export const approvalPlugin = {
   tools: [
-    {
+    registerTool(defineTool({
       name: "approval_submit",
       description: "Submit a post for human approval before publishing.",
       parameters: {
@@ -43,8 +43,8 @@ export const approvalPlugin = {
         });
         return { submitted: true, approvalId: approval.id };
       },
-    } satisfies ToolDefinition<ApprovalSubmitArgs, { submitted: boolean; approvalId: string }>,
-    {
+    } satisfies ToolDefinition<ApprovalSubmitArgs, { submitted: boolean; approvalId: string }>)),
+    registerTool(defineTool({
       name: "approval_get_pending",
       description: "Get all posts waiting for approval.",
       parameters: { type: "object", properties: {} },
@@ -64,8 +64,8 @@ export const approvalPlugin = {
           })),
         };
       },
-    } satisfies ToolDefinition<ApprovalPendingArgs, { pendingApprovals: Array<{ id: string; postId: string; status: string; notes: string | null; createdAt: string }> }>,
-    {
+    } satisfies ToolDefinition<ApprovalPendingArgs, { pendingApprovals: Array<{ id: string; postId: string; status: string; notes: string | null; createdAt: string }> }>)),
+    registerTool(defineTool({
       name: "approval_decide",
       description: "Approve or reject a pending post.",
       parameters: {
@@ -93,6 +93,6 @@ export const approvalPlugin = {
         });
         return { decided: true, approvalId, decision, postStatus };
       },
-    } satisfies ToolDefinition<ApprovalDecideArgs, { decided: boolean; approvalId: string; decision: "approve" | "reject"; postStatus: string }>,
+    } satisfies ToolDefinition<ApprovalDecideArgs, { decided: boolean; approvalId: string; decision: "approve" | "reject"; postStatus: string }>)),
   ],
 };

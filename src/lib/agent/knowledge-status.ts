@@ -16,7 +16,9 @@ const MAX_FILE_COUNT = 200;
 
 function resolveKnowledgeRoot(relativeFolder: string): string {
   const workspaceRoot = getWorkspacePath();
-  const resolved = path.resolve(/* turbopackIgnore: true */ workspaceRoot, /* turbopackIgnore: true */ (relativeFolder || "."));
+  const resolved = relativeFolder && relativeFolder !== "."
+    ? path.resolve(/* turbopackIgnore: true */ workspaceRoot, /* turbopackIgnore: true */ relativeFolder)
+    : workspaceRoot;
   if (!resolved.startsWith(workspaceRoot + path.sep) && resolved !== workspaceRoot) {
     throw new Error("Knowledge path escapes workspace root");
   }
