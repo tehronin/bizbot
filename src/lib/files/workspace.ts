@@ -15,11 +15,7 @@ function getWorkspaceRoot(): string {
     ? resolveFromAppHome(getDefaultWorkspaceDirname())
     : path.isAbsolute(envPath)
       ? path.resolve(/* turbopackIgnore: true */ envPath)
-      : path.resolve(
-        /* turbopackIgnore: true */ getAppHomeDir(),
-        /* turbopackIgnore: true */ getDefaultWorkspaceDirname(),
-        /* turbopackIgnore: true */ envPath,
-      );
+      : resolveFromAppHome(envPath);
   if (!fs.existsSync(resolved)) {
     fs.mkdirSync(resolved, { recursive: true });
   }
