@@ -48,6 +48,25 @@ export interface ChatRequestOptions {
   forceFunctionCall?: boolean;
   includeServerSideToolInvocations?: boolean;
   agentProfile?: string;
+  signal?: AbortSignal;
+}
+
+function abortPromise(signal: AbortSignal | undefined): Promise<never> {
+  if (!signal) {
+    return new Promise<never>(() => {});
+  }
+
+  if (signal.aborted) {
+    return Promise.reject(signal.reason ?? new Error("Request aborted"));
+  }
+
+  return new Promise<never>((_, reject) => {
+    signal.addEventListener(
+      "abort",
+      () => reject(signal.reason ?? new Error("Request aborted")),
+      { once: true },
+    );
+  });
 }
 
 // ─── Provider-specific clients ───────────────────────────────────────────────
@@ -402,6 +421,8 @@ export async function chatComplete(
         ...(tools ? { parallel_tool_calls: true } : {}),
         ...(tools ? { tools: toOpenAITools(tools) } : {}),
         ...(options?.forceFunctionCall && tools ? { tool_choice: "required" as const } : {}),
+      }, {
+        signal: options?.signal,
       });
       const responseMessage = response.choices[0].message;
       return {
@@ -432,6 +453,8 @@ export async function chatComplete(
               })),
             }
           : {}),
+      }, {
+        signal: options?.signal,
       });
       const parsed = parseAnthropicResponse(response);
       return { content: parsed.content, provider: "anthropic", model, toolCalls: parsed.toolCalls };
@@ -452,6 +475,8 @@ export async function chatComplete(
         ...(tools ? { parallel_tool_calls: true } : {}),
         ...(tools ? { tools: toOpenAITools(tools) } : {}),
         ...(options?.forceFunctionCall && tools ? { tool_choice: "required" as const } : {}),
+      }, {
+        signal: options?.signal,
       });
       const responseMessage = response.choices[0].message;
       return {
@@ -466,35 +491,38 @@ export async function chatComplete(
       const client = getGoogleClient();
       const model = getModelForProvider("google");
       const functionDeclarations = toGoogleFunctionDeclarations(tools);
-      const response = await client.models.generateContent({
-        model,
-        contents: toGoogleContents(messages),
-        config: {
-          systemInstruction: messages.find((message) => message.role === "system")?.content,
-          temperature: generation.temperature,
-          maxOutputTokens: generation.maxTokens,
-          tools: [
+      const response = await Promise.race([
+        client.models.generateContent({
+          model,
+          contents: toGoogleContents(messages),
+          config: {
+            systemInstruction: messages.find((message) => message.role === "system")?.content,
+            temperature: generation.temperature,
+            maxOutputTokens: generation.maxTokens,
+            tools: [
+              ...(functionDeclarations?.length
+                ? [{ functionDeclarations }]
+                : []),
+              ...(options?.enableGoogleSearch ? [{ googleSearch: {} }] : []),
+              ...(options?.enableGoogleCodeExecution ? [{ codeExecution: {} }] : []),
+            ],
             ...(functionDeclarations?.length
-              ? [{ functionDeclarations }]
-              : []),
-            ...(options?.enableGoogleSearch ? [{ googleSearch: {} }] : []),
-            ...(options?.enableGoogleCodeExecution ? [{ codeExecution: {} }] : []),
-          ],
-          ...(functionDeclarations?.length
-            ? {
-                toolConfig: {
-                  functionCallingConfig: {
-                    mode: options?.forceFunctionCall
-                      ? FunctionCallingConfigMode.ANY
-                      : FunctionCallingConfigMode.AUTO,
+              ? {
+                  toolConfig: {
+                    functionCallingConfig: {
+                      mode: options?.forceFunctionCall
+                        ? FunctionCallingConfigMode.ANY
+                        : FunctionCallingConfigMode.AUTO,
+                    },
+                    includeServerSideToolInvocations:
+                      options?.includeServerSideToolInvocations ?? true,
                   },
-                  includeServerSideToolInvocations:
-                    options?.includeServerSideToolInvocations ?? true,
-                },
-              }
-            : {}),
-        },
-      });
+                }
+              : {}),
+          },
+        }),
+        abortPromise(options?.signal),
+      ]);
       return {
         content: response.text ?? "",
         provider: "google",
@@ -526,6 +554,8 @@ export async function chatComplete(
         ...(tools ? { parallel_tool_calls: true } : {}),
         ...(tools ? { tools: toOpenAITools(tools) } : {}),
         ...(options?.forceFunctionCall && tools ? { tool_choice: "required" as const } : {}),
+      }, {
+        signal: options?.signal,
       });
       const responseMessage = response.choices[0].message;
       return {

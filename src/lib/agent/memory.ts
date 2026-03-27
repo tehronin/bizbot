@@ -158,6 +158,62 @@ export async function saveMessage(
   });
 }
 
+export async function trimConversationMessages(
+  conversationId: string,
+  maxMessages: number,
+): Promise<void> {
+  if (maxMessages < 1) {
+    return;
+  }
+
+  const overflow = await db.message.findMany({
+    where: { conversationId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    skip: maxMessages,
+    select: { id: true },
+  });
+
+  if (overflow.length === 0) {
+    return;
+  }
+
+  await db.message.deleteMany({
+    where: {
+      id: {
+        in: overflow.map((message) => message.id),
+      },
+    },
+  });
+}
+
+export async function getOrCreateScopedConversation(
+  scopeKey: string,
+  userId = DEFAULT_USER_ID,
+): Promise<string> {
+  const title = `Scope:${scopeKey}`;
+
+  await db.user.upsert({
+    where: { id: userId },
+    create: { id: userId, name: "User" },
+    update: {},
+  });
+
+  const existing = await db.conversation.findFirst({
+    where: { userId, title },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (existing) {
+    return existing.id;
+  }
+
+  const conversation = await db.conversation.create({
+    data: { userId, title },
+  });
+  return conversation.id;
+}
+
 /** Get or create a conversation for the local user. */
 export async function getOrCreateConversation(
   conversationId?: string,

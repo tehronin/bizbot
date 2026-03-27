@@ -6,9 +6,32 @@
 import { NextRequest } from "next/server";
 import { executeAgentConversation, type AgentExecutionEvent } from "@/lib/agent/executor";
 import type { LLMProvider } from "@/lib/agent/kernel";
+import { db } from "@/lib/db";
 
 function toSseChunk(event: string, payload: object): string {
   return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+}
+
+async function recordAgentStreamAbort(): Promise<void> {
+  await db.setting.upsert({
+    where: { key: "agent_stream_abort_count" },
+    update: { value: { increment: 1 } as never },
+    create: { key: "agent_stream_abort_count", value: "1" },
+  }).catch(async () => {
+    const current = await db.setting.findUnique({ where: { key: "agent_stream_abort_count" } });
+    const nextValue = String((current ? Number.parseInt(current.value, 10) || 0 : 0) + 1);
+    await db.setting.upsert({
+      where: { key: "agent_stream_abort_count" },
+      update: { value: nextValue },
+      create: { key: "agent_stream_abort_count", value: nextValue },
+    });
+  });
+
+  await db.setting.upsert({
+    where: { key: "agent_stream_last_aborted_at" },
+    update: { value: new Date().toISOString() },
+    create: { key: "agent_stream_last_aborted_at", value: new Date().toISOString() },
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -22,6 +45,22 @@ export async function POST(req: NextRequest) {
 
     if (stream) {
       const encoder = new TextEncoder();
+      const executionAbortController = new AbortController();
+      let abortRecorded = false;
+      const handleAbort = () => {
+        executionAbortController.abort(new Error("Client disconnected"));
+        if (!abortRecorded) {
+          abortRecorded = true;
+          void recordAgentStreamAbort();
+        }
+      };
+
+      if (req.signal.aborted) {
+        handleAbort();
+      } else {
+        req.signal.addEventListener("abort", handleAbort, { once: true });
+      }
+
       const responseStream = new ReadableStream<Uint8Array>({
         start(controller) {
           void (async () => {
@@ -30,20 +69,32 @@ export async function POST(req: NextRequest) {
                 message,
                 conversationId,
                 provider: provider as LLMProvider | undefined,
+                signal: executionAbortController.signal,
                 onEvent: async (event: AgentExecutionEvent) => {
+                  if (executionAbortController.signal.aborted) {
+                    return;
+                  }
                   controller.enqueue(encoder.encode(toSseChunk(event.type, event)));
                 },
               });
             } catch (error) {
-              controller.enqueue(
-                encoder.encode(
-                  toSseChunk("error", { type: "error", error: String(error) }),
-                ),
-              );
+              if (!executionAbortController.signal.aborted) {
+                controller.enqueue(
+                  encoder.encode(
+                    toSseChunk("error", { type: "error", error: String(error) }),
+                  ),
+                );
+              }
             } finally {
-              controller.close();
+              req.signal.removeEventListener("abort", handleAbort);
+              if (!executionAbortController.signal.aborted) {
+                controller.close();
+              }
             }
           })();
+        },
+        cancel() {
+          handleAbort();
         },
       });
 

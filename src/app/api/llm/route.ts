@@ -78,6 +78,8 @@ export async function GET() {
           "agent_last_heartbeat_started_at",
           "agent_last_heartbeat_finished_at",
           "agent_last_heartbeat_summary",
+          "agent_stream_abort_count",
+          "agent_stream_last_aborted_at",
         ],
       },
     },
@@ -115,6 +117,8 @@ export async function GET() {
       lastStartedAt: heartbeatMap.agent_last_heartbeat_started_at ?? null,
       lastFinishedAt: heartbeatMap.agent_last_heartbeat_finished_at ?? null,
       summary: heartbeatMap.agent_last_heartbeat_summary ?? null,
+      streamAbortCount: heartbeatMap.agent_stream_abort_count ?? "0",
+      streamLastAbortedAt: heartbeatMap.agent_stream_last_aborted_at ?? null,
     },
     checks: {
       chat: {

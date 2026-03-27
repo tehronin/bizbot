@@ -9,7 +9,7 @@ import {
   type Prisma,
 } from "@prisma/client";
 import { db } from "@/lib/db";
-import { buildContext, getOrCreateConversation, saveMessage } from "@/lib/agent/memory";
+import { buildContext, getOrCreateScopedConversation, saveMessage, trimConversationMessages } from "@/lib/agent/memory";
 import { chatComplete } from "@/lib/agent/kernel";
 import { ensureKnowledgeEmbeddingsIndexed } from "@/lib/agent/knowledge";
 import { getAgentCapabilities, getAgentRuntimeConfig } from "@/lib/agent/runtime";
@@ -20,6 +20,10 @@ import { getPlatformNameForType, getSocialClientForPlatformType } from "@/lib/so
 interface HeartbeatRunSummary {
   indexedKnowledge: boolean;
   knowledgeChunks: number;
+  knowledgeChangedFiles: number;
+  knowledgeRemovedFiles: number;
+  knowledgeRebuilt: boolean;
+  knowledgeError: string | null;
   importedInboxItems: number;
   publishedPosts: number;
   repliedItems: number;
@@ -27,6 +31,14 @@ interface HeartbeatRunSummary {
   failedActions: number;
   competitorChecks: number;
   competitorChanges: number;
+  durationsMs: {
+    knowledge: number;
+    inboxImport: number;
+    publish: number;
+    inboxProcess: number;
+    competitor: number;
+    total: number;
+  };
 }
 
 type InboxItemWithPlatform = InboxMessage & {
@@ -55,6 +67,8 @@ const MANAGED_PLATFORMS: Array<{ id: string; type: PlatformType }> = [
 const globalForHeartbeat = globalThis as typeof globalThis & {
   bizbotHeartbeatActive?: boolean;
 };
+
+const AUTO_INBOX_CONVERSATION_MAX_MESSAGES = 40;
 
 function parseInboxMetadata(value: Prisma.JsonValue | null): InboxMetadata {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -103,6 +117,10 @@ function leadStageScore(stage: LeadStage): number {
     case LeadStage.NONE:
       return 0;
   }
+}
+
+function getInboxConversationScope(item: InboxItemWithPlatform): string {
+  return `inbox:${item.platform.type}:${item.threadId ?? item.externalId}`;
 }
 
 async function claimInboxMessage(id: string, statuses: InboxStatus[]): Promise<boolean> {
@@ -350,7 +368,7 @@ async function generateReplyDraft(item: InboxItemWithPlatform): Promise<string> 
 
   const deterministicDraft = await buildDeterministicReplyDraft(item);
   if (deterministicDraft) {
-    const conversationId = await getOrCreateConversation(undefined, "local-user");
+    const conversationId = await getOrCreateScopedConversation(getInboxConversationScope(item), "local-user");
     await saveMessage(conversationId, "USER", item.content, {
       source: "inbox",
       inboxMessageId: item.id,
@@ -364,6 +382,7 @@ async function generateReplyDraft(item: InboxItemWithPlatform): Promise<string> 
       cannedResponseNodeKey: deterministicDraft.nodeKey,
       leadStage: deterministicDraft.leadStage,
     });
+    await trimConversationMessages(conversationId, AUTO_INBOX_CONVERSATION_MAX_MESSAGES);
 
     await db.inboxMessage.update({
       where: { id: item.id },
@@ -381,8 +400,8 @@ async function generateReplyDraft(item: InboxItemWithPlatform): Promise<string> 
   }
 
   const platformName = getPlatformNameForType(item.platform.type);
-  const context = await buildContext(item.content, undefined, "local-user");
-  const conversationId = await getOrCreateConversation(undefined, "local-user");
+  const conversationId = await getOrCreateScopedConversation(getInboxConversationScope(item), "local-user");
+  const context = await buildContext(item.content, conversationId, "local-user");
   const response = await chatComplete([
     {
       role: "system",
@@ -405,6 +424,7 @@ async function generateReplyDraft(item: InboxItemWithPlatform): Promise<string> 
     source: "inbox-reply-draft",
     inboxMessageId: item.id,
   });
+  await trimConversationMessages(conversationId, AUTO_INBOX_CONVERSATION_MAX_MESSAGES);
 
   await db.inboxMessage.update({
     where: { id: item.id },
@@ -609,6 +629,10 @@ export async function runAgentHeartbeat(): Promise<HeartbeatRunSummary> {
     return {
       indexedKnowledge: false,
       knowledgeChunks: 0,
+      knowledgeChangedFiles: 0,
+      knowledgeRemovedFiles: 0,
+      knowledgeRebuilt: false,
+      knowledgeError: null,
       importedInboxItems: 0,
       publishedPosts: 0,
       repliedItems: 0,
@@ -616,6 +640,14 @@ export async function runAgentHeartbeat(): Promise<HeartbeatRunSummary> {
       failedActions: 0,
       competitorChecks: 0,
       competitorChanges: 0,
+      durationsMs: {
+        knowledge: 0,
+        inboxImport: 0,
+        publish: 0,
+        inboxProcess: 0,
+        competitor: 0,
+        total: 0,
+      },
     };
   }
 
@@ -623,16 +655,36 @@ export async function runAgentHeartbeat(): Promise<HeartbeatRunSummary> {
   await setHeartbeatSetting("agent_last_heartbeat_started_at", new Date().toISOString());
 
   try {
+    const totalStartedAt = Date.now();
+
+    const knowledgeStartedAt = Date.now();
     const knowledge = await ensureKnowledgeEmbeddingsIndexed();
+    const knowledgeDuration = Date.now() - knowledgeStartedAt;
+
+    const inboxImportStartedAt = Date.now();
     const importedMentions = await syncInboxFromMentions();
     const importedDirectMessages = await syncInboxFromDirectMessages();
+    const inboxImportDuration = Date.now() - inboxImportStartedAt;
+
+    const publishStartedAt = Date.now();
     const publishedPosts = await publishReadyPosts();
+    const publishDuration = Date.now() - publishStartedAt;
+
+    const inboxProcessStartedAt = Date.now();
     const inbox = await processInbox();
+    const inboxProcessDuration = Date.now() - inboxProcessStartedAt;
+
+    const competitorStartedAt = Date.now();
     const competitor = await runDueCompetitorChecks();
+    const competitorDuration = Date.now() - competitorStartedAt;
 
     const summary: HeartbeatRunSummary = {
       indexedKnowledge: knowledge.indexed,
       knowledgeChunks: knowledge.chunkCount,
+      knowledgeChangedFiles: knowledge.changedFiles,
+      knowledgeRemovedFiles: knowledge.removedFiles,
+      knowledgeRebuilt: knowledge.rebuilt,
+      knowledgeError: knowledge.error ?? null,
       importedInboxItems: importedMentions + importedDirectMessages,
       publishedPosts,
       repliedItems: inbox.replied,
@@ -640,6 +692,14 @@ export async function runAgentHeartbeat(): Promise<HeartbeatRunSummary> {
       failedActions: inbox.failed + competitor.failed,
       competitorChecks: competitor.checked,
       competitorChanges: competitor.changed,
+      durationsMs: {
+        knowledge: knowledgeDuration,
+        inboxImport: inboxImportDuration,
+        publish: publishDuration,
+        inboxProcess: inboxProcessDuration,
+        competitor: competitorDuration,
+        total: Date.now() - totalStartedAt,
+      },
     };
 
     await setHeartbeatSetting("agent_last_heartbeat_finished_at", new Date().toISOString());

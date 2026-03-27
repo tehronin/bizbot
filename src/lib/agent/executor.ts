@@ -11,6 +11,7 @@ import {
 } from "@/lib/agent/profiles";
 
 const MAX_TOOL_ROUNDS = 8;
+const MAX_TOOL_RESULT_CHARS = 8_000;
 
 export type AgentExecutionEvent =
   | {
@@ -32,6 +33,7 @@ export interface AgentExecutionParams {
   conversationId?: string;
   provider?: LLMProvider;
   onEvent?: (event: AgentExecutionEvent) => Promise<void> | void;
+  signal?: AbortSignal;
 }
 
 export interface AgentExecutionResult {
@@ -43,7 +45,13 @@ export interface AgentExecutionResult {
 }
 
 function stringifyToolResult(result: ToolExecutionResult): string {
-  return typeof result === "string" ? result : JSON.stringify(result, null, 2);
+  const rawResult = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+  if (rawResult.length <= MAX_TOOL_RESULT_CHARS) {
+    return rawResult;
+  }
+
+  const overflow = rawResult.length - MAX_TOOL_RESULT_CHARS;
+  return `${rawResult.slice(0, MAX_TOOL_RESULT_CHARS)}\n\n[truncated ${overflow} chars to keep tool context bounded]`;
 }
 
 async function emit(
@@ -57,10 +65,18 @@ async function emit(
   await onEvent(event);
 }
 
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new Error("Request aborted");
+  }
+}
+
 export async function executeAgentConversation(
   params: AgentExecutionParams,
 ): Promise<AgentExecutionResult> {
   const { message, conversationId, provider, onEvent } = params;
+  const { signal } = params;
+  throwIfAborted(signal);
   const userId = "local-user";
   const runtimeConfig = getAgentRuntimeConfig();
   const resolvedConversationId = await getOrCreateConversation(conversationId, userId);
@@ -68,6 +84,7 @@ export async function executeAgentConversation(
   const profilePrompt = buildAgentProfilePrompt(profileDecision.profile, message);
   const resolvedProvider = provider ?? (process.env.ACTIVE_LLM_PROVIDER as LLMProvider | undefined) ?? "ollama";
   const resolvedModel = getModelForProvider(resolvedProvider);
+  throwIfAborted(signal);
   const contextBlock = await buildContext(message, resolvedConversationId, userId);
   const tools = getAllToolDefinitions(runtimeConfig).filter((tool) =>
     canProfileUseTool(profileDecision.profile, tool.name),
@@ -107,6 +124,7 @@ export async function executeAgentConversation(
   let round = 0;
 
   while (round < MAX_TOOL_ROUNDS) {
+    throwIfAborted(signal);
     round += 1;
     await emit(onEvent, {
       type: "status",
@@ -120,9 +138,11 @@ export async function executeAgentConversation(
       forceFunctionCall: round === 1 && profilePrompt.forceToolUse,
       includeServerSideToolInvocations: true,
       agentProfile: profileDecision.profile,
+      signal,
     };
 
     const response = await chatComplete(messages, resolvedProvider, tools, requestOptions);
+    throwIfAborted(signal);
 
     if (response.metadata?.googleSearchQueries) {
       await emit(onEvent, {
@@ -150,6 +170,7 @@ export async function executeAgentConversation(
 
       const toolMessages = await Promise.all(
         response.toolCalls.map(async (toolCall) => {
+          throwIfAborted(signal);
           await emit(onEvent, {
             type: "tool_call",
             round,
@@ -164,6 +185,7 @@ export async function executeAgentConversation(
           } catch (error) {
             result = { error: String(error) };
           }
+          throwIfAborted(signal);
 
           const resultText = stringifyToolResult(result);
           await emit(onEvent, {
@@ -188,6 +210,7 @@ export async function executeAgentConversation(
     }
 
     const assistantContent = response.content;
+    throwIfAborted(signal);
     const assistantMetadata = {
       userId,
       toolRoundCount: round,
@@ -217,6 +240,7 @@ export async function executeAgentConversation(
   }
 
   const fallback = "I reached the maximum number of tool-use steps. Please try a simpler request.";
+  throwIfAborted(signal);
   await saveMessage(resolvedConversationId, "ASSISTANT", fallback, {
     userId,
     toolRoundCount: MAX_TOOL_ROUNDS,

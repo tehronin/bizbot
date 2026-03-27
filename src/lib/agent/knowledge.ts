@@ -18,6 +18,7 @@ const MAX_FILE_COUNT = 200;
 const MAX_FILE_SIZE_BYTES = 256_000;
 const KNOWLEDGE_CATEGORY = "knowledge-document";
 const KNOWLEDGE_MANIFEST_SETTING = "knowledge_index_manifest";
+const KNOWLEDGE_FILE_MANIFEST_SETTING = "knowledge_index_file_manifest";
 const KNOWLEDGE_INDEXED_AT_SETTING = "knowledge_indexed_at";
 const KNOWLEDGE_USER_ID = "local-user";
 const CHUNK_SIZE = 1200;
@@ -28,6 +29,16 @@ interface KnowledgeFile {
   relativePath: string;
   content: string;
   statSignature: string;
+}
+
+interface StoredKnowledgeFileManifest {
+  version: 1;
+  files: Record<string, string>;
+}
+
+interface IndexedKnowledgeState {
+  indexedPaths: Set<string>;
+  malformedKeys: number;
 }
 
 function resolveKnowledgeRoot(relativeFolder: string): string {
@@ -120,17 +131,106 @@ async function getStoredManifest(): Promise<string | null> {
   return row?.value ?? null;
 }
 
-async function setKnowledgeIndexMetadata(manifest: string): Promise<void> {
+async function getStoredFileManifest(): Promise<StoredKnowledgeFileManifest | null> {
+  const row = await db.setting.findUnique({ where: { key: KNOWLEDGE_FILE_MANIFEST_SETTING } });
+  if (!row?.value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(row.value) as StoredKnowledgeFileManifest;
+    if (parsed.version !== 1 || typeof parsed.files !== "object" || parsed.files === null || Array.isArray(parsed.files)) {
+      return null;
+    }
+
+    const files = Object.fromEntries(
+      Object.entries(parsed.files).filter(
+        (entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string",
+      ),
+    );
+
+    return { version: 1, files };
+  } catch {
+    return null;
+  }
+}
+
+function parseKnowledgeMemoryKey(key: string): string | null {
+  const match = /^knowledge:(.+):(\d+)$/.exec(key);
+  return match?.[1] ?? null;
+}
+
+async function getIndexedKnowledgeState(): Promise<IndexedKnowledgeState> {
+  const rows = await db.memory.findMany({
+    where: { userId: KNOWLEDGE_USER_ID, category: KNOWLEDGE_CATEGORY },
+    select: { key: true },
+  });
+
+  const indexedPaths = new Set<string>();
+  let malformedKeys = 0;
+
+  for (const row of rows) {
+    const relativePath = parseKnowledgeMemoryKey(row.key);
+    if (!relativePath) {
+      malformedKeys += 1;
+      continue;
+    }
+    indexedPaths.add(relativePath);
+  }
+
+  return { indexedPaths, malformedKeys };
+}
+
+async function setKnowledgeIndexMetadata(manifest: string, fileManifest: Record<string, string>): Promise<void> {
   await db.setting.upsert({
     where: { key: KNOWLEDGE_MANIFEST_SETTING },
     update: { value: manifest },
     create: { key: KNOWLEDGE_MANIFEST_SETTING, value: manifest },
   });
   await db.setting.upsert({
+    where: { key: KNOWLEDGE_FILE_MANIFEST_SETTING },
+    update: { value: JSON.stringify({ version: 1, files: fileManifest }) },
+    create: { key: KNOWLEDGE_FILE_MANIFEST_SETTING, value: JSON.stringify({ version: 1, files: fileManifest }) },
+  });
+  await db.setting.upsert({
     where: { key: KNOWLEDGE_INDEXED_AT_SETTING },
     update: { value: new Date().toISOString() },
     create: { key: KNOWLEDGE_INDEXED_AT_SETTING, value: new Date().toISOString() },
   });
+}
+
+async function deleteKnowledgeFile(relativePath: string): Promise<void> {
+  await db.memory.deleteMany({
+    where: {
+      userId: KNOWLEDGE_USER_ID,
+      category: KNOWLEDGE_CATEGORY,
+      key: { startsWith: `knowledge:${relativePath}:` },
+    },
+  });
+}
+
+async function indexKnowledgeFile(file: KnowledgeFile): Promise<number> {
+  await deleteKnowledgeFile(file.relativePath);
+
+  const chunks = chunkDocument(file.content);
+  let chunkCount = 0;
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const key = `knowledge:${file.relativePath}:${index}`;
+    const value = `[${file.relativePath}] ${chunks[index]}`;
+    const memory = await db.memory.create({
+      data: {
+        userId: KNOWLEDGE_USER_ID,
+        key,
+        value,
+        category: KNOWLEDGE_CATEGORY,
+      },
+    });
+    await storeMemoryEmbedding(memory.id, value);
+    chunkCount += 1;
+  }
+
+  return chunkCount;
 }
 
 async function rebuildKnowledgeIndex(files: KnowledgeFile[]): Promise<number> {
@@ -147,50 +247,121 @@ async function rebuildKnowledgeIndex(files: KnowledgeFile[]): Promise<number> {
   let chunkCount = 0;
 
   for (const file of files) {
-    const chunks = chunkDocument(file.content);
-    for (let index = 0; index < chunks.length; index += 1) {
-      const key = `knowledge:${file.relativePath}:${index}`;
-      const value = `[${file.relativePath}] ${chunks[index]}`;
-      const memory = await db.memory.create({
-        data: {
-          userId: KNOWLEDGE_USER_ID,
-          key,
-          value,
-          category: KNOWLEDGE_CATEGORY,
-        },
-      });
-      await storeMemoryEmbedding(memory.id, value);
-      chunkCount += 1;
-    }
+    chunkCount += await indexKnowledgeFile(file);
   }
 
   return chunkCount;
 }
 
-export async function ensureKnowledgeEmbeddingsIndexed(): Promise<{ indexed: boolean; chunkCount: number }> {
+function buildFileManifest(files: KnowledgeFile[]): Record<string, string> {
+  return Object.fromEntries(files.map((file) => [file.relativePath, file.statSignature]));
+}
+
+function requiresFullKnowledgeRebuild(
+  indexedState: IndexedKnowledgeState,
+  storedFileManifest: StoredKnowledgeFileManifest | null,
+  legacyManifest: string | null,
+): boolean {
+  if (indexedState.malformedKeys > 0) {
+    return true;
+  }
+
+  if (!storedFileManifest && legacyManifest && indexedState.indexedPaths.size > 0) {
+    return true;
+  }
+
+  return false;
+}
+
+export async function ensureKnowledgeEmbeddingsIndexed(): Promise<{
+  indexed: boolean;
+  chunkCount: number;
+  changedFiles: number;
+  removedFiles: number;
+  rebuilt: boolean;
+  error?: string;
+}> {
   const config = getAgentRuntimeConfig();
   if (!config.knowledgeEnabled) {
-    return { indexed: false, chunkCount: 0 };
+    return { indexed: false, chunkCount: 0, changedFiles: 0, removedFiles: 0, rebuilt: false };
   }
 
   const root = resolveKnowledgeRoot(config.knowledgePath);
   if (!fs.existsSync(root)) {
-    return { indexed: false, chunkCount: 0 };
+    return { indexed: false, chunkCount: 0, changedFiles: 0, removedFiles: 0, rebuilt: false };
   }
 
-  const files = listKnowledgeFiles(root);
-  const manifest = buildManifest(files);
-  const currentManifest = await getStoredManifest();
-  if (manifest === currentManifest) {
+  try {
+    const files = listKnowledgeFiles(root);
+    const manifest = buildManifest(files);
+    const currentFileManifest = buildFileManifest(files);
+    const [legacyManifest, storedFileManifest, indexedState] = await Promise.all([
+      getStoredManifest(),
+      getStoredFileManifest(),
+      getIndexedKnowledgeState(),
+    ]);
+
+    if (requiresFullKnowledgeRebuild(indexedState, storedFileManifest, legacyManifest)) {
+      const chunkCount = await rebuildKnowledgeIndex(files);
+      await setKnowledgeIndexMetadata(manifest, currentFileManifest);
+      return {
+        indexed: true,
+        chunkCount,
+        changedFiles: files.length,
+        removedFiles: indexedState.indexedPaths.size,
+        rebuilt: true,
+      };
+    }
+
+    const storedFiles = storedFileManifest?.files ?? {};
+    const removedFiles = [...indexedState.indexedPaths].filter((relativePath) => !(relativePath in currentFileManifest));
+    const changedFiles = files.filter((file) => storedFiles[file.relativePath] !== file.statSignature || !indexedState.indexedPaths.has(file.relativePath));
+
+    if (removedFiles.length === 0 && changedFiles.length === 0 && manifest === legacyManifest) {
+      const chunkCount = await db.memory.count({
+        where: { userId: KNOWLEDGE_USER_ID, category: KNOWLEDGE_CATEGORY },
+      });
+      return { indexed: false, chunkCount, changedFiles: 0, removedFiles: 0, rebuilt: false };
+    }
+
+    await db.user.upsert({
+      where: { id: KNOWLEDGE_USER_ID },
+      create: { id: KNOWLEDGE_USER_ID, name: "User" },
+      update: {},
+    });
+
+    for (const relativePath of removedFiles) {
+      await deleteKnowledgeFile(relativePath);
+    }
+
+    for (const file of changedFiles) {
+      await indexKnowledgeFile(file);
+    }
+
     const chunkCount = await db.memory.count({
       where: { userId: KNOWLEDGE_USER_ID, category: KNOWLEDGE_CATEGORY },
     });
-    return { indexed: false, chunkCount };
+    await setKnowledgeIndexMetadata(manifest, currentFileManifest);
+    return {
+      indexed: true,
+      chunkCount,
+      changedFiles: changedFiles.length,
+      removedFiles: removedFiles.length,
+      rebuilt: false,
+    };
+  } catch (error) {
+    const chunkCount = await db.memory.count({
+      where: { userId: KNOWLEDGE_USER_ID, category: KNOWLEDGE_CATEGORY },
+    });
+    return {
+      indexed: false,
+      chunkCount,
+      changedFiles: 0,
+      removedFiles: 0,
+      rebuilt: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
-
-  const chunkCount = await rebuildKnowledgeIndex(files);
-  await setKnowledgeIndexMetadata(manifest);
-  return { indexed: true, chunkCount };
 }
 
 export async function searchKnowledgeDocuments(query: string, limit = 3): Promise<KnowledgeSnippet[]> {
@@ -204,7 +375,10 @@ export async function searchKnowledgeDocuments(query: string, limit = 3): Promis
     return [];
   }
 
-  await ensureKnowledgeEmbeddingsIndexed();
+  const knowledgeSync = await ensureKnowledgeEmbeddingsIndexed();
+  if (knowledgeSync.error) {
+    return [];
+  }
 
   const results = await searchMemories(KNOWLEDGE_USER_ID, query, limit, KNOWLEDGE_CATEGORY);
   return results.map((entry) => {
