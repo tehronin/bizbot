@@ -1,26 +1,31 @@
 import { db } from "@/lib/db";
-import { getHeartbeatServiceState, startHeartbeatService } from "@/lib/agent/heartbeat";
+import { ensureAgentHeartbeatScheduler, getAgentWorkerStatus } from "@/lib/agent/heartbeat-queue";
 
 export async function GET() {
-  const state = getHeartbeatServiceState();
-  const startedAt = await db.setting.findUnique({
-    where: { key: "agent_heartbeat_service_started_at" },
-    select: { value: true },
-  });
+  const [status, startedAt] = await Promise.all([
+    getAgentWorkerStatus(),
+    db.setting.findUnique({
+      where: { key: "agent_worker_started_at" },
+      select: { value: true },
+    }),
+  ]);
 
   return Response.json({
     ok: true,
     service: {
-      running: state.running,
-      heartbeatSeconds: state.heartbeatSeconds,
+      running: status.workerRunning,
+      heartbeatSeconds: status.schedulerEveryMs ? Math.trunc(status.schedulerEveryMs / 1000) : null,
       startedAt: startedAt?.value ?? null,
+      schedulerRegistered: status.schedulerRegistered,
+      queueName: status.queueName,
+      counts: status.counts,
     },
   });
 }
 
 export async function POST() {
   try {
-    const service = await startHeartbeatService();
+    const service = await ensureAgentHeartbeatScheduler();
     return Response.json({ ok: true, service });
   } catch (error) {
     return Response.json({ ok: false, error: String(error) }, { status: 500 });

@@ -4,9 +4,9 @@
  */
 
 import fs from "fs";
-import path from "path";
+import { resolveFromAppHome } from "@/lib/runtime-paths";
 
-const ENV_PATH = path.resolve(process.cwd(), ".env");
+const ENV_PATH = resolveFromAppHome(".env");
 
 /** Parse the .env file into a key-value map (skips comments & blank lines). */
 function parseEnv(content: string): Record<string, string> {
@@ -66,6 +66,7 @@ export function writeEnv(updates: Record<string, string>): void {
     ? fs.readFileSync(ENV_PATH, "utf-8")
     : "";
   const serialized = serializeEnv(existing, updates);
+  fs.mkdirSync(resolveFromAppHome(), { recursive: true });
   fs.writeFileSync(ENV_PATH, serialized, "utf-8");
 }
 

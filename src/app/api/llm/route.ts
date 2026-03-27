@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { getAgentWorkerStatus } from "@/lib/agent/heartbeat-queue";
 import {
   getActiveProvider,
   getConfiguredProviders,
@@ -12,8 +13,7 @@ import {
   getAgentRuntimeConfig,
   getAutonomyDescription,
 } from "@/lib/agent/runtime";
-import { getHeartbeatServiceState } from "@/lib/agent/heartbeat";
-import { getKnowledgeStatus } from "@/lib/agent/knowledge";
+import { getKnowledgeStatus } from "@/lib/agent/knowledge-status";
 import {
   getEmbeddingConfig,
   testEmbeddingProvider,
@@ -29,7 +29,7 @@ const CHAT_MODEL_OPTIONS: Record<LLMProvider, string[]> = {
   openai: ["gpt-4o", "gpt-4.1-mini"],
   anthropic: ["claude-3-5-sonnet-20241022", "claude-3-7-sonnet-latest"],
   ollama: ["gemma3", "gemma3:4b", "gemma3:12b", "llama3.2"],
-  google: ["gemini-2.0-flash", "gemini-2.5-flash"],
+  google: ["gemini-3-flash-preview", "gemini-2.5-flash"],
   minimax: ["abab6.5s-chat"],
 };
 
@@ -69,7 +69,6 @@ export async function GET() {
   const embedding = getEmbeddingConfig();
   const autonomy = getAgentRuntimeConfig();
   const capabilities = getAgentCapabilities(autonomy);
-  const heartbeatService = getHeartbeatServiceState();
   const knowledge = getKnowledgeStatus();
   const heartbeatSettings = await db.setting.findMany({
     where: {
@@ -86,10 +85,11 @@ export async function GET() {
 
   const heartbeatMap = Object.fromEntries(heartbeatSettings.map((row) => [row.key, row.value]));
 
-  const [chatOk, embeddingStatus, ollamaModels] = await Promise.all([
+  const [chatOk, embeddingStatus, ollamaModels, workerStatus] = await Promise.all([
     testProvider(activeProvider),
     testEmbeddingProvider(),
     getOllamaModelOptions(),
+    getAgentWorkerStatus(),
   ]);
 
   return Response.json({
@@ -105,9 +105,13 @@ export async function GET() {
     capabilities,
     knowledge,
     heartbeat: {
-      serviceRunning: heartbeatService.running,
-      serviceHeartbeatSeconds: heartbeatService.heartbeatSeconds,
-      serviceStartedAt: heartbeatMap.agent_heartbeat_service_started_at ?? null,
+      serviceRunning: workerStatus.workerRunning,
+      serviceHeartbeatSeconds: workerStatus.schedulerEveryMs ? Math.trunc(workerStatus.schedulerEveryMs / 1000) : null,
+      serviceStartedAt: workerStatus.workerStartedAt,
+      queueName: workerStatus.queueName,
+      schedulerRegistered: workerStatus.schedulerRegistered,
+      queueCounts: workerStatus.counts,
+      workerLastSeenAt: workerStatus.workerLastSeenAt,
       lastStartedAt: heartbeatMap.agent_last_heartbeat_started_at ?? null,
       lastFinishedAt: heartbeatMap.agent_last_heartbeat_finished_at ?? null,
       summary: heartbeatMap.agent_last_heartbeat_summary ?? null,

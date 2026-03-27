@@ -1,11 +1,19 @@
 use std::{
+  fs,
   net::TcpStream,
+  path::PathBuf,
   process::{Command, Stdio},
+  sync::Mutex,
   thread,
   time::{Duration, Instant},
 };
 
-use tauri::{path::BaseDirectory, Manager};
+use tauri::{path::BaseDirectory, Manager, RunEvent, State};
+
+#[derive(Default)]
+struct ManagedProcesses {
+  children: Mutex<Vec<std::process::Child>>,
+}
 
 fn wait_for_local_server(address: &str, timeout: Duration) -> bool {
   let started = Instant::now();
@@ -18,7 +26,96 @@ fn wait_for_local_server(address: &str, timeout: Duration) -> bool {
   false
 }
 
-fn start_bundled_next_server(app: &tauri::App) {
+fn ensure_runtime_home(app: &tauri::App) -> Option<PathBuf> {
+  let runtime_home = match app.path().resolve(".", BaseDirectory::AppData) {
+    Ok(path) => path,
+    Err(error) => {
+      log::error!("failed to resolve app data directory: {error}");
+      return None;
+    }
+  };
+
+  if let Err(error) = fs::create_dir_all(&runtime_home) {
+    log::error!(
+      "failed to create app data directory at {}: {error}",
+      runtime_home.display()
+    );
+    return None;
+  }
+
+  let env_path = runtime_home.join(".env");
+  if !env_path.exists() {
+    match app.path().resolve(".env.example", BaseDirectory::Resource) {
+      Ok(example_path) if example_path.exists() => {
+        if let Err(error) = fs::copy(&example_path, &env_path) {
+          log::error!(
+            "failed to seed runtime env file from {} to {}: {error}",
+            example_path.display(),
+            env_path.display()
+          );
+        }
+      }
+      Ok(example_path) => {
+        log::warn!("bundled env example not found at {}", example_path.display());
+      }
+      Err(error) => {
+        log::warn!("failed to resolve bundled env example: {error}");
+      }
+    }
+  }
+
+  if let Err(error) = fs::create_dir_all(runtime_home.join("workspace")) {
+    log::error!("failed to create runtime workspace directory: {error}");
+    return None;
+  }
+
+  Some(runtime_home)
+}
+
+fn spawn_packaged_node_process(
+  server_dir: &PathBuf,
+  runtime_home: &PathBuf,
+  target_name: &str,
+  extra_env: &[(&str, &str)],
+) -> Option<std::process::Child> {
+  let bootstrap_entry = server_dir.join("server-bootstrap.cjs");
+  let target_entry = server_dir.join(target_name);
+
+  if !bootstrap_entry.exists() {
+    log::error!("packaged bootstrap entrypoint is missing at {}", bootstrap_entry.display());
+    return None;
+  }
+
+  if !target_entry.exists() {
+    log::error!("packaged target entrypoint is missing at {}", target_entry.display());
+    return None;
+  }
+
+  let mut command = Command::new("node");
+  command
+    .arg(&bootstrap_entry)
+    .arg(&target_entry)
+    .current_dir(server_dir)
+    .env("BIZBOT_HOME_DIR", runtime_home)
+    .env("BIZBOT_ENV_PATH", runtime_home.join(".env"))
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::inherit());
+
+  for (key, value) in extra_env {
+    command.env(key, value);
+  }
+
+  match command.spawn() {
+    Ok(child) => Some(child),
+    Err(error) => {
+      log::error!("failed to launch packaged node target {target_name}: {error}");
+      None
+    }
+  }
+}
+
+fn start_bundled_runtime(app: &tauri::App, processes: State<'_, ManagedProcesses>) {
   if cfg!(debug_assertions) {
     return;
   }
@@ -31,27 +128,26 @@ fn start_bundled_next_server(app: &tauri::App) {
     }
   };
 
-  let server_entry = server_dir.join("server.js");
-  if !server_entry.exists() {
-    log::error!(
-      "packaged Next standalone entrypoint is missing at {}",
-      server_entry.display()
-    );
+  let Some(runtime_home) = ensure_runtime_home(app) else {
     return;
-  }
+  };
 
-  if let Err(error) = Command::new("node")
-    .arg(&server_entry)
-    .current_dir(&server_dir)
-    .env("HOSTNAME", "127.0.0.1")
-    .env("PORT", "3000")
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::inherit())
-    .spawn()
-  {
-    log::error!("failed to launch packaged Next standalone server with node: {error}");
+  let Some(server_child) = spawn_packaged_node_process(
+    &server_dir,
+    &runtime_home,
+    "server.js",
+    &[("HOSTNAME", "127.0.0.1"), ("PORT", "3000")],
+  ) else {
     return;
+  };
+
+  let Some(worker_child) = spawn_packaged_node_process(&server_dir, &runtime_home, "worker.cjs", &[]) else {
+    return;
+  };
+
+  if let Ok(mut children) = processes.children.lock() {
+    children.push(server_child);
+    children.push(worker_child);
   }
 
   if let Some(window) = app.get_webview_window("main") {
@@ -67,18 +163,47 @@ fn start_bundled_next_server(app: &tauri::App) {
   }
 }
 
+fn shutdown_managed_processes(processes: State<'_, ManagedProcesses>) {
+  if let Ok(mut children) = processes.children.lock() {
+    for child in children.iter_mut() {
+      match child.try_wait() {
+        Ok(Some(_)) => continue,
+        Ok(None) => {
+          if let Err(error) = child.kill() {
+            log::warn!("failed to terminate child process {}: {error}", child.id());
+          }
+          let _ = child.wait();
+        }
+        Err(error) => {
+          log::warn!("failed to query child process status {}: {error}", child.id());
+        }
+      }
+    }
+
+    children.clear();
+  }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .manage(ManagedProcesses::default())
     .setup(|app| {
       app.handle().plugin(
         tauri_plugin_log::Builder::default()
           .level(log::LevelFilter::Info)
           .build(),
       )?;
-      start_bundled_next_server(app);
+      let processes = app.state::<ManagedProcesses>();
+      start_bundled_runtime(app, processes);
       Ok(())
     })
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    .build(tauri::generate_context!())
+    .expect("error while building tauri application")
+    .run(|app, event| {
+      if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
+        let processes = app.state::<ManagedProcesses>();
+        shutdown_managed_processes(processes);
+      }
+    });
 }

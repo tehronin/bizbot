@@ -7,8 +7,9 @@ import { chromium, Browser, BrowserContext, Page } from "playwright";
 import path from "path";
 import fs from "fs";
 import type { BrowserCookie, ExtractedLink } from "@/lib/browser/types";
+import { resolveFromAppHome } from "@/lib/runtime-paths";
 
-const SCREENSHOT_DIR = path.join(process.cwd(), "workspace", "screenshots");
+const SCREENSHOT_DIR = resolveFromAppHome("workspace", "screenshots");
 
 let browser: Browser | null = null;
 

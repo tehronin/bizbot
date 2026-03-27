@@ -5,19 +5,12 @@ import { db } from "@/lib/db";
 import { getWorkspacePath } from "@/lib/files/workspace";
 import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { searchMemories, storeMemoryEmbedding } from "@/lib/embeddings/search";
+export { getKnowledgeStatus, type KnowledgeStatus } from "@/lib/agent/knowledge-status";
 
 export interface KnowledgeSnippet {
   path: string;
   score: number;
   snippet: string;
-}
-
-export interface KnowledgeStatus {
-  enabled: boolean;
-  folder: string;
-  absolutePath: string;
-  exists: boolean;
-  documentCount: number;
 }
 
 const TEXT_FILE_EXTENSIONS = new Set([".md", ".txt", ".json", ".yaml", ".yml", ".csv", ".html"]);
@@ -196,21 +189,6 @@ export async function ensureKnowledgeEmbeddingsIndexed(): Promise<{ indexed: boo
   const chunkCount = await rebuildKnowledgeIndex(files);
   await setKnowledgeIndexMetadata(manifest);
   return { indexed: true, chunkCount };
-}
-
-export function getKnowledgeStatus(): KnowledgeStatus {
-  const config = getAgentRuntimeConfig();
-  const absolutePath = resolveKnowledgeRoot(config.knowledgePath);
-  const exists = fs.existsSync(absolutePath);
-  const documentCount = exists ? listKnowledgeFiles(absolutePath).length : 0;
-
-  return {
-    enabled: config.knowledgeEnabled,
-    folder: config.knowledgePath,
-    absolutePath,
-    exists,
-    documentCount,
-  };
 }
 
 export async function searchKnowledgeDocuments(query: string, limit = 3): Promise<KnowledgeSnippet[]> {

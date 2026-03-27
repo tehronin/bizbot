@@ -104,7 +104,7 @@ function sanitizeSecretUpdate(value: string): string | null {
 export default function SettingsPage() {
   const [provider, setProvider] = useState("ollama");
   const [ollamaModel, setOllamaModel] = useState("gemma3");
-  const [googleModel, setGoogleModel] = useState("gemini-2.0-flash");
+  const [googleModel, setGoogleModel] = useState("gemini-3-flash-preview");
   const [openAiModel, setOpenAiModel] = useState("gpt-4o");
   const [embeddingProvider, setEmbeddingProvider] = useState("google");
   const [embeddingModel, setEmbeddingModel] = useState("gemini-embedding-001");
@@ -134,7 +134,7 @@ export default function SettingsPage() {
         setSettings(data.settings ?? []);
         setProvider(data.env?.ACTIVE_LLM_PROVIDER ?? "ollama");
         setOllamaModel(data.env?.OLLAMA_MODEL ?? "gemma3");
-        setGoogleModel(data.env?.GOOGLE_MODEL ?? "gemini-2.0-flash");
+        setGoogleModel(data.env?.GOOGLE_MODEL ?? "gemini-3-flash-preview");
         setOpenAiModel(data.env?.OPENAI_MODEL ?? "gpt-4o");
         setEmbeddingProvider(data.env?.EMBEDDING_PROVIDER ?? "google");
         setEmbeddingModel(data.env?.EMBEDDING_MODEL ?? "gemini-embedding-001");

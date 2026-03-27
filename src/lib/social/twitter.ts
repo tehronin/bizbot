@@ -86,10 +86,18 @@ async function withRateLimitRetry<T>(
 
 export class TwitterClient implements SocialClient {
   platform = "twitter" as const;
-  private client: TwitterApi;
+  private client: TwitterApi | null = null;
 
-  constructor() {
-    this.client = buildClient();
+  private getClient(): TwitterApi {
+    if (!this.isConnected()) {
+      throw new Error("Twitter client is not configured.");
+    }
+
+    if (!this.client) {
+      this.client = buildClient();
+    }
+
+    return this.client;
   }
 
   supportsDirectMessages(): boolean {
@@ -106,8 +114,9 @@ export class TwitterClient implements SocialClient {
   }
 
   async post(input: PostInput): Promise<SocialPost> {
+    const client = this.getClient();
     const result: TweetV2PostTweetResult = await withRateLimitRetry(() =>
-      this.client.v2.tweet({
+      client.v2.tweet({
         text: input.content,
         ...(input.replyToId
           ? { reply: { in_reply_to_tweet_id: input.replyToId } }
@@ -124,8 +133,9 @@ export class TwitterClient implements SocialClient {
   }
 
   async reply(replyToId: string, content: string): Promise<SocialReply> {
+    const client = this.getClient();
     const result = await withRateLimitRetry(() =>
-      this.client.v2.reply(content, replyToId),
+      client.v2.reply(content, replyToId),
     );
     return {
       id: result.data.id,
@@ -136,8 +146,9 @@ export class TwitterClient implements SocialClient {
   }
 
   async getMentions(limit = 20): Promise<SocialMention[]> {
-    const me = await this.client.v2.me();
-    const timeline = await this.client.v2.userMentionTimeline(me.data.id, {
+    const client = this.getClient();
+    const me = await client.v2.me();
+    const timeline = await client.v2.userMentionTimeline(me.data.id, {
       max_results: limit,
       "tweet.fields": ["created_at", "author_id", "text"],
       expansions: ["author_id"],
@@ -162,7 +173,8 @@ export class TwitterClient implements SocialClient {
   }
 
   async listDirectMessages(limit = 20): Promise<SocialDirectMessage[]> {
-    const paginator = await this.client.v1.listDmEvents({ count: Math.min(50, limit) });
+    const client = this.getClient();
+    const paginator = await client.v1.listDmEvents({ count: Math.min(50, limit) });
     const events = paginator.events ?? [];
     return events
       .map((event) => mapDmEvent(event as DirectMessageCreateV1))
@@ -171,7 +183,8 @@ export class TwitterClient implements SocialClient {
   }
 
   async sendDirectMessage(recipientId: string, content: string, _replyToId?: string): Promise<SocialReply> {
-    const result = await this.client.v1.sendDm({
+    const client = this.getClient();
+    const result = await client.v1.sendDm({
       recipient_id: recipientId,
       text: content,
     });
@@ -186,7 +199,8 @@ export class TwitterClient implements SocialClient {
   }
 
   async getAnalytics(postId: string): Promise<EngagementMetrics> {
-    const tweet = await this.client.v2.singleTweet(postId, {
+    const client = this.getClient();
+    const tweet = await client.v2.singleTweet(postId, {
       "tweet.fields": ["public_metrics"],
     });
     const m = tweet.data.public_metrics;

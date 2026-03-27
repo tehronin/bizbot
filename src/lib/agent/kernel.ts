@@ -70,7 +70,7 @@ export function getModelForProvider(provider: LLMProvider): string {
     case "ollama":
       return process.env.OLLAMA_MODEL ?? "gemma3";
     case "google":
-      return process.env.GOOGLE_MODEL ?? "gemini-2.0-flash";
+      return process.env.GOOGLE_MODEL ?? "gemini-3-flash-preview";
     case "minimax":
       return process.env.MINIMAX_MODEL ?? "abab6.5s-chat";
   }

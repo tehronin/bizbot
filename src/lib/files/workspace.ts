@@ -7,10 +7,11 @@
 
 import fs from "fs";
 import path from "path";
+import { getAppHomeDir } from "@/lib/runtime-paths";
 
 function getWorkspaceRoot(): string {
   const envPath = process.env.BIZBOT_WORKSPACE_PATH ?? "./workspace";
-  const resolved = path.resolve(/* turbopackIgnore: true */ process.cwd(), envPath);
+  const resolved = path.resolve(/* turbopackIgnore: true */ getAppHomeDir(), /* turbopackIgnore: true */ envPath);
   if (!fs.existsSync(resolved)) {
     fs.mkdirSync(resolved, { recursive: true });
   }

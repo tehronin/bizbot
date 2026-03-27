@@ -43,8 +43,6 @@ const MANAGED_PLATFORMS: Array<{ id: string; type: PlatformType }> = [
 
 const globalForHeartbeat = globalThis as typeof globalThis & {
   bizbotHeartbeatActive?: boolean;
-  bizbotHeartbeatInterval?: ReturnType<typeof setInterval>;
-  bizbotHeartbeatSeconds?: number;
 };
 
 function parseInboxMetadata(value: Prisma.JsonValue | null): InboxMetadata {
@@ -531,37 +529,4 @@ export async function runAgentHeartbeat(): Promise<HeartbeatRunSummary> {
   } finally {
     globalForHeartbeat.bizbotHeartbeatActive = false;
   }
-}
-
-export function getHeartbeatServiceState(): { running: boolean; heartbeatSeconds: number | null } {
-  return {
-    running: Boolean(globalForHeartbeat.bizbotHeartbeatInterval),
-    heartbeatSeconds: globalForHeartbeat.bizbotHeartbeatSeconds ?? null,
-  };
-}
-
-export async function startHeartbeatService(): Promise<{ started: boolean; heartbeatSeconds: number }> {
-  const heartbeatSeconds = Math.max(15, getAgentRuntimeConfig().heartbeatSeconds);
-
-  if (globalForHeartbeat.bizbotHeartbeatInterval && globalForHeartbeat.bizbotHeartbeatSeconds === heartbeatSeconds) {
-    return { started: false, heartbeatSeconds };
-  }
-
-  if (globalForHeartbeat.bizbotHeartbeatInterval) {
-    clearInterval(globalForHeartbeat.bizbotHeartbeatInterval);
-  }
-
-  globalForHeartbeat.bizbotHeartbeatSeconds = heartbeatSeconds;
-  globalForHeartbeat.bizbotHeartbeatInterval = setInterval(() => {
-    void runAgentHeartbeat().catch((error) => {
-      console.error("[heartbeat service]", error);
-    });
-  }, heartbeatSeconds * 1000);
-
-  void runAgentHeartbeat().catch((error) => {
-    console.error("[heartbeat bootstrap]", error);
-  });
-
-  await setHeartbeatSetting("agent_heartbeat_service_started_at", new Date().toISOString());
-  return { started: true, heartbeatSeconds };
 }
