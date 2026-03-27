@@ -1,6 +1,7 @@
 import {
   InboxChannelType,
   InboxStatus,
+  LeadStage,
   type InboxMessage,
   PostStatus,
   PlatformType,
@@ -13,6 +14,7 @@ import { chatComplete } from "@/lib/agent/kernel";
 import { ensureKnowledgeEmbeddingsIndexed } from "@/lib/agent/knowledge";
 import { getAgentCapabilities, getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { runDueCompetitorChecks } from "@/lib/competitors/monitor";
+import { buildDeterministicReplyDraft } from "@/lib/inbox/canned-responses";
 import { getPlatformNameForType, getSocialClientForPlatformType } from "@/lib/social/clients";
 
 interface HeartbeatRunSummary {
@@ -84,6 +86,23 @@ function formatErrorMessage(error: Error | string | null | undefined): string {
   }
 
   return error instanceof Error ? error.message : String(error);
+}
+
+function leadStageScore(stage: LeadStage): number {
+  switch (stage) {
+    case LeadStage.LEAD:
+      return 25;
+    case LeadStage.QUALIFIED:
+      return 50;
+    case LeadStage.CONTACTED:
+      return 75;
+    case LeadStage.CONVERTED:
+      return 100;
+    case LeadStage.LOST:
+      return 0;
+    case LeadStage.NONE:
+      return 0;
+  }
 }
 
 async function claimInboxMessage(id: string, statuses: InboxStatus[]): Promise<boolean> {
@@ -327,6 +346,38 @@ async function publishReadyPosts(): Promise<number> {
 async function generateReplyDraft(item: InboxItemWithPlatform): Promise<string> {
   if (item.replyContent) {
     return item.replyContent;
+  }
+
+  const deterministicDraft = await buildDeterministicReplyDraft(item);
+  if (deterministicDraft) {
+    const conversationId = await getOrCreateConversation(undefined, "local-user");
+    await saveMessage(conversationId, "USER", item.content, {
+      source: "inbox",
+      inboxMessageId: item.id,
+      cannedResponseTreeId: deterministicDraft.treeId,
+      cannedResponseNodeKey: deterministicDraft.nodeKey,
+    });
+    await saveMessage(conversationId, "ASSISTANT", deterministicDraft.replyContent, {
+      source: "inbox-canned-response",
+      inboxMessageId: item.id,
+      cannedResponseTreeId: deterministicDraft.treeId,
+      cannedResponseNodeKey: deterministicDraft.nodeKey,
+      leadStage: deterministicDraft.leadStage,
+    });
+
+    await db.inboxMessage.update({
+      where: { id: item.id },
+      data: {
+        replyContent: deterministicDraft.replyContent,
+        cannedResponseTreeId: deterministicDraft.treeId,
+        cannedResponseNodeKey: deterministicDraft.nodeKey,
+        leadStage: deterministicDraft.leadStage,
+        leadScore: leadStageScore(deterministicDraft.leadStage),
+        processedAt: new Date(),
+      },
+    });
+
+    return deterministicDraft.replyContent;
   }
 
   const platformName = getPlatformNameForType(item.platform.type);

@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   const statusParam = req.nextUrl.searchParams.get("status");
   const items = await db.inboxMessage.findMany({
     where: statusParam ? { status: statusParam as InboxStatus } : undefined,
-    include: { platform: true },
+    include: { platform: true, cannedResponseTree: true },
     orderBy: { receivedAt: "desc" },
     take: 100,
   });

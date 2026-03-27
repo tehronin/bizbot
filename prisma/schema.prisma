@@ -45,6 +45,15 @@ enum PlatformType {
   INSTAGRAM
 }
 
+enum LeadStage {
+  NONE
+  LEAD
+  QUALIFIED
+  CONTACTED
+  CONVERTED
+  LOST
+}
+
 // ─────────────────── POSTS ───────────────────
 model Post {
   id          String      @id @default(cuid())
@@ -203,6 +212,9 @@ model InboxMessage {
   platformId    String
   channelType   InboxChannelType
   status        InboxStatus      @default(OPEN)
+  leadStage     LeadStage        @default(NONE)
+  leadScore     Int              @default(0)
+  leadSummary   String?
   externalId    String
   threadId      String?
   authorName    String?
@@ -211,6 +223,9 @@ model InboxMessage {
   replyContent  String?
   replyPostId   String?
   metadata      Json?
+  cannedResponseTree   CannedResponseTree? @relation(fields: [cannedResponseTreeId], references: [id], onDelete: SetNull)
+  cannedResponseTreeId String?
+  cannedResponseNodeKey String?
   receivedAt    DateTime
   processedAt   DateTime?
   createdAt     DateTime         @default(now())
@@ -218,6 +233,7 @@ model InboxMessage {
 
   @@unique([platformId, externalId])
   @@index([status, channelType, receivedAt])
+  @@index([leadStage, receivedAt])
 }
 
 enum InboxChannelType {
@@ -309,4 +325,89 @@ enum BrowserActionStatus {
   REJECTED
   COMPLETED
   FAILED
+}
+
+model CannedResponseTree {
+  id           String            @id @default(cuid())
+  name         String
+  description  String?
+  active       Boolean           @default(true)
+  platformHint PlatformType?
+  channelType  InboxChannelType?
+  rootNodeKey  String
+  nodes        Json
+  matchRules   Json?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  inboxMessages InboxMessage[]
+
+  @@index([active, platformHint, channelType])
+}
+
+enum GoogleBusinessPostStatus {
+  DRAFT
+  PUBLISHED
+  FAILED
+}
+
+model GoogleBusinessLocation {
+  id               String                @id @default(cuid())
+  accountName      String
+  locationName     String                @unique
+  infoLocationName String?
+  title            String
+  storeCode        String?
+  websiteUrl       String?
+  regularHours     Json?
+  metadata         Json?
+  syncEnabled      Boolean               @default(true)
+  lastSyncAt       DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  reviews          GoogleBusinessReview[]
+  posts            GoogleBusinessPost[]
+}
+
+model GoogleBusinessReview {
+  id                 String                @id @default(cuid())
+  location           GoogleBusinessLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId         String
+  resourceName       String
+  reviewId           String
+  reviewerName       String?
+  reviewerPhotoUrl   String?
+  starRating         Int
+  comment            String?
+  reviewReply        String?
+  reviewReplyUpdatedAt DateTime?
+  createTime         DateTime
+  updateTime         DateTime
+  syncedAt           DateTime              @default(now())
+  needsResponse      Boolean               @default(false)
+
+  @@unique([locationId, reviewId])
+  @@index([locationId, updateTime])
+}
+
+model GoogleBusinessPost {
+  id               String                 @id @default(cuid())
+  location         GoogleBusinessLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId       String
+  resourceName     String?                @unique
+  summary          String
+  topicType        String                 @default("STANDARD")
+  actionType       String?
+  callToActionUrl  String?
+  searchUrl        String?
+  eventData        Json?
+  offerData        Json?
+  status           GoogleBusinessPostStatus @default(DRAFT)
+  error            String?
+  publishedAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([locationId, status, createdAt])
 }

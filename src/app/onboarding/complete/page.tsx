@@ -24,6 +24,7 @@ export default function OnboardingCompletePage() {
           <div>Review the settings page before going live with real accounts.</div>
           <div>Meta webhook verification depends on the verify token you saved during onboarding.</div>
           <div>Workspace and knowledge folder paths now affect document retrieval and file tools.</div>
+          <div>Google Business Profile review, post, and hours workflows depend on the account and location resource names you saved during onboarding.</div>
         </div>
         <div className="flex gap-3">
           <button onClick={() => void finish()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>enter dashboard</button>

@@ -12,6 +12,9 @@ BizBot is a local-first desktop social media agent for automated customer engage
 - **Knowledge-backed context** — drop product docs, FAQs, or sales materials into the `knowledge/` folder and the agent uses them when composing replies
 - **Multi-agent routing** — requests are routed into specialist lanes for DM handling, content creation, analytics reporting, or browser research
 - **Competitor monitoring** — scheduled browser watches can track public competitor pages and summarize detected changes
+- **Deterministic DM playbooks** — canned response trees can guide greeting → qualify → pitch → website handoff flows before the LLM path is used
+- **Lead pipeline tracking** — inbox contacts can be staged as lead, qualified, contacted, converted, or lost directly in the dashboard
+- **Google Business Profile ops** — sync reviews, publish local posts, and update hours when GBP credentials are configured
 
 ## Current Status
 
@@ -71,6 +74,20 @@ The agent exposes typed function-calling tools organized as plugins:
 | Approval | `approval_submit`, `approval_get_pending`, `approval_decide` |
 | Browser | web navigation, screenshot, text/link extraction |
 | Competitor | `competitor_watch_create`, `competitor_watch_list`, `competitor_watch_check`, `competitor_watch_pause` |
+
+### DM Funnel And Lead Tracking
+
+- Direct-message inbox replies can now use stored canned response trees before falling back to the LLM draft path
+- Inbox items now carry lead stage, lead score, lead summary, and the last matched canned-response node
+- The default funnel covers greeting -> qualify -> pitch -> handoff -> conversion with website-link placeholders
+- The leads dashboard exposes both pipeline state and the active canned-response tree definitions
+
+### Google Business Profile
+
+- Reviews sync from `GET /v4/{parent=accounts/*/locations/*}/reviews`
+- Review replies send through `PUT /v4/{name=accounts/*/locations/*/reviews/*}/reply`
+- Local posts publish through `POST /v4/{parent=accounts/*/locations/*}/localPosts`
+- Business hours update through the Business Information API `PATCH /v1/{location.name=locations/*}` with `updateMask=regularHours`
 
 ### Autonomy Presets
 
@@ -183,7 +200,7 @@ A BullMQ-based background worker runs on a configurable interval (default: 5 min
 
 ## Pages
 
-**Dashboard:** `/chat`, `/inbox`, `/posts`, `/approvals`, `/analytics`, `/settings`
+**Dashboard:** `/chat`, `/inbox`, `/leads`, `/posts`, `/google-business`, `/approvals`, `/analytics`, `/settings`
 
 **Onboarding:** `/onboarding`, `/onboarding/llm`, `/onboarding/platforms`, `/onboarding/policies`, `/onboarding/complete`
 
@@ -205,14 +222,23 @@ A BullMQ-based background worker runs on a configurable interval (default: 5 min
 - `GET /api/files`
 - `POST /api/files`
 - `DELETE /api/files`
+- `GET /api/google-business`
+- `PATCH /api/google-business`
+- `POST /api/google-business/posts`
+- `POST /api/google-business/reviews/[id]/reply`
 - `GET /api/inbox`
 - `POST /api/inbox`
 - `PATCH /api/inbox/[id]`
+- `GET /api/leads`
+- `PATCH /api/leads/[id]`
 - `GET /api/llm`
 - `GET /api/onboarding`
 - `POST /api/onboarding`
 - `GET /api/posts`
 - `POST /api/posts`
+- `GET /api/canned-responses`
+- `POST /api/canned-responses`
+- `PATCH /api/canned-responses/[id]`
 - `GET /api/settings`
 - `PATCH /api/settings`
 - `GET /api/social/[platform]`
@@ -222,7 +248,7 @@ A BullMQ-based background worker runs on a configurable interval (default: 5 min
 
 ## Data Model
 
-18 Prisma models: `User`, `Platform`, `Post`, `PostApproval`, `Conversation`, `Message`, `Memory`, `Policy`, `ScheduleRule`, `AnalyticsSnapshot`, `Setting`, `InboxMessage`, `BrowserSession`, `BrowserAction`, `CompetitorWatch`, `CompetitorSnapshot`
+22 Prisma models: `User`, `Platform`, `Post`, `PostApproval`, `Conversation`, `Message`, `Memory`, `Policy`, `ScheduleRule`, `AnalyticsSnapshot`, `Setting`, `InboxMessage`, `BrowserSession`, `BrowserAction`, `CompetitorWatch`, `CompetitorSnapshot`, `CannedResponseTree`, `GoogleBusinessLocation`, `GoogleBusinessReview`, `GoogleBusinessPost`
 
 ## Repository Structure
 
@@ -336,6 +362,12 @@ Redis uses the default `localhost:6379` (no env var needed for defaults).
 | `FACEBOOK_PAGE_ID` | Facebook Page ID |
 | `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram Business Account ID |
 | `META_WEBHOOK_VERIFY_TOKEN` | Verification token for Meta webhook subscription |
+| `GOOGLE_BUSINESS_CLIENT_ID` | OAuth client ID used to mint short-lived Google Business access tokens |
+| `GOOGLE_BUSINESS_CLIENT_SECRET` | OAuth client secret for Google Business token exchange |
+| `GOOGLE_BUSINESS_REFRESH_TOKEN` | Refresh token used locally to exchange for short-lived Google Business access tokens |
+| `GOOGLE_BUSINESS_ACCOUNT_NAME` | GBP account resource name, e.g. `accounts/123456789` |
+| `GOOGLE_BUSINESS_LOCATION_NAME` | GBP v4 location resource name, e.g. `accounts/123456789/locations/987654321` |
+| `GOOGLE_BUSINESS_INFO_LOCATION_NAME` | Business Information v1 location name, e.g. `locations/987654321` |
 | `TWITTER_APP_KEY`, `TWITTER_APP_SECRET` | Twitter API credentials |
 | `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_TOKEN_SECRET` | Twitter user tokens |
 | `TWITTER_USER_ID` | Twitter user ID for mention timeline |
@@ -359,9 +391,10 @@ Redis uses the default `localhost:6379` (no env var needed for defaults).
 - Facebook Messenger DM access requires Meta App Review for production use
 - Browser-based social adapters are experimental (Facebook post only, no Instagram browser adapter)
 - Meta webhooks are implemented, but Twitter/X real-time webhooks are still pending external API availability/access
-- No canned/template response system yet — all replies are LLM-generated
+- DM canned response trees currently target direct messages only; public mention playbooks are not wired yet
 - Multi-account social tenancy is not implemented; platform IDs are single-account
 - `ScheduleRule` model exists but max-per-day enforcement is not yet wired into the publish pipeline
+- Google Business Profile support currently assumes a single configured account/location and a locally stored OAuth refresh token in `.env`
 
 ## Security
 

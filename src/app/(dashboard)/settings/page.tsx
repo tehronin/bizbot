@@ -104,6 +104,9 @@ const PUBLIC_ENV_DEFAULTS = {
   BIZBOT_KNOWLEDGE_PATH: "knowledge",
   BIZBOT_WORKSPACE_PATH: "./workspace",
   BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY: "true",
+  GOOGLE_BUSINESS_ACCOUNT_NAME: "",
+  GOOGLE_BUSINESS_LOCATION_NAME: "",
+  GOOGLE_BUSINESS_INFO_LOCATION_NAME: "",
   TWITTER_USER_ID: "",
   FACEBOOK_PAGE_ID: "",
   META_PAGE_ID: "",
@@ -118,6 +121,9 @@ type SecretEnvKey =
   | "OPENAI_API_KEY"
   | "ANTHROPIC_API_KEY"
   | "MINIMAX_API_KEY"
+  | "GOOGLE_BUSINESS_CLIENT_ID"
+  | "GOOGLE_BUSINESS_CLIENT_SECRET"
+  | "GOOGLE_BUSINESS_REFRESH_TOKEN"
   | "META_ACCESS_TOKEN"
   | "META_WEBHOOK_VERIFY_TOKEN"
   | "TWITTER_APP_KEY"
@@ -132,6 +138,9 @@ const SECRET_ENV_LABELS: Record<SecretEnvKey, string> = {
   OPENAI_API_KEY: "OpenAI API key",
   ANTHROPIC_API_KEY: "Anthropic API key",
   MINIMAX_API_KEY: "MiniMax API key",
+  GOOGLE_BUSINESS_CLIENT_ID: "Google Business OAuth client ID",
+  GOOGLE_BUSINESS_CLIENT_SECRET: "Google Business OAuth client secret",
+  GOOGLE_BUSINESS_REFRESH_TOKEN: "Google Business refresh token",
   META_ACCESS_TOKEN: "Meta access token",
   META_WEBHOOK_VERIFY_TOKEN: "Meta webhook verify token",
   TWITTER_APP_KEY: "Twitter app key",
@@ -155,6 +164,9 @@ const EMPTY_SECRETS: Record<SecretEnvKey, string> = {
   OPENAI_API_KEY: "",
   ANTHROPIC_API_KEY: "",
   MINIMAX_API_KEY: "",
+  GOOGLE_BUSINESS_CLIENT_ID: "",
+  GOOGLE_BUSINESS_CLIENT_SECRET: "",
+  GOOGLE_BUSINESS_REFRESH_TOKEN: "",
   META_ACCESS_TOKEN: "",
   META_WEBHOOK_VERIFY_TOKEN: "",
   TWITTER_APP_KEY: "",
@@ -398,6 +410,37 @@ export default function SettingsPage() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
+          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>google business profile</div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Account name</label>
+              <input value={publicEnv.GOOGLE_BUSINESS_ACCOUNT_NAME} onChange={(event) => updatePublicEnv("GOOGLE_BUSINESS_ACCOUNT_NAME", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Review/post location name</label>
+              <input value={publicEnv.GOOGLE_BUSINESS_LOCATION_NAME} onChange={(event) => updatePublicEnv("GOOGLE_BUSINESS_LOCATION_NAME", event.target.value)} placeholder="accounts/*/locations/*" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Business info location name</label>
+              <input value={publicEnv.GOOGLE_BUSINESS_INFO_LOCATION_NAME} onChange={(event) => updatePublicEnv("GOOGLE_BUSINESS_INFO_LOCATION_NAME", event.target.value)} placeholder="locations/*" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.GOOGLE_BUSINESS_CLIENT_ID}</label>
+              <input type="password" value={secretEnv.GOOGLE_BUSINESS_CLIENT_ID} onChange={(event) => updateSecretEnv("GOOGLE_BUSINESS_CLIENT_ID", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.GOOGLE_BUSINESS_CLIENT_SECRET}</label>
+              <input type="password" value={secretEnv.GOOGLE_BUSINESS_CLIENT_SECRET} onChange={(event) => updateSecretEnv("GOOGLE_BUSINESS_CLIENT_SECRET", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.GOOGLE_BUSINESS_REFRESH_TOKEN}</label>
+              <input type="password" value={secretEnv.GOOGLE_BUSINESS_REFRESH_TOKEN} onChange={(event) => updateSecretEnv("GOOGLE_BUSINESS_REFRESH_TOKEN", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              Reviews and local posts use the v4 `accounts/*/locations/*` resource name. Hours updates use the Business Information `locations/*` resource name. Access tokens are now minted locally from the OAuth refresh token instead of being stored directly.
+            </div>
+          </div>
+
           <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
             <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>meta and webhooks</div>
             <div>

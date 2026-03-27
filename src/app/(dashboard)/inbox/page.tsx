@@ -6,11 +6,17 @@ interface InboxItem {
   id: string;
   channelType: string;
   status: string;
+  leadStage: string;
+  leadSummary: string | null;
+  cannedResponseNodeKey: string | null;
   authorName: string | null;
   authorHandle: string | null;
   content: string;
   replyContent: string | null;
   receivedAt: string;
+  cannedResponseTree: {
+    name: string;
+  } | null;
   platform: {
     displayName: string;
   };
@@ -21,6 +27,9 @@ interface InboxResponse {
 }
 
 type InboxAction = "approve" | "dismiss" | "draft" | "resend";
+type LeadStage = "NONE" | "LEAD" | "QUALIFIED" | "CONTACTED" | "CONVERTED" | "LOST";
+
+const LEAD_STAGES: LeadStage[] = ["NONE", "LEAD", "QUALIFIED", "CONTACTED", "CONVERTED", "LOST"];
 
 export default function InboxPage() {
   const [items, setItems] = useState<InboxItem[]>([]);
@@ -42,6 +51,29 @@ export default function InboxPage() {
       setError(String(loadError));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function updateLead(id: string, leadStage: LeadStage): Promise<void> {
+    setActionItemId(id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/leads/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadStage }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        throw new Error(data.error ?? "Lead update failed.");
+      }
+
+      await load();
+    } catch (leadError) {
+      setError(String(leadError));
+    } finally {
+      setActionItemId(null);
     }
   }
 
@@ -109,6 +141,11 @@ export default function InboxPage() {
               <span>{item.channelType}</span>
               <span>{item.status}</span>
             </div>
+            <div className="flex flex-wrap gap-3 text-[10px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+              <span>lead {item.leadStage}</span>
+              {item.cannedResponseTree ? <span>tree {item.cannedResponseTree.name}</span> : null}
+              {item.cannedResponseNodeKey ? <span>node {item.cannedResponseNodeKey}</span> : null}
+            </div>
             <div className="text-sm" style={{ color: "var(--text-dim)" }}>{item.authorHandle ?? item.authorName ?? "unknown"}</div>
             <div className="text-sm whitespace-pre-wrap">{item.content}</div>
             {item.replyContent ? (
@@ -116,6 +153,25 @@ export default function InboxPage() {
                 {item.replyContent}
               </div>
             ) : null}
+            {item.leadSummary ? (
+              <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                {item.leadSummary}
+              </div>
+            ) : null}
+            <label className="block text-[10px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+              Lead stage
+            </label>
+            <select
+              value={item.leadStage}
+              onChange={(event) => void updateLead(item.id, event.target.value as LeadStage)}
+              disabled={actionItemId === item.id}
+              className="w-full max-w-52 bg-transparent border px-3 py-2 text-xs"
+              style={{ borderColor: "var(--border)" }}
+            >
+              {LEAD_STAGES.map((stage) => (
+                <option key={stage} value={stage}>{stage}</option>
+              ))}
+            </select>
             <div className="flex flex-wrap gap-3 text-[10px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
               {canDraft(item) ? (
                 <button
