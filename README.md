@@ -2,6 +2,8 @@
 
 BizBot is a local-first desktop social media agent for automated customer engagement, content publishing, and inbox management across Facebook, Instagram, and Twitter/X.
 
+![BizBot UI Preview](docs/ui-preview.svg)
+
 ## What It Does
 
 - **Monitors DMs** — polls Facebook Messenger, Instagram DMs, and Twitter DMs on a configurable heartbeat interval
@@ -175,7 +177,8 @@ A BullMQ-based background worker runs on a configurable interval (default: 5 min
 │  Tauri v2 Desktop Shell (or browser at localhost:3000)│
 ├──────────────────────────────────────────────────────┤
 │  Next.js App Router                                   │
-│  ├─ Dashboard: /chat /inbox /posts /approvals         │
+│  ├─ Dashboard: /chat /inbox /leads /posts             │
+│  │             /google-business /approvals            │
 │  │             /analytics /settings                   │
 │  ├─ Onboarding: /onboarding/llm /platforms /policies  │
 │  └─ API Routes: /api/agent /api/llm /api/inbox ...    │
@@ -248,7 +251,7 @@ A BullMQ-based background worker runs on a configurable interval (default: 5 min
 
 ## Data Model
 
-22 Prisma models: `User`, `Platform`, `Post`, `PostApproval`, `Conversation`, `Message`, `Memory`, `Policy`, `ScheduleRule`, `AnalyticsSnapshot`, `Setting`, `InboxMessage`, `BrowserSession`, `BrowserAction`, `CompetitorWatch`, `CompetitorSnapshot`, `CannedResponseTree`, `GoogleBusinessLocation`, `GoogleBusinessReview`, `GoogleBusinessPost`
+20 Prisma models: `User`, `Platform`, `Post`, `PostApproval`, `Conversation`, `Message`, `Memory`, `Policy`, `ScheduleRule`, `AnalyticsSnapshot`, `Setting`, `InboxMessage`, `BrowserSession`, `BrowserAction`, `CompetitorWatch`, `CompetitorSnapshot`, `CannedResponseTree`, `GoogleBusinessLocation`, `GoogleBusinessReview`, `GoogleBusinessPost`
 
 ## Repository Structure
 

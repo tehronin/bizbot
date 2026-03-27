@@ -1,0 +1,68 @@
+<svg width="1366" height="768" viewBox="0 0 1366 768" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">BizBot UI preview</title>
+  <desc id="desc">Dark BizBot dashboard preview with chat selected in the sidebar and an assistant welcome message in the main panel.</desc>
+  <rect width="1366" height="768" fill="#151622"/>
+  <rect x="0" y="0" width="212" height="768" fill="#171724"/>
+  <rect x="0" y="55" width="212" height="2" fill="#202338"/>
+  <rect x="0" y="728" width="212" height="2" fill="#202338"/>
+  <text x="18" y="30" fill="#5E6BFF" font-family="Segoe UI, Arial, sans-serif" font-size="28" letter-spacing="2">BIZBOT</text>
+
+  <rect x="8" y="77" width="196" height="30" rx="2" fill="#272854"/>
+  <circle cx="21" cy="92" r="5" fill="#B6B9D7"/>
+  <text x="43" y="98" fill="#6E80FF" font-family="Segoe UI, Arial, sans-serif" font-size="16">Chat</text>
+
+  <rect x="8" y="112" width="196" height="215" rx="2" fill="transparent"/>
+  <g fill="#6C6D8E" font-family="Segoe UI, Arial, sans-serif" font-size="16">
+    <text x="43" y="137">Inbox</text>
+    <text x="43" y="178">Posts</text>
+    <text x="43" y="219">Approvals</text>
+    <text x="43" y="260">Analytics</text>
+    <text x="43" y="301">Settings</text>
+  </g>
+  <g fill="#9092AE">
+    <rect x="15" y="125" width="11" height="8" rx="1"/>
+    <rect x="15" y="166" width="11" height="14" rx="1"/>
+    <rect x="15" y="206" width="11" height="14" rx="1" fill="#4DBA7E"/>
+    <rect x="15" y="247" width="11" height="14" rx="1"/>
+    <circle cx="20" cy="294" r="5"/>
+  </g>
+
+  <circle cx="29" cy="734" r="17" fill="#0E101A" stroke="#3B3D53" stroke-width="2"/>
+  <text x="21" y="741" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif" font-size="18">N</text>
+  <text x="7" y="756" fill="#4B4E68" font-family="Segoe UI, Arial, sans-serif" font-size="12">local agent</text>
+
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="239" y="24" fill="#676B88" font-size="16" letter-spacing="6">STEALTH CONSOLE</text>
+    <text x="239" y="46" fill="#E8E9F4" font-size="16">3/27/2026, 10:14:31 AM</text>
+    <text x="1080" y="24" fill="#676B88" font-size="14" letter-spacing="4">PROVIDER</text>
+    <text x="1172" y="24" fill="#6280FF" font-size="14" letter-spacing="4">GOOGLE</text>
+    <text x="1242" y="24" fill="#676B88" font-size="14" letter-spacing="4">APPROVALS</text>
+    <text x="1348" y="24" text-anchor="end" fill="#E8E9F4" font-size="14">0</text>
+  </g>
+
+  <rect x="240" y="94" width="1120" height="569" fill="#161823" stroke="#27293C"/>
+  <text x="275" y="124" fill="#676B88" font-family="Segoe UI, Arial, sans-serif" font-size="18" letter-spacing="5">AGENT CONSOLE</text>
+
+  <rect x="258" y="147" width="1084" height="79" fill="#1C1F37" stroke="#3242A4"/>
+  <text x="277" y="174" fill="#6B6F92" font-family="Segoe UI, Arial, sans-serif" font-size="14" letter-spacing="4">USER</text>
+  <text x="277" y="203" fill="#F2F4FF" font-family="Segoe UI, Arial, sans-serif" font-size="18">hello</text>
+
+  <rect x="258" y="239" width="1084" height="312" fill="#1A1C28" stroke="#202236"/>
+  <text x="277" y="265" fill="#6B6F92" font-family="Segoe UI, Arial, sans-serif" font-size="14" letter-spacing="4">ASSISTANT</text>
+
+  <g fill="#ECE7EE" font-family="Segoe UI, Arial, sans-serif" font-size="17">
+    <text x="277" y="294">Hello! I'm BizBot, your social media assistant. I'm ready to help you manage your accounts, draft content, and track</text>
+    <text x="277" y="323">engagement.</text>
+    <text x="277" y="374">How can I help you today? I can:</text>
+    <text x="277" y="402">*  Check for new mentions on your social platforms.</text>
+    <text x="277" y="430">*  Draft and schedule posts for Twitter, Facebook, or Instagram.</text>
+    <text x="277" y="458">*  Review your approval queue for any pending content.</text>
+    <text x="277" y="486">*  Research topics or extract information from websites.</text>
+    <text x="277" y="537">Let me know what's on your mind!</text>
+  </g>
+
+  <rect x="240" y="682" width="1120" height="67" fill="#171924" stroke="#27293C"/>
+  <text x="253" y="722" fill="#737596" font-family="Segoe UI, Arial, sans-serif" font-size="16">Draft a launch thread about our product update...</text>
+  <rect x="1257" y="695" width="89" height="39" fill="#1E2140" stroke="#4361FF"/>
+  <text x="1276" y="720" fill="#5C7AFF" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="3">SEND</text>
+</svg>
