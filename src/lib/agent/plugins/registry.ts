@@ -2,6 +2,7 @@ import type { RegisteredToolDefinition } from "@/lib/agent/tools";
 import type { BizBotPlugin } from "@/lib/agent/plugins/contracts";
 import { wrapBuiltinPlugin } from "@/lib/agent/plugins/contracts";
 import { approvalPlugin } from "./ApprovalPlugin";
+import { builderPlugin } from "./BuilderPlugin";
 import { browserPlugin } from "./BrowserPlugin";
 import { competitorPlugin } from "./CompetitorPlugin";
 import { commercePlugin } from "./CommercePlugin";
@@ -21,6 +22,7 @@ const builtinPlugins: BizBotPlugin[] = [
   wrapBuiltinPlugin({ id: "commerce", displayName: "Commerce", description: "Local-first products and orders for sales workflows.", tags: ["commerce", "sales"] }, commercePlugin),
   wrapBuiltinPlugin({ id: "content", displayName: "Content", description: "Content drafting, refinement, and policy checks.", tags: ["content", "drafting"] }, contentPlugin),
   wrapBuiltinPlugin({ id: "crm", displayName: "CRM", description: "CRM contacts, activities, and provider synchronization.", tags: ["crm", "sales"] }, crmPlugin),
+  wrapBuiltinPlugin({ id: "builder", displayName: "Builder", description: "Sandboxed workspace scaffolding, file generation, and allowlisted command execution.", tags: ["builder", "workspace"] }, builderPlugin),
   wrapBuiltinPlugin({ id: "delegation", displayName: "Delegation", description: "Delegated sub-runs across specialist operator lanes.", tags: ["agent", "delegation"] }, delegationPlugin),
   wrapBuiltinPlugin({ id: "developer", displayName: "Developer", description: "Runtime inspection tools for workers, memories, and agent runs.", tags: ["developer", "debugging"] }, developerPlugin),
   wrapBuiltinPlugin({ id: "memory", displayName: "Memory", description: "Semantic recall and memory storage tools.", tags: ["memory", "knowledge"] }, memoryPlugin),

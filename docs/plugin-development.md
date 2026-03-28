@@ -110,6 +110,16 @@ Current external import behavior:
 - resource and prompt catalogs are cached and tested for future surfacing
 - fallback remains one-way: Streamable HTTP first, then SSE
 
+## Builder Lane Safety
+
+The builtin `builder` plugin is intentionally stricter than the generic workspace file tools.
+
+- It uses `BIZBOT_BUILDER_WORKSPACE_PATH` for a dedicated external workspace.
+- If that workspace overlaps the BizBot repository, builder file and command tools fail closed.
+- Command execution is opt-in through `BIZBOT_BUILDER_ALLOWED_COMMANDS` and runs without shell expansion.
+
+This keeps Builder Mode suitable for scaffolding or codegen work without giving the lane permission to mutate the BizBot repo itself.
+
 ## Design Guidance
 
 - Prefer narrow, composable tools over giant multi-purpose tools.

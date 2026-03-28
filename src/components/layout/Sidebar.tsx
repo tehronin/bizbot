@@ -10,6 +10,7 @@ interface ApprovalsResponse {
 
 const NAV = [
   { href: "/chat", label: "Chat", icon: "💬" },
+  { href: "/builder", label: "Builder", icon: "🏗️" },
   { href: "/inbox", label: "Inbox", icon: "✉️" },
   { href: "/leads", label: "Leads", icon: "🧭" },
   { href: "/commerce", label: "Commerce", icon: "🧾" },

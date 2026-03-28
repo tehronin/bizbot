@@ -133,6 +133,19 @@ const PUBLIC_ENV_DEFAULTS = {
   BIZBOT_KNOWLEDGE_PATH: "knowledge",
   BIZBOT_WORKSPACE_PATH: "./workspace",
   BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY: "true",
+  BIZBOT_BUILDER_WORKSPACE_PATH: "",
+  BIZBOT_BUILDER_ALLOWED_COMMANDS: "npm,pnpm,npx,git,node",
+  BIZBOT_BUILDER_DEFAULT_TEMPLATE: "node-cli",
+  BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER: "NPM",
+  BIZBOT_BUILDER_INIT_GIT: "true",
+  BIZBOT_BUILDER_INSTALL_DEPS: "false",
+  BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE: "codex",
+  BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS: "900",
+  BIZBOT_BUILDER_CODEX_ENABLED: "false",
+  BIZBOT_BUILDER_CODEX_COMMAND: "codex",
+  BIZBOT_BUILDER_CODEX_MODEL: "",
+  BIZBOT_BUILDER_CLAUDE_CODE_ENABLED: "false",
+  BIZBOT_BUILDER_CLAUDE_CODE_COMMAND: "claude",
   CRM_PROVIDER: "internal",
   HUBSPOT_PORTAL_ID: "",
   HUBSPOT_BASE_URL: "https://api.hubapi.com",
@@ -526,6 +539,82 @@ export default function SettingsPage() {
             </div>
             <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
               Current docs path: {knowledgeExample}
+            </div>
+          </div>
+
+          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder mode</div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Builder workspace path</label>
+              <input value={publicEnv.BIZBOT_BUILDER_WORKSPACE_PATH} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_WORKSPACE_PATH", event.target.value)} placeholder="External path outside this repo" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Allowed raw commands</label>
+              <input value={publicEnv.BIZBOT_BUILDER_ALLOWED_COMMANDS} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_ALLOWED_COMMANDS", event.target.value)} placeholder="npm,pnpm,npx,git,node" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Default template</label>
+                <input value={publicEnv.BIZBOT_BUILDER_DEFAULT_TEMPLATE} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_TEMPLATE", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              </div>
+              <div>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Default package manager</label>
+                <select value={publicEnv.BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                  <option value="NPM">NPM</option>
+                  <option value="PNPM">PNPM</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <span>Initialize git by default</span>
+                <input type="checkbox" checked={publicEnv.BIZBOT_BUILDER_INIT_GIT === "true"} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_INIT_GIT", event.target.checked ? "true" : "false")} />
+              </label>
+              <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <span>Install dependencies by default</span>
+                <input type="checkbox" checked={publicEnv.BIZBOT_BUILDER_INSTALL_DEPS === "true"} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_INSTALL_DEPS", event.target.checked ? "true" : "false")} />
+              </label>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Default agentic profile</label>
+                <input value={publicEnv.BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              </div>
+              <div>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Agentic timeout seconds</label>
+                <input value={publicEnv.BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              </div>
+            </div>
+            <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+              <div className="text-[10px] uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>codex adapter</div>
+              <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <span>Enable Codex adapter</span>
+                <input type="checkbox" checked={publicEnv.BIZBOT_BUILDER_CODEX_ENABLED === "true"} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CODEX_ENABLED", event.target.checked ? "true" : "false")} />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Codex command</label>
+                  <input value={publicEnv.BIZBOT_BUILDER_CODEX_COMMAND} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CODEX_COMMAND", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                </div>
+                <div>
+                  <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Codex model override</label>
+                  <input value={publicEnv.BIZBOT_BUILDER_CODEX_MODEL} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CODEX_MODEL", event.target.value)} placeholder="optional" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                </div>
+              </div>
+            </div>
+            <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+              <div className="text-[10px] uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>claude code adapter</div>
+              <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <span>Enable Claude Code adapter</span>
+                <input type="checkbox" checked={publicEnv.BIZBOT_BUILDER_CLAUDE_CODE_ENABLED === "true"} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CLAUDE_CODE_ENABLED", event.target.checked ? "true" : "false")} />
+              </label>
+              <div>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Claude command</label>
+                <input value={publicEnv.BIZBOT_BUILDER_CLAUDE_CODE_COMMAND} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CLAUDE_CODE_COMMAND", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              </div>
+            </div>
+            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              Builder Mode should point at an external workspace. Raw commands stay behind the allowlist; agentic adapters such as Codex run through the dedicated builder project flow instead of the generic command surface.
             </div>
           </div>
         </div>

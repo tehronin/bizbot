@@ -6,6 +6,7 @@ export type AgentProfile =
   | "analyst_operator"
   | "research_operator"
   | "platform_operator"
+  | "builder_operator"
   | "mcp_operator";
 
 export interface AgentProfileDecision {
@@ -38,6 +39,18 @@ const PROFILE_RULES: Array<{
   reason: string;
   matchers: RegExp[];
 }> = [
+  {
+    profile: "builder_operator",
+    reason: "message appears to be about scaffolding, code generation, or building inside an external workspace",
+    matchers: [
+      /builder mode/i,
+      /openclaw/i,
+      /\bscaffold\b/i,
+      /\bcodegen\b/i,
+      /generate (?:a )?(?:project|app|plugin)/i,
+      /build (?:me|an?|out) /i,
+    ],
+  },
   {
     profile: "platform_operator",
     reason: "message appears to be about runtime, tools, MCP, workers, logs, or debugging",
@@ -150,7 +163,7 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     id: "general_operator",
     label: "General Operator",
     mission: "Coordinate across BizBot's business systems with bounded autonomy and route to specialists when needed.",
-    delegationTargets: ["sales_operator", "content_operator", "reputation_operator", "analyst_operator", "research_operator", "platform_operator"],
+    delegationTargets: ["sales_operator", "content_operator", "reputation_operator", "analyst_operator", "research_operator", "platform_operator", "builder_operator"],
     toolPolicy: {
       allowedPrefixes: ["agent_", "social_", "content_", "crm_", "memory_", "file_", "graph_", "schedule_", "approval_", "browser_", "competitor_"],
     },
@@ -240,7 +253,7 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     id: "platform_operator",
     label: "Platform Operator",
     mission: "Inspect and stabilize the BizBot runtime, tool surfaces, workers, and MCP control loop.",
-    delegationTargets: ["analyst_operator", "general_operator"],
+    delegationTargets: ["analyst_operator", "general_operator", "builder_operator"],
     toolPolicy: {
       allowedPrefixes: ["agent_", "developer_", "file_", "memory_", "graph_", "browser_", "competitor_", "crm_", "commerce_", "local_business_"],
       allowedTools: ["approval_get_pending", "schedule_list"],
@@ -252,13 +265,28 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
       forceToolUse: true,
     },
   },
+  builder_operator: {
+    id: "builder_operator",
+    label: "Builder Operator",
+    mission: "Operate inside a dedicated external build workspace for scaffolding, file generation, and safe command orchestration.",
+    delegationTargets: ["platform_operator", "general_operator"],
+    toolPolicy: {
+      allowedPrefixes: ["builder_", "memory_"],
+    },
+    prompt: {
+      systemInstruction: "Builder lane: operate only inside the dedicated builder workspace, prefer deterministic scaffolds and bounded commands, and never target the BizBot repository.",
+      googleSearch: false,
+      googleCodeExecution: true,
+      forceToolUse: true,
+    },
+  },
   mcp_operator: {
     id: "mcp_operator",
     label: "MCP Operator",
     mission: "Expose a bounded operator-grade BizBot control surface over MCP without inheriting the full internal platform lane.",
     delegationTargets: [],
     toolPolicy: {
-      allowedPrefixes: ["developer_", "file_", "memory_", "graph_", "crm_", "commerce_", "local_business_"],
+      allowedPrefixes: ["builder_", "developer_", "file_", "memory_", "graph_", "crm_", "commerce_", "local_business_"],
       allowedTools: ["approval_get_pending", "schedule_list"],
       deniedTools: ["agent_delegate_run"],
     },

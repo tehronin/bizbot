@@ -9,6 +9,7 @@ BizBot is a local-first business operations agent: social publishing, inbox hand
 BizBot is no longer just a social posting bot. The app now includes:
 
 - Agent chat with typed specialist routing and tool traces
+- Builder Mode for sandboxed project scaffolding, codegen, and external build-workspace orchestration
 - Unified inbox and lead pipeline
 - CRM cockpit with notes, tasks, contact sync, and provider status
 - Commerce workspace with local products and orders
@@ -20,6 +21,7 @@ BizBot is no longer just a social posting bot. The app now includes:
 The current dashboard surface is:
 
 - `/chat`
+- `/builder`
 - `/inbox`
 - `/leads`
 - `/commerce`
@@ -45,6 +47,7 @@ The legacy `/google-business` route still exists as a compatibility redirect to 
 - Exposes a runtime operations surface for jobs, failures, and control-plane state
 - Runs as an MCP server for VS Code and other MCP clients
 - Imports external MCP servers through configured client connections
+- Creates and manages external builder projects without letting scaffolding work mutate the BizBot repo itself
 
 ## Developer Workflow
 
@@ -60,9 +63,12 @@ BizBot is set up so feature work can move through a plugin-shaped path instead o
 ### Dev Tools For Feature Work
 
 - `npm run plugin:new -- <plugin-name>` scaffolds a starter plugin file and a matching test file.
+- Builder Mode adds a second path for feature work: create a project in `/builder`, bootstrap a preset, then iterate in a dedicated external workspace instead of inside the BizBot repo.
 - `src/lib/agent/plugins/contracts.ts` defines the formal BizBot plugin contract used by builtin and future external-style plugins.
 - `src/lib/agent/plugins/registry.ts` centralizes plugin registration, duplicate detection, and tool-to-plugin ownership mapping.
+- `src/lib/builder/*` contains the Builder Mode runtime for project records, presets, typed commands, CLI adapters, and workspace safety rules.
 - `tests/plugins/*` gives you fixture-oriented coverage for registry rules, provider-style tools, and builtin runtime seams.
+- `tests/builder/*` covers builder config, project lifecycle, and route behavior so scaffolding and CLI orchestration stay predictable.
 - `tests/mcp/*` verifies the public MCP surface so plugin changes do not silently break tools, prompts, resources, or transport behavior.
 - `npm run test:mcp` isolates MCP and plugin coverage from the rest of the app.
 - `npm run lint:docs` keeps README and contributor docs aligned with the actual developer workflow.
@@ -78,6 +84,40 @@ The intended feature path is:
 5. If the feature is MCP-visible, update or verify MCP contract coverage.
 
 That gives a developer one repeatable path from idea to shipped feature: scaffold, define schema, register, test, expose.
+
+## Builder Mode
+
+Builder Mode is BizBot's safe build lane for generating new projects, plugin packages, and one-off app scaffolds outside the main repository.
+
+### Why Builder Mode Exists
+
+- It gives BizBot a place to help build new things without granting file-write power over the BizBot repo.
+- It separates product-development scaffolding from the app's own source tree.
+- It keeps codegen and CLI orchestration typed, testable, lane-gated, and MCP-exposed.
+
+### Current Builder Behavior
+
+- `/builder` is a dedicated dashboard surface for project creation, bootstrap actions, script execution, and run history.
+- Builder projects are persisted with templates, package manager choice, run records, and CLI profile metadata.
+- The builder workspace must live outside the BizBot repository; overlap fails closed.
+- Raw command execution is allowlisted through `BIZBOT_BUILDER_ALLOWED_COMMANDS` and runs without shell expansion.
+- Presets currently cover `node-cli`, `vite-app`, `next-app`, and `plugin-package`.
+- An optional Codex adapter is wired through `builder_run_agentic_task` using `codex exec` for non-interactive runs when enabled and installed.
+- Claude Code is modeled as a future adapter slot under the same Builder Mode shell, not as a separate builtin product plugin.
+
+### Builder Configuration
+
+- `BIZBOT_BUILDER_WORKSPACE_PATH` points to the dedicated external builder workspace.
+- `BIZBOT_BUILDER_ALLOWED_COMMANDS` controls the raw command allowlist.
+- `BIZBOT_BUILDER_DEFAULT_TEMPLATE` and `BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER` set project defaults.
+- `BIZBOT_BUILDER_INIT_GIT` and `BIZBOT_BUILDER_INSTALL_DEPS` set bootstrap defaults.
+- `BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE`, `BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS`, and the `BIZBOT_BUILDER_CODEX_*` values control optional agentic execution.
+
+### Builder Over MCP
+
+- Builder tools are exposed with the `builder_` prefix for bounded remote orchestration.
+- MCP exposure keeps Builder Mode inspectable and scriptable without mixing it into the general platform lane.
+- Builder tool access is routed through the dedicated `builder_operator` lane and also surfaced to the bounded `mcp_operator` profile.
 
 ### MCP Helps Plugin Authors Too
 
@@ -95,6 +135,7 @@ BizBot now runs on a typed control plane instead of a flat tool bag.
 The runtime can route or delegate work into these profiles:
 
 - `general_operator`
+- `builder_operator`
 - `sales_operator`
 - `content_operator`
 - `reputation_operator`
@@ -157,10 +198,19 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 - Queue and execution summaries
 - Operational debugging surface for the control plane
 
+### Builder
+
+- External project workspace management
+- Preset bootstrapping for new apps and plugin packages
+- Typed package, script, generator, and git actions
+- Optional Codex-backed non-interactive agentic task execution
+- Run logs and command output capture per builder project
+
 ### Settings
 
 - Runtime readiness surface for LLM, CRM, MCP, Redis, Memgraph, and provider config
 - Environment-backed configuration visibility
+- Builder workspace, preset, allowlist, and optional CLI adapter controls
 
 ## CRM
 
@@ -217,6 +267,7 @@ BizBot can act as both an MCP server and an MCP client.
 - Exposes tools, resources, and prompts
 - Includes runtime-oriented resources for inspection and debugging
 - Exposes plugin discovery resources so developers can inspect exported plugin metadata and tool ownership
+- Exposes Builder Mode tools for bounded project scaffolding and build-lane automation
 - Conformance coverage now exercises tools, resources, prompts, auth handling, and negative-path transport behavior
 
 ### MCP Client
@@ -250,6 +301,7 @@ Current repo/runtime assumptions:
 - `npm run dev` starts the Next.js app and worker supervisor
 - `npm run build` passes on the current app state
 - `npm run plugin:new -- <plugin-name>` scaffolds the starting point for new plugin-based features
+- `npx vitest run tests/builder tests/plugins tests/mcp` validates Builder Mode, plugin registry behavior, and MCP exposure together
 - `npm run test:app` isolates the general Vitest suite from MCP transport coverage
 - `npm run test:mcp` runs MCP transport, contract, and plugin fixture coverage
 - `npm run lint:docs` enforces README/contributor/plugin markdown quality

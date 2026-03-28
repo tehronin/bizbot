@@ -42,6 +42,7 @@ export const delegationPlugin = {
               "analyst_operator",
               "research_operator",
               "platform_operator",
+              "builder_operator",
             ],
           },
           task: { type: "string" },

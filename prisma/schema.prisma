@@ -411,3 +411,88 @@ model GoogleBusinessPost {
 
   @@index([locationId, status, createdAt])
 }
+
+enum BuilderPackageManager {
+  NPM
+  PNPM
+}
+
+enum BuilderRunStatus {
+  IDLE
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum BuilderRunKind {
+  BOOTSTRAP
+  COMMAND
+  INSTALL
+  GIT_INIT
+  SCRIPT
+  GENERATOR
+  AGENTIC
+}
+
+model BuilderProject {
+  id             String                @id @default(cuid())
+  name           String
+  slug           String                @unique
+  relativePath   String                @unique
+  template       String
+  packageManager BuilderPackageManager @default(NPM)
+  gitInitialized Boolean               @default(false)
+  lastRunStatus  BuilderRunStatus      @default(IDLE)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  runs           BuilderRun[]
+
+  @@index([template, createdAt])
+}
+
+model BuilderTemplatePreset {
+  id                    String                @id @default(cuid())
+  key                   String                @unique
+  displayName           String
+  description           String
+  enabled               Boolean               @default(true)
+  defaultPackageManager BuilderPackageManager @default(NPM)
+  metadata              Json?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+}
+
+model BuilderRun {
+  id          String           @id @default(cuid())
+  project     BuilderProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+  kind        BuilderRunKind
+  title       String
+  status      BuilderRunStatus @default(RUNNING)
+  command     String?
+  args        Json?
+  stdout      String?
+  stderr      String?
+  summary     String?
+  metadata    Json?
+  startedAt   DateTime         @default(now())
+  finishedAt  DateTime?
+
+  @@index([projectId, startedAt])
+  @@index([status, startedAt])
+}
+
+model BuilderCliProfile {
+  id                     String   @id @default(cuid())
+  key                    String   @unique
+  displayName            String
+  command                String
+  description            String?
+  enabled                Boolean  @default(false)
+  supportsNonInteractive Boolean  @default(false)
+  metadata               Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
