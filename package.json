@@ -7,11 +7,17 @@
     "dev:web": "next dev",
     "worker": "tsx --env-file=.env src/workers/agent-worker.ts",
     "mcp:stdio": "tsx --env-file=.env scripts/mcp-stdio.mjs",
+    "plugin:new": "node scripts/new-plugin.mjs",
     "build:web": "next build",
     "build": "next build",
     "start": "node scripts/run-stack.mjs start",
     "start:web": "next start",
     "lint": "eslint",
+    "lint:docs": "markdownlint-cli2",
+    "test": "vitest run",
+    "test:app": "vitest run --exclude tests/mcp/** --exclude tests/plugins/** --passWithNoTests",
+    "test:watch": "vitest",
+    "test:mcp": "vitest run tests/mcp tests/plugins",
     "tauri:prepare-resources": "node scripts/prepare-tauri-resources.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -52,8 +58,10 @@
     "esbuild": "^0.27.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "markdownlint-cli2": "^0.22.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.2"
   }
 }

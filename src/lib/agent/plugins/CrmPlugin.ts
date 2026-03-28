@@ -2,24 +2,15 @@
 
 import { LeadStage } from "@prisma/client";
 import {
-  createCrmContactActivity,
   CRM_PROVIDER_NAMES,
   CRM_STAGE_NAMES,
-  createCrmContactFromInbox,
-  getCrmContactActivity,
-  getCrmContact,
-  getCrmProviderStatuses,
-  listCrmContactActivities,
-  listCrmContacts,
-  syncCrmActivity,
-  syncCrmContact,
-  upsertCrmContact,
   type CrmActivityPriority,
   type CrmActivityStatus,
   type CrmActivityType,
   type CrmProviderName,
 } from "@/lib/crm";
 import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
+import { getCrmPluginDeps } from "@/lib/agent/plugins/crm-runtime";
 
 type CrmProviderStatusArgs = Record<string, never>;
 
@@ -87,11 +78,14 @@ export const crmPlugin = {
       name: "crm_get_provider_status",
       description: "Inspect CRM provider availability, active provider selection, and HubSpot stub readiness.",
       parameters: { type: "object", properties: {} },
-      execute: async (_args: CrmProviderStatusArgs) => ({
-        activeProvider: process.env.CRM_PROVIDER?.trim() === "hubspot" ? "hubspot" : "internal",
-        providers: await getCrmProviderStatuses(),
-      }),
-    } satisfies ToolDefinition<CrmProviderStatusArgs, { activeProvider: CrmProviderName; providers: Awaited<ReturnType<typeof getCrmProviderStatuses>> }>)),
+      execute: async (_args: CrmProviderStatusArgs) => {
+        const deps = getCrmPluginDeps();
+        return {
+          activeProvider: deps.getActiveProviderName(),
+          providers: await deps.getProviderStatuses(),
+        };
+      },
+    } satisfies ToolDefinition<CrmProviderStatusArgs, { activeProvider: CrmProviderName; providers: Awaited<ReturnType<ReturnType<typeof getCrmPluginDeps>["getProviderStatuses"]>> }>)),
     registerTool(defineTool({
       name: "crm_list_contacts",
       description: "List inbox-backed CRM contacts and leads, optionally filtered by stage or text query.",
@@ -104,9 +98,9 @@ export const crmPlugin = {
         },
       },
       execute: async ({ stage, query, limit }: CrmListContactsArgs) => ({
-        contacts: await listCrmContacts({ stage, query, limit: limit ?? 25 }),
+        contacts: await getCrmPluginDeps().listContacts({ stage, query, limit: limit ?? 25 }),
       }),
-    } satisfies ToolDefinition<CrmListContactsArgs, { contacts: Awaited<ReturnType<typeof listCrmContacts>> }>)),
+    } satisfies ToolDefinition<CrmListContactsArgs, { contacts: Awaited<ReturnType<ReturnType<typeof getCrmPluginDeps>["listContacts"]>> }>)),
     registerTool(defineTool({
       name: "crm_get_contact",
       description: "Get a single CRM contact by BizBot contact id.",
@@ -118,13 +112,13 @@ export const crmPlugin = {
         required: ["contactId"],
       },
       execute: async ({ contactId }: CrmGetContactArgs) => {
-        const contact = await getCrmContact(contactId);
+        const contact = await getCrmPluginDeps().getContact(contactId);
         if (!contact) {
           throw new Error(`CRM contact not found: ${contactId}`);
         }
         return { contact };
       },
-    } satisfies ToolDefinition<CrmGetContactArgs, { contact: NonNullable<Awaited<ReturnType<typeof getCrmContact>>> }>)),
+    } satisfies ToolDefinition<CrmGetContactArgs, { contact: NonNullable<Awaited<ReturnType<ReturnType<typeof getCrmPluginDeps>["getContact"]>>> }>)),
     registerTool(defineTool({
       name: "crm_upsert_contact",
       description: "Update CRM lead stage, score, or summary for an inbox-backed contact.",
@@ -140,14 +134,14 @@ export const crmPlugin = {
         required: ["contactId"],
       },
       execute: async ({ contactId, stage, score, summary, clearSummary }: CrmUpsertContactArgs) => ({
-        contact: await upsertCrmContact({
+        contact: await getCrmPluginDeps().upsertContact({
           contactId,
           ...(stage !== undefined ? { stage } : {}),
           ...(score !== undefined ? { score } : {}),
           ...(clearSummary ? { summary: null } : summary !== undefined ? { summary } : {}),
         }),
       }),
-    } satisfies ToolDefinition<CrmUpsertContactArgs, { contact: Awaited<ReturnType<typeof upsertCrmContact>> }>)),
+    } satisfies ToolDefinition<CrmUpsertContactArgs, { contact: Awaited<ReturnType<ReturnType<typeof getCrmPluginDeps>["upsertContact"]>> }>)),
     registerTool(defineTool({
       name: "crm_create_contact_from_inbox",
       description: "Promote an inbox item into the CRM pipeline with an initial stage, score, and summary.",
@@ -162,14 +156,14 @@ export const crmPlugin = {
         required: ["inboxMessageId"],
       },
       execute: async ({ inboxMessageId, stage, score, summary }: CrmCreateContactFromInboxArgs) => ({
-        contact: await createCrmContactFromInbox({
+        contact: await getCrmPluginDeps().createContactFromInbox({
           inboxMessageId,
           stage: stage ?? LeadStage.LEAD,
           ...(score !== undefined ? { score } : {}),
           ...(summary !== undefined ? { summary } : {}),
         }),
       }),
-    } satisfies ToolDefinition<CrmCreateContactFromInboxArgs, { contact: Awaited<ReturnType<typeof createCrmContactFromInbox>> }>)),
+    } satisfies ToolDefinition<CrmCreateContactFromInboxArgs, { contact: Awaited<ReturnType<ReturnType<typeof getCrmPluginDeps>["createContactFromInbox"]>> }>)),
     registerTool(defineTool({
       name: "crm_sync_contact",
       description: "Sync a CRM contact to the selected provider.",
@@ -182,9 +176,9 @@ export const crmPlugin = {
         required: ["contactId"],
       },
       execute: async ({ contactId, provider }: CrmSyncContactArgs) => ({
-        sync: await syncCrmContact(contactId, provider),
+        sync: await getCrmPluginDeps().syncContact(contactId, provider),
       }),
-    } satisfies ToolDefinition<CrmSyncContactArgs, { sync: Awaited<ReturnType<typeof syncCrmContact>> }>)),
+    } satisfies ToolDefinition<CrmSyncContactArgs, { sync: Awaited<ReturnType<ReturnType<typeof getCrmPluginDeps>["syncContact"]>> }>)),
     registerTool(defineTool({
       name: "crm_list_activities",
       description: "List CRM notes and follow-up tasks, optionally scoped to a contact, type, status, or text query.",
@@ -199,7 +193,7 @@ export const crmPlugin = {
         },
       },
       execute: async ({ contactId, type, status, query, limit }: CrmListActivitiesArgs) => ({
-        activities: await listCrmContactActivities({
+        activities: await getCrmPluginDeps().listActivities({
           contactId,
           type,
           status,
@@ -207,7 +201,7 @@ export const crmPlugin = {
           limit: limit ?? 25,
         }),
       }),
-    } satisfies ToolDefinition<CrmListActivitiesArgs, { activities: Awaited<ReturnType<typeof listCrmContactActivities>> }>)),
+    } satisfies ToolDefinition<CrmListActivitiesArgs, { activities: Awaited<ReturnType<ReturnType<typeof getCrmPluginDeps>["listActivities"]>> }>)),
     registerTool(defineTool({
       name: "crm_get_activity",
       description: "Get a single CRM note or task by activity id.",
@@ -219,13 +213,13 @@ export const crmPlugin = {
         required: ["activityId"],
       },
       execute: async ({ activityId }: CrmGetActivityArgs) => {
-        const activity = await getCrmContactActivity(activityId);
+        const activity = await getCrmPluginDeps().getActivity(activityId);
         if (!activity) {
           throw new Error(`CRM activity not found: ${activityId}`);
         }
         return { activity };
       },
-    } satisfies ToolDefinition<CrmGetActivityArgs, { activity: NonNullable<Awaited<ReturnType<typeof getCrmContactActivity>>> }>)),
+    } satisfies ToolDefinition<CrmGetActivityArgs, { activity: NonNullable<Awaited<ReturnType<ReturnType<typeof getCrmPluginDeps>["getActivity"]>>> }>)),
     registerTool(defineTool({
       name: "crm_create_activity",
       description: "Create a local CRM note or follow-up task for a contact.",
@@ -244,7 +238,7 @@ export const crmPlugin = {
         required: ["contactId", "type", "body"],
       },
       execute: async ({ contactId, type, title, subject, body, status, priority, dueAt }: CrmCreateActivityArgs) => ({
-        activity: await createCrmContactActivity({
+        activity: await getCrmPluginDeps().createActivity({
           contactId,
           type,
           title,
@@ -255,7 +249,7 @@ export const crmPlugin = {
           dueAt,
         }),
       }),
-    } satisfies ToolDefinition<CrmCreateActivityArgs, { activity: Awaited<ReturnType<typeof createCrmContactActivity>> }>)),
+    } satisfies ToolDefinition<CrmCreateActivityArgs, { activity: Awaited<ReturnType<ReturnType<typeof getCrmPluginDeps>["createActivity"]>> }>)),
     registerTool(defineTool({
       name: "crm_sync_activity",
       description: "Sync a CRM note or task to the selected provider. HubSpot creates a real associated note or task in live mode.",
@@ -268,8 +262,8 @@ export const crmPlugin = {
         required: ["activityId"],
       },
       execute: async ({ activityId, provider }: CrmSyncActivityArgs) => ({
-        sync: await syncCrmActivity(activityId, provider),
+        sync: await getCrmPluginDeps().syncActivity(activityId, provider),
       }),
-    } satisfies ToolDefinition<CrmSyncActivityArgs, { sync: Awaited<ReturnType<typeof syncCrmActivity>> }>)),
+    } satisfies ToolDefinition<CrmSyncActivityArgs, { sync: Awaited<ReturnType<ReturnType<typeof getCrmPluginDeps>["syncActivity"]>> }>)),
   ],
 };

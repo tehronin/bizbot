@@ -1,16 +1,7 @@
 /** LocalBusinessPlugin — Google Business Profile operations for reviews, posts, and hours. */
 
-import { db } from "@/lib/db";
-import {
-  createGoogleBusinessPost,
-  getGoogleBusinessDashboard,
-  isGoogleBusinessConfigured,
-  replyToGoogleBusinessReview,
-  syncGoogleBusinessPosts,
-  syncGoogleBusinessReviews,
-  updateGoogleBusinessHours,
-} from "@/lib/google-business/service";
 import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
+import { getLocalBusinessPluginDeps } from "@/lib/agent/plugins/local-business-runtime";
 
 type LocalBusinessStatusArgs = Record<string, never>;
 
@@ -51,10 +42,10 @@ export const localBusinessPlugin = {
       description: "Inspect Google Business Profile readiness and the latest local dashboard snapshot.",
       parameters: { type: "object", properties: {} },
       execute: async (_args: LocalBusinessStatusArgs) => ({
-        configured: isGoogleBusinessConfigured(),
-        dashboard: await getGoogleBusinessDashboard(false),
+        configured: getLocalBusinessPluginDeps().isConfigured(),
+        dashboard: await getLocalBusinessPluginDeps().getDashboard(false),
       }),
-    } satisfies ToolDefinition<LocalBusinessStatusArgs, { configured: boolean; dashboard: Awaited<ReturnType<typeof getGoogleBusinessDashboard>> }>)),
+    } satisfies ToolDefinition<LocalBusinessStatusArgs, { configured: boolean; dashboard: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["getDashboard"]>> }>)),
     registerTool(defineTool({
       name: "local_business_get_dashboard",
       description: "Get the Google Business dashboard, optionally syncing reviews and posts from Google first.",
@@ -65,25 +56,25 @@ export const localBusinessPlugin = {
         },
       },
       execute: async ({ syncRemote }: LocalBusinessDashboardArgs) => ({
-        dashboard: await getGoogleBusinessDashboard(syncRemote ?? false),
+        dashboard: await getLocalBusinessPluginDeps().getDashboard(syncRemote ?? false),
       }),
-    } satisfies ToolDefinition<LocalBusinessDashboardArgs, { dashboard: Awaited<ReturnType<typeof getGoogleBusinessDashboard>> }>)),
+    } satisfies ToolDefinition<LocalBusinessDashboardArgs, { dashboard: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["getDashboard"]>> }>)),
     registerTool(defineTool({
       name: "local_business_sync_reviews",
       description: "Sync Google Business reviews into the local dashboard store.",
       parameters: { type: "object", properties: {} },
       execute: async (_args: LocalBusinessStatusArgs) => ({
-        reviews: await syncGoogleBusinessReviews(),
+        reviews: await getLocalBusinessPluginDeps().syncReviews(),
       }),
-    } satisfies ToolDefinition<LocalBusinessStatusArgs, { reviews: Awaited<ReturnType<typeof syncGoogleBusinessReviews>> }>)),
+    } satisfies ToolDefinition<LocalBusinessStatusArgs, { reviews: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["syncReviews"]>> }>)),
     registerTool(defineTool({
       name: "local_business_sync_posts",
       description: "Sync Google Business posts into the local dashboard store.",
       parameters: { type: "object", properties: {} },
       execute: async (_args: LocalBusinessStatusArgs) => ({
-        posts: await syncGoogleBusinessPosts(),
+        posts: await getLocalBusinessPluginDeps().syncPosts(),
       }),
-    } satisfies ToolDefinition<LocalBusinessStatusArgs, { posts: Awaited<ReturnType<typeof syncGoogleBusinessPosts>> }>)),
+    } satisfies ToolDefinition<LocalBusinessStatusArgs, { posts: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["syncPosts"]>> }>)),
     registerTool(defineTool({
       name: "local_business_list_reviews",
       description: "List recent locally cached Google Business reviews, optionally only those still needing a response.",
@@ -95,13 +86,13 @@ export const localBusinessPlugin = {
         },
       },
       execute: async ({ needsResponse, limit }: LocalBusinessListReviewsArgs) => ({
-        reviews: await db.googleBusinessReview.findMany({
+        reviews: await getLocalBusinessPluginDeps().listReviews({
           where: needsResponse === undefined ? {} : { needsResponse },
           orderBy: { updateTime: "desc" },
           take: Math.min(Math.max(limit ?? 25, 1), 100),
         }),
       }),
-    } satisfies ToolDefinition<LocalBusinessListReviewsArgs, { reviews: Awaited<ReturnType<typeof db.googleBusinessReview.findMany>> }>)),
+    } satisfies ToolDefinition<LocalBusinessListReviewsArgs, { reviews: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["listReviews"]>> }>)),
     registerTool(defineTool({
       name: "local_business_reply_review",
       description: "Reply to a Google Business review by local review id.",
@@ -114,9 +105,9 @@ export const localBusinessPlugin = {
         required: ["reviewId", "comment"],
       },
       execute: async ({ reviewId, comment }: LocalBusinessReplyReviewArgs) => ({
-        review: await replyToGoogleBusinessReview(reviewId, comment),
+        review: await getLocalBusinessPluginDeps().replyReview(reviewId, comment),
       }),
-    } satisfies ToolDefinition<LocalBusinessReplyReviewArgs, { review: Awaited<ReturnType<typeof replyToGoogleBusinessReview>> }>)),
+    } satisfies ToolDefinition<LocalBusinessReplyReviewArgs, { review: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["replyReview"]>> }>)),
     registerTool(defineTool({
       name: "local_business_create_post",
       description: "Create a new Google Business local post.",
@@ -131,14 +122,14 @@ export const localBusinessPlugin = {
         required: ["summary"],
       },
       execute: async ({ summary, topicType, actionType, callToActionUrl }: LocalBusinessCreatePostArgs) => ({
-        post: await createGoogleBusinessPost({
+        post: await getLocalBusinessPluginDeps().createPost({
           summary,
           topicType,
           actionType,
           callToActionUrl,
         }),
       }),
-    } satisfies ToolDefinition<LocalBusinessCreatePostArgs, { post: Awaited<ReturnType<typeof createGoogleBusinessPost>> }>)),
+    } satisfies ToolDefinition<LocalBusinessCreatePostArgs, { post: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["createPost"]>> }>)),
     registerTool(defineTool({
       name: "local_business_update_hours",
       description: "Update Google Business regular hours using open and close periods.",
@@ -162,8 +153,8 @@ export const localBusinessPlugin = {
         required: ["periods"],
       },
       execute: async ({ periods }: LocalBusinessHoursArgs) => ({
-        location: await updateGoogleBusinessHours({ periods }),
+        location: await getLocalBusinessPluginDeps().updateHours({ periods }),
       }),
-    } satisfies ToolDefinition<LocalBusinessHoursArgs, { location: Awaited<ReturnType<typeof updateGoogleBusinessHours>> }>)),
+    } satisfies ToolDefinition<LocalBusinessHoursArgs, { location: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["updateHours"]>> }>)),
   ],
 };

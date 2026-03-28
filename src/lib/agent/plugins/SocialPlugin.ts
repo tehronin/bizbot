@@ -5,10 +5,9 @@
 import { PlatformType, PostStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
-import { TwitterClient } from "@/lib/social/twitter";
-import { FacebookClient, InstagramClient } from "@/lib/social/meta";
 import type { EngagementMetrics, SocialClient, SocialMention, SocialPost, SocialReply } from "@/lib/social/types";
 import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
+import { getSocialPluginDeps } from "@/lib/agent/plugins/social-runtime";
 
 type PlatformName = "twitter" | "facebook" | "instagram";
 
@@ -43,16 +42,7 @@ interface SocialAnalyticsArgs {
 }
 
 function getClient(platform: PlatformName): SocialClient {
-  switch (platform) {
-    case "twitter":
-      return new TwitterClient();
-    case "facebook":
-      return new FacebookClient();
-    case "instagram":
-      return new InstagramClient();
-    default:
-      throw new Error(`Unknown platform: ${platform}`);
-  }
+  return getSocialPluginDeps().getClient(platform);
 }
 
 function getPlatformType(platform: PlatformName): PlatformType {

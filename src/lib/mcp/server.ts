@@ -13,14 +13,14 @@ import { inspectMemories, listRecentConversations } from "@/lib/agent/memory";
 import { listAgentHeartbeatJobs } from "@/lib/agent/heartbeat-queue";
 import { listRecentAgentRuns } from "@/lib/agent/run-journal";
 import { listAgentProfileDescriptors } from "@/lib/agent/profiles";
-import { getAllToolDefinitions, executeTool } from "@/lib/agent/plugins";
+import { createPluginRegistry, getAllToolDefinitions, getBuiltinPlugins, executeTool } from "@/lib/agent/plugins";
 import { getActiveCrmProvider, getCrmProviderStatuses, listCrmContacts } from "@/lib/crm";
 import { getActiveProvider, getConfiguredProviders, getGenerationConfig, getModelForProvider } from "@/lib/agent/kernel";
 import { getAgentRuntimeConfig, getAutonomyDescription, getAgentCapabilities } from "@/lib/agent/runtime";
 import type { JsonObject, ToolParametersSchema, ToolPropertySchema } from "@/lib/agent/tools";
 import { db } from "@/lib/db";
 import { getEmbeddingConfig } from "@/lib/embeddings/embed";
-import { getMcpClientStatus } from "@/lib/mcp/client";
+import { getMcpClientStatus, getMcpClientTools } from "@/lib/mcp/client";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod/v4";
 
@@ -582,6 +582,48 @@ async function buildCrmPipelineSummary() {
   };
 }
 
+function buildPluginResourcePayload(allowedTools: Array<{ name: string; description: string }>) {
+  const registry = createPluginRegistry(getBuiltinPlugins(), getMcpClientTools());
+  const allowedToolNames = new Set(allowedTools.map((tool) => tool.name));
+
+  const plugins = registry.plugins
+    .map((plugin) => {
+      const tools = plugin.tools
+        .filter((tool) => allowedToolNames.has(tool.name))
+        .map((tool) => ({
+          name: tool.name,
+          title: getToolTitle(tool.name),
+          description: tool.description,
+          annotations: getToolAnnotations(tool.name),
+        }));
+
+      return {
+        ...plugin.metadata,
+        tools,
+      };
+    })
+    .filter((plugin) => plugin.tools.length > 0);
+
+  const toolMap = registry.tools
+    .filter((tool) => allowedToolNames.has(tool.name))
+    .map((tool) => ({
+      toolName: tool.name,
+      pluginId: registry.toolToPluginId.get(tool.name) ?? "unknown",
+      title: getToolTitle(tool.name),
+      description: tool.description,
+      annotations: getToolAnnotations(tool.name),
+    }));
+
+  const externalTools = toolMap.filter((tool) => tool.pluginId === "external-mcp");
+
+  return {
+    generatedAt: new Date().toISOString(),
+    plugins,
+    externalTools,
+    toolMap,
+  };
+}
+
 /**
  * Creates a fresh McpServer with all BizBot tools, resources, and prompts
  * registered. Returns a new instance each time (needed for stateless HTTP).
@@ -613,6 +655,7 @@ export function createBizBotMcpServer(): McpServer {
 
   const tools = getAllToolDefinitions(config, { agentProfile: MCP_AGENT_PROFILE })
     .filter((tool) => !MCP_BLOCKED_TOOLS.has(tool.name));
+  const pluginResourcePayload = buildPluginResourcePayload(tools);
 
   for (const tool of tools) {
     server.registerTool(
@@ -744,6 +787,51 @@ export function createBizBotMcpServer(): McpServer {
         ],
       };
     },
+  );
+
+  server.registerResource(
+    "plugins-installed",
+    "bizbot://plugins/installed",
+    {
+      title: "Installed Plugins",
+      description: "Builtin plugin metadata plus exposed MCP tool coverage for each plugin",
+      mimeType: "application/json",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "bizbot://plugins/installed",
+          text: JSON.stringify({
+            generatedAt: pluginResourcePayload.generatedAt,
+            plugins: pluginResourcePayload.plugins,
+            externalTools: pluginResourcePayload.externalTools,
+          }, null, 2),
+          mimeType: "application/json",
+        },
+      ],
+    }),
+  );
+
+  server.registerResource(
+    "plugins-tool-map",
+    "bizbot://plugins/tool-map",
+    {
+      title: "Plugin Tool Map",
+      description: "Resolved mapping from exposed MCP tools to their source plugin ids",
+      mimeType: "application/json",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "bizbot://plugins/tool-map",
+          text: JSON.stringify({
+            generatedAt: pluginResourcePayload.generatedAt,
+            toolMap: pluginResourcePayload.toolMap,
+          }, null, 2),
+          mimeType: "application/json",
+        },
+      ],
+    }),
   );
 
   server.registerResource(
@@ -1069,6 +1157,32 @@ export function createBizBotMcpServer(): McpServer {
               "Check whether the stdio server starts, whether tools/resources/prompts are exposed, and whether authorization or trust configuration could block discovery.",
               "Return findings ordered by severity with the smallest fix first.",
             ].filter(Boolean).join(" "),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "inspect-agent-run",
+    {
+      title: "Inspect Agent Run",
+      description: "Inspect a specific BizBot agent run by id using the run journal tools",
+      argsSchema: {
+        runId: z.string(),
+      },
+    },
+    ({ runId }: { runId: string }) => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: [
+              `Inspect BizBot agent run ${runId}.`,
+              "Use developer_get_agent_run to retrieve the full run journal.",
+              "Summarize the lane, tool trace, failure point, and the smallest corrective action.",
+            ].join(" "),
           },
         },
       ],

@@ -7,7 +7,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { RegisteredToolDefinition, ToolParametersSchema, ToolSchemaProperties } from "@/lib/agent/tools";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  GetPromptResult,
+  Prompt,
+  ReadResourceResult,
+  Resource,
+  Tool,
+} from "@modelcontextprotocol/sdk/types.js";
 import { db } from "@/lib/db";
 
 function isTextContentPart(value: unknown): value is { type: "text"; text: string } {
@@ -27,11 +33,34 @@ interface ConnectedServer {
   client: Client;
   transport: StreamableHTTPClientTransport | SSEClientTransport;
   tools: RegisteredToolDefinition[];
+  resources: Resource[];
+  prompts: Prompt[];
   connected: boolean;
 }
 
+type McpClientLogger = Pick<typeof console, "info" | "warn" | "error">;
+
+export type ImportedMcpResource = {
+  serverName: string;
+  resource: Resource;
+};
+
+export type ImportedMcpPrompt = {
+  serverName: string;
+  prompt: Prompt;
+};
+
 const connectedServers: Map<string, ConnectedServer> = new Map();
 let initPromise: Promise<void> | null = null;
+let mcpClientLogger: McpClientLogger = console;
+
+export function setMcpClientLogger(logger: McpClientLogger): void {
+  mcpClientLogger = logger;
+}
+
+export function resetMcpClientLogger(): void {
+  mcpClientLogger = console;
+}
 
 /**
  * Load MCP server configurations from the database Setting table.
@@ -45,7 +74,7 @@ async function loadServerConfigs(): Promise<McpServerConfig[]> {
     try {
       return JSON.parse(envValue) as McpServerConfig[];
     } catch {
-      console.warn("[mcp-client] MCP_SERVERS env is not valid JSON, skipping");
+      mcpClientLogger.warn("[mcp-client] MCP_SERVERS env is not valid JSON, skipping");
     }
   }
 
@@ -124,7 +153,7 @@ async function connectToServer(config: McpServerConfig): Promise<ConnectedServer
       transport = new SSEClientTransport(url, fetchOptions);
       await client.connect(transport);
     } catch (err) {
-      console.error(`[mcp-client] Failed to connect to ${config.name} at ${config.url}:`, err);
+      mcpClientLogger.error(`[mcp-client] Failed to connect to ${config.name} at ${config.url}:`, err);
       return null;
     }
   }
@@ -140,11 +169,35 @@ async function connectToServer(config: McpServerConfig): Promise<ConnectedServer
 
   const wrappedTools = allTools.map((t) => mcpToolToRegistered(config.name, t, client));
 
-  console.log(
-    `[mcp-client] Connected to ${config.name} — ${wrappedTools.length} tools: ${wrappedTools.map((t) => t.name).join(", ")}`,
+  const allResources: Resource[] = [];
+  cursor = undefined;
+  do {
+    const { resources, nextCursor } = await client.listResources({ cursor });
+    allResources.push(...resources);
+    cursor = nextCursor;
+  } while (cursor);
+
+  const allPrompts: Prompt[] = [];
+  cursor = undefined;
+  do {
+    const { prompts, nextCursor } = await client.listPrompts({ cursor });
+    allPrompts.push(...prompts);
+    cursor = nextCursor;
+  } while (cursor);
+
+  mcpClientLogger.info(
+    `[mcp-client] Connected to ${config.name} — ${wrappedTools.length} tools, ${allResources.length} resources, ${allPrompts.length} prompts`,
   );
 
-  return { config, client, transport, tools: wrappedTools, connected: true };
+  return {
+    config,
+    client,
+    transport,
+    tools: wrappedTools,
+    resources: allResources,
+    prompts: allPrompts,
+    connected: true,
+  };
 }
 
 /**
@@ -162,7 +215,7 @@ export async function initMcpClients(): Promise<void> {
     const connected = await connectToServer(config);
     if (connected) {
       connected.client.onclose = () => {
-        console.log(`[mcp-client] Disconnected from ${config.name}`);
+        mcpClientLogger.info(`[mcp-client] Disconnected from ${config.name}`);
         connected.connected = false;
         connectedServers.delete(config.name);
       };
@@ -193,6 +246,42 @@ export function getMcpClientTools(): RegisteredToolDefinition[] {
   return tools;
 }
 
+export function getMcpClientResources(): ImportedMcpResource[] {
+  return Array.from(connectedServers.values()).flatMap((server) => server.resources.map((resource) => ({
+    serverName: server.config.name,
+    resource,
+  })));
+}
+
+export function getMcpClientPrompts(): ImportedMcpPrompt[] {
+  return Array.from(connectedServers.values()).flatMap((server) => server.prompts.map((prompt) => ({
+    serverName: server.config.name,
+    prompt,
+  })));
+}
+
+export async function readMcpClientResource(serverName: string, uri: string): Promise<ReadResourceResult> {
+  const server = connectedServers.get(serverName);
+  if (!server) {
+    throw new Error(`No connected MCP server named ${serverName}`);
+  }
+
+  return server.client.readResource({ uri });
+}
+
+export async function getMcpClientPrompt(
+  serverName: string,
+  name: string,
+  arguments_: Record<string, string> = {},
+): Promise<GetPromptResult> {
+  const server = connectedServers.get(serverName);
+  if (!server) {
+    throw new Error(`No connected MCP server named ${serverName}`);
+  }
+
+  return server.client.getPrompt({ name, arguments: arguments_ });
+}
+
 /**
  * Disconnect all MCP clients. Call on shutdown.
  */
@@ -204,7 +293,7 @@ export async function closeMcpClients(): Promise<void> {
       // Ignore close errors
     }
     connectedServers.delete(name);
-    console.log(`[mcp-client] Closed ${name}`);
+    mcpClientLogger.info(`[mcp-client] Closed ${name}`);
   }
 
   initPromise = null;

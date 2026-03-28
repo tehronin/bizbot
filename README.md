@@ -46,6 +46,46 @@ The legacy `/google-business` route still exists as a compatibility redirect to 
 - Runs as an MCP server for VS Code and other MCP clients
 - Imports external MCP servers through configured client connections
 
+## Developer Workflow
+
+BizBot is set up so feature work can move through a plugin-shaped path instead of forcing developers to keep editing one central runtime file.
+
+### Why This Matters
+
+- New feature surfaces can be modeled as plugins with explicit metadata and dedicated tools.
+- Tool contracts are easier to review because schemas, descriptions, and ownership stay close together.
+- Runtime exposure stays predictable through the plugin registry instead of ad hoc imports.
+- MCP contract tests catch drift in the OSS-facing tool, prompt, and resource surface before it leaks into integrations.
+
+### Dev Tools For Feature Work
+
+- `npm run plugin:new -- <plugin-name>` scaffolds a starter plugin file and a matching test file.
+- `src/lib/agent/plugins/contracts.ts` defines the formal BizBot plugin contract used by builtin and future external-style plugins.
+- `src/lib/agent/plugins/registry.ts` centralizes plugin registration, duplicate detection, and tool-to-plugin ownership mapping.
+- `tests/plugins/*` gives you fixture-oriented coverage for registry rules, provider-style tools, and builtin runtime seams.
+- `tests/mcp/*` verifies the public MCP surface so plugin changes do not silently break tools, prompts, resources, or transport behavior.
+- `npm run test:mcp` isolates MCP and plugin coverage from the rest of the app.
+- `npm run lint:docs` keeps README and contributor docs aligned with the actual developer workflow.
+
+### Building Features As Plugins
+
+The intended feature path is:
+
+1. Scaffold a plugin with `npm run plugin:new -- <plugin-name>`.
+2. Define metadata and narrow tool contracts in the plugin file.
+3. Register the plugin in the builtin registry if it ships with BizBot.
+4. Add fixture-based tests for execution shape, defaults, and failure cases.
+5. If the feature is MCP-visible, update or verify MCP contract coverage.
+
+That gives a developer one repeatable path from idea to shipped feature: scaffold, define schema, register, test, expose.
+
+### MCP Helps Plugin Authors Too
+
+- `/api/mcp` exposes the runtime in a way that is testable at the protocol level, not just through internal TypeScript calls.
+- Plugin discovery resources like `bizbot://plugins/installed` and `bizbot://plugins/tool-map` make it easier to inspect what a feature plugin actually exports.
+- Prompt and resource snapshots keep wording and interface drift visible in review.
+- The imported MCP client path is already tested against Streamable HTTP and SSE fallback, so future plugin-like integrations can reuse that path with less uncertainty.
+
 ## Control Plane
 
 BizBot now runs on a typed control plane instead of a flat tool bag.
@@ -142,7 +182,7 @@ BizBot now includes CRM v2 as a first-class surface.
 - Contact sync is implemented on top of the new control plane
 - Activities are created locally first, then synced when requested
 
-## Commerce
+## Commerce Surface
 
 Commerce is now a visible product surface rather than a hidden plugin.
 
@@ -153,7 +193,7 @@ Commerce is now a visible product surface rather than a hidden plugin.
 - Both products and orders are editable in the dashboard
 - Commerce is available to agent lanes through dedicated tools
 
-## Local Business
+## Local Business Surface
 
 The Local Business area is backed by the Google Business service.
 
@@ -176,12 +216,32 @@ BizBot can act as both an MCP server and an MCP client.
 - HTTP endpoint is `/api/mcp`
 - Exposes tools, resources, and prompts
 - Includes runtime-oriented resources for inspection and debugging
+- Exposes plugin discovery resources so developers can inspect exported plugin metadata and tool ownership
+- Conformance coverage now exercises tools, resources, prompts, auth handling, and negative-path transport behavior
 
 ### MCP Client
 
 - External MCP servers can be imported via `MCP_SERVERS`
 - Imported tools are surfaced through BizBot’s runtime
+- Imported resource and prompt catalogs are cached and integration-tested for future surfacing
 - MCP execution is bounded to the dedicated `mcp_operator` profile
+- Imported MCP tools are integration-tested through the registry merge path
+
+### External MCP Compatibility
+
+BizBot currently supports these external server transport paths:
+
+| Transport | Status | Behavior |
+| --------- | ------ | -------- |
+| Streamable HTTP | Supported | Primary client path for external MCP imports |
+| Legacy SSE | Supported | Automatic fallback when Streamable HTTP connection setup fails |
+| Stdio | Not imported by `src/lib/mcp/client.ts` | Use BizBot as the stdio server instead of trying to import external stdio endpoints into the app |
+
+Fallback behavior is intentionally simple:
+
+- BizBot attempts Streamable HTTP first for each configured external server.
+- If that handshake fails, BizBot retries the same server over legacy SSE.
+- Imported tools are executable today; imported resource and prompt catalogs are now captured and tested, but not yet surfaced through the BizBot runtime UI or MCP server.
 
 ## Runtime Status
 
@@ -189,29 +249,33 @@ Current repo/runtime assumptions:
 
 - `npm run dev` starts the Next.js app and worker supervisor
 - `npm run build` passes on the current app state
+- `npm run plugin:new -- <plugin-name>` scaffolds the starting point for new plugin-based features
+- `npm run test:app` isolates the general Vitest suite from MCP transport coverage
+- `npm run test:mcp` runs MCP transport, contract, and plugin fixture coverage
+- `npm run lint:docs` enforces README/contributor/plugin markdown quality
 - PostgreSQL, Redis, and Memgraph are expected locally via Docker Compose
 - Tauri packaging is wired for desktop delivery
 - Meta webhook receiver is available at `/api/webhooks/meta`
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Desktop | Tauri v2 |
-| Frontend | Next.js 16.2.1, React 19, Tailwind CSS 4, TypeScript |
-| API | Next.js App Router route handlers |
-| Worker | BullMQ on Redis |
-| ORM | Prisma 6.16.2 |
-| Database | PostgreSQL 16 + pgvector |
-| Graph | Memgraph |
-| Cache/Queue | Redis 7 |
-| Browser | Playwright |
-| AI SDKs | OpenAI, Anthropic, Google GenAI, Axios-based provider integrations |
-| MCP | `@modelcontextprotocol/sdk` |
+| Layer       | Technology                                                            |
+| ----------- | --------------------------------------------------------------------- |
+| Desktop     | Tauri v2                                                              |
+| Frontend    | Next.js 16.2.1, React 19, Tailwind CSS 4, TypeScript                  |
+| API         | Next.js App Router route handlers                                     |
+| Worker      | BullMQ on Redis                                                       |
+| ORM         | Prisma 6.16.2                                                         |
+| Database    | PostgreSQL 16 + pgvector                                              |
+| Graph       | Memgraph                                                              |
+| Cache/Queue | Redis 7                                                               |
+| Browser     | Playwright                                                            |
+| AI SDKs     | OpenAI, Anthropic, Google GenAI, Axios-based provider integrations    |
+| MCP         | `@modelcontextprotocol/sdk`                                           |
 
 ## Architecture
 
-```
+```text
 ┌────────────────────────────────────────────────────────────┐
 │ Tauri shell or browser at localhost:3000                  │
 ├────────────────────────────────────────────────────────────┤
@@ -266,7 +330,7 @@ BizBot’s app routes now include these main groups:
 - `/api/social/[platform]`
 - `/api/webhooks/meta`
 
-### CRM
+### CRM APIs
 
 - `/api/crm`
 - `/api/crm/activities`
@@ -274,13 +338,13 @@ BizBot’s app routes now include these main groups:
 - `/api/crm/activities/[id]/sync`
 - `/api/crm/contacts/[id]/sync`
 
-### Commerce
+### Commerce APIs
 
 - `/api/commerce`
 - `/api/commerce/products`
 - `/api/commerce/orders`
 
-### Local Business
+### Local Business APIs
 
 - `/api/local-business`
 - `/api/local-business/posts`
@@ -313,7 +377,7 @@ The app still uses Prisma for core relational models, with `Setting` acting as a
 
 ## Repository Structure
 
-```
+```text
 bizbot/
   src/
     app/                      Next.js pages and route handlers
@@ -380,79 +444,83 @@ Copy `.env.example` and fill in only the providers you actually intend to use.
 
 ### Core Services
 
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `MEMGRAPH_URI` | Memgraph connection string |
-| `REDIS_URL` | Optional Redis connection string override |
+| Variable       | Purpose                                   |
+| -------------- | ----------------------------------------- |
+| `DATABASE_URL` | PostgreSQL connection string              |
+| `MEMGRAPH_URI` | Memgraph connection string                |
+| `REDIS_URL`    | Optional Redis connection string override |
 
 ### LLM and Agent Runtime
 
-| Variable | Purpose |
-|----------|---------|
-| `ACTIVE_LLM_PROVIDER` | Active LLM provider |
-| `GOOGLE_AI_API_KEY` | Google GenAI API key |
-| `GOOGLE_MODEL` | Default Google chat model |
-| `EMBEDDING_PROVIDER` | Embedding provider |
-| `EMBEDDING_MODEL` | Embedding model |
-| `BIZBOT_AUTONOMY_PRESET` | Approval/autonomy mode |
-| `BIZBOT_AGENT_HEARTBEAT_SECONDS` | Worker interval |
-| `BIZBOT_KNOWLEDGE_ENABLED` | Enable knowledge indexing |
-| `BIZBOT_KNOWLEDGE_PATH` | Knowledge folder path |
-| `BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY` | Process webhook inbox items immediately |
+| Variable                                   | Purpose                                  |
+| ------------------------------------------ | ---------------------------------------- |
+| `ACTIVE_LLM_PROVIDER`                      | Active LLM provider                      |
+| `GOOGLE_AI_API_KEY`                        | Google GenAI API key                     |
+| `GOOGLE_MODEL`                             | Default Google chat model                |
+| `EMBEDDING_PROVIDER`                       | Embedding provider                       |
+| `EMBEDDING_MODEL`                          | Embedding model                          |
+| `BIZBOT_AUTONOMY_PRESET`                   | Approval/autonomy mode                   |
+| `BIZBOT_AGENT_HEARTBEAT_SECONDS`           | Worker interval                          |
+| `BIZBOT_KNOWLEDGE_ENABLED`                 | Enable knowledge indexing                |
+| `BIZBOT_KNOWLEDGE_PATH`                    | Knowledge folder path                    |
+| `BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY` | Process webhook inbox items immediately  |
 
-### MCP
+### MCP Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `MCP_AUTH_TOKEN` | Optional auth token for `/api/mcp` |
-| `MCP_SERVERS` | External MCP server definitions |
+| Variable         | Purpose                              |
+| ---------------- | ------------------------------------ |
+| `MCP_AUTH_TOKEN` | Optional auth token for `/api/mcp`   |
+| `MCP_SERVERS`    | External MCP server definitions      |
 
-### CRM
+### CRM Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `CRM_PROVIDER` | `internal` or `hubspot` |
-| `HUBSPOT_PORTAL_ID` | Optional HubSpot portal id |
-| `HUBSPOT_PRIVATE_APP_TOKEN` | HubSpot private app token |
-| `HUBSPOT_BASE_URL` | HubSpot API base URL |
+| Variable                     | Purpose                    |
+| ---------------------------- | -------------------------- |
+| `CRM_PROVIDER`               | `internal` or `hubspot`    |
+| `HUBSPOT_PORTAL_ID`          | Optional HubSpot portal id |
+| `HUBSPOT_PRIVATE_APP_TOKEN`  | HubSpot private app token  |
+| `HUBSPOT_BASE_URL`           | HubSpot API base URL       |
 
 ### Social and Local Business
 
-| Variable | Purpose |
-|----------|---------|
-| `META_ACCESS_TOKEN` | Meta Graph API token |
-| `FACEBOOK_PAGE_ID` | Facebook Page ID |
-| `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram Business account id |
-| `META_WEBHOOK_VERIFY_TOKEN` | Meta webhook verification token |
-| `GOOGLE_BUSINESS_CLIENT_ID` | Google Business OAuth client id |
-| `GOOGLE_BUSINESS_CLIENT_SECRET` | Google Business OAuth client secret |
-| `GOOGLE_BUSINESS_REFRESH_TOKEN` | Google Business refresh token |
-| `GOOGLE_BUSINESS_ACCOUNT_NAME` | GBP account resource name |
-| `GOOGLE_BUSINESS_LOCATION_NAME` | GBP location resource name |
-| `GOOGLE_BUSINESS_INFO_LOCATION_NAME` | Business Information v1 location name |
-| `TWITTER_APP_KEY` / `TWITTER_APP_SECRET` | Twitter app credentials |
-| `TWITTER_ACCESS_TOKEN` / `TWITTER_ACCESS_TOKEN_SECRET` | Twitter user tokens |
-| `TWITTER_USER_ID` | Twitter user id |
+| Variable                                               | Purpose                               |
+| ------------------------------------------------------ | ------------------------------------- |
+| `META_ACCESS_TOKEN`                                    | Meta Graph API token                  |
+| `FACEBOOK_PAGE_ID`                                     | Facebook Page ID                      |
+| `INSTAGRAM_BUSINESS_ACCOUNT_ID`                        | Instagram Business account id         |
+| `META_WEBHOOK_VERIFY_TOKEN`                            | Meta webhook verification token       |
+| `GOOGLE_BUSINESS_CLIENT_ID`                            | Google Business OAuth client id       |
+| `GOOGLE_BUSINESS_CLIENT_SECRET`                        | Google Business OAuth client secret   |
+| `GOOGLE_BUSINESS_REFRESH_TOKEN`                        | Google Business refresh token         |
+| `GOOGLE_BUSINESS_ACCOUNT_NAME`                         | GBP account resource name             |
+| `GOOGLE_BUSINESS_LOCATION_NAME`                        | GBP location resource name            |
+| `GOOGLE_BUSINESS_INFO_LOCATION_NAME`                   | Business Information v1 location name |
+| `TWITTER_APP_KEY` / `TWITTER_APP_SECRET`               | Twitter app credentials               |
+| `TWITTER_ACCESS_TOKEN` / `TWITTER_ACCESS_TOKEN_SECRET` | Twitter user tokens                   |
+| `TWITTER_USER_ID`                                      | Twitter user id                       |
 
 ## NPM Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start full stack in dev mode |
-| `npm run dev:web` | Start only the Next.js dev server |
-| `npm run worker` | Start only the worker |
-| `npm run mcp:stdio` | Start BizBot as a stdio MCP server |
-| `npm run build` | Production build |
-| `npm run start` | Start full stack in production mode |
-| `npm run tauri:prepare-resources` | Bundle server and worker for Tauri |
-| `npm run tauri:dev` | Run Tauri in dev mode |
-| `npm run tauri:build` | Build the desktop app |
+| Command                           | Description                                               |
+| --------------------------------- | --------------------------------------------------------- |
+| `npm run dev`                     | Start full stack in dev mode                              |
+| `npm run dev:web`                 | Start only the Next.js dev server                         |
+| `npm run worker`                  | Start only the worker                                     |
+| `npm run mcp:stdio`               | Start BizBot as a stdio MCP server                        |
+| `npm run plugin:new -- <name>`    | Scaffold a plugin file and matching starter test          |
+| `npm run test:app`                | Run non-MCP Vitest coverage                               |
+| `npm run test:mcp`                | Run MCP transport, contract, and plugin integration tests |
+| `npm run lint:docs`               | Lint README and contributor markdown                      |
+| `npm run build`                   | Production build                                          |
+| `npm run start`                   | Start full stack in production mode                       |
+| `npm run tauri:prepare-resources` | Bundle server and worker for Tauri                        |
+| `npm run tauri:dev`               | Run Tauri in dev mode                                     |
+| `npm run tauri:build`             | Build the desktop app                                     |
 
 ## Known Gaps
 
 - Social integrations still need real credentials and live production validation
-- MCP stdio mode should avoid verbose database query logging to keep the transport clean
+- MCP stdio mode now suppresses verbose database query logging, but live external-server compatibility still needs broader matrix coverage
 - Google Business support assumes a single configured account/location
 - Multi-account tenant separation is not implemented
 - Browser-based social adapters remain secondary to API-backed flows
