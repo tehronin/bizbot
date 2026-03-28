@@ -12,10 +12,12 @@ const NAV = [
   { href: "/chat", label: "Chat", icon: "💬" },
   { href: "/inbox", label: "Inbox", icon: "✉️" },
   { href: "/leads", label: "Leads", icon: "🧭" },
+  { href: "/commerce", label: "Commerce", icon: "🧾" },
   { href: "/posts", label: "Posts", icon: "📝" },
-  { href: "/google-business", label: "Google", icon: "⭐" },
+  { href: "/local-business", label: "Local Business", icon: "⭐" },
   { href: "/approvals", label: "Approvals", icon: "✅" },
   { href: "/analytics", label: "Analytics", icon: "📊" },
+  { href: "/operations", label: "Operations", icon: "🛠" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
 ];
 

@@ -69,6 +69,62 @@ interface TreeValidationResult {
   nodeIssues: Record<number, string[]>;
 }
 
+interface CrmProviderStatus {
+  name: string;
+  label: string;
+  active: boolean;
+  connected: boolean;
+  mode: "local" | "stub" | "live";
+}
+
+interface CrmActivity {
+  id: string;
+  contactId: string;
+  type: "note" | "task";
+  title: string | null;
+  subject: string | null;
+  body: string;
+  status: "logged" | "pending" | "completed";
+  priority: "low" | "medium" | "high" | null;
+  dueAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  syncedAt: string | null;
+  externalId: string | null;
+}
+
+interface ActivityDraft {
+  type: "note" | "task";
+  title: string;
+  subject: string;
+  body: string;
+  status: "pending" | "completed";
+  priority: "low" | "medium" | "high";
+  dueAt: string;
+}
+
+interface ActivityFilters {
+  type: "all" | "note" | "task";
+  status: "all" | "logged" | "pending" | "completed";
+  query: string;
+}
+
+const EMPTY_ACTIVITY_DRAFT: ActivityDraft = {
+  type: "note",
+  title: "",
+  subject: "",
+  body: "",
+  status: "pending",
+  priority: "medium",
+  dueAt: "",
+};
+
+const EMPTY_ACTIVITY_FILTERS: ActivityFilters = {
+  type: "all",
+  status: "all",
+  query: "",
+};
+
 const STAGES: LeadStage[] = ["LEAD", "QUALIFIED", "CONTACTED", "CONVERTED", "LOST"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -300,6 +356,12 @@ function validateTree(tree: TreeEditorDraft): TreeValidationResult {
 export default function LeadsPage() {
   const [leads, setLeads] = useState<LeadItem[]>([]);
   const [trees, setTrees] = useState<TreeEditorDraft[]>([]);
+  const [crmProviders, setCrmProviders] = useState<CrmProviderStatus[]>([]);
+  const [crmActivities, setCrmActivities] = useState<CrmActivity[]>([]);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [activityDraft, setActivityDraft] = useState<ActivityDraft>(EMPTY_ACTIVITY_DRAFT);
+  const [activityFilters, setActivityFilters] = useState<ActivityFilters>(EMPTY_ACTIVITY_FILTERS);
+  const [crmBusy, setCrmBusy] = useState(false);
   const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
   const [savingTreeId, setSavingTreeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -309,12 +371,14 @@ export default function LeadsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [leadsResponse, treesResponse] = await Promise.all([
+      const [leadsResponse, treesResponse, crmResponse] = await Promise.all([
         fetch("/api/leads"),
         fetch("/api/canned-responses"),
+        fetch("/api/crm"),
       ]);
       const leadsData = (await leadsResponse.json()) as { leads?: LeadItem[]; error?: string };
       const treesData = (await treesResponse.json()) as { trees?: CannedTree[]; error?: string };
+      const crmData = (await crmResponse.json()) as { providers?: CrmProviderStatus[]; error?: string };
 
       if (!leadsResponse.ok) {
         throw new Error(leadsData.error ?? "Failed to load leads.");
@@ -322,10 +386,18 @@ export default function LeadsPage() {
       if (!treesResponse.ok) {
         throw new Error(treesData.error ?? "Failed to load canned response trees.");
       }
+      if (!crmResponse.ok) {
+        throw new Error(crmData.error ?? "Failed to load CRM status.");
+      }
 
       const nextTrees = (treesData.trees ?? []).map(createTreeEditorDraft);
-      setLeads(leadsData.leads ?? []);
+      const nextLeads = leadsData.leads ?? [];
+      setLeads(nextLeads);
+      setCrmProviders(crmData.providers ?? []);
       setTrees(nextTrees);
+      setSelectedLeadId((current) => current && nextLeads.some((lead) => lead.id === current)
+        ? current
+        : nextLeads[0]?.id ?? null);
       setSelectedTreeId((current) => current && nextTrees.some((tree) => tree.id === current)
         ? current
         : nextTrees[0]?.id ?? null);
@@ -350,6 +422,156 @@ export default function LeadsPage() {
     }
 
     await load();
+  }
+
+  async function loadActivities(contactId: string, filters: ActivityFilters = activityFilters): Promise<void> {
+    const params = new URLSearchParams({ contactId });
+    if (filters.type !== "all") {
+      params.set("type", filters.type);
+    }
+    if (filters.status !== "all") {
+      params.set("status", filters.status);
+    }
+    if (filters.query.trim()) {
+      params.set("query", filters.query.trim());
+    }
+
+    const response = await fetch(`/api/crm/activities?${params.toString()}`);
+    const data = (await response.json()) as { activities?: CrmActivity[]; error?: string };
+    if (!response.ok) {
+      throw new Error(data.error ?? "Failed to load CRM activities.");
+    }
+    setCrmActivities(data.activities ?? []);
+  }
+
+  async function saveCrmContact(contactId: string, updates: {
+    summary?: string | null;
+    score?: number;
+    stage?: LeadStage;
+  }): Promise<void> {
+    setCrmBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/crm", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId, ...updates }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to update CRM contact.");
+      }
+      await load();
+    } catch (crmError) {
+      setError(String(crmError));
+    } finally {
+      setCrmBusy(false);
+    }
+  }
+
+  async function syncCrmContactNow(contactId: string): Promise<void> {
+    setCrmBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/crm/contacts/${contactId}/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await response.json()) as { sync?: { message?: string }; error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to sync CRM contact.");
+      }
+      if (data.sync?.message) {
+        setError(data.sync.message);
+      }
+      await load();
+      await loadActivities(contactId, activityFilters);
+    } catch (crmError) {
+      setError(String(crmError));
+    } finally {
+      setCrmBusy(false);
+    }
+  }
+
+  async function createActivity(contactId: string): Promise<void> {
+    setCrmBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/crm/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactId,
+          type: activityDraft.type,
+          title: activityDraft.title || undefined,
+          subject: activityDraft.subject || undefined,
+          body: activityDraft.body,
+          ...(activityDraft.type === "task"
+            ? {
+                status: activityDraft.status,
+                priority: activityDraft.priority,
+                dueAt: activityDraft.dueAt || undefined,
+              }
+            : {}),
+        }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to create CRM activity.");
+      }
+      setActivityDraft(EMPTY_ACTIVITY_DRAFT);
+      await loadActivities(contactId, activityFilters);
+    } catch (crmError) {
+      setError(String(crmError));
+    } finally {
+      setCrmBusy(false);
+    }
+  }
+
+  async function updateActivityStatus(activityId: string, contactId: string, status: CrmActivity["status"]): Promise<void> {
+    setCrmBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/crm/activities/${activityId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to update CRM activity.");
+      }
+      await loadActivities(contactId, activityFilters);
+    } catch (crmError) {
+      setError(String(crmError));
+    } finally {
+      setCrmBusy(false);
+    }
+  }
+
+  async function syncActivityNow(activityId: string, contactId: string): Promise<void> {
+    setCrmBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/crm/activities/${activityId}/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await response.json()) as { sync?: { message?: string }; error?: string };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to sync CRM activity.");
+      }
+      if (data.sync?.message) {
+        setError(data.sync.message);
+      }
+      await loadActivities(contactId);
+    } catch (crmError) {
+      setError(String(crmError));
+    } finally {
+      setCrmBusy(false);
+    }
   }
 
   async function ensureDefaultTree(): Promise<void> {
@@ -438,12 +660,25 @@ export default function LeadsPage() {
     void load();
   }, []);
 
+  useEffect(() => {
+    if (!selectedLeadId) {
+      setCrmActivities([]);
+      return;
+    }
+
+    void loadActivities(selectedLeadId, activityFilters).catch((loadError) => {
+      setError(String(loadError));
+    });
+  }, [selectedLeadId, activityFilters]);
+
   const selectedTree = trees.find((tree) => tree.id === selectedTreeId) ?? null;
   const selectedTreeValidation = selectedTree ? validateTree(selectedTree) : null;
+  const selectedLead = leads.find((lead) => lead.id === selectedLeadId) ?? null;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-      <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+    <div className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>lead pipeline</div>
@@ -458,7 +693,7 @@ export default function LeadsPage() {
             <div key={stage} className="space-y-3">
               <div className="text-[11px] uppercase tracking-[0.2em]" style={{ color: "var(--text-muted)" }}>{stage}</div>
               {leads.filter((lead) => lead.leadStage === stage).map((lead) => (
-                <article key={lead.id} className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <article key={lead.id} onClick={() => setSelectedLeadId(lead.id)} className="border p-3 space-y-3 cursor-pointer" style={{ borderColor: selectedLeadId === lead.id ? "var(--accent)" : "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
                     <span>{lead.platform.displayName}</span>
                     <span>{lead.leadScore}</span>
@@ -482,9 +717,9 @@ export default function LeadsPage() {
             </div>
           ))}
         </div>
-      </section>
+        </section>
 
-      <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+        <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
         <div className="flex items-center justify-between">
           <div>
             <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>canned response trees</div>
@@ -803,6 +1038,160 @@ export default function LeadsPage() {
             No tree available yet. Use ensure default to seed the default qualification funnel.
           </div>
         )}
+        </section>
+      </div>
+
+      <section className="grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
+        <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>CRM cockpit</div>
+              <div className="text-sm mt-2" style={{ color: "var(--text-dim)" }}>Selected contact, provider state, and sync controls.</div>
+            </div>
+            <button onClick={() => void load()} className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--accent)" }}>refresh CRM</button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {crmProviders.map((provider) => (
+              <div key={provider.name} className="border p-3" style={{ borderColor: provider.active ? "var(--accent)" : "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm">{provider.label}</span>
+                  <span className="text-[10px] uppercase tracking-[0.18em]" style={{ color: provider.connected ? "var(--success)" : "var(--danger)" }}>{provider.mode}</span>
+                </div>
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{provider.active ? "active provider" : "available"}</div>
+              </div>
+            ))}
+          </div>
+
+          {selectedLead ? (
+            <div className="space-y-3 border p-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm">{selectedLead.authorName ?? selectedLead.authorHandle ?? "Unknown contact"}</div>
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{selectedLead.authorHandle ?? selectedLead.id}</div>
+                </div>
+                <button onClick={() => void syncCrmContactNow(selectedLead.id)} disabled={crmBusy} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: crmBusy ? 0.6 : 1 }}>
+                  sync contact
+                </button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Stage</div>
+                  <select value={selectedLead.leadStage} onChange={(event) => void saveCrmContact(selectedLead.id, { stage: event.target.value as LeadStage })} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                    {STAGES.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Score</div>
+                  <input defaultValue={selectedLead.leadScore} onBlur={(event) => void saveCrmContact(selectedLead.id, { score: Number.parseInt(event.target.value, 10) || 0 })} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                </label>
+              </div>
+
+              <label className="space-y-1 block">
+                <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Summary</div>
+                <textarea defaultValue={selectedLead.leadSummary ?? ""} onBlur={(event) => void saveCrmContact(selectedLead.id, { summary: event.target.value || null })} className="w-full min-h-28 bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              </label>
+            </div>
+          ) : (
+            <div className="text-sm leading-7" style={{ color: "var(--text-dim)" }}>Select a lead from the pipeline to manage CRM notes, tasks, and provider sync.</div>
+          )}
+        </section>
+
+        <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <div>
+            <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>notes and tasks</div>
+            <div className="text-sm mt-2" style={{ color: "var(--text-dim)" }}>Create local CRM activities and push them to the active provider when needed.</div>
+          </div>
+
+          {selectedLead ? (
+            <>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[0.9fr_1.1fr]">
+                <div className="space-y-3 border p-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <select value={activityDraft.type} onChange={(event) => setActivityDraft((current) => ({ ...current, type: event.target.value as ActivityDraft["type"] }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                      <option value="note">note</option>
+                      <option value="task">task</option>
+                    </select>
+                    <input value={activityDraft.title} onChange={(event) => setActivityDraft((current) => ({ ...current, title: event.target.value }))} placeholder="title" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  </div>
+                  <input value={activityDraft.subject} onChange={(event) => setActivityDraft((current) => ({ ...current, subject: event.target.value }))} placeholder="subject" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  <textarea value={activityDraft.body} onChange={(event) => setActivityDraft((current) => ({ ...current, body: event.target.value }))} placeholder="Call notes, follow-up plan, or next action" className="w-full min-h-28 bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  {activityDraft.type === "task" ? (
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <select value={activityDraft.status} onChange={(event) => setActivityDraft((current) => ({ ...current, status: event.target.value as ActivityDraft["status"] }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                        <option value="pending">pending</option>
+                        <option value="completed">completed</option>
+                      </select>
+                      <select value={activityDraft.priority} onChange={(event) => setActivityDraft((current) => ({ ...current, priority: event.target.value as ActivityDraft["priority"] }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                        <option value="low">low</option>
+                        <option value="medium">medium</option>
+                        <option value="high">high</option>
+                      </select>
+                      <input type="datetime-local" value={activityDraft.dueAt} onChange={(event) => setActivityDraft((current) => ({ ...current, dueAt: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    </div>
+                  ) : null}
+                  <button onClick={() => void createActivity(selectedLead.id)} disabled={crmBusy || !activityDraft.body.trim()} className="px-4 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: crmBusy || !activityDraft.body.trim() ? 0.6 : 1 }}>
+                    add activity
+                  </button>
+                </div>
+
+                <div className="space-y-3 max-h-[520px] overflow-auto">
+                  <div className="grid gap-3 border p-3 md:grid-cols-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+                    <select value={activityFilters.type} onChange={(event) => setActivityFilters((current) => ({ ...current, type: event.target.value as ActivityFilters["type"] }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                      <option value="all">all types</option>
+                      <option value="note">notes</option>
+                      <option value="task">tasks</option>
+                    </select>
+                    <select value={activityFilters.status} onChange={(event) => setActivityFilters((current) => ({ ...current, status: event.target.value as ActivityFilters["status"] }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                      <option value="all">all statuses</option>
+                      <option value="logged">logged</option>
+                      <option value="pending">pending</option>
+                      <option value="completed">completed</option>
+                    </select>
+                    <input value={activityFilters.query} onChange={(event) => setActivityFilters((current) => ({ ...current, query: event.target.value }))} placeholder="Search notes and tasks" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  </div>
+                  {crmActivities.length === 0 ? (
+                    <div className="text-sm leading-7" style={{ color: "var(--text-dim)" }}>No CRM activities yet for this contact.</div>
+                  ) : crmActivities.map((activity) => (
+                    <article key={activity.id} className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-sm">{activity.title ?? activity.subject ?? activity.type}</div>
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{activity.type} • {activity.status}</div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <select
+                            value={activity.status}
+                            onChange={(event) => void updateActivityStatus(activity.id, selectedLead.id, event.target.value as CrmActivity["status"])}
+                            disabled={crmBusy || activity.type === "note"}
+                            className="bg-transparent border px-3 py-2 text-xs uppercase tracking-[0.16em]"
+                            style={{ borderColor: "var(--border)", color: "var(--text-muted)", opacity: crmBusy || activity.type === "note" ? 0.6 : 1 }}
+                          >
+                            {activity.type === "note" ? <option value="logged">logged</option> : null}
+                            {activity.type === "task" ? <option value="pending">pending</option> : null}
+                            {activity.type === "task" ? <option value="completed">completed</option> : null}
+                          </select>
+                          <button onClick={() => void syncActivityNow(activity.id, selectedLead.id)} disabled={crmBusy} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: crmBusy ? 0.6 : 1 }}>
+                            sync
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap">{activity.body}</div>
+                      <div className="flex flex-wrap gap-3 text-xs" style={{ color: "var(--text-dim)" }}>
+                        {activity.priority ? <span>priority {activity.priority}</span> : null}
+                        {activity.dueAt ? <span>due {new Date(activity.dueAt).toLocaleString()}</span> : null}
+                        {activity.syncedAt ? <span>synced {new Date(activity.syncedAt).toLocaleString()}</span> : <span>not yet synced</span>}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-sm leading-7" style={{ color: "var(--text-dim)" }}>Choose a pipeline contact to review notes and follow-up tasks.</div>
+          )}
+        </section>
       </section>
     </div>
   );

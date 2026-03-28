@@ -32,6 +32,20 @@ export interface AgentWorkerStatus {
   };
 }
 
+export type AgentHeartbeatJobStatus = "waiting" | "active" | "delayed" | "completed" | "failed";
+
+export interface AgentHeartbeatJobSummary {
+  id: string;
+  name: string;
+  status: AgentHeartbeatJobStatus | "unknown";
+  data: AgentHeartbeatJobData;
+  attemptsMade: number;
+  failedReason: string | null;
+  createdAt: string;
+  processedAt: string | null;
+  finishedAt: string | null;
+}
+
 const globalForAgentQueue = globalThis as typeof globalThis & {
   bizbotAgentHeartbeatQueue?: Queue<AgentHeartbeatJobData>;
 };
@@ -106,6 +120,54 @@ export async function enqueueAgentHeartbeat(
     trigger,
     requestedAt: new Date().toISOString(),
   });
+}
+
+function toJobSummary(job: Job<AgentHeartbeatJobData>, status: AgentHeartbeatJobStatus | "unknown"): AgentHeartbeatJobSummary {
+  return {
+    id: String(job.id),
+    name: job.name,
+    status,
+    data: job.data,
+    attemptsMade: job.attemptsMade,
+    failedReason: job.failedReason ?? null,
+    createdAt: new Date(job.timestamp).toISOString(),
+    processedAt: job.processedOn ? new Date(job.processedOn).toISOString() : null,
+    finishedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : null,
+  };
+}
+
+export async function listAgentHeartbeatJobs(
+  statuses: AgentHeartbeatJobStatus[] = ["waiting", "active", "delayed", "completed", "failed"],
+  limit = 20,
+): Promise<AgentHeartbeatJobSummary[]> {
+  const queue = getAgentHeartbeatQueue();
+  const normalizedLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
+  const jobs = await queue.getJobs(statuses, 0, normalizedLimit - 1, false);
+
+  return Promise.all(jobs.map(async (job) => {
+    let status: AgentHeartbeatJobStatus | "unknown" = "unknown";
+    try {
+      const state = await job.getState();
+      if (["waiting", "active", "delayed", "completed", "failed"].includes(state)) {
+        status = state as AgentHeartbeatJobStatus;
+      }
+    } catch {
+      status = "unknown";
+    }
+
+    return toJobSummary(job, status);
+  }));
+}
+
+export async function retryAgentHeartbeatJob(jobId: string): Promise<{ retried: boolean; jobId: string }> {
+  const queue = getAgentHeartbeatQueue();
+  const job = await queue.getJob(jobId);
+  if (!job) {
+    throw new Error(`Heartbeat job not found: ${jobId}`);
+  }
+
+  await job.retry();
+  return { retried: true, jobId };
 }
 
 export async function getAgentWorkerStatus(): Promise<AgentWorkerStatus> {

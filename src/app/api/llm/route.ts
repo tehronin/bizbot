@@ -18,6 +18,8 @@ import {
   getEmbeddingConfig,
   testEmbeddingProvider,
 } from "@/lib/embeddings/embed";
+import { getActiveCrmProvider, getCrmProviderStatuses } from "@/lib/crm";
+import { getMcpClientStatus } from "@/lib/mcp/client";
 
 interface OllamaTagsResponse {
   models?: Array<{
@@ -87,11 +89,12 @@ export async function GET() {
 
   const heartbeatMap = Object.fromEntries(heartbeatSettings.map((row) => [row.key, row.value]));
 
-  const [chatOk, embeddingStatus, ollamaModels, workerStatus] = await Promise.all([
+  const [chatOk, embeddingStatus, ollamaModels, workerStatus, crmProviders] = await Promise.all([
     testProvider(activeProvider),
     testEmbeddingProvider(),
     getOllamaModelOptions(),
     getAgentWorkerStatus(),
+    getCrmProviderStatuses(),
   ]);
 
   return Response.json({
@@ -135,6 +138,22 @@ export async function GET() {
       },
       embeddingProviders: Object.keys(EMBEDDING_MODEL_OPTIONS),
       embeddingModels: EMBEDDING_MODEL_OPTIONS,
+    },
+    mcp: {
+      serverEndpoint: "/api/mcp",
+      authRequired: !!process.env.MCP_AUTH_TOKEN,
+      connectedClients: getMcpClientStatus(),
+    },
+    crm: {
+      activeProvider: getActiveCrmProvider(),
+      providers: crmProviders,
+    },
+    infrastructure: {
+      redisConfigured: Boolean(process.env.REDIS_URL),
+      memgraphConfigured: Boolean(process.env.MEMGRAPH_URI),
+      memgraphUri: process.env.MEMGRAPH_URI ?? null,
+      memgraphUser: process.env.MEMGRAPH_USER ?? null,
+      devWebConflictStrategy: process.env.BIZBOT_DEV_WEB_CONFLICT ?? "reuse",
     },
   });
 }

@@ -72,6 +72,34 @@ interface LlmStatusResponse {
     embeddingProviders: string[];
     embeddingModels: Record<string, string[]>;
   };
+  mcp: {
+    serverEndpoint: string;
+    authRequired: boolean;
+    connectedClients: Array<{
+      name: string;
+      url: string;
+      connected: boolean;
+      toolCount: number;
+    }>;
+  };
+  crm: {
+    activeProvider: string;
+    providers: Array<{
+      name: string;
+      label: string;
+      active: boolean;
+      connected: boolean;
+      mode: "local" | "stub" | "live";
+      details: Record<string, string | boolean | null>;
+    }>;
+  };
+  infrastructure: {
+    redisConfigured: boolean;
+    memgraphConfigured: boolean;
+    memgraphUri: string | null;
+    memgraphUser: string | null;
+    devWebConflictStrategy: string;
+  };
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -100,10 +128,18 @@ const PUBLIC_ENV_DEFAULTS = {
   MINIMAX_BASE_URL: "https://api.minimax.chat/v1",
   BIZBOT_AUTONOMY_PRESET: "approval_all_posts",
   BIZBOT_AGENT_HEARTBEAT_SECONDS: "300",
+  BIZBOT_DEV_WEB_CONFLICT: "reuse",
   BIZBOT_KNOWLEDGE_ENABLED: "true",
   BIZBOT_KNOWLEDGE_PATH: "knowledge",
   BIZBOT_WORKSPACE_PATH: "./workspace",
   BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY: "true",
+  CRM_PROVIDER: "internal",
+  HUBSPOT_PORTAL_ID: "",
+  HUBSPOT_BASE_URL: "https://api.hubapi.com",
+  MCP_SERVERS: "[]",
+  REDIS_URL: "",
+  MEMGRAPH_URI: "",
+  MEMGRAPH_USER: "",
   GOOGLE_BUSINESS_ACCOUNT_NAME: "",
   GOOGLE_BUSINESS_LOCATION_NAME: "",
   GOOGLE_BUSINESS_INFO_LOCATION_NAME: "",
@@ -121,6 +157,9 @@ type SecretEnvKey =
   | "OPENAI_API_KEY"
   | "ANTHROPIC_API_KEY"
   | "MINIMAX_API_KEY"
+  | "HUBSPOT_PRIVATE_APP_TOKEN"
+  | "MCP_AUTH_TOKEN"
+  | "MEMGRAPH_PASSWORD"
   | "GOOGLE_BUSINESS_CLIENT_ID"
   | "GOOGLE_BUSINESS_CLIENT_SECRET"
   | "GOOGLE_BUSINESS_REFRESH_TOKEN"
@@ -138,6 +177,9 @@ const SECRET_ENV_LABELS: Record<SecretEnvKey, string> = {
   OPENAI_API_KEY: "OpenAI API key",
   ANTHROPIC_API_KEY: "Anthropic API key",
   MINIMAX_API_KEY: "MiniMax API key",
+  HUBSPOT_PRIVATE_APP_TOKEN: "HubSpot private app token",
+  MCP_AUTH_TOKEN: "MCP auth token",
+  MEMGRAPH_PASSWORD: "Memgraph password",
   GOOGLE_BUSINESS_CLIENT_ID: "Google Business OAuth client ID",
   GOOGLE_BUSINESS_CLIENT_SECRET: "Google Business OAuth client secret",
   GOOGLE_BUSINESS_REFRESH_TOKEN: "Google Business refresh token",
@@ -164,6 +206,9 @@ const EMPTY_SECRETS: Record<SecretEnvKey, string> = {
   OPENAI_API_KEY: "",
   ANTHROPIC_API_KEY: "",
   MINIMAX_API_KEY: "",
+  HUBSPOT_PRIVATE_APP_TOKEN: "",
+  MCP_AUTH_TOKEN: "",
+  MEMGRAPH_PASSWORD: "",
   GOOGLE_BUSINESS_CLIENT_ID: "",
   GOOGLE_BUSINESS_CLIENT_SECRET: "",
   GOOGLE_BUSINESS_REFRESH_TOKEN: "",
@@ -267,6 +312,9 @@ export default function SettingsPage() {
       { label: "chat status", value: runtime?.checks.chat.ok ? "ok" : "failed" },
       { label: "embedding status", value: runtime?.checks.embedding.ok ? "ok" : "failed" },
       { label: "worker", value: runtime?.heartbeat.serviceRunning ? "running" : "stopped" },
+      { label: "crm", value: runtime?.crm.activeProvider ?? publicEnv.CRM_PROVIDER },
+      { label: "mcp clients", value: String(runtime?.mcp.connectedClients.length ?? 0) },
+      { label: "redis", value: runtime?.infrastructure.redisConfigured ? "configured" : "default/local" },
       { label: "knowledge docs", value: String(runtime?.knowledge.documentCount ?? 0) },
       { label: "autonomy", value: runtime?.autonomy.autonomyPreset ?? publicEnv.BIZBOT_AUTONOMY_PRESET },
       { label: "heartbeat", value: `${runtime?.autonomy.heartbeatSeconds ?? publicEnv.BIZBOT_AGENT_HEARTBEAT_SECONDS}s` },
@@ -360,6 +408,79 @@ export default function SettingsPage() {
                 <input type="password" value={secretEnv[key]} onChange={(event) => updateSecretEnv(key, event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
               </div>
             ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>CRM and HubSpot</div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>CRM provider</label>
+              <select value={publicEnv.CRM_PROVIDER} onChange={(event) => updatePublicEnv("CRM_PROVIDER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <option value="internal">internal</option>
+                <option value="hubspot">hubspot</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>HubSpot portal ID</label>
+              <input value={publicEnv.HUBSPOT_PORTAL_ID} onChange={(event) => updatePublicEnv("HUBSPOT_PORTAL_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>HubSpot base URL</label>
+              <input value={publicEnv.HUBSPOT_BASE_URL} onChange={(event) => updatePublicEnv("HUBSPOT_BASE_URL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.HUBSPOT_PRIVATE_APP_TOKEN}</label>
+              <input type="password" value={secretEnv.HUBSPOT_PRIVATE_APP_TOKEN} onChange={(event) => updateSecretEnv("HUBSPOT_PRIVATE_APP_TOKEN", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div className="space-y-2 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              {(runtime?.crm.providers ?? []).map((provider) => (
+                <div key={provider.name} className="border px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                  <div>{provider.label}: {provider.mode}</div>
+                  <div>{provider.connected ? "connected" : "not connected"}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>MCP and infrastructure</div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>MCP servers JSON</label>
+              <textarea value={publicEnv.MCP_SERVERS} onChange={(event) => updatePublicEnv("MCP_SERVERS", event.target.value)} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.MCP_AUTH_TOKEN}</label>
+              <input type="password" value={secretEnv.MCP_AUTH_TOKEN} onChange={(event) => updateSecretEnv("MCP_AUTH_TOKEN", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Redis URL</label>
+              <input value={publicEnv.REDIS_URL} onChange={(event) => updatePublicEnv("REDIS_URL", event.target.value)} placeholder="Optional if using local default" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Memgraph URI</label>
+                <input value={publicEnv.MEMGRAPH_URI} onChange={(event) => updatePublicEnv("MEMGRAPH_URI", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              </div>
+              <div>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Memgraph user</label>
+                <input value={publicEnv.MEMGRAPH_USER} onChange={(event) => updatePublicEnv("MEMGRAPH_USER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.MEMGRAPH_PASSWORD}</label>
+              <input type="password" value={secretEnv.MEMGRAPH_PASSWORD} onChange={(event) => updateSecretEnv("MEMGRAPH_PASSWORD", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Dev web conflict strategy</label>
+              <select value={publicEnv.BIZBOT_DEV_WEB_CONFLICT} onChange={(event) => updatePublicEnv("BIZBOT_DEV_WEB_CONFLICT", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <option value="reuse">reuse</option>
+                <option value="replace">replace</option>
+              </select>
+            </div>
+            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              MCP endpoint: {runtime?.mcp.serverEndpoint ?? "/api/mcp"}. Auth {runtime?.mcp.authRequired ? "required" : "optional"}. Imported clients: {runtime?.mcp.connectedClients.length ?? 0}.
+            </div>
           </div>
         </div>
 
@@ -514,6 +635,10 @@ export default function SettingsPage() {
           <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>requirements check</div>
           <div className="space-y-3 text-sm">
             <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>LLM configured</span><span>{runtime?.checks.chat.ok ? "yes" : "needs attention"}</span></div>
+            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>CRM provider</span><span>{runtime?.crm.activeProvider ?? publicEnv.CRM_PROVIDER}</span></div>
+            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>MCP HTTP auth</span><span>{runtime?.mcp.authRequired ? "required" : "disabled"}</span></div>
+            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Redis configured</span><span>{runtime?.infrastructure.redisConfigured ? "yes" : "local default"}</span></div>
+            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Memgraph configured</span><span>{runtime?.infrastructure.memgraphConfigured ? "yes" : "no"}</span></div>
             <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Knowledge folder exists</span><span>{runtime?.knowledge.exists ? "yes" : "no"}</span></div>
             <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Meta page IDs present</span><span>{metaPageId && instagramAccountId ? "yes" : "partial"}</span></div>
             <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Webhook immediate processing</span><span>{publicEnv.BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY === "true" ? "enabled" : "disabled"}</span></div>

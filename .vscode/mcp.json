@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "bizbot": {
+      "type": "stdio",
+      "command": "npm",
+      "args": [
+        "run",
+        "mcp:stdio"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}

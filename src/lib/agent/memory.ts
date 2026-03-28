@@ -30,6 +30,30 @@ export interface MemoryEntry {
   similarity?: number;
 }
 
+export interface MemoryInspectorEntry {
+  id: string;
+  key: string;
+  value: string;
+  category: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationInspectorEntry {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+export interface ConversationMessageInspectorEntry {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: string;
+}
+
 const DEFAULT_USER_ID = "local-user";
 
 /** Store a new memory entry with embedding. */
@@ -82,6 +106,88 @@ export async function recall(
       category: memory.category,
     }));
   }
+}
+
+export async function inspectMemories(options?: {
+  query?: string;
+  category?: string;
+  limit?: number;
+  userId?: string;
+}): Promise<MemoryInspectorEntry[]> {
+  const limit = Math.max(1, Math.min(Math.trunc(options?.limit ?? 20), 100));
+  const userId = options?.userId ?? DEFAULT_USER_ID;
+
+  const memories = await db.memory.findMany({
+    where: {
+      userId,
+      ...(options?.category ? { category: options.category } : {}),
+      ...(options?.query
+        ? {
+            OR: [
+              { key: { contains: options.query, mode: "insensitive" } },
+              { value: { contains: options.query, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: { updatedAt: "desc" },
+    take: limit,
+  });
+
+  return memories.map((memory) => ({
+    id: memory.id,
+    key: memory.key,
+    value: memory.value,
+    category: memory.category,
+    createdAt: memory.createdAt.toISOString(),
+    updatedAt: memory.updatedAt.toISOString(),
+  }));
+}
+
+export async function listRecentConversations(options?: {
+  limit?: number;
+  userId?: string;
+}): Promise<ConversationInspectorEntry[]> {
+  const limit = Math.max(1, Math.min(Math.trunc(options?.limit ?? 20), 100));
+  const userId = options?.userId ?? DEFAULT_USER_ID;
+
+  const conversations = await db.conversation.findMany({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+    take: limit,
+    include: {
+      _count: {
+        select: { messages: true },
+      },
+    },
+  });
+
+  return conversations.map((conversation) => ({
+    id: conversation.id,
+    title: conversation.title ?? null,
+    createdAt: conversation.createdAt.toISOString(),
+    updatedAt: conversation.updatedAt.toISOString(),
+    messageCount: conversation._count.messages,
+  }));
+}
+
+export async function inspectConversationMessages(
+  conversationId: string,
+  limit = 50,
+): Promise<ConversationMessageInspectorEntry[]> {
+  const normalizedLimit = Math.max(1, Math.min(Math.trunc(limit), 200));
+  const messages = await db.message.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "desc" },
+    take: normalizedLimit,
+  });
+
+  return messages.reverse().map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.createdAt.toISOString(),
+  }));
 }
 
 /** Build a context string for the LLM prompt from relevant memories + graph entities. */

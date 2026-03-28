@@ -36,11 +36,19 @@ export interface ToolParametersSchema {
   additionalProperties?: boolean;
 }
 
+export interface ToolExecutionContext {
+  conversationId?: string;
+  runId?: string;
+  agentProfile?: string;
+  provider?: string;
+  signal?: AbortSignal;
+}
+
 export interface ToolDefinition<TArgs extends object, TResult extends ToolExecutionResult> {
   name: string;
   description: string;
   parameters: ToolParametersSchema;
-  execute: (args: TArgs) => Promise<TResult>;
+  execute: (args: TArgs, context: ToolExecutionContext) => Promise<TResult>;
 }
 
 export interface ToolDescriptor {
@@ -50,7 +58,7 @@ export interface ToolDescriptor {
 }
 
 export interface RegisteredToolDefinition extends ToolDescriptor {
-  execute: (args: JsonObject) => Promise<ToolExecutionResult>;
+  execute: (args: JsonObject, context: ToolExecutionContext) => Promise<ToolExecutionResult>;
 }
 
 export interface ToolCall {
@@ -255,9 +263,9 @@ export function registerTool<TArgs extends object, TResult extends ToolExecution
     name: tool.name,
     description: tool.description,
     parameters: tool.parameters,
-    execute: async (args: JsonObject) => {
+    execute: async (args: JsonObject, context: ToolExecutionContext) => {
       const validatedArgs = validateToolArguments(tool.parameters, args);
-      return tool.execute(validatedArgs as TArgs);
+      return tool.execute(validatedArgs as TArgs, context);
     },
   };
 }

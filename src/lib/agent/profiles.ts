@@ -1,13 +1,36 @@
 export type AgentProfile =
   | "general_operator"
-  | "dm_handler"
-  | "content_creator"
-  | "analytics_reporter"
-  | "browser_researcher";
+  | "sales_operator"
+  | "content_operator"
+  | "reputation_operator"
+  | "analyst_operator"
+  | "research_operator"
+  | "platform_operator"
+  | "mcp_operator";
 
 export interface AgentProfileDecision {
   profile: AgentProfile;
   reason: string;
+}
+
+export interface AgentToolPolicy {
+  allowedPrefixes: string[];
+  allowedTools?: string[];
+  deniedTools?: string[];
+}
+
+export interface AgentProfileDescriptor {
+  id: AgentProfile;
+  label: string;
+  mission: string;
+  delegationTargets: AgentProfile[];
+  toolPolicy: AgentToolPolicy;
+  prompt: {
+    systemInstruction: string;
+    googleSearch: boolean;
+    googleCodeExecution: boolean;
+    forceToolUse: boolean;
+  };
 }
 
 const PROFILE_RULES: Array<{
@@ -16,48 +39,90 @@ const PROFILE_RULES: Array<{
   matchers: RegExp[];
 }> = [
   {
-    profile: "dm_handler",
-    reason: "message appears to be about inbox, DM, or lead-response handling",
+    profile: "platform_operator",
+    reason: "message appears to be about runtime, tools, MCP, workers, logs, or debugging",
     matchers: [
-      /\bdm\b/i,
-      /direct message/i,
-      /messenger/i,
-      /inbox/i,
-      /lead/i,
+      /\bdebug\b/i,
+      /\berror\b/i,
+      /\bbug\b/i,
+      /\bmcp\b/i,
+      /\bworker\b/i,
+      /\bheartbeat\b/i,
+      /\bqueue\b/i,
+      /\blogs?\b/i,
+      /\btrace\b/i,
+      /\bruntime\b/i,
+      /\btools?\b/i,
+    ],
+  },
+  {
+    profile: "sales_operator",
+    reason: "message appears to be about leads, contacts, CRM, qualification, or conversion",
+    matchers: [
+      /\bcrm\b/i,
+      /\blead\b/i,
+      /\bprospect\b/i,
+      /\bcontact\b/i,
+      /\bfollow[ -]?up\b/i,
+      /\bqualif/i,
+      /\bconvert/i,
+      /\bhubspot\b/i,
+      /\bproduct\b/i,
+      /\bpricing\b/i,
+      /\bsku\b/i,
+      /\border\b/i,
+      /\bcheckout\b/i,
       /reply to (them|this|customer|prospect)/i,
     ],
   },
   {
-    profile: "content_creator",
-    reason: "message appears to be about drafting, scheduling, or publishing content",
+    profile: "reputation_operator",
+    reason: "message appears to be about reviews, local listings, or reputation management",
     matchers: [
-      /draft/i,
-      /caption/i,
+      /\breview\b/i,
+      /\brating\b/i,
+      /google business/i,
+      /business profile/i,
+      /reputation/i,
+      /listing/i,
+      /\bhours\b/i,
+      /local seo/i,
+    ],
+  },
+  {
+    profile: "content_operator",
+    reason: "message appears to be about drafting, campaigns, scheduling, or publishing content",
+    matchers: [
+      /\bdraft\b/i,
+      /\bcaption\b/i,
       /post idea/i,
       /social post/i,
-      /schedule/i,
-      /publish/i,
-      /campaign/i,
+      /\bschedule\b/i,
+      /\bpublish\b/i,
+      /\bcampaign\b/i,
       /content calendar/i,
+      /creative brief/i,
     ],
   },
   {
-    profile: "analytics_reporter",
-    reason: "message appears to be about metrics, reporting, or performance analysis",
+    profile: "analyst_operator",
+    reason: "message appears to be about metrics, funnels, reporting, or performance analysis",
     matchers: [
-      /analytics/i,
-      /engagement/i,
-      /impressions/i,
-      /clicks/i,
-      /report/i,
-      /performance/i,
-      /compare/i,
-      /trend/i,
+      /\banalytics\b/i,
+      /\bengagement\b/i,
+      /\bimpressions\b/i,
+      /\bclicks\b/i,
+      /\breport\b/i,
+      /\bperformance\b/i,
+      /\bfunnel\b/i,
+      /\bcompare\b/i,
+      /\btrend\b/i,
+      /\battribution\b/i,
     ],
   },
   {
-    profile: "browser_researcher",
-    reason: "message appears to be about browser research, current events, or competitor tracking",
+    profile: "research_operator",
+    reason: "message appears to be about browsing, competitor tracking, or market research",
     matchers: [
       /research/i,
       /browse/i,
@@ -72,22 +137,138 @@ const PROFILE_RULES: Array<{
   },
 ];
 
-const PROFILE_TOOL_PREFIXES: Record<AgentProfile, string[]> = {
-  general_operator: [
-    "social_",
-    "content_",
-    "memory_",
-    "file_",
-    "graph_",
-    "schedule_",
-    "approval_",
-    "browser_",
-    "competitor_",
-  ],
-  dm_handler: ["social_", "memory_", "file_", "graph_"],
-  content_creator: ["social_", "content_", "memory_", "file_", "schedule_", "approval_"],
-  analytics_reporter: ["social_", "memory_", "graph_", "browser_", "competitor_"],
-  browser_researcher: ["browser_", "memory_", "file_", "graph_", "competitor_", "social_"],
+export function listAgentProfileDescriptors(): AgentProfileDescriptor[] {
+  return Object.values(PROFILE_DESCRIPTORS);
+}
+
+export function getAgentProfileDescriptor(profile: AgentProfile): AgentProfileDescriptor {
+  return PROFILE_DESCRIPTORS[profile];
+}
+
+const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
+  general_operator: {
+    id: "general_operator",
+    label: "General Operator",
+    mission: "Coordinate across BizBot's business systems with bounded autonomy and route to specialists when needed.",
+    delegationTargets: ["sales_operator", "content_operator", "reputation_operator", "analyst_operator", "research_operator", "platform_operator"],
+    toolPolicy: {
+      allowedPrefixes: ["agent_", "social_", "content_", "crm_", "memory_", "file_", "graph_", "schedule_", "approval_", "browser_", "competitor_"],
+    },
+    prompt: {
+      systemInstruction: "Business lane: general operator. Coordinate sales, content, reputation, analytics, and research work. Prefer calling the fewest tools needed and keep handoffs explicit.",
+      googleSearch: false,
+      googleCodeExecution: false,
+      forceToolUse: false,
+    },
+  },
+  sales_operator: {
+    id: "sales_operator",
+    label: "Sales Operator",
+    mission: "Capture, qualify, and advance leads toward conversion using CRM-safe actions.",
+    delegationTargets: ["research_operator", "content_operator", "analyst_operator"],
+    toolPolicy: {
+      allowedPrefixes: ["agent_", "crm_", "social_", "memory_", "graph_", "file_", "approval_", "commerce_"],
+    },
+    prompt: {
+      systemInstruction: "Business lane: sales operator. Prioritize CRM state, lead qualification, and conversion-safe communication. Use CRM and social tools before improvising account details.",
+      googleSearch: false,
+      googleCodeExecution: false,
+      forceToolUse: true,
+    },
+  },
+  content_operator: {
+    id: "content_operator",
+    label: "Content Operator",
+    mission: "Create and route campaign content through approval-safe publishing workflows.",
+    delegationTargets: ["research_operator", "analyst_operator"],
+    toolPolicy: {
+      allowedPrefixes: ["agent_", "content_", "social_", "memory_", "file_", "schedule_", "approval_", "competitor_", "commerce_", "local_business_"],
+    },
+    prompt: {
+      systemInstruction: "Business lane: content operator. Prioritize campaign quality, brand consistency, approvals, and scheduling discipline.",
+      googleSearch: false,
+      googleCodeExecution: false,
+      forceToolUse: true,
+    },
+  },
+  reputation_operator: {
+    id: "reputation_operator",
+    label: "Reputation Operator",
+    mission: "Protect and improve public reputation across reviews, public replies, and local presence.",
+    delegationTargets: ["research_operator", "analyst_operator"],
+    toolPolicy: {
+      allowedPrefixes: ["agent_", "social_", "browser_", "memory_", "file_", "graph_", "approval_", "local_business_"],
+    },
+    prompt: {
+      systemInstruction: "Business lane: reputation operator. Prioritize careful public communication, response quality, and evidence-backed decisions. Use browser and social tools before making claims.",
+      googleSearch: true,
+      googleCodeExecution: false,
+      forceToolUse: true,
+    },
+  },
+  analyst_operator: {
+    id: "analyst_operator",
+    label: "Analyst Operator",
+    mission: "Explain performance, pipeline movement, and operating risk with quantified evidence.",
+    delegationTargets: ["sales_operator", "content_operator", "research_operator", "platform_operator"],
+    toolPolicy: {
+      allowedPrefixes: ["agent_", "crm_", "social_", "memory_", "graph_", "browser_", "competitor_", "developer_", "commerce_", "local_business_"],
+    },
+    prompt: {
+      systemInstruction: "Business lane: analyst operator. Quantify claims, inspect systems and pipeline state directly, and prefer structured tool outputs over narrative guesses.",
+      googleSearch: false,
+      googleCodeExecution: true,
+      forceToolUse: true,
+    },
+  },
+  research_operator: {
+    id: "research_operator",
+    label: "Research Operator",
+    mission: "Gather grounded external context to improve sales, content, and strategy decisions.",
+    delegationTargets: ["sales_operator", "content_operator", "analyst_operator"],
+    toolPolicy: {
+      allowedPrefixes: ["agent_", "browser_", "competitor_", "memory_", "file_", "graph_", "crm_", "social_", "local_business_", "commerce_"],
+    },
+    prompt: {
+      systemInstruction: "Business lane: research operator. Prefer grounded browsing, extraction, and competitor evidence. Be explicit about what is observed versus inferred.",
+      googleSearch: true,
+      googleCodeExecution: false,
+      forceToolUse: true,
+    },
+  },
+  platform_operator: {
+    id: "platform_operator",
+    label: "Platform Operator",
+    mission: "Inspect and stabilize the BizBot runtime, tool surfaces, workers, and MCP control loop.",
+    delegationTargets: ["analyst_operator", "general_operator"],
+    toolPolicy: {
+      allowedPrefixes: ["agent_", "developer_", "file_", "memory_", "graph_", "browser_", "competitor_", "crm_", "commerce_", "local_business_"],
+      allowedTools: ["approval_get_pending", "schedule_list"],
+    },
+    prompt: {
+      systemInstruction: "Business lane: platform operator. Diagnose runtime state, queue state, MCP visibility, and memory/tool behavior before proposing fixes.",
+      googleSearch: false,
+      googleCodeExecution: true,
+      forceToolUse: true,
+    },
+  },
+  mcp_operator: {
+    id: "mcp_operator",
+    label: "MCP Operator",
+    mission: "Expose a bounded operator-grade BizBot control surface over MCP without inheriting the full internal platform lane.",
+    delegationTargets: [],
+    toolPolicy: {
+      allowedPrefixes: ["developer_", "file_", "memory_", "graph_", "crm_", "commerce_", "local_business_"],
+      allowedTools: ["approval_get_pending", "schedule_list"],
+      deniedTools: ["agent_delegate_run"],
+    },
+    prompt: {
+      systemInstruction: "Business lane: MCP operator. Serve as a bounded control-plane surface for external MCP clients. Prefer inspection and deliberate state changes over broad autonomy.",
+      googleSearch: false,
+      googleCodeExecution: true,
+      forceToolUse: true,
+    },
+  },
 };
 
 export interface AgentProfilePromptContext {
@@ -115,57 +296,26 @@ export function routeAgentProfile(message: string): AgentProfileDecision {
 }
 
 export function canProfileUseTool(profile: AgentProfile, toolName: string): boolean {
-  return PROFILE_TOOL_PREFIXES[profile].some((prefix) => toolName.startsWith(prefix));
+  const descriptor = getAgentProfileDescriptor(profile);
+  if (descriptor.toolPolicy.deniedTools?.includes(toolName)) {
+    return false;
+  }
+  if (descriptor.toolPolicy.allowedTools?.includes(toolName)) {
+    return true;
+  }
+
+  return descriptor.toolPolicy.allowedPrefixes.some((prefix) => toolName.startsWith(prefix));
 }
 
 export function buildAgentProfilePrompt(profile: AgentProfile, message: string): AgentProfilePromptContext {
   const lower = message.toLowerCase();
+  const descriptor = getAgentProfileDescriptor(profile);
 
-  switch (profile) {
-    case "dm_handler":
-      return {
-        streamLabel: "DM Handler",
-        systemInstruction:
-          "Specialist lane: DM handling. Prioritize inbox accuracy, customer intent, and safe lead-conversion language. Use social and memory tools before improvising platform facts.",
-        googleSearch: false,
-        googleCodeExecution: false,
-        forceToolUse: true,
-      };
-    case "content_creator":
-      return {
-        streamLabel: "Content Creator",
-        systemInstruction:
-          "Specialist lane: content creation. Prioritize content drafting, policy checks, scheduling, and approval-safe publishing workflows.",
-        googleSearch: /trend|current|latest|news|competitor/.test(lower),
-        googleCodeExecution: false,
-        forceToolUse: true,
-      };
-    case "analytics_reporter":
-      return {
-        streamLabel: "Analytics Reporter",
-        systemInstruction:
-          "Specialist lane: analytics reporting. Prefer analytics, graph, and competitor tools. Quantify claims and keep summaries operational.",
-        googleSearch: /benchmark|industry|competitor|market/.test(lower),
-        googleCodeExecution: true,
-        forceToolUse: true,
-      };
-    case "browser_researcher":
-      return {
-        streamLabel: "Browser Researcher",
-        systemInstruction:
-          "Specialist lane: browser research. Prefer browser navigation, extraction, and competitor tools. Use grounded, source-aware reasoning for current information.",
-        googleSearch: true,
-        googleCodeExecution: /compare|analy[sz]e|summarize table|count|calculate/.test(lower),
-        forceToolUse: true,
-      };
-    case "general_operator":
-      return {
-        streamLabel: "General Operator",
-        systemInstruction:
-          "Specialist lane: general operator. Coordinate tools across content, social, memory, analytics, browser, and approvals as needed.",
-        googleSearch: /current|latest|today|recent|news/.test(lower),
-        googleCodeExecution: /calculate|estimate|forecast|analy[sz]e/.test(lower),
-        forceToolUse: false,
-      };
-  }
+  return {
+    streamLabel: descriptor.label,
+    systemInstruction: `${descriptor.prompt.systemInstruction} Mission: ${descriptor.mission}`,
+    googleSearch: descriptor.prompt.googleSearch || /trend|current|latest|news|benchmark|market/.test(lower),
+    googleCodeExecution: descriptor.prompt.googleCodeExecution || /calculate|estimate|forecast|analy[sz]e|compare/.test(lower),
+    forceToolUse: descriptor.prompt.forceToolUse,
+  };
 }

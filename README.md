@@ -1,156 +1,197 @@
 # BizBot
 
-BizBot is a local-first desktop social media agent for automated customer engagement, content publishing, and inbox management across Facebook, Instagram, and Twitter/X.
+BizBot is a local-first business operations agent: social publishing, inbox handling, CRM, commerce, local-business reputation work, approvals, and operator debugging in one app.
 
 ![BizBot UI Preview](docs/ui-preview.svg)
 
-## What It Does
+## Current Product State
 
-- **Monitors DMs** — polls Facebook Messenger, Instagram DMs, and Twitter DMs on a configurable heartbeat interval
-- **Auto-replies** — generates context-aware replies using any configured LLM provider, guided by brand-voice policies and a local knowledge folder
-- **Publishes social posts** — drafts, schedules, and publishes content with platform-specific formatting (character limits, media rules)
-- **Approval workflow** — posts can be auto-published or routed through a human approval queue depending on autonomy preset
-- **Unified inbox** — social mentions and DMs from all platforms land in a single inbox with status tracking (open → processing → drafted → replied → dismissed)
-- **Knowledge-backed context** — drop product docs, FAQs, or sales materials into the `knowledge/` folder and the agent uses them when composing replies
-- **Multi-agent routing** — requests are routed into specialist lanes for DM handling, content creation, analytics reporting, or browser research
-- **Competitor monitoring** — scheduled browser watches can track public competitor pages and summarize detected changes
-- **Deterministic DM playbooks** — canned response trees can guide greeting → qualify → pitch → website handoff flows before the LLM path is used
-- **Lead pipeline tracking** — inbox contacts can be staged as lead, qualified, contacted, converted, or lost directly in the dashboard
-- **Google Business Profile ops** — sync reviews, publish local posts, and update hours when GBP credentials are configured
+BizBot is no longer just a social posting bot. The app now includes:
 
-## Current Status
+- Agent chat with typed specialist routing and tool traces
+- Unified inbox and lead pipeline
+- CRM cockpit with notes, tasks, contact sync, and provider status
+- Commerce workspace with local products and orders
+- Local Business workspace for Google Business Profile reviews, posts, and hours
+- Approvals queue and publishing workflows
+- Analytics and runtime Operations views
+- MCP server and MCP client plumbing for tool exposure and imports
 
-**Runtime is fully operational on localhost:**
+The current dashboard surface is:
 
-- `npm run dev` launches the full stack (Next.js + BullMQ worker) via a single unified supervisor
-- PostgreSQL, Redis, and Memgraph run via Docker Compose
-- Google Gemini is the active LLM provider (chat: `gemini-3-flash-preview`, embeddings: `gemini-embedding-2-preview`)
-- Google Gemini now runs through the native official Google GenAI SDK (`@google/genai`) with support for Search grounding and code execution
-- Heartbeat worker syncs inbox, publishes scheduled posts, and processes open DMs every 5 minutes
-- Meta webhook receiver is available at `/api/webhooks/meta` for real-time Messenger / Instagram ingestion
-- Agent chat now streams routing decisions, tool calls, tool results, and final output live in the UI
-- Health endpoint at `/api/llm` reports full system status
-- Next.js 16.2.1 production build passes (standalone output for Tauri packaging)
-- Tauri v2 desktop packaging pipeline is wired and staged
+- `/chat`
+- `/inbox`
+- `/leads`
+- `/commerce`
+- `/posts`
+- `/local-business`
+- `/approvals`
+- `/analytics`
+- `/operations`
+- `/settings`
 
-**What still needs real credentials / testing:**
+The legacy `/google-business` route still exists as a compatibility redirect to `/local-business`.
 
-- Facebook Graph API: requires `META_ACCESS_TOKEN` + `FACEBOOK_PAGE_ID` (and Meta App Review for production Messenger access)
-- Twitter API: requires OAuth tokens
-- Instagram API: requires `INSTAGRAM_BUSINESS_ACCOUNT_ID`
-- Live DM send/receive validation against real accounts
+## What BizBot Does
 
-## Goals
+- Monitors inbox traffic across Facebook, Instagram, and Twitter/X
+- Drafts and sends replies through a bounded agent runtime
+- Routes requests into specialist business lanes instead of one generic agent prompt
+- Keeps lead stage, lead score, lead summary, and canned-response progression visible in the dashboard
+- Stores local-first CRM contacts and activities with optional HubSpot sync
+- Stores local-first products and orders for sales and content workflows
+- Publishes, schedules, and approves social posts
+- Syncs Google Business Profile reviews and posts, drafts replies, and updates business hours
+- Exposes a runtime operations surface for jobs, failures, and control-plane state
+- Runs as an MCP server for VS Code and other MCP clients
+- Imports external MCP servers through configured client connections
 
-- Local desktop app — not a browser-only SaaS product
-- Multi-provider LLM support (swap between OpenAI, Anthropic, Google, Ollama, MiniMax)
-- Persistent memory across conversations (semantic vector + graph)
-- Approval workflows and brand/safety guardrails before anything goes live
-- Platform abstraction — one inbox, one posting pipeline for all networks
-- Autonomous browsing and research capability via Playwright
+## Control Plane
 
-## Key Features
+BizBot now runs on a typed control plane instead of a flat tool bag.
 
-### Social Platform Support
+### Specialist Profiles
 
-| Platform | Post | Reply | Read Mentions | Read DMs | Send DMs | Analytics |
-|----------|------|-------|---------------|----------|----------|-----------|
-| Facebook | Yes  | Yes   | Yes           | Yes      | Yes      | Yes       |
-| Instagram| Yes  | Yes   | Yes           | Yes      | Yes      | Yes       |
-| Twitter/X| Yes  | Yes   | Yes           | Yes      | Yes      | Yes       |
+The runtime can route or delegate work into these profiles:
 
-All three platforms are implemented via their official APIs (Meta Graph API v21.0, Twitter API v2). A Playwright-based browser adapter for Facebook also exists for scenarios where API access is limited.
+- `general_operator`
+- `sales_operator`
+- `content_operator`
+- `reputation_operator`
+- `analyst_operator`
+- `research_operator`
+- `platform_operator`
+- `mcp_operator`
 
-### Agent Tools
+Each profile has its own mission, delegation targets, and tool policy. Public chat requests are bounded at the API edge, and delegated execution fields are not accepted from public callers.
 
-The agent exposes typed function-calling tools organized as plugins:
+### Agent Runtime Features
 
-| Plugin | Tools |
-|--------|-------|
-| Social | `social_post`, `social_reply`, `social_get_mentions`, `social_get_analytics` |
-| Content | `content_draft`, `content_refine`, `content_check_policy` |
-| Memory | recall, remember, semantic search |
-| Files | workspace file read/write |
-| Graph | Memgraph entity/relationship queries |
-| Schedule | `schedule_post`, `schedule_list`, `schedule_cancel` |
-| Approval | `approval_submit`, `approval_get_pending`, `approval_decide` |
-| Browser | web navigation, screenshot, text/link extraction |
-| Competitor | `competitor_watch_create`, `competitor_watch_list`, `competitor_watch_check`, `competitor_watch_pause` |
+- Lane-aware tool gating
+- Delegated sub-runs with parent/child lineage
+- Durable run journaling under `.bizbot/agent-runs`
+- Live tool trace streaming in Chat
+- MCP resources for runtime and debugging visibility
 
-### DM Funnel And Lead Tracking
+## Major Surfaces
 
-- Direct-message inbox replies can now use stored canned response trees before falling back to the LLM draft path
-- Inbox items now carry lead stage, lead score, lead summary, and the last matched canned-response node
-- The default funnel covers greeting -> qualify -> pitch -> handoff -> conversion with website-link placeholders
-- The leads dashboard exposes both pipeline state and the active canned-response tree definitions
+### Chat
 
-### Google Business Profile
+- Streams run metadata, routing decisions, tool calls, and final outputs
+- Uses the typed specialist control plane
+- Can expose runtime state through MCP-aware flows
 
-- Reviews sync from `GET /v4/{parent=accounts/*/locations/*}/reviews`
-- Review replies send through `PUT /v4/{name=accounts/*/locations/*/reviews/*}/reply`
-- Local posts publish through `POST /v4/{parent=accounts/*/locations/*}/localPosts`
-- Business hours update through the Business Information API `PATCH /v1/{location.name=locations/*}` with `updateMask=regularHours`
+### Inbox
 
-### Autonomy Presets
+- Unified social inbox for mentions and DMs
+- Status tracking and reply drafting
+- Integrates with canned response trees and lead progression
 
-| Preset | Create Posts | Reply to DMs | Publish Without Approval |
-|--------|-------------|--------------|--------------------------|
-| `manual_only` | No | No | No |
-| `reply_only` | No | Yes | Yes (replies only) |
-| `approval_all_posts` | Yes | Yes | No — queued for review |
-| `wide_open` | Yes | Yes | Yes |
+### Leads
 
-Current default: `approval_all_posts`
+- Kanban-style lead pipeline
+- Deterministic canned-response tree editor
+- CRM cockpit for selected contacts
+- Activity creation for notes and tasks
+- Activity filtering by type, status, and query
+- Inline task status editing
+- Contact sync and activity sync flows
 
-### LLM Providers
+### Commerce
 
-| Provider | Chat | Embeddings | Status |
-|----------|------|------------|--------|
-| Google Gemini | `gemini-3-flash-preview`, `gemini-2.5-flash` | `gemini-embedding-001`, `gemini-embedding-2-preview` | Active default |
-| OpenAI | `gpt-4o`, `gpt-4.1-mini` | `text-embedding-3-small`, `text-embedding-3-large` | Supported |
-| Anthropic | `claude-3-5-sonnet`, `claude-3-7-sonnet` | — | Supported |
-| Ollama | `gemma3`, `llama3.2` | `mxbai-embed-large`, `nomic-embed-text` | Supported |
-| MiniMax | `abab6.5s-chat` | — | Supported |
+- Local-first product catalog
+- Local-first order workspace
+- Inline editing for existing products and orders
+- Commerce data exposed to sales and content agent lanes
 
-### Memory and Knowledge
+### Local Business
 
-- **Semantic memory** — pgvector embeddings in PostgreSQL for long-term recall
-- **Graph memory** — Memgraph stores entities, topics, and relationships
-- **Conversation history** — stored per-session for continuity
-- **Knowledge folder** — drop `.txt`, `.md`, or other docs into `workspace/knowledge/`; they get chunked, embedded, and used as context in replies and drafts
+- Google Business Profile review sync
+- Review reply drafting and publishing
+- Local post publishing
+- Business hours updates
 
-### Heartbeat Worker
+### Operations
 
-A BullMQ-based background worker runs on a configurable interval (default: 5 minutes):
+- Runtime and worker visibility
+- Queue and execution summaries
+- Operational debugging surface for the control plane
 
-1. Indexes knowledge folder into pgvector embeddings
-2. Syncs mentions from all social platforms into the inbox
-3. Syncs DMs from all platforms into the inbox
-4. Publishes approved/scheduled posts that are due
-5. Auto-processes open inbox items (generates and sends replies)
-6. Runs due competitor watches and records detected content changes
+### Settings
 
-### Tier 2 Intelligence Upgrades
+- Runtime readiness surface for LLM, CRM, MCP, Redis, Memgraph, and provider config
+- Environment-backed configuration visibility
 
-- **Native Gemini harness** via `@google/genai` with native function-calling config, Google Search grounding, and code execution
-- **Streaming execution** via server-sent events from `/api/agent`
-- **Meta webhooks** for real-time inbound Messenger / Instagram ingestion via `/api/webhooks/meta`
-- **Multi-agent routing** with specialist lanes: DM handler, content creator, analytics reporter, browser researcher
-- **Competitor monitor** with watch management APIs, heartbeat scheduling, and browser-based change summaries
+## CRM
 
-### Browser Capability
+BizBot now includes CRM v2 as a first-class surface.
 
-- Playwright-powered navigation, screenshot, and text extraction
-- Cookie/session persistence per domain
-- Allowlist-based safety controls
-- Experimental Facebook browser adapter (login + post)
+### Current CRM Behavior
 
-### Desktop App
+- Local-first contact store backed by the app database
+- Local-first notes and task activities
+- Provider status visibility in the UI
+- Optional HubSpot provider
+- Contact sync routes and activity sync routes
+- CRM exposed through both app APIs and agent tools
 
-- Tauri v2 desktop shell with process supervision
-- Packaged build bundles Next.js standalone server + worker into app resources
-- Tauri runtime manages Node child processes (server + worker) with coordinated shutdown
-- App home directory (`BIZBOT_HOME_DIR`) resolves paths for packaged vs dev modes
+### CRM Notes
+
+- Internal mode is the safe default
+- HubSpot is supported as an optional provider
+- Contact sync is implemented on top of the new control plane
+- Activities are created locally first, then synced when requested
+
+## Commerce
+
+Commerce is now a visible product surface rather than a hidden plugin.
+
+### Current Commerce Behavior
+
+- Products are stored locally with SKU, pricing, activity state, and checkout metadata
+- Orders are stored locally with line items, customer info, notes, and status
+- Both products and orders are editable in the dashboard
+- Commerce is available to agent lanes through dedicated tools
+
+## Local Business
+
+The Local Business area is backed by the Google Business service.
+
+### Current Local Business Behavior
+
+- Pull latest reviews and posts from Google Business Profile
+- Reply to reviews
+- Publish local updates and offers
+- Patch regular hours
+- Use `/local-business` as the canonical UI and API route family
+
+## MCP
+
+BizBot can act as both an MCP server and an MCP client.
+
+### MCP Server
+
+- Workspace config is checked in at `.vscode/mcp.json`
+- Local stdio entry point is `npm run mcp:stdio`
+- HTTP endpoint is `/api/mcp`
+- Exposes tools, resources, and prompts
+- Includes runtime-oriented resources for inspection and debugging
+
+### MCP Client
+
+- External MCP servers can be imported via `MCP_SERVERS`
+- Imported tools are surfaced through BizBot’s runtime
+- MCP execution is bounded to the dedicated `mcp_operator` profile
+
+## Runtime Status
+
+Current repo/runtime assumptions:
+
+- `npm run dev` starts the Next.js app and worker supervisor
+- `npm run build` passes on the current app state
+- PostgreSQL, Redis, and Memgraph are expected locally via Docker Compose
+- Tauri packaging is wired for desktop delivery
+- Meta webhook receiver is available at `/api/webhooks/meta`
 
 ## Tech Stack
 
@@ -162,125 +203,135 @@ A BullMQ-based background worker runs on a configurable interval (default: 5 min
 | Worker | BullMQ on Redis |
 | ORM | Prisma 6.16.2 |
 | Database | PostgreSQL 16 + pgvector |
-| Graph | Memgraph via `neo4j-driver` |
+| Graph | Memgraph |
 | Cache/Queue | Redis 7 |
-| AI SDKs | OpenAI, Anthropic, Axios (Meta/MiniMax) |
-| Gemini SDK | `@google/genai` |
-| Social | Twitter API v2, Meta Graph API v21.0 |
 | Browser | Playwright |
-| Bundling | esbuild (worker), Next.js standalone (server) |
+| AI SDKs | OpenAI, Anthropic, Google GenAI, Axios-based provider integrations |
+| MCP | `@modelcontextprotocol/sdk` |
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  Tauri v2 Desktop Shell (or browser at localhost:3000)│
-├──────────────────────────────────────────────────────┤
-│  Next.js App Router                                   │
-│  ├─ Dashboard: /chat /inbox /leads /posts             │
-│  │             /google-business /approvals            │
-│  │             /analytics /settings                   │
-│  ├─ Onboarding: /onboarding/llm /platforms /policies  │
-│  └─ API Routes: /api/agent /api/llm /api/inbox ...    │
-├──────────────────────────────────────────────────────┤
-│  Agent Kernel                                         │
-│  ├─ Multi-step tool-calling loop                      │
-│  ├─ Plugin registry (social, content, memory, etc.)   │
-│  └─ Context assembly (conversation + vector + graph)  │
-├──────────────────────────────────────────────────────┤
-│  BullMQ Heartbeat Worker                              │
-│  ├─ Inbox sync (mentions + DMs)                       │
-│  ├─ Post publisher                                    │
-│  ├─ Knowledge indexer                                 │
-│  └─ Auto-reply processor                              │
-├──────────────────────────────────────────────────────┤
-│  Data Layer                                           │
-│  ├─ PostgreSQL + pgvector (models, embeddings)        │
-│  ├─ Memgraph (graph memory)                           │
-│  └─ Redis (BullMQ job queue)                          │
-└──────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│ Tauri shell or browser at localhost:3000                  │
+├────────────────────────────────────────────────────────────┤
+│ Next.js App Router                                        │
+│ ├─ Dashboard pages                                        │
+│ ├─ Onboarding pages                                       │
+│ └─ App and MCP API routes                                 │
+├────────────────────────────────────────────────────────────┤
+│ Typed agent control plane                                 │
+│ ├─ specialist profiles                                    │
+│ ├─ lane-aware tool gating                                 │
+│ ├─ delegated sub-runs                                     │
+│ └─ durable run journal                                    │
+├────────────────────────────────────────────────────────────┤
+│ BullMQ worker                                             │
+│ ├─ inbox sync and processing                              │
+│ ├─ scheduled publishing                                   │
+│ ├─ competitor checks                                      │
+│ └─ background upkeep                                      │
+├────────────────────────────────────────────────────────────┤
+│ Data + integrations                                       │
+│ ├─ PostgreSQL + pgvector                                  │
+│ ├─ Memgraph                                               │
+│ ├─ Redis                                                  │
+│ ├─ social platform APIs                                   │
+│ ├─ Google Business Profile                                │
+│ ├─ HubSpot                                                │
+│ └─ MCP clients and server                                 │
+└────────────────────────────────────────────────────────────┘
 ```
 
-## Pages
+## API Surface
 
-**Dashboard:** `/chat`, `/inbox`, `/leads`, `/posts`, `/google-business`, `/approvals`, `/analytics`, `/settings`
+BizBot’s app routes now include these main groups:
 
-**Onboarding:** `/onboarding`, `/onboarding/llm`, `/onboarding/platforms`, `/onboarding/policies`, `/onboarding/complete`
+### Core Runtime
 
-## API Routes
+- `/api/agent`
+- `/api/agent/heartbeat`
+- `/api/agent/heartbeat/service`
+- `/api/llm`
+- `/api/operations`
+- `/api/mcp`
 
-- `POST /api/agent`
-- `GET /api/agent/heartbeat`
-- `POST /api/agent/heartbeat`
-- `GET /api/agent/heartbeat/service`
-- `POST /api/agent/heartbeat/service`
-- `GET /api/analytics`
-- `GET /api/approvals`
-- `PATCH /api/approvals/[id]`
-- `GET /api/competitors`
-- `POST /api/competitors`
-- `GET /api/competitors/[id]`
-- `PATCH /api/competitors/[id]`
-- `POST /api/competitors/[id]/check`
-- `GET /api/files`
-- `POST /api/files`
-- `DELETE /api/files`
-- `GET /api/google-business`
-- `PATCH /api/google-business`
-- `POST /api/google-business/posts`
-- `POST /api/google-business/reviews/[id]/reply`
-- `GET /api/inbox`
-- `POST /api/inbox`
-- `PATCH /api/inbox/[id]`
-- `GET /api/leads`
-- `PATCH /api/leads/[id]`
-- `GET /api/llm`
-- `GET /api/onboarding`
-- `POST /api/onboarding`
-- `GET /api/posts`
-- `POST /api/posts`
-- `GET /api/canned-responses`
-- `POST /api/canned-responses`
-- `PATCH /api/canned-responses/[id]`
-- `GET /api/settings`
-- `PATCH /api/settings`
-- `GET /api/social/[platform]`
-- `POST /api/social/[platform]`
-- `GET /api/webhooks/meta`
-- `POST /api/webhooks/meta`
+### Social / Inbox / Publishing
 
-## Data Model
+- `/api/inbox`
+- `/api/inbox/[id]`
+- `/api/posts`
+- `/api/approvals`
+- `/api/approvals/[id]`
+- `/api/social/[platform]`
+- `/api/webhooks/meta`
 
-20 Prisma models: `User`, `Platform`, `Post`, `PostApproval`, `Conversation`, `Message`, `Memory`, `Policy`, `ScheduleRule`, `AnalyticsSnapshot`, `Setting`, `InboxMessage`, `BrowserSession`, `BrowserAction`, `CompetitorWatch`, `CompetitorSnapshot`, `CannedResponseTree`, `GoogleBusinessLocation`, `GoogleBusinessReview`, `GoogleBusinessPost`
+### CRM
+
+- `/api/crm`
+- `/api/crm/activities`
+- `/api/crm/activities/[id]`
+- `/api/crm/activities/[id]/sync`
+- `/api/crm/contacts/[id]/sync`
+
+### Commerce
+
+- `/api/commerce`
+- `/api/commerce/products`
+- `/api/commerce/orders`
+
+### Local Business
+
+- `/api/local-business`
+- `/api/local-business/posts`
+- `/api/local-business/reviews/[id]/reply`
+
+Compatibility redirects are retained at the legacy `/api/google-business/*` paths.
+
+### Other Product APIs
+
+- `/api/analytics`
+- `/api/competitors`
+- `/api/competitors/[id]/check`
+- `/api/canned-responses`
+- `/api/canned-responses/[id]`
+- `/api/files`
+- `/api/leads`
+- `/api/leads/[id]`
+- `/api/settings`
+- `/api/onboarding`
+
+## Data Model Notes
+
+The app still uses Prisma for core relational models, with `Setting` acting as a flexible local-first persistence layer for newer operator features such as:
+
+- CRM activity state
+- commerce products and orders
+- HubSpot mapping metadata
+- runtime and worker state
+- integration snapshots and lightweight control-plane records
 
 ## Repository Structure
 
 ```
 bizbot/
   src/
-    app/                      Next.js pages and API routes
+    app/                      Next.js pages and route handlers
     components/               Layout and UI components
     hooks/                    Frontend hooks
     lib/
-      agent/                  Kernel, tools, plugins, heartbeat, knowledge
-      browser/                Playwright engine, safety, sessions
-      competitors/            Competitor watch scheduler and change summaries
-      embeddings/             Embedding generation and vector search
-      files/                  Workspace file helpers
-      graph/                  Memgraph client
-      policies/               Guardrails and brand voice
-      social/                 Twitter, Facebook, Instagram adapters
-        browser/              Playwright-based social adapters
-  prisma/
-    schema.prisma             Database schema
-    migrations/               SQL migrations (pgvector setup)
-  scripts/
-    run-stack.mjs             Unified process supervisor (dev + start)
-    server-bootstrap.cjs      CJS bootstrap for packaged runtime
-    prepare-tauri-resources.mjs  Bundles standalone server + worker for Tauri
-  src-tauri/                  Tauri v2 desktop wrapper (Rust)
-  docker-compose.yml          Redis + PostgreSQL + Memgraph
-  .env.example                Environment variable template
+      agent/                  profiles, executor, tools, journaling, plugins
+      commerce/               local-first commerce data layer
+      crm/                    CRM providers, contact store, activities
+      mcp/                    MCP server and client support
+      social/                 social platform adapters
+      google-business/        Local Business service backing
+      competitors/            competitor watch logic
+      browser/                Playwright support
+  prisma/                     schema and migrations
+  scripts/                    stack runner, MCP stdio entry point, packaging helpers
+  src-tauri/                  Tauri desktop wrapper
+  workspace/                  local-first workspace data
 ```
 
 ## Quick Start
@@ -289,7 +340,7 @@ bizbot/
 
 - Node.js 20+
 - Docker and Docker Compose
-- (Optional) Rust toolchain for Tauri desktop builds
+- Optional Rust toolchain for Tauri builds
 
 ### 1. Start Infrastructure
 
@@ -297,13 +348,13 @@ bizbot/
 docker compose up -d
 ```
 
-This starts Redis, PostgreSQL (with pgvector), and Memgraph.
+This starts PostgreSQL, Redis, and Memgraph.
 
-### 2. Install Dependencies and Set Up Database
+### 2. Install Dependencies and Set Up the Database
 
 ```bash
 npm install
-cp .env.example .env     # then edit .env with your credentials
+cp .env.example .env
 npx prisma generate
 npx prisma db push
 ```
@@ -314,9 +365,9 @@ npx prisma db push
 npm run dev
 ```
 
-This single command starts both the Next.js dev server and the BullMQ worker via the unified supervisor. Open `http://localhost:3000`.
+Open `http://localhost:3000`.
 
-### 4. (Optional) Tauri Desktop Build
+### 4. Optional Desktop Build
 
 ```bash
 npm run tauri:prepare-resources
@@ -325,83 +376,91 @@ npm run tauri:build
 
 ## Environment Variables
 
-Copy `.env.example` and fill in values for your setup. Key groups:
+Copy `.env.example` and fill in only the providers you actually intend to use.
 
-### Database & Services
-
-| Variable | Default |
-|----------|---------|
-| `DATABASE_URL` | `postgresql://bizbot:bizbot_local@localhost:5432/bizbot` |
-| `MEMGRAPH_URI` | `bolt://localhost:7687` |
-
-Redis uses the default `localhost:6379` (no env var needed for defaults).
-
-### LLM Configuration
+### Core Services
 
 | Variable | Purpose |
 |----------|---------|
-| `ACTIVE_LLM_PROVIDER` | `google`, `openai`, `anthropic`, `ollama`, or `minimax` |
-| `GOOGLE_AI_API_KEY` | Google Gemini API key |
-| `GOOGLE_MODEL` | Default: `gemini-3-flash-preview` |
-| `EMBEDDING_PROVIDER` | Provider for embeddings (default: `google`) |
-| `EMBEDDING_MODEL` | Default: `gemini-embedding-001` |
-| `EMBEDDING_DIMENSIONS` | Must match pgvector column width (default: `1536`) |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `MEMGRAPH_URI` | Memgraph connection string |
+| `REDIS_URL` | Optional Redis connection string override |
 
-### Agent Behavior
+### LLM and Agent Runtime
 
 | Variable | Purpose |
 |----------|---------|
-| `BIZBOT_AUTONOMY_PRESET` | `manual_only`, `reply_only`, `approval_all_posts`, `wide_open` |
-| `BIZBOT_AGENT_HEARTBEAT_SECONDS` | Worker poll interval (default: `300`) |
-| `BIZBOT_KNOWLEDGE_ENABLED` | Enable knowledge folder indexing (default: `true`) |
-| `BIZBOT_KNOWLEDGE_PATH` | Subfolder under workspace (default: `knowledge`) |
-| `BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY` | If `true`, process webhook-ingested inbox items immediately |
+| `ACTIVE_LLM_PROVIDER` | Active LLM provider |
+| `GOOGLE_AI_API_KEY` | Google GenAI API key |
+| `GOOGLE_MODEL` | Default Google chat model |
+| `EMBEDDING_PROVIDER` | Embedding provider |
+| `EMBEDDING_MODEL` | Embedding model |
+| `BIZBOT_AUTONOMY_PRESET` | Approval/autonomy mode |
+| `BIZBOT_AGENT_HEARTBEAT_SECONDS` | Worker interval |
+| `BIZBOT_KNOWLEDGE_ENABLED` | Enable knowledge indexing |
+| `BIZBOT_KNOWLEDGE_PATH` | Knowledge folder path |
+| `BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY` | Process webhook inbox items immediately |
 
-### Social Platforms
+### MCP
 
-| Variable | Platform |
-|----------|----------|
-| `META_ACCESS_TOKEN` | Facebook + Instagram (Graph API) |
+| Variable | Purpose |
+|----------|---------|
+| `MCP_AUTH_TOKEN` | Optional auth token for `/api/mcp` |
+| `MCP_SERVERS` | External MCP server definitions |
+
+### CRM
+
+| Variable | Purpose |
+|----------|---------|
+| `CRM_PROVIDER` | `internal` or `hubspot` |
+| `HUBSPOT_PORTAL_ID` | Optional HubSpot portal id |
+| `HUBSPOT_PRIVATE_APP_TOKEN` | HubSpot private app token |
+| `HUBSPOT_BASE_URL` | HubSpot API base URL |
+
+### Social and Local Business
+
+| Variable | Purpose |
+|----------|---------|
+| `META_ACCESS_TOKEN` | Meta Graph API token |
 | `FACEBOOK_PAGE_ID` | Facebook Page ID |
-| `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram Business Account ID |
-| `META_WEBHOOK_VERIFY_TOKEN` | Verification token for Meta webhook subscription |
-| `GOOGLE_BUSINESS_CLIENT_ID` | OAuth client ID used to mint short-lived Google Business access tokens |
-| `GOOGLE_BUSINESS_CLIENT_SECRET` | OAuth client secret for Google Business token exchange |
-| `GOOGLE_BUSINESS_REFRESH_TOKEN` | Refresh token used locally to exchange for short-lived Google Business access tokens |
-| `GOOGLE_BUSINESS_ACCOUNT_NAME` | GBP account resource name, e.g. `accounts/123456789` |
-| `GOOGLE_BUSINESS_LOCATION_NAME` | GBP v4 location resource name, e.g. `accounts/123456789/locations/987654321` |
-| `GOOGLE_BUSINESS_INFO_LOCATION_NAME` | Business Information v1 location name, e.g. `locations/987654321` |
-| `TWITTER_APP_KEY`, `TWITTER_APP_SECRET` | Twitter API credentials |
-| `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_TOKEN_SECRET` | Twitter user tokens |
-| `TWITTER_USER_ID` | Twitter user ID for mention timeline |
+| `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram Business account id |
+| `META_WEBHOOK_VERIFY_TOKEN` | Meta webhook verification token |
+| `GOOGLE_BUSINESS_CLIENT_ID` | Google Business OAuth client id |
+| `GOOGLE_BUSINESS_CLIENT_SECRET` | Google Business OAuth client secret |
+| `GOOGLE_BUSINESS_REFRESH_TOKEN` | Google Business refresh token |
+| `GOOGLE_BUSINESS_ACCOUNT_NAME` | GBP account resource name |
+| `GOOGLE_BUSINESS_LOCATION_NAME` | GBP location resource name |
+| `GOOGLE_BUSINESS_INFO_LOCATION_NAME` | Business Information v1 location name |
+| `TWITTER_APP_KEY` / `TWITTER_APP_SECRET` | Twitter app credentials |
+| `TWITTER_ACCESS_TOKEN` / `TWITTER_ACCESS_TOKEN_SECRET` | Twitter user tokens |
+| `TWITTER_USER_ID` | Twitter user id |
 
 ## NPM Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start full stack (web + worker) in dev mode |
+| `npm run dev` | Start full stack in dev mode |
 | `npm run dev:web` | Start only the Next.js dev server |
-| `npm run worker` | Start only the BullMQ worker |
-| `npm run build` | Production build (Next.js standalone) |
+| `npm run worker` | Start only the worker |
+| `npm run mcp:stdio` | Start BizBot as a stdio MCP server |
+| `npm run build` | Production build |
 | `npm run start` | Start full stack in production mode |
-| `npm run tauri:prepare-resources` | Bundle server + worker into Tauri resources |
-| `npm run tauri:dev` | Run Tauri desktop in dev mode |
-| `npm run tauri:build` | Build packaged Tauri desktop app |
+| `npm run tauri:prepare-resources` | Bundle server and worker for Tauri |
+| `npm run tauri:dev` | Run Tauri in dev mode |
+| `npm run tauri:build` | Build the desktop app |
 
-## Known Limitations
+## Known Gaps
 
-- Social platform integrations are implemented but require real API credentials and live testing
-- Facebook Messenger DM access requires Meta App Review for production use
-- Browser-based social adapters are experimental (Facebook post only, no Instagram browser adapter)
-- Meta webhooks are implemented, but Twitter/X real-time webhooks are still pending external API availability/access
-- DM canned response trees currently target direct messages only; public mention playbooks are not wired yet
-- Multi-account social tenancy is not implemented; platform IDs are single-account
-- `ScheduleRule` model exists but max-per-day enforcement is not yet wired into the publish pipeline
-- Google Business Profile support currently assumes a single configured account/location and a locally stored OAuth refresh token in `.env`
+- Social integrations still need real credentials and live production validation
+- MCP stdio mode should avoid verbose database query logging to keep the transport clean
+- Google Business support assumes a single configured account/location
+- Multi-account tenant separation is not implemented
+- Browser-based social adapters remain secondary to API-backed flows
 
-## Security
+## Security Notes
 
-- `.env` is gitignored — never commit credentials
-- Browser access is allowlist-controlled via `BROWSER_ALLOWLIST` policies
-- Posting goes through approval workflows (configurable via autonomy preset)
-- This is a local operator tool, not a multi-tenant service
+- `.env` is gitignored
+- Approval flows still bound publishing by autonomy preset
+- Public agent entrypoints reject delegated execution fields
+- MCP HTTP access can be protected with `MCP_AUTH_TOKEN`
+- This is a local operator product, not a multi-tenant hosted service

@@ -6,6 +6,7 @@
     "dev": "node scripts/run-stack.mjs dev",
     "dev:web": "next dev",
     "worker": "tsx --env-file=.env src/workers/agent-worker.ts",
+    "mcp:stdio": "tsx --env-file=.env scripts/mcp-stdio.mjs",
     "build:web": "next build",
     "build": "next build",
     "start": "node scripts/run-stack.mjs start",
@@ -18,6 +19,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@google/genai": "^1.46.0",
+    "@modelcontextprotocol/sdk": "^1.28.0",
     "@prisma/client": "^6.16.2",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-fs": "^2.4.5",

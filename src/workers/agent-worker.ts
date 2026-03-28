@@ -7,6 +7,7 @@ import {
   ensureAgentHeartbeatScheduler,
 } from "@/lib/agent/heartbeat-queue";
 import { createBullMqConnection } from "@/lib/queue/redis";
+import { initMcpClients, closeMcpClients } from "@/lib/mcp/client";
 
 async function setWorkerSetting(key: string, value: string): Promise<void> {
   await db.setting.upsert({
@@ -26,6 +27,11 @@ async function main(): Promise<void> {
   await setWorkerSetting("agent_worker_started_at", new Date().toISOString());
   await recordWorkerPulse();
   await ensureAgentHeartbeatScheduler();
+
+  // Connect to any configured external MCP servers
+  await initMcpClients().catch((err) => {
+    console.warn("[agent worker] MCP client init skipped:", err);
+  });
 
   const pulseInterval = setInterval(() => {
     void recordWorkerPulse().catch((error) => {
@@ -66,6 +72,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     console.info(`[agent worker] shutting down on ${signal}`);
     clearInterval(pulseInterval);
+    await closeMcpClients();
     await worker.close();
     await connection.quit();
     await db.$disconnect();

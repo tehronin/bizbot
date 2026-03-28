@@ -6,6 +6,7 @@
 import { NextRequest } from "next/server";
 import { executeAgentConversation, type AgentExecutionEvent } from "@/lib/agent/executor";
 import type { LLMProvider } from "@/lib/agent/kernel";
+import type { AgentProfile } from "@/lib/agent/profiles";
 import { db } from "@/lib/db";
 
 function toSseChunk(event: string, payload: object): string {
@@ -36,12 +37,37 @@ async function recordAgentStreamAbort(): Promise<void> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, conversationId, provider, stream } = (await req.json()) as {
-      message: string;
-      conversationId?: string;
-      provider?: string;
-      stream?: boolean;
+    const body = (await req.json()) as {
+      message?: unknown;
+      conversationId?: unknown;
+      provider?: unknown;
+      stream?: unknown;
+      forcedProfile?: AgentProfile;
+      parentRunId?: string;
+      delegationReason?: string;
+      delegatedByProfile?: AgentProfile;
     };
+
+    if (
+      body.forcedProfile !== undefined
+      || body.parentRunId !== undefined
+      || body.delegationReason !== undefined
+      || body.delegatedByProfile !== undefined
+    ) {
+      return Response.json(
+        { error: "Delegated execution fields are internal-only and cannot be supplied via the public agent API." },
+        { status: 400 },
+      );
+    }
+
+    const message = typeof body.message === "string" ? body.message.trim() : "";
+    if (!message) {
+      return Response.json({ error: "A non-empty message is required." }, { status: 400 });
+    }
+
+    const conversationId = typeof body.conversationId === "string" ? body.conversationId : undefined;
+    const provider = typeof body.provider === "string" ? body.provider : undefined;
+    const stream = body.stream === true;
 
     if (stream) {
       const encoder = new TextEncoder();
@@ -115,6 +141,7 @@ export async function POST(req: NextRequest) {
 
     return Response.json({
       reply: result.reply,
+      runId: result.runId,
       conversationId: result.conversationId,
       profile: result.profile,
       provider: result.provider,
