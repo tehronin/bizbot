@@ -17,6 +17,8 @@ import {
   JsonObject,
   JsonValue,
   ToolDescriptor,
+  ToolParametersSchema,
+  ToolPropertySchema,
   ToolCall,
   ToolExecutionResult,
   isJsonObject,
@@ -187,8 +189,57 @@ function toGoogleFunctionDeclarations(
   return tools?.map((tool) => ({
     name: tool.name,
     description: tool.description,
-    parametersJsonSchema: tool.parameters,
+    parametersJsonSchema: toGoogleToolSchema(tool.parameters),
   }));
+}
+
+function toGoogleToolPropertySchema(schema: ToolPropertySchema): ToolPropertySchema {
+  if (schema.type === "json") {
+    return {
+      type: "string",
+      description: schema.description
+        ? `${schema.description} Pass arbitrary structured values as a JSON-encoded string.`
+        : "Pass arbitrary structured values as a JSON-encoded string.",
+      ...(schema.default !== undefined ? { default: typeof schema.default === "string" ? schema.default : JSON.stringify(schema.default) } : {}),
+    };
+  }
+
+  if (schema.type === "array") {
+    return {
+      ...schema,
+      ...(schema.items ? { items: toGoogleToolPropertySchema(schema.items) } : {}),
+    };
+  }
+
+  if (schema.type === "object") {
+    return {
+      ...schema,
+      ...(schema.properties
+        ? {
+            properties: Object.fromEntries(
+              Object.entries(schema.properties).map(([key, value]) => [
+                key,
+                value ? toGoogleToolPropertySchema(value) : value,
+              ]),
+            ),
+          }
+        : {}),
+    };
+  }
+
+  return schema;
+}
+
+function toGoogleToolSchema(schema: ToolParametersSchema): ToolParametersSchema {
+  return {
+    ...schema,
+    properties: Object.fromEntries(
+      Object.entries(schema.properties).map(([key, value]) => [
+        key,
+        value ? toGoogleToolPropertySchema(value) : value,
+      ]),
+    ),
+  };
 }
 
 function toGoogleContents(messages: ChatMessage[]): Content[] {

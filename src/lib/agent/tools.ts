@@ -131,6 +131,19 @@ function applyDefault(schema: ToolPropertySchema, value: JsonValue | undefined):
   return schema.default;
 }
 
+function coerceJsonString(value: JsonValue): JsonValue {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as JsonValue;
+    return isJsonValue(parsed) ? parsed : value;
+  } catch {
+    return value;
+  }
+}
+
 function validateToolValue(
   path: string,
   schema: ToolPropertySchema,
@@ -215,11 +228,12 @@ function validateToolValue(
       return nested;
     }
     case "json": {
-      if (!isJsonValue(resolvedValue)) {
+      const normalizedValue = coerceJsonString(resolvedValue);
+      if (!isJsonValue(normalizedValue)) {
         throw new Error(`Tool argument ${path} must be valid JSON.`);
       }
 
-      return resolvedValue;
+      return normalizedValue;
     }
   }
 }

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { MEMORY_FACT_CATEGORIES, type MemoryFactCategory } from "@/lib/agent/memory/facts";
-import { useChat } from "@/hooks/useChat";
+import { useChat, type ChatEntry } from "@/hooks/useChat";
 
 function inferCategoryFromText(content: string): MemoryFactCategory {
   const lower = content.toLowerCase();
@@ -39,6 +39,36 @@ export default function ChatPage() {
     () => messages.filter((message) => message.role === "user" || message.role === "assistant"),
     [messages],
   );
+
+  const [expandedBadges, setExpandedBadges] = useState<Set<string>>(new Set());
+
+  function toggleBadge(id: string): void {
+    setExpandedBadges((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** Group messages into blocks: full messages (user/assistant) stay as-is,
+   *  consecutive process entries (meta/status/tool) are grouped into badge rows. */
+  const grouped = useMemo(() => {
+    const groups: Array<{ kind: "message"; entry: ChatEntry } | { kind: "badges"; entries: ChatEntry[] }> = [];
+    for (const msg of messages) {
+      if (msg.role === "user" || msg.role === "assistant") {
+        groups.push({ kind: "message", entry: msg });
+      } else {
+        const last = groups[groups.length - 1];
+        if (last && last.kind === "badges") {
+          last.entries.push(msg);
+        } else {
+          groups.push({ kind: "badges", entries: [msg] });
+        }
+      }
+    }
+    return groups;
+  }, [messages]);
 
   async function promoteToMemory(): Promise<void> {
     if (!memoryDraft) {
@@ -95,45 +125,27 @@ export default function ChatPage() {
               Ask BizBot to draft, schedule, inspect analytics, or recall brand context.
             </div>
           )}
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className="border px-4 py-3 whitespace-pre-wrap"
-              style={{
-                borderColor:
-                  message.role === "user"
-                    ? "var(--accent-dim)"
-                    : message.role === "meta"
-                      ? "rgba(36,196,162,0.28)"
-                    : message.role === "status"
-                      ? "rgba(255,255,255,0.08)"
-                      : message.role === "tool"
-                        ? "rgba(91,106,240,0.18)"
-                        : "var(--border)",
-                background:
-                  message.role === "user"
-                    ? "rgba(91,106,240,0.08)"
-                    : message.role === "meta"
-                      ? "rgba(36,196,162,0.08)"
-                    : message.role === "status"
-                      ? "rgba(255,255,255,0.03)"
-                      : message.role === "tool"
-                        ? "rgba(91,106,240,0.05)"
-                        : "var(--bg-raised)",
-              }}
-            >
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
-                  {message.role}
-                </div>
-                {(message.role === "user" || message.role === "assistant") ? (
+          {grouped.map((group, gi) =>
+            group.kind === "message" ? (
+              <div
+                key={group.entry.id}
+                className="border px-4 py-3 whitespace-pre-wrap"
+                style={{
+                  borderColor: group.entry.role === "user" ? "var(--accent-dim)" : "var(--border)",
+                  background: group.entry.role === "user" ? "rgba(91,106,240,0.08)" : "var(--bg-raised)",
+                }}
+              >
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
+                    {group.entry.role}
+                  </div>
                   <button
                     onClick={() => {
                       setMemoryDraft({
-                        messageId: message.id,
-                        category: inferCategoryFromText(message.content),
-                        key: inferKeyFromText(message.content),
-                        value: message.content,
+                        messageId: group.entry.id,
+                        category: inferCategoryFromText(group.entry.content),
+                        key: inferKeyFromText(group.entry.content),
+                        value: group.entry.content,
                       });
                       setMemoryState("idle");
                       setMemoryError(null);
@@ -143,28 +155,81 @@ export default function ChatPage() {
                   >
                     promote to memory
                   </button>
-                ) : null}
-              </div>
-              {message.content}
-              {message.role === "meta" ? (
-                <div className="flex flex-wrap gap-2 mt-3 text-xs" style={{ color: "var(--text-dim)" }}>
-                  {message.profileLabel ? <span>lane {message.profileLabel}</span> : null}
-                  {message.provider ? <span>provider {message.provider}</span> : null}
-                  {message.model ? <span>model {message.model}</span> : null}
-                  {message.runId ? <span>run {message.runId}</span> : null}
                 </div>
-              ) : null}
-              {message.role === "tool" && message.round ? (
-                <div className="mt-2 text-xs" style={{ color: "var(--text-dim)" }}>round {message.round}</div>
-              ) : null}
-              {message.role === "tool" && message.args ? (
-                <pre className="mt-3 overflow-auto text-xs" style={{ color: "var(--text-dim)" }}>{message.args}</pre>
-              ) : null}
-              {message.role === "tool" && message.result ? (
-                <pre className="mt-3 overflow-auto text-xs" style={{ color: "var(--text-dim)" }}>{message.result}</pre>
-              ) : null}
-            </div>
-          ))}
+                {group.entry.content}
+              </div>
+            ) : (
+              <div key={`badges-${gi}`} className="flex flex-wrap gap-1.5 py-1">
+                {group.entries.map((msg) => {
+                  const isExpanded = expandedBadges.has(msg.id);
+                  const badgeColor =
+                    msg.role === "meta"
+                      ? { bg: "rgba(36,196,162,0.10)", border: "rgba(36,196,162,0.30)", dot: "rgb(36,196,162)" }
+                      : msg.role === "tool"
+                        ? { bg: "rgba(91,106,240,0.08)", border: "rgba(91,106,240,0.22)", dot: "rgb(91,106,240)" }
+                        : { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.10)", dot: "rgba(255,255,255,0.35)" };
+                  const label =
+                    msg.role === "meta"
+                      ? (msg.profileLabel ? `Routed → ${msg.profileLabel}` : "Routed")
+                      : msg.role === "tool"
+                        ? (msg.name ?? "tool call")
+                        : msg.content.length > 60
+                          ? msg.content.slice(0, 57) + "…"
+                          : msg.content;
+                  return (
+                    <div key={msg.id} className="inline-flex flex-col">
+                      <button
+                        onClick={() => toggleBadge(msg.id)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors"
+                        style={{
+                          background: badgeColor.bg,
+                          border: `1px solid ${badgeColor.border}`,
+                          color: "var(--text-dim)",
+                        }}
+                      >
+                        <span
+                          className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+                          style={{ background: badgeColor.dot }}
+                        />
+                        {label}
+                        <span
+                          className="ml-0.5 text-[9px] transition-transform"
+                          style={{ transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}
+                        >
+                          ▾
+                        </span>
+                      </button>
+                      {isExpanded && (
+                        <div
+                          className="mt-1 px-3 py-2 rounded text-xs whitespace-pre-wrap overflow-auto max-h-48"
+                          style={{
+                            background: badgeColor.bg,
+                            border: `1px solid ${badgeColor.border}`,
+                            color: "var(--text-dim)",
+                          }}
+                        >
+                          {msg.content}
+                          {msg.role === "meta" && (
+                            <div className="flex flex-wrap gap-2 mt-2 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                              {msg.provider ? <span>provider: {msg.provider}</span> : null}
+                              {msg.model ? <span>model: {msg.model}</span> : null}
+                              {msg.runId ? <span>run: {msg.runId}</span> : null}
+                            </div>
+                          )}
+                          {msg.role === "tool" && msg.args ? (
+                            <pre className="mt-2 overflow-auto text-[10px]" style={{ color: "var(--text-muted)" }}>{msg.args}</pre>
+                          ) : null}
+                          {msg.role === "tool" && msg.result ? (
+                            <pre className="mt-2 overflow-auto text-[10px]" style={{ color: "var(--text-muted)" }}>{msg.result}</pre>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ),
+          )}
         </div>
       </section>
       {memoryDraft ? (
