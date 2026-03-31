@@ -2,7 +2,9 @@
 
 BizBot is a local-first business operations agent: social publishing, inbox handling, CRM, commerce, local-business reputation work, approvals, and operator debugging in one app.
 
-![BizBot UI Preview](docs/ui-preview.svg)
+![BizBot Chat Preview](public/Screenshot%202026-03-31%20145157.png)
+
+![BizBot Setup Preview](public/Screenshot%202026-03-31%20145123.png)
 
 ## Current Product State
 
