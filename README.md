@@ -225,12 +225,15 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 ### Settings
 
 - Runtime readiness surface for LLM, CRM, MCP, Redis, Memgraph, and provider config
+- Explicit agent-LLM role and embedding-role selectors with provider readiness state
 - Environment-backed configuration visibility
 - Explicit user memory panel for seeding, editing, filtering, and forgetting durable facts
 - Builder workspace, preset, allowlist, and optional CLI adapter controls
 
 ### Onboarding
 
+- Mirrors the same agent-role vs embedding-role split used in Settings
+- Disables providers that are not ready yet while still showing what credentials are missing
 - Dedicated memory-seeding step before completion
 - Reuses the same explicit user memory controls as Settings
 - Guides operators toward stable facts such as preferred name, timezone, workflows, and hard constraints
@@ -567,6 +570,9 @@ Copy `.env.example` and fill in only the providers you actually intend to use.
 | `ACTIVE_LLM_PROVIDER`                      | Active LLM provider                      |
 | `GOOGLE_AI_API_KEY`                        | Google GenAI API key                     |
 | `GOOGLE_MODEL`                             | Default Google chat model                |
+| `MINIMAX_API_KEY`                          | MiniMax API key                          |
+| `MINIMAX_MODEL`                            | Default MiniMax chat model               |
+| `MINIMAX_BASE_URL`                         | MiniMax-compatible API base URL          |
 | `EMBEDDING_PROVIDER`                       | Embedding provider                       |
 | `EMBEDDING_MODEL`                          | Embedding model                          |
 | `BIZBOT_AUTONOMY_PRESET`                   | Approval/autonomy mode                   |
@@ -574,6 +580,8 @@ Copy `.env.example` and fill in only the providers you actually intend to use.
 | `BIZBOT_KNOWLEDGE_ENABLED`                 | Enable knowledge indexing                |
 | `BIZBOT_KNOWLEDGE_PATH`                    | Knowledge folder path                    |
 | `BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY` | Process webhook inbox items immediately  |
+
+The intended production split is Google for embeddings and MiniMax for the main agent/tool-calling LLM. Saving credentials only makes a provider available; operators still explicitly choose the active agent role in Settings or onboarding.
 
 ### MCP Variables
 

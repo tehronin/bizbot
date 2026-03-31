@@ -17,6 +17,14 @@ interface LlmStatusResponse {
   activeProvider: string;
   activeModel: string;
   configuredProviders: Record<string, boolean>;
+  providerStatuses: Array<{
+    provider: string;
+    model: string;
+    configured: boolean;
+    available: boolean;
+    active: boolean;
+    reason: string;
+  }>;
   generation: {
     maxTokens: number;
     temperature: number;
@@ -316,6 +324,15 @@ export default function SettingsPage() {
   const chatModelOptions = runtime?.options.chatModels[activeProvider] ?? [publicEnv[activeModelKey]];
   const embeddingProviderOptions = runtime?.options.embeddingProviders ?? ["google", "openai", "ollama"];
   const embeddingModelOptions = runtime?.options.embeddingModels[publicEnv.EMBEDDING_PROVIDER] ?? [publicEnv.EMBEDDING_MODEL];
+  const providerStatuses = runtime?.providerStatuses ?? [];
+  const providerStatusByName = Object.fromEntries(providerStatuses.map((status) => [status.provider, status]));
+  const selectedProviderStatus = providerStatusByName[activeProvider];
+  const selectedEmbeddingProviderStatus =
+    publicEnv.EMBEDDING_PROVIDER === "google"
+      ? { available: Boolean(secretEnv.GOOGLE_AI_API_KEY || runtime?.configuredProviders.google), reason: "Uses Google API key" }
+      : publicEnv.EMBEDDING_PROVIDER === "openai"
+        ? { available: Boolean(secretEnv.OPENAI_API_KEY || runtime?.configuredProviders.openai), reason: "Uses OpenAI API key" }
+        : { available: true, reason: "Uses local Ollama endpoint" };
   const metaPageId = publicEnv.META_PAGE_ID || publicEnv.FACEBOOK_PAGE_ID;
   const instagramAccountId = publicEnv.META_INSTAGRAM_ACCOUNT_ID || publicEnv.INSTAGRAM_BUSINESS_ACCOUNT_ID;
   const knowledgeExample = `${publicEnv.BIZBOT_WORKSPACE_PATH}/${publicEnv.BIZBOT_KNOWLEDGE_PATH || "knowledge"}`;
@@ -337,13 +354,13 @@ export default function SettingsPage() {
   );
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+    <div className="space-y-6">
       <section className="border p-4 space-y-6" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>settings</div>
             <div className="text-sm" style={{ color: "var(--text-dim)" }}>
-              This page is the operational source of truth for provider setup, workspace + knowledge paths, autonomy, platform credentials, and Meta webhook behavior.
+              This page is the operational source of truth for provider setup, explicit model roles, workspace + knowledge paths, autonomy, platform credentials, and Meta webhook behavior.
             </div>
           </div>
           <div className="flex gap-2">
@@ -354,19 +371,43 @@ export default function SettingsPage() {
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>chat runtime</div>
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Provider</label>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>agent llm role</div>
+                <div className="text-xs leading-6 mt-2" style={{ color: "var(--text-dim)" }}>
+                  Controls chat, tool calling, and the main agent loop. This does not change embeddings.
+                </div>
+              </div>
+              <div className="text-xs uppercase tracking-[0.16em]" style={{ color: selectedProviderStatus?.available ? "var(--success)" : "var(--danger)" }}>
+                {selectedProviderStatus?.available ? "ready" : "needs setup"}
+              </div>
+            </div>
+            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Active provider</label>
             <select value={activeProvider} onChange={(event) => updatePublicEnv("ACTIVE_LLM_PROVIDER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
               {(runtime?.options.chatProviders ?? ["ollama", "google", "openai", "anthropic", "minimax"]).map((option) => (
-                <option key={option} value={option}>{option}</option>
+                <option
+                  key={option}
+                  value={option}
+                  disabled={providerStatusByName[option] ? !providerStatusByName[option].available && option !== activeProvider : false}
+                >
+                  {option}{providerStatusByName[option] ? ` · ${providerStatusByName[option].reason}` : ""}
+                </option>
               ))}
             </select>
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Model</label>
+            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Active model</label>
             <select value={publicEnv[activeModelKey]} onChange={(event) => updatePublicEnv(activeModelKey, event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
               {chatModelOptions.map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
+            <div className="grid gap-2">
+              {providerStatuses.map((status) => (
+                <div key={status.provider} className="flex items-center justify-between border px-3 py-2 text-xs uppercase tracking-[0.14em]" style={{ borderColor: status.active ? "var(--accent)" : "var(--border)", color: "var(--text-primary)", background: status.active ? "var(--accent-glow)" : "transparent" }}>
+                  <span>{status.provider}</span>
+                  <span style={{ color: status.available ? "var(--success)" : "var(--text-dim)" }}>{status.reason}</span>
+                </div>
+              ))}
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Temperature</label>
@@ -381,10 +422,27 @@ export default function SettingsPage() {
               <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Ollama base URL</label>
               <input value={publicEnv.OLLAMA_BASE_URL} onChange={(event) => updatePublicEnv("OLLAMA_BASE_URL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
             </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>MiniMax base URL</label>
+              <input value={publicEnv.MINIMAX_BASE_URL} onChange={(event) => updatePublicEnv("MINIMAX_BASE_URL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              Entering credentials only makes a provider available. The agent will switch only when you explicitly change the active provider here.
+            </div>
           </div>
 
           <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>embeddings</div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>embedding role</div>
+                <div className="text-xs leading-6 mt-2" style={{ color: "var(--text-dim)" }}>
+                  Controls vector generation only. This is independent from the agent LLM role.
+                </div>
+              </div>
+              <div className="text-xs uppercase tracking-[0.16em]" style={{ color: selectedEmbeddingProviderStatus.available ? "var(--success)" : "var(--danger)" }}>
+                {selectedEmbeddingProviderStatus.available ? "ready" : "needs setup"}
+              </div>
+            </div>
             <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Provider</label>
             <select value={publicEnv.EMBEDDING_PROVIDER} onChange={(event) => updatePublicEnv("EMBEDDING_PROVIDER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
               {embeddingProviderOptions.map((option) => (
@@ -402,13 +460,14 @@ export default function SettingsPage() {
                 <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Vector dimensions</label>
                 <input value={publicEnv.EMBEDDING_DIMENSIONS} onChange={(event) => updatePublicEnv("EMBEDDING_DIMENSIONS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
               </div>
-              <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>MiniMax base URL</label>
-                <input value={publicEnv.MINIMAX_BASE_URL} onChange={(event) => updatePublicEnv("MINIMAX_BASE_URL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <div className="flex items-end">
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  {selectedEmbeddingProviderStatus.reason}
+                </div>
               </div>
             </div>
             <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-              Keep the embedding dimension aligned with the model that populated your pgvector column. The current default path expects 1536.
+              Keep the embedding dimension aligned with the model that populated your pgvector column. The current default path expects 1536. For the intended production split, leave embeddings on Google and switch the agent role to MiniMax.
             </div>
           </div>
         </div>
@@ -700,57 +759,59 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="space-y-6">
+      <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <UserMemoryPanel />
 
-        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>runtime status</div>
-            <div className="text-xs uppercase tracking-[0.18em]" style={{ color: saveState === "saved" ? "var(--success)" : saveState === "error" ? "var(--danger)" : "var(--text-dim)" }}>
-              {saveState}
-            </div>
-          </div>
-          <div className="space-y-3 text-sm">
-            {runtimeCards.map((card) => (
-              <div key={card.label} className="flex justify-between border-b pb-2 gap-4" style={{ borderColor: "var(--border-sub)" }}>
-                <span style={{ color: "var(--text-muted)" }}>{card.label}</span>
-                <span>{card.value}</span>
+        <div className="space-y-6">
+          <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>runtime status</div>
+              <div className="text-xs uppercase tracking-[0.18em]" style={{ color: saveState === "saved" ? "var(--success)" : saveState === "error" ? "var(--danger)" : "var(--text-dim)" }}>
+                {saveState}
               </div>
-            ))}
-            {runtime?.checks.embedding.error ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{runtime.checks.embedding.error}</div> : null}
-            {runtime?.autonomy.description ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{runtime.autonomy.description}</div> : null}
-            {runtime?.heartbeat.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{runtime.heartbeat.summary}</div> : null}
-          </div>
-        </section>
-
-        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>requirements check</div>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>LLM configured</span><span>{runtime?.checks.chat.ok ? "yes" : "needs attention"}</span></div>
-            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>CRM provider</span><span>{runtime?.crm.activeProvider ?? publicEnv.CRM_PROVIDER}</span></div>
-            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>MCP HTTP auth</span><span>{runtime?.mcp.authRequired ? "required" : "disabled"}</span></div>
-            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Redis configured</span><span>{runtime?.infrastructure.redisConfigured ? "yes" : "local default"}</span></div>
-            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Memgraph configured</span><span>{runtime?.infrastructure.memgraphConfigured ? "yes" : "no"}</span></div>
-            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Knowledge folder exists</span><span>{runtime?.knowledge.exists ? "yes" : "no"}</span></div>
-            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Meta page IDs present</span><span>{metaPageId && instagramAccountId ? "yes" : "partial"}</span></div>
-            <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Webhook immediate processing</span><span>{publicEnv.BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY === "true" ? "enabled" : "disabled"}</span></div>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-              When new product features add operational requirements, this page should be updated alongside the codepath so operators can satisfy them here instead of editing env files blindly.
             </div>
-          </div>
-        </section>
+            <div className="space-y-3 text-sm">
+              {runtimeCards.map((card) => (
+                <div key={card.label} className="flex justify-between border-b pb-2 gap-4" style={{ borderColor: "var(--border-sub)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>{card.label}</span>
+                  <span>{card.value}</span>
+                </div>
+              ))}
+              {runtime?.checks.embedding.error ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{runtime.checks.embedding.error}</div> : null}
+              {runtime?.autonomy.description ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{runtime.autonomy.description}</div> : null}
+              {runtime?.heartbeat.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{runtime.heartbeat.summary}</div> : null}
+            </div>
+          </section>
 
-        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>stored settings</div>
-          <div className="space-y-2 text-sm max-h-[420px] overflow-auto">
-            {settings.map((item) => (
-              <div key={item.key} className="flex justify-between border-b pb-2 gap-4" style={{ borderColor: "var(--border-sub)" }}>
-                <span style={{ color: "var(--text-muted)" }}>{item.key}</span>
-                <span>{item.value}</span>
+          <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+            <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>requirements check</div>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>LLM configured</span><span>{runtime?.checks.chat.ok ? "yes" : "needs attention"}</span></div>
+              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>CRM provider</span><span>{runtime?.crm.activeProvider ?? publicEnv.CRM_PROVIDER}</span></div>
+              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>MCP HTTP auth</span><span>{runtime?.mcp.authRequired ? "required" : "disabled"}</span></div>
+              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Redis configured</span><span>{runtime?.infrastructure.redisConfigured ? "yes" : "local default"}</span></div>
+              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Memgraph configured</span><span>{runtime?.infrastructure.memgraphConfigured ? "yes" : "no"}</span></div>
+              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Knowledge folder exists</span><span>{runtime?.knowledge.exists ? "yes" : "no"}</span></div>
+              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Meta page IDs present</span><span>{metaPageId && instagramAccountId ? "yes" : "partial"}</span></div>
+              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Webhook immediate processing</span><span>{publicEnv.BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY === "true" ? "enabled" : "disabled"}</span></div>
+              <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                When new product features add operational requirements, this page should be updated alongside the codepath so operators can satisfy them here instead of editing env files blindly.
               </div>
-            ))}
-          </div>
-        </section>
+            </div>
+          </section>
+
+          <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+            <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>stored settings</div>
+            <div className="space-y-2 text-sm max-h-[420px] overflow-auto">
+              {settings.map((item) => (
+                <div key={item.key} className="flex justify-between border-b pb-2 gap-4" style={{ borderColor: "var(--border-sub)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>{item.key}</span>
+                  <span>{item.value}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
       </section>
     </div>
   );

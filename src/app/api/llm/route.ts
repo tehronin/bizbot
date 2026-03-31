@@ -27,6 +27,15 @@ interface OllamaTagsResponse {
   }>;
 }
 
+interface ProviderStatus {
+  provider: LLMProvider;
+  model: string;
+  configured: boolean;
+  available: boolean;
+  active: boolean;
+  reason: string;
+}
+
 const CHAT_MODEL_OPTIONS: Record<LLMProvider, string[]> = {
   openai: ["gpt-4o", "gpt-4.1-mini"],
   anthropic: ["claude-3-5-sonnet-20241022", "claude-3-7-sonnet-latest"],
@@ -64,6 +73,46 @@ async function getOllamaModelOptions(): Promise<string[]> {
   }
 }
 
+async function getProviderStatuses(
+  activeProvider: LLMProvider,
+  configuredProviders: Record<LLMProvider, boolean>,
+): Promise<ProviderStatus[]> {
+  const providers = Object.keys(configuredProviders) as LLMProvider[];
+  const availability = await Promise.all(
+    providers.map(async (provider) => {
+      const configured = configuredProviders[provider];
+
+      if (provider !== "ollama" && !configured) {
+        return {
+          provider,
+          model: getModelForProvider(provider),
+          configured,
+          available: false,
+          active: provider === activeProvider,
+          reason: "Missing credentials",
+        } satisfies ProviderStatus;
+      }
+
+      const available = await testProvider(provider);
+
+      return {
+        provider,
+        model: getModelForProvider(provider),
+        configured,
+        available,
+        active: provider === activeProvider,
+        reason: available
+          ? "Ready"
+          : provider === "ollama"
+            ? "Ollama is not responding"
+            : "Configured but failing health check",
+      } satisfies ProviderStatus;
+    }),
+  );
+
+  return availability;
+}
+
 export async function GET() {
   const activeProvider = getActiveProvider();
   const configuredProviders = getConfiguredProviders();
@@ -89,12 +138,13 @@ export async function GET() {
 
   const heartbeatMap = Object.fromEntries(heartbeatSettings.map((row) => [row.key, row.value]));
 
-  const [chatOk, embeddingStatus, ollamaModels, workerStatus, crmProviders] = await Promise.all([
+  const [chatOk, embeddingStatus, ollamaModels, workerStatus, crmProviders, providerStatuses] = await Promise.all([
     testProvider(activeProvider),
     testEmbeddingProvider(),
     getOllamaModelOptions(),
     getAgentWorkerStatus(),
     getCrmProviderStatuses(),
+    getProviderStatuses(activeProvider, configuredProviders),
   ]);
 
   return Response.json({
@@ -130,6 +180,7 @@ export async function GET() {
       },
       embedding: embeddingStatus,
     },
+    providerStatuses,
     options: {
       chatProviders: Object.keys(configuredProviders),
       chatModels: {

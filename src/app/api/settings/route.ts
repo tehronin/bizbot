@@ -7,6 +7,12 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { readEnv, writeEnv, maskEnvValues } from "@/lib/env";
 
+function applyEnvUpdatesToProcessEnv(env: Record<string, string>): void {
+  for (const [key, value] of Object.entries(env)) {
+    process.env[key] = value;
+  }
+}
+
 export async function GET() {
   const settings = await db.setting.findMany();
   const raw = await readEnv();
@@ -34,6 +40,7 @@ export async function PATCH(req: NextRequest) {
 
     if (body.env) {
       await writeEnv(body.env);
+      applyEnvUpdatesToProcessEnv(body.env);
     }
 
     return Response.json({ updated: true });
