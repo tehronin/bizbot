@@ -120,6 +120,14 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - An optional Codex adapter is wired through `builder_run_agentic_task` using `codex exec` for non-interactive runs when enabled and installed.
 - Claude Code is modeled as a future adapter slot under the same Builder Mode shell, not as a separate builtin product plugin.
 
+### Recommended Builder Workflow
+
+- Treat Builder as project-first, not chat-first: create the Builder project before asking chat to scaffold or modify code in that external workspace.
+- Use the Builder tab to establish the durable project identity: project name, template, package manager, and workspace location when exposed by the UI.
+- After the project exists, return to Chat and reference the Builder project by name or project id so the agent can target the correct external workspace.
+- Builder run ids are useful for inspecting a specific run, but they are not the primary handoff token for ongoing build work; the persistent Builder project is.
+- If a user asks Chat to build something and no Builder project is in scope, the preferred behavior is to direct them to create the project in `/builder` first, then continue the build from Chat against that project.
+
 ### Builder Configuration
 
 - `BIZBOT_BUILDER_WORKSPACE_PATH` points to the dedicated external builder workspace.
