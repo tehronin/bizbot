@@ -27,6 +27,7 @@ import {
 } from "@/lib/agent/tools";
 import type { FunctionParameters } from "openai/resources/shared";
 import type { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/messages/messages";
+import { getSecretValue, hasSecretValueSync } from "@/lib/runtime-secrets";
 
 export type LLMProvider = "openai" | "anthropic" | "ollama" | "google" | "minimax";
 
@@ -75,18 +76,8 @@ function abortPromise(signal: AbortSignal | undefined): Promise<never> {
 
 function getOpenAIClient(baseURL?: string, apiKey?: string): OpenAI {
   return new OpenAI({
-    apiKey: apiKey ?? process.env.OPENAI_API_KEY ?? "",
+    apiKey: apiKey ?? "",
     ...(baseURL ? { baseURL } : {}),
-  });
-}
-
-function getAnthropicClient(): Anthropic {
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
-}
-
-function getGoogleClient(): GoogleGenAI {
-  return new GoogleGenAI({
-    apiKey: process.env.GOOGLE_AI_API_KEY ?? process.env.GEMINI_API_KEY ?? "",
   });
 }
 
@@ -462,7 +453,7 @@ export async function chatComplete(
 
   switch (activeProvider) {
     case "openai": {
-      const client = getOpenAIClient();
+      const client = getOpenAIClient(undefined, await getSecretValue("OPENAI_API_KEY"));
       const model = getModelForProvider("openai");
       const response = await client.chat.completions.create({
         model,
@@ -485,7 +476,7 @@ export async function chatComplete(
     }
 
     case "anthropic": {
-      const client = getAnthropicClient();
+      const client = new Anthropic({ apiKey: (await getSecretValue("ANTHROPIC_API_KEY")) ?? "" });
       const model = getModelForProvider("anthropic");
       const systemMsg = messages.find((m) => m.role === "system")?.content;
       const response = await client.messages.create({
@@ -539,7 +530,9 @@ export async function chatComplete(
     }
 
     case "google": {
-      const client = getGoogleClient();
+      const client = new GoogleGenAI({
+        apiKey: (await getSecretValue("GOOGLE_AI_API_KEY")) ?? process.env.GEMINI_API_KEY ?? "",
+      });
       const model = getModelForProvider("google");
       const functionDeclarations = toGoogleFunctionDeclarations(tools);
       const response = await Promise.race([
@@ -594,7 +587,7 @@ export async function chatComplete(
       // MiniMax exposes an OpenAI-compatible endpoint
       const client = getOpenAIClient(
         process.env.MINIMAX_BASE_URL ?? "https://api.minimax.chat/v1",
-        process.env.MINIMAX_API_KEY,
+        await getSecretValue("MINIMAX_API_KEY"),
       );
       const model = getModelForProvider("minimax");
       const response = await client.chat.completions.create({
@@ -635,10 +628,10 @@ export async function testProvider(provider?: LLMProvider): Promise<boolean> {
 /** Get a list of available/configured providers. */
 export function getConfiguredProviders(): Record<LLMProvider, boolean> {
   return {
-    openai: !!process.env.OPENAI_API_KEY,
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
+    openai: hasSecretValueSync("OPENAI_API_KEY"),
+    anthropic: hasSecretValueSync("ANTHROPIC_API_KEY"),
     ollama: true, // always try Ollama (local, no key needed)
-    google: !!process.env.GOOGLE_AI_API_KEY,
-    minimax: !!process.env.MINIMAX_API_KEY,
+    google: hasSecretValueSync("GOOGLE_AI_API_KEY"),
+    minimax: hasSecretValueSync("MINIMAX_API_KEY"),
   };
 }

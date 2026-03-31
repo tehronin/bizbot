@@ -20,6 +20,7 @@ import {
 } from "@/lib/embeddings/embed";
 import { getActiveCrmProvider, getCrmProviderStatuses } from "@/lib/crm";
 import { getMcpClientStatus } from "@/lib/mcp/client";
+import { hasSecretValue } from "@/lib/runtime-secrets";
 
 interface OllamaTagsResponse {
   models?: Array<{
@@ -138,13 +139,14 @@ export async function GET() {
 
   const heartbeatMap = Object.fromEntries(heartbeatSettings.map((row) => [row.key, row.value]));
 
-  const [chatOk, embeddingStatus, ollamaModels, workerStatus, crmProviders, providerStatuses] = await Promise.all([
+  const [chatOk, embeddingStatus, ollamaModels, workerStatus, crmProviders, providerStatuses, mcpAuthRequired] = await Promise.all([
     testProvider(activeProvider),
     testEmbeddingProvider(),
     getOllamaModelOptions(),
     getAgentWorkerStatus(),
     getCrmProviderStatuses(),
     getProviderStatuses(activeProvider, configuredProviders),
+    hasSecretValue("MCP_AUTH_TOKEN"),
   ]);
 
   return Response.json({
@@ -192,7 +194,7 @@ export async function GET() {
     },
     mcp: {
       serverEndpoint: "/api/mcp",
-      authRequired: !!process.env.MCP_AUTH_TOKEN,
+      authRequired: mcpAuthRequired,
       connectedClients: getMcpClientStatus(),
     },
     crm: {

@@ -42,7 +42,7 @@ export const localBusinessPlugin = {
       description: "Inspect Google Business Profile readiness and the latest local dashboard snapshot.",
       parameters: { type: "object", properties: {} },
       execute: async (_args: LocalBusinessStatusArgs) => ({
-        configured: getLocalBusinessPluginDeps().isConfigured(),
+        configured: await getLocalBusinessPluginDeps().isConfigured(),
         dashboard: await getLocalBusinessPluginDeps().getDashboard(false),
       }),
     } satisfies ToolDefinition<LocalBusinessStatusArgs, { configured: boolean; dashboard: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["getDashboard"]>> }>)),

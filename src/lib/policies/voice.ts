@@ -4,10 +4,16 @@
  */
 
 import OpenAI from "openai";
+import { getSecretValue } from "@/lib/runtime-secrets";
 
 let client: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (!client) client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let clientApiKey: string | null = null;
+async function getClient(): Promise<OpenAI> {
+  const apiKey = (await getSecretValue("OPENAI_API_KEY")) ?? "";
+  if (!client || clientApiKey !== apiKey) {
+    client = new OpenAI({ apiKey });
+    clientApiKey = apiKey;
+  }
   return client;
 }
 
@@ -29,7 +35,7 @@ export async function checkBrandVoice(
 ): Promise<VoiceResult> {
   const minScore = rules.minScore ?? 60;
 
-  const response = await getClient().chat.completions.create({
+  const response = await (await getClient()).chat.completions.create({
     model: process.env.OPENAI_MODEL ?? "gpt-4o",
     temperature: 0,
     messages: [

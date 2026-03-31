@@ -1,6 +1,7 @@
 import axios, { type AxiosRequestConfig } from "axios";
 import { GoogleBusinessPostStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getSecretValue } from "@/lib/runtime-secrets";
 
 const GOOGLE_MY_BUSINESS_BASE_URL = "https://mybusiness.googleapis.com";
 const GOOGLE_BUSINESS_INFO_BASE_URL = "https://mybusinessbusinessinformation.googleapis.com";
@@ -75,10 +76,10 @@ export interface GoogleBusinessPostInput {
   offerData?: object;
 }
 
-function getGoogleBusinessConfig(): GoogleBusinessConfig | null {
-  const oauthClientId = process.env.GOOGLE_BUSINESS_CLIENT_ID?.trim();
-  const oauthClientSecret = process.env.GOOGLE_BUSINESS_CLIENT_SECRET?.trim();
-  const refreshToken = process.env.GOOGLE_BUSINESS_REFRESH_TOKEN?.trim();
+async function getGoogleBusinessConfig(): Promise<GoogleBusinessConfig | null> {
+  const oauthClientId = (await getSecretValue("GOOGLE_BUSINESS_CLIENT_ID"))?.trim();
+  const oauthClientSecret = (await getSecretValue("GOOGLE_BUSINESS_CLIENT_SECRET"))?.trim();
+  const refreshToken = (await getSecretValue("GOOGLE_BUSINESS_REFRESH_TOKEN"))?.trim();
   const accountName = process.env.GOOGLE_BUSINESS_ACCOUNT_NAME?.trim();
   const locationName = process.env.GOOGLE_BUSINESS_LOCATION_NAME?.trim();
   const infoLocationName = process.env.GOOGLE_BUSINESS_INFO_LOCATION_NAME?.trim() ?? null;
@@ -97,8 +98,8 @@ function getGoogleBusinessConfig(): GoogleBusinessConfig | null {
   };
 }
 
-function assertConfig(): GoogleBusinessConfig {
-  const config = getGoogleBusinessConfig();
+async function assertConfig(): Promise<GoogleBusinessConfig> {
+  const config = await getGoogleBusinessConfig();
   if (!config) {
     throw new Error("Google Business Profile is not configured. Set GOOGLE_BUSINESS_CLIENT_ID, GOOGLE_BUSINESS_CLIENT_SECRET, GOOGLE_BUSINESS_REFRESH_TOKEN, GOOGLE_BUSINESS_ACCOUNT_NAME, and GOOGLE_BUSINESS_LOCATION_NAME.");
   }
@@ -183,12 +184,12 @@ async function ensureLocation(config: GoogleBusinessConfig) {
   });
 }
 
-export function isGoogleBusinessConfigured(): boolean {
-  return getGoogleBusinessConfig() !== null;
+export async function isGoogleBusinessConfigured(): Promise<boolean> {
+  return Boolean(await getGoogleBusinessConfig());
 }
 
 export async function syncGoogleBusinessReviews() {
-  const config = assertConfig();
+  const config = await assertConfig();
   const location = await ensureLocation(config);
   const authConfig = await toAuthConfig(config);
   const response = await axios.get<{ reviews?: GoogleReviewPayload[] }>(
@@ -250,7 +251,7 @@ export async function syncGoogleBusinessReviews() {
 }
 
 export async function syncGoogleBusinessPosts() {
-  const config = assertConfig();
+  const config = await assertConfig();
   const location = await ensureLocation(config);
   const authConfig = await toAuthConfig(config);
   const response = await axios.get<{ localPosts?: GoogleLocalPostPayload[] }>(
@@ -315,7 +316,8 @@ export async function syncGoogleBusinessPosts() {
 }
 
 export async function getGoogleBusinessDashboard(syncRemote = false) {
-  if (syncRemote && isGoogleBusinessConfigured()) {
+  const configured = Boolean(await getGoogleBusinessConfig());
+  if (syncRemote && configured) {
     await Promise.all([syncGoogleBusinessReviews(), syncGoogleBusinessPosts()]);
   }
 
@@ -334,13 +336,13 @@ export async function getGoogleBusinessDashboard(syncRemote = false) {
   });
 
   return {
-    configured: isGoogleBusinessConfigured(),
+    configured,
     location,
   };
 }
 
 export async function replyToGoogleBusinessReview(id: string, comment: string) {
-  const config = assertConfig();
+  const config = await assertConfig();
   const authConfig = await toAuthConfig(config);
   const review = await db.googleBusinessReview.findUnique({
     where: { id },
@@ -369,7 +371,7 @@ export async function replyToGoogleBusinessReview(id: string, comment: string) {
 }
 
 export async function createGoogleBusinessPost(input: GoogleBusinessPostInput) {
-  const config = assertConfig();
+  const config = await assertConfig();
   const location = await ensureLocation(config);
   const authConfig = await toAuthConfig(config);
   const payload = {
@@ -413,7 +415,7 @@ export async function createGoogleBusinessPost(input: GoogleBusinessPostInput) {
 }
 
 export async function updateGoogleBusinessHours(hours: GoogleHoursInput) {
-  const config = assertConfig();
+  const config = await assertConfig();
   const authConfig = await toAuthConfig(config);
   if (!config.infoLocationName) {
     throw new Error("GOOGLE_BUSINESS_INFO_LOCATION_NAME is required to update business hours.");

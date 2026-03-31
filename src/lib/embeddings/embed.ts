@@ -4,6 +4,7 @@
  */
 
 import OpenAI from "openai";
+import { getSecretValue } from "@/lib/runtime-secrets";
 
 export type EmbeddingProvider = "google" | "openai" | "ollama";
 export type EmbeddingPurpose = "query" | "document";
@@ -34,10 +35,13 @@ const DEFAULT_EMBEDDING_DIMENSIONS = 1536;
 const MAX_EMBEDDING_INPUT_CHARS = 8000;
 
 let openaiClient: OpenAI | null = null;
+let openaiClientApiKey: string | null = null;
 
-function getOpenAI(): OpenAI {
-  if (!openaiClient) {
-    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+async function getOpenAI(): Promise<OpenAI> {
+  const apiKey = (await getSecretValue("OPENAI_API_KEY")) ?? "";
+  if (!openaiClient || openaiClientApiKey !== apiKey) {
+    openaiClient = new OpenAI({ apiKey });
+    openaiClientApiKey = apiKey;
   }
   return openaiClient;
 }
@@ -109,7 +113,7 @@ async function embedWithGoogle(
   purpose: EmbeddingPurpose,
   config: EmbeddingConfig,
 ): Promise<number[]> {
-  const apiKey = process.env.GOOGLE_AI_API_KEY ?? "";
+  const apiKey = (await getSecretValue("GOOGLE_AI_API_KEY")) ?? "";
   if (!apiKey) {
     throw new Error("GOOGLE_AI_API_KEY is required when EMBEDDING_PROVIDER=google");
   }
@@ -147,7 +151,7 @@ async function embedBatchWithGoogle(
   purpose: EmbeddingPurpose,
   config: EmbeddingConfig,
 ): Promise<number[][]> {
-  const apiKey = process.env.GOOGLE_AI_API_KEY ?? "";
+  const apiKey = (await getSecretValue("GOOGLE_AI_API_KEY")) ?? "";
   if (!apiKey) {
     throw new Error("GOOGLE_AI_API_KEY is required when EMBEDDING_PROVIDER=google");
   }
@@ -222,7 +226,7 @@ async function embedBatchWithOllama(texts: string[], config: EmbeddingConfig): P
 }
 
 async function embedWithOpenAI(text: string, config: EmbeddingConfig): Promise<number[]> {
-  const client = getOpenAI();
+  const client = await getOpenAI();
   const response = await client.embeddings.create({
     input: text.slice(0, MAX_EMBEDDING_INPUT_CHARS),
     model: config.model,
@@ -231,7 +235,7 @@ async function embedWithOpenAI(text: string, config: EmbeddingConfig): Promise<n
 }
 
 async function embedBatchWithOpenAI(texts: string[], config: EmbeddingConfig): Promise<number[][]> {
-  const client = getOpenAI();
+  const client = await getOpenAI();
   const response = await client.embeddings.create({
     input: texts.map((text) => text.slice(0, MAX_EMBEDDING_INPUT_CHARS)),
     model: config.model,

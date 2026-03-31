@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { ingestMetaWebhook } from "@/lib/social/meta-webhooks";
+import { getSecretValue } from "@/lib/runtime-secrets";
 
 function isRecord(value: object | null): value is Record<string, object | string | number | boolean | null | Array<object | string | number | boolean | null>> {
   return value !== null && !Array.isArray(value);
@@ -10,10 +11,12 @@ export async function GET(req: NextRequest) {
   const verifyToken = req.nextUrl.searchParams.get("hub.verify_token");
   const challenge = req.nextUrl.searchParams.get("hub.challenge");
 
+  const expectedVerifyToken = await getSecretValue("META_WEBHOOK_VERIFY_TOKEN");
+
   if (
     mode === "subscribe"
     && verifyToken
-    && verifyToken === (process.env.META_WEBHOOK_VERIFY_TOKEN ?? "")
+    && verifyToken === (expectedVerifyToken ?? "")
     && challenge
   ) {
     return new Response(challenge, { status: 200 });

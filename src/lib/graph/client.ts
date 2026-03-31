@@ -5,14 +5,15 @@
 
 import neo4j, { Driver, Session } from "neo4j-driver";
 import type { JsonObject } from "@/lib/agent/tools";
+import { getSecretValue } from "@/lib/runtime-secrets";
 
 let driver: Driver | null = null;
 
-function getDriver(): Driver {
+async function getDriver(): Promise<Driver> {
   if (!driver) {
     const uri = process.env.MEMGRAPH_URI ?? "bolt://localhost:7687";
     const user = process.env.MEMGRAPH_USER ?? "";
-    const password = process.env.MEMGRAPH_PASSWORD ?? "";
+    const password = (await getSecretValue("MEMGRAPH_PASSWORD")) ?? "";
 
     driver = neo4j.driver(
       uri,
@@ -26,8 +27,8 @@ function getDriver(): Driver {
   return driver;
 }
 
-export function getSession(): Session {
-  return getDriver().session();
+export async function getSession(): Promise<Session> {
+  return (await getDriver()).session();
 }
 
 export async function closeGraph(): Promise<void> {
@@ -42,7 +43,7 @@ export async function runRead<T extends JsonObject>(
   cypher: string,
   params: JsonObject = {},
 ): Promise<T[]> {
-  const session = getSession();
+  const session = await getSession();
   try {
     const result = await session.executeRead((tx) => tx.run(cypher, params));
     return result.records.map((r) => r.toObject() as T);
@@ -56,7 +57,7 @@ export async function runWrite<T extends JsonObject>(
   cypher: string,
   params: JsonObject = {},
 ): Promise<T[]> {
-  const session = getSession();
+  const session = await getSession();
   try {
     const result = await session.executeWrite((tx) => tx.run(cypher, params));
     return result.records.map((r) => r.toObject() as T);

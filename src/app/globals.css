@@ -18,6 +18,7 @@
   --accent-glow: rgba(91,106,240,0.15);
 
   --danger:      #d94f4f;
+  --warning:     #d6923a;
   --success:     #3a8c5c;
 
   --background: var(--bg-base);

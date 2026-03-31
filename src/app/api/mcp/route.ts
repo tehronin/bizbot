@@ -9,13 +9,14 @@
 
 import { createBizBotMcpServer } from "@/lib/mcp/server";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { getSecretValue } from "@/lib/runtime-secrets";
 
 /**
  * Verify the MCP_AUTH_TOKEN if one is configured.
  * Returns null if auth passes, or an error Response if it fails.
  */
-function checkAuth(req: Request): Response | null {
-  const expectedToken = process.env.MCP_AUTH_TOKEN;
+async function checkAuth(req: Request): Promise<Response | null> {
+  const expectedToken = await getSecretValue("MCP_AUTH_TOKEN");
   if (!expectedToken) return null; // no auth configured
 
   const authHeader = req.headers.get("authorization");
@@ -54,13 +55,13 @@ async function handleMcpRequest(req: Request): Promise<Response> {
 }
 
 export async function POST(req: Request) {
-  const authError = checkAuth(req);
+  const authError = await checkAuth(req);
   if (authError) return authError;
   return handleMcpRequest(req);
 }
 
 export async function GET(req: Request) {
-  const authError = checkAuth(req);
+  const authError = await checkAuth(req);
   if (authError) return authError;
   // Stateless mode doesn't support standalone SSE streams
   return Response.json(
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const authError = checkAuth(req);
+  const authError = await checkAuth(req);
   if (authError) return authError;
   // Stateless mode — no sessions to terminate
   return Response.json(

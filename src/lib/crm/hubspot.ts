@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { getSecretValue } from "@/lib/runtime-secrets";
 import {
   updateCrmActivitySync,
 } from "@/lib/crm/activities";
@@ -46,17 +47,13 @@ function getHubSpotPortalId(): string | null {
   return value ? value : null;
 }
 
-function getHubSpotToken(): string | null {
-  const value = process.env.HUBSPOT_PRIVATE_APP_TOKEN?.trim();
+async function getHubSpotToken(): Promise<string | null> {
+  const value = (await getSecretValue("HUBSPOT_PRIVATE_APP_TOKEN"))?.trim();
   return value ? value : null;
 }
 
 function getHubSpotBaseUrl(): string {
   return process.env.HUBSPOT_BASE_URL?.trim() || "https://api.hubapi.com";
-}
-
-function isHubSpotLiveConfigured(): boolean {
-  return Boolean(getHubSpotToken());
 }
 
 function getHubSpotMapKey(contactId: string): string {
@@ -245,7 +242,7 @@ async function callHubSpot<T>(
   endpoint: string,
   init?: RequestInit,
 ): Promise<T> {
-  const token = getHubSpotToken();
+  const token = await getHubSpotToken();
   if (!token) {
     throw new Error("HubSpot private app token is not configured.");
   }
@@ -367,7 +364,7 @@ export class HubSpotCrmProvider implements CrmProvider {
   readonly name = "hubspot" as const;
 
   async getStatus(): Promise<CrmProviderStatus> {
-    const token = getHubSpotToken();
+    const token = await getHubSpotToken();
     const portalId = getHubSpotPortalId();
     const mappedContacts = await db.setting.count({
       where: { key: { startsWith: HUBSPOT_CONTACT_MAP_PREFIX } },
@@ -378,7 +375,7 @@ export class HubSpotCrmProvider implements CrmProvider {
       label: "HubSpot",
       active: (process.env.CRM_PROVIDER ?? "internal") === this.name,
       connected: Boolean(token),
-      mode: isHubSpotLiveConfigured() ? "live" : "stub",
+      mode: token ? "live" : "stub",
       details: {
         portalId,
         tokenConfigured: Boolean(token),
@@ -390,7 +387,8 @@ export class HubSpotCrmProvider implements CrmProvider {
   }
 
   async syncContact(contact: CrmContact): Promise<CrmSyncResult> {
-    if (!isHubSpotLiveConfigured()) {
+    const token = await getHubSpotToken();
+    if (!token) {
       return {
         ok: true,
         provider: this.name,
@@ -444,7 +442,8 @@ export class HubSpotCrmProvider implements CrmProvider {
   }
 
   async syncActivity(contact: CrmContact, activity: CrmActivity): Promise<CrmActivitySyncResult> {
-    if (!isHubSpotLiveConfigured()) {
+    const token = await getHubSpotToken();
+    if (!token) {
       return {
         ok: true,
         provider: this.name,

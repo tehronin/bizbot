@@ -1,8 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { AgenticSetupDrawer } from "@/components/chat/AgenticSetupDrawer";
 import { MEMORY_FACT_CATEGORIES, type MemoryFactCategory } from "@/lib/agent/memory/facts";
 import { useChat, type ChatEntry } from "@/hooks/useChat";
+
+const FIRST_RUN_AUTO_OPEN_KEY = "bizbot:first-run-setup-auto-opened";
+
+interface AgenticSetupBootResponse {
+  state: {
+    isFirstRun: boolean;
+  };
+}
 
 function inferCategoryFromText(content: string): MemoryFactCategory {
   const lower = content.toLowerCase();
@@ -24,6 +34,8 @@ function inferKeyFromText(content: string): string {
 }
 
 export default function ChatPage() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [input, setInput] = useState("");
   const [memoryDraft, setMemoryDraft] = useState<{
     messageId: string;
@@ -41,6 +53,41 @@ export default function ChatPage() {
   );
 
   const [expandedBadges, setExpandedBadges] = useState<Set<string>>(new Set());
+  const setupOpen = searchParams.get("setup") === "1";
+  const closeSetupHref = useMemo(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("setup");
+    return params.toString() ? `${pathname}?${params.toString()}` : pathname;
+  }, [pathname, searchParams]);
+
+  useEffect(() => {
+    if (setupOpen) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (window.sessionStorage.getItem(FIRST_RUN_AUTO_OPEN_KEY) === "1") {
+      return;
+    }
+
+    fetch("/api/agentic-setup")
+      .then((response) => response.json() as Promise<AgenticSetupBootResponse>)
+      .then((data) => {
+        if (!data.state.isFirstRun) {
+          return;
+        }
+
+        window.sessionStorage.setItem(FIRST_RUN_AUTO_OPEN_KEY, "1");
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("setup", "1");
+        const nextPath = params.toString() ? `${pathname}?${params.toString()}` : `${pathname}?setup=1`;
+        window.location.replace(nextPath);
+      })
+      .catch(() => {});
+  }, [pathname, searchParams, setupOpen]);
 
   function toggleBadge(id: string): void {
     setExpandedBadges((prev) => {
@@ -101,7 +148,8 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="grid gap-4 h-full" style={{ gridTemplateRows: "auto 1fr auto auto" }}>
+    <>
+      <div className="grid gap-4 h-full" style={{ gridTemplateRows: "auto 1fr auto auto" }}>
       <section className="grid gap-3 grid-cols-4">
         {[
           { label: "conversation", value: conversationId ?? "not started" },
@@ -299,6 +347,8 @@ export default function ChatPage() {
           {isPending ? "Running" : "Send"}
         </button>
       </form>
-    </div>
+      </div>
+      <AgenticSetupDrawer open={setupOpen} closeHref={closeSetupHref} />
+    </>
   );
 }

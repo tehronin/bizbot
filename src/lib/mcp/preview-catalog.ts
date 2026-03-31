@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { db } from "@/lib/db";
+import { filterVisibleSettings } from "@/lib/runtime-secrets";
 import { getAgentWorkerStatus, listAgentHeartbeatJobs } from "@/lib/agent/heartbeat-queue";
 import { getKnowledgeStatus } from "@/lib/agent/knowledge-status";
 import { inspectMemories, listRecentConversations } from "@/lib/agent/memory";
@@ -461,7 +462,7 @@ export function listBizBotResourceDefinitions(): BizBotResourceDefinition[] {
     { name: "posts-scheduled", uri: "bizbot://posts/scheduled", title: "Scheduled Posts", description: "Posts scheduled for future publishing", mimeType: "application/json", ownerId: "schedule", group: "publishing", read: async () => db.post.findMany({ where: { status: "SCHEDULED" }, orderBy: { scheduledAt: "asc" }, take: 50, include: { platform: true } }) },
     { name: "approvals-pending", uri: "bizbot://approvals/pending", title: "Pending Approvals", description: "Posts waiting for human approval", mimeType: "application/json", ownerId: "approval", group: "publishing", read: async () => db.postApproval.findMany({ where: { status: "PENDING" }, include: { post: { include: { platform: true } } }, orderBy: { createdAt: "asc" } }) },
     { name: "settings", uri: "bizbot://settings", title: "BizBot Settings", description: "Current agent settings and autonomy configuration", mimeType: "application/json", ownerId: "core", group: "runtime", read: async () => {
-      const settings = await db.setting.findMany();
+      const settings = filterVisibleSettings(await db.setting.findMany());
       const mapped = Object.fromEntries(settings.map((s) => [s.key, s.value]));
       return { ...mapped, runtimeConfig: getAgentRuntimeConfig() };
     } },

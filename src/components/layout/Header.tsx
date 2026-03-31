@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 interface SettingsResponse {
@@ -11,17 +12,40 @@ interface ApprovalsResponse {
   approvals?: Array<{ id: string }>;
 }
 
+interface AgenticSetupResponse {
+  state: {
+    tone: "missing" | "partial" | "ready";
+    label: string;
+    detail: string;
+    nextRequiredLabel: string | null;
+    isFirstRun: boolean;
+    completionPercent: number;
+  };
+}
+
+function getSetupTooltip(state: AgenticSetupResponse["state"] | null): string {
+  if (!state) {
+    return "Open guided setup";
+  }
+
+  if (state.isFirstRun) {
+    return `${state.detail}\nRecommended start: Google key for chat + embeddings.`;
+  }
+
+  if (state.nextRequiredLabel) {
+    return `${state.detail}\nNext item: ${state.nextRequiredLabel}`;
+  }
+
+  return state.detail;
+}
+
 export default function Header() {
-  const [provider, setProvider] = useState("ollama");
+  const [provider, setProvider] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
   const [now, setNow] = useState(() => new Date());
+  const [setupState, setSetupState] = useState<AgenticSetupResponse["state"] | null>(null);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
+  function refreshHeaderState(): void {
     fetch("/api/settings")
       .then((res) => res.json() as Promise<SettingsResponse>)
       .then((data) => {
@@ -37,7 +61,39 @@ export default function Header() {
       .then((res) => res.json() as Promise<ApprovalsResponse>)
       .then((data) => setPending(data.approvals?.length ?? 0))
       .catch(() => {});
+
+    fetch("/api/agentic-setup")
+      .then((res) => res.json() as Promise<AgenticSetupResponse>)
+      .then((data) => setSetupState(data.state))
+      .catch(() => {});
+  }
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    refreshHeaderState();
+
+    const handleSetupChanged = () => refreshHeaderState();
+    window.addEventListener("bizbot:agentic-setup-changed", handleSetupChanged);
+    return () => window.removeEventListener("bizbot:agentic-setup-changed", handleSetupChanged);
+  }, []);
+
+  const setupToneColor =
+    setupState?.tone === "ready"
+      ? "var(--success)"
+      : setupState?.tone === "partial"
+        ? "var(--warning)"
+        : "var(--danger)";
+
+  const setupToneBackground =
+    setupState?.tone === "ready"
+      ? "rgba(58,140,92,0.10)"
+      : setupState?.tone === "partial"
+        ? "rgba(214,146,58,0.10)"
+        : "rgba(217,79,79,0.10)";
 
   return (
     <header
@@ -53,9 +109,15 @@ export default function Header() {
         </div>
       </div>
       <div className="flex items-center gap-6 text-xs uppercase tracking-[0.2em]">
+        <Link href="/chat?setup=1" className="inline-flex items-center gap-2 border px-3 py-2" style={{ borderColor: setupToneColor, color: setupToneColor, background: setupToneBackground }} title={getSetupTooltip(setupState)}>
+          <span>{setupState?.tone === "ready" ? "check" : setupState?.tone === "partial" ? "pending" : "setup"}</span>
+          <span>{setupState?.label ?? "Start setup"}</span>
+        </Link>
         <div style={{ color: "var(--text-muted)" }}>
           provider
-          <span className="ml-2" style={{ color: "var(--accent)" }}>{provider}</span>
+          <span className="ml-2" style={{ color: provider ? "var(--accent)" : "var(--text-dim)" }}>
+            {provider ?? "detecting"}
+          </span>
         </div>
         <div style={{ color: "var(--text-muted)" }}>
           approvals

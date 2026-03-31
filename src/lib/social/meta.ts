@@ -16,6 +16,7 @@ import type {
   PostInput,
 } from "./types";
 import { RateLimitError, sleep } from "./types";
+import { getSecretValue, hasSecretValueSync } from "@/lib/runtime-secrets";
 
 const GRAPH_BASE = "https://graph.facebook.com/v21.0";
 
@@ -65,10 +66,10 @@ function getInstagramBusinessAccountId(): string {
   return process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID ?? process.env.META_INSTAGRAM_ACCOUNT_ID ?? "";
 }
 
-function buildAxios(): AxiosInstance {
+function buildAxios(accessToken: string): AxiosInstance {
   return axios.create({
     baseURL: GRAPH_BASE,
-    params: { access_token: process.env.META_ACCESS_TOKEN },
+    params: { access_token: accessToken },
     timeout: 30_000,
   });
 }
@@ -156,10 +157,13 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
 
 export class FacebookClient implements SocialClient {
   platform = "facebook" as const;
-  private http: AxiosInstance;
 
-  constructor() {
-    this.http = buildAxios();
+  private async getHttp(): Promise<AxiosInstance> {
+    const accessToken = await getSecretValue("META_ACCESS_TOKEN");
+    if (!accessToken) {
+      throw new Error("Meta client is not configured.");
+    }
+    return buildAxios(accessToken);
   }
 
   supportsDirectMessages(): boolean {
@@ -167,13 +171,14 @@ export class FacebookClient implements SocialClient {
   }
 
   isConnected(): boolean {
-    return !!(process.env.META_ACCESS_TOKEN && getMetaPageId());
+    return !!(hasSecretValueSync("META_ACCESS_TOKEN") && getMetaPageId());
   }
 
   async post(input: PostInput): Promise<SocialPost> {
     const pageId = getMetaPageId();
+    const http = await this.getHttp();
     const response = await withRetry(() =>
-      this.http.post(`/${pageId}/feed`, {
+      http.post(`/${pageId}/feed`, {
         message: input.content,
         ...(input.mediaUrls?.length ? { link: input.mediaUrls[0] } : {}),
       }),
@@ -186,8 +191,9 @@ export class FacebookClient implements SocialClient {
   }
 
   async reply(replyToId: string, content: string): Promise<SocialReply> {
+    const http = await this.getHttp();
     const response = await withRetry(() =>
-      this.http.post(`/${replyToId}/comments`, { message: content }),
+      http.post(`/${replyToId}/comments`, { message: content }),
     );
     return {
       id: response.data.id,
@@ -199,8 +205,9 @@ export class FacebookClient implements SocialClient {
 
   async getMentions(limit = 20): Promise<SocialMention[]> {
     const pageId = getMetaPageId();
+    const http = await this.getHttp();
     const response = await withRetry(() =>
-      this.http.get(`/${pageId}/tagged`, {
+      http.get(`/${pageId}/tagged`, {
         params: { fields: "id,from,message,created_time,permalink_url", limit },
       }),
     );
@@ -223,8 +230,9 @@ export class FacebookClient implements SocialClient {
   }
 
   async getAnalytics(postId: string): Promise<EngagementMetrics> {
+    const http = await this.getHttp();
     const response = await withRetry(() =>
-      this.http.get(`/${postId}/insights`, {
+      http.get(`/${postId}/insights`, {
         params: {
           metric: "post_impressions,post_reactions_by_type_total",
           period: "lifetime",
@@ -247,12 +255,13 @@ export class FacebookClient implements SocialClient {
   }
 
   async listDirectMessages(limit = 20): Promise<SocialDirectMessage[]> {
-    return listMetaDirectMessages(this.http, getMetaPageId(), "messenger", getMetaPageId(), limit);
+    return listMetaDirectMessages(await this.getHttp(), getMetaPageId(), "messenger", getMetaPageId(), limit);
   }
 
   async sendDirectMessage(recipientId: string, content: string, _replyToId?: string): Promise<SocialReply> {
+    const http = await this.getHttp();
     const response = await withRetry(() =>
-      this.http.post(`/${getMetaPageId()}/messages`, {
+      http.post(`/${getMetaPageId()}/messages`, {
         recipient: { id: recipientId },
         messaging_type: "RESPONSE",
         message: { text: content },
@@ -271,10 +280,13 @@ export class FacebookClient implements SocialClient {
 
 export class InstagramClient implements SocialClient {
   platform = "instagram" as const;
-  private http: AxiosInstance;
 
-  constructor() {
-    this.http = buildAxios();
+  private async getHttp(): Promise<AxiosInstance> {
+    const accessToken = await getSecretValue("META_ACCESS_TOKEN");
+    if (!accessToken) {
+      throw new Error("Meta client is not configured.");
+    }
+    return buildAxios(accessToken);
   }
 
   supportsDirectMessages(): boolean {
@@ -283,17 +295,18 @@ export class InstagramClient implements SocialClient {
 
   isConnected(): boolean {
     return !!(
-      process.env.META_ACCESS_TOKEN &&
+      hasSecretValueSync("META_ACCESS_TOKEN") &&
       getInstagramBusinessAccountId()
     );
   }
 
   async post(input: PostInput): Promise<SocialPost> {
     const igId = getInstagramBusinessAccountId();
+    const http = await this.getHttp();
 
     // Step 1: Create media container
     const mediaResponse = await withRetry(() =>
-      this.http.post(`/${igId}/media`, {
+      http.post(`/${igId}/media`, {
         caption: input.content,
         ...(input.mediaUrls?.length
           ? { image_url: input.mediaUrls[0] }
@@ -303,7 +316,7 @@ export class InstagramClient implements SocialClient {
 
     // Step 2: Publish the container
     const publishResponse = await withRetry(() =>
-      this.http.post(`/${igId}/media_publish`, {
+      http.post(`/${igId}/media_publish`, {
         creation_id: mediaResponse.data.id,
       }),
     );
@@ -316,8 +329,9 @@ export class InstagramClient implements SocialClient {
   }
 
   async reply(replyToId: string, content: string): Promise<SocialReply> {
+    const http = await this.getHttp();
     const response = await withRetry(() =>
-      this.http.post(`/${replyToId}/replies`, { message: content }),
+      http.post(`/${replyToId}/replies`, { message: content }),
     );
     return {
       id: response.data.id,
@@ -329,8 +343,9 @@ export class InstagramClient implements SocialClient {
 
   async getMentions(limit = 20): Promise<SocialMention[]> {
     const igId = getInstagramBusinessAccountId();
+    const http = await this.getHttp();
     const response = await withRetry(() =>
-      this.http.get(`/${igId}/tags`, {
+      http.get(`/${igId}/tags`, {
         params: { fields: "id,from,text,timestamp", limit },
       }),
     );
@@ -352,8 +367,9 @@ export class InstagramClient implements SocialClient {
   }
 
   async getAnalytics(postId: string): Promise<EngagementMetrics> {
+    const http = await this.getHttp();
     const response = await withRetry(() =>
-      this.http.get(`/${postId}/insights`, {
+      http.get(`/${postId}/insights`, {
         params: {
           metric: "impressions,reach,likes_count,comments_count,saved",
         },
@@ -372,12 +388,13 @@ export class InstagramClient implements SocialClient {
   }
 
   async listDirectMessages(limit = 20): Promise<SocialDirectMessage[]> {
-    return listMetaDirectMessages(this.http, getMetaPageId(), "instagram", getInstagramBusinessAccountId(), limit);
+    return listMetaDirectMessages(await this.getHttp(), getMetaPageId(), "instagram", getInstagramBusinessAccountId(), limit);
   }
 
   async sendDirectMessage(recipientId: string, content: string, replyToId?: string): Promise<SocialReply> {
+    const http = await this.getHttp();
     const response = await withRetry(() =>
-      this.http.post("/me/messages", {
+      http.post("/me/messages", {
         recipient: { id: recipientId },
         message: { text: content },
         ...(replyToId ? { reply_to: { mid: replyToId } } : {}),

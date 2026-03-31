@@ -6,6 +6,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { readEnv, writeEnv, maskEnvValues } from "@/lib/env";
+import { filterVisibleSettings, saveEncryptedSecrets } from "@/lib/runtime-secrets";
 
 function applyEnvUpdatesToProcessEnv(env: Record<string, string>): void {
   for (const [key, value] of Object.entries(env)) {
@@ -14,7 +15,7 @@ function applyEnvUpdatesToProcessEnv(env: Record<string, string>): void {
 }
 
 export async function GET() {
-  const settings = await db.setting.findMany();
+  const settings = filterVisibleSettings(await db.setting.findMany());
   const raw = await readEnv();
   return Response.json({ settings, env: maskEnvValues(raw) });
 }
@@ -41,6 +42,7 @@ export async function PATCH(req: NextRequest) {
     if (body.env) {
       await writeEnv(body.env);
       applyEnvUpdatesToProcessEnv(body.env);
+      await saveEncryptedSecrets(body.env);
     }
 
     return Response.json({ updated: true });

@@ -16,21 +16,27 @@ import type {
   PostInput,
 } from "./types";
 import { RateLimitError, sleep } from "./types";
+import { getSecretValue, getSecretValueSync, hasSecretValueSync } from "@/lib/runtime-secrets";
 
 function getTwitterAppKey(): string {
-  return process.env.TWITTER_APP_KEY ?? process.env.TWITTER_CLIENT_ID ?? "";
+  return getSecretValueSync("TWITTER_APP_KEY") ?? getSecretValueSync("TWITTER_CLIENT_ID") ?? "";
 }
 
 function getTwitterAppSecret(): string {
-  return process.env.TWITTER_APP_SECRET ?? process.env.TWITTER_CLIENT_SECRET ?? "";
+  return getSecretValueSync("TWITTER_APP_SECRET") ?? getSecretValueSync("TWITTER_CLIENT_SECRET") ?? "";
 }
 
-function buildClient(): TwitterApi {
+async function buildClient(): Promise<TwitterApi> {
+  const appKey = (await getSecretValue("TWITTER_APP_KEY")) ?? (await getSecretValue("TWITTER_CLIENT_ID")) ?? "";
+  const appSecret = (await getSecretValue("TWITTER_APP_SECRET")) ?? (await getSecretValue("TWITTER_CLIENT_SECRET")) ?? "";
+  const accessToken = (await getSecretValue("TWITTER_ACCESS_TOKEN")) ?? "";
+  const accessSecret = (await getSecretValue("TWITTER_ACCESS_TOKEN_SECRET")) ?? "";
+
   return new TwitterApi({
-    appKey: getTwitterAppKey(),
-    appSecret: getTwitterAppSecret(),
-    accessToken: process.env.TWITTER_ACCESS_TOKEN ?? "",
-    accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET ?? "",
+    appKey,
+    appSecret,
+    accessToken,
+    accessSecret,
   });
 }
 
@@ -87,14 +93,22 @@ async function withRateLimitRetry<T>(
 export class TwitterClient implements SocialClient {
   platform = "twitter" as const;
   private client: TwitterApi | null = null;
+  private clientSignature: string | null = null;
 
-  private getClient(): TwitterApi {
-    if (!this.isConnected()) {
+  private async getClient(): Promise<TwitterApi> {
+    const appKey = (await getSecretValue("TWITTER_APP_KEY")) ?? (await getSecretValue("TWITTER_CLIENT_ID")) ?? "";
+    const appSecret = (await getSecretValue("TWITTER_APP_SECRET")) ?? (await getSecretValue("TWITTER_CLIENT_SECRET")) ?? "";
+    const accessToken = (await getSecretValue("TWITTER_ACCESS_TOKEN")) ?? "";
+    const accessSecret = (await getSecretValue("TWITTER_ACCESS_TOKEN_SECRET")) ?? "";
+
+    if (!(appKey && appSecret && accessToken && accessSecret)) {
       throw new Error("Twitter client is not configured.");
     }
 
-    if (!this.client) {
-      this.client = buildClient();
+    const signature = `${appKey}:${appSecret}:${accessToken}:${accessSecret}`;
+    if (!this.client || this.clientSignature !== signature) {
+      this.client = await buildClient();
+      this.clientSignature = signature;
     }
 
     return this.client;
@@ -108,13 +122,13 @@ export class TwitterClient implements SocialClient {
     return !!(
       getTwitterAppKey() &&
       getTwitterAppSecret() &&
-      process.env.TWITTER_ACCESS_TOKEN &&
-      process.env.TWITTER_ACCESS_TOKEN_SECRET
+      hasSecretValueSync("TWITTER_ACCESS_TOKEN") &&
+      hasSecretValueSync("TWITTER_ACCESS_TOKEN_SECRET")
     );
   }
 
   async post(input: PostInput): Promise<SocialPost> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const result: TweetV2PostTweetResult = await withRateLimitRetry(() =>
       client.v2.tweet({
         text: input.content,
@@ -133,7 +147,7 @@ export class TwitterClient implements SocialClient {
   }
 
   async reply(replyToId: string, content: string): Promise<SocialReply> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const result = await withRateLimitRetry(() =>
       client.v2.reply(content, replyToId),
     );
@@ -146,7 +160,7 @@ export class TwitterClient implements SocialClient {
   }
 
   async getMentions(limit = 20): Promise<SocialMention[]> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const me = await client.v2.me();
     const timeline = await client.v2.userMentionTimeline(me.data.id, {
       max_results: limit,
@@ -173,7 +187,7 @@ export class TwitterClient implements SocialClient {
   }
 
   async listDirectMessages(limit = 20): Promise<SocialDirectMessage[]> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const paginator = await client.v1.listDmEvents({ count: Math.min(50, limit) });
     const events = paginator.events ?? [];
     return events
@@ -183,7 +197,7 @@ export class TwitterClient implements SocialClient {
   }
 
   async sendDirectMessage(recipientId: string, content: string, _replyToId?: string): Promise<SocialReply> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const result = await client.v1.sendDm({
       recipient_id: recipientId,
       text: content,
@@ -199,7 +213,7 @@ export class TwitterClient implements SocialClient {
   }
 
   async getAnalytics(postId: string): Promise<EngagementMetrics> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const tweet = await client.v2.singleTweet(postId, {
       "tweet.fields": ["public_metrics"],
     });
