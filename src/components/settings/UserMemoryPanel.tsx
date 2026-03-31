@@ -218,7 +218,7 @@ export function UserMemoryPanel({ userId = DEFAULT_AGENT_USER_ID }: { userId?: s
           <div className="text-sm" style={{ color: "var(--text-dim)" }}>
             Store only stable, user-approved identity details, preferences, workflows, constraints, and operator settings. This feeds the executor’s [User Memory] prompt block directly.
           </div>
-          <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+          <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
             scope {userId} · {facts.length} active facts
           </div>
         </div>
@@ -228,7 +228,7 @@ export function UserMemoryPanel({ userId = DEFAULT_AGENT_USER_ID }: { userId?: s
       </div>
 
       <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-        <div className="text-[10px] uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>recommended starting points</div>
+        <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>recommended starting points</div>
         <div className="grid gap-2">
           {QUICK_START_PRESETS.map((preset) => (
             <button
@@ -269,13 +269,13 @@ export function UserMemoryPanel({ userId = DEFAULT_AGENT_USER_ID }: { userId?: s
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>{fact.key}</div>
-                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>
                     {MEMORY_FACT_CATEGORY_LABELS[fact.category]} · {MEMORY_FACT_SOURCE_LABELS[fact.source]}
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => editFact(fact)} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>edit</button>
-                  <button onClick={() => void forgetFact(fact.key)} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>forget</button>
+                  <button onClick={() => editFact(fact)} className="px-3 py-2 border text-xs uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>edit</button>
+                  <button onClick={() => void forgetFact(fact.key)} className="px-3 py-2 border text-xs uppercase tracking-[0.16em]" style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>forget</button>
                 </div>
               </div>
               <pre className="overflow-auto border p-3 text-xs leading-6 whitespace-pre-wrap break-words" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)", color: "var(--text-primary)" }}>{formatValue(fact.value)}</pre>
@@ -286,10 +286,10 @@ export function UserMemoryPanel({ userId = DEFAULT_AGENT_USER_ID }: { userId?: s
 
       <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
         <div className="flex items-center justify-between gap-4">
-          <div className="text-[10px] uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>
+          <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>
             {editingKey ? `editing ${editingKey}` : "store or update fact"}
           </div>
-          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: saveState === "saved" ? "var(--success)" : saveState === "error" ? "var(--danger)" : "var(--text-dim)" }}>{saveState}</div>
+          <div className="text-xs uppercase tracking-[0.16em]" style={{ color: saveState === "saved" ? "var(--success)" : saveState === "error" ? "var(--danger)" : "var(--text-dim)" }}>{saveState}</div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>

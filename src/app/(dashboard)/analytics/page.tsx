@@ -34,26 +34,39 @@ export default function AnalyticsPage() {
   );
 
   return (
-    <div className="grid gap-4 md:grid-cols-5">
-      {Object.entries(totals).map(([key, value]) => (
-        <section key={key} className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="text-[10px] uppercase tracking-[0.24em] mb-3" style={{ color: "var(--text-muted)" }}>{key}</div>
-          <div className="text-2xl" style={{ color: "var(--accent)" }}>{value}</div>
-        </section>
-      ))}
-      <section className="border p-4 md:col-span-5" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+    <div className="space-y-5">
+      <div className="grid gap-4 grid-cols-5">
+        {Object.entries(totals).map(([key, value]) => (
+          <section key={key} className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+            <div className="text-xs uppercase tracking-[0.24em] mb-3" style={{ color: "var(--text-muted)" }}>{key}</div>
+            <div className="text-2xl font-semibold tabular-nums" style={{ color: "var(--accent)" }}>{value}</div>
+          </section>
+        ))}
+      </div>
+      <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
         <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>snapshots</div>
-        <div className="space-y-2 text-sm">
-          {snapshots.map((snapshot) => (
-            <div key={snapshot.id} className="grid grid-cols-6 gap-2 border-b pb-2" style={{ borderColor: "var(--border-sub)" }}>
-              <span>{new Date(snapshot.capturedAt).toLocaleDateString()}</span>
-              <span>{snapshot.impressions} imp</span>
-              <span>{snapshot.likes} likes</span>
-              <span>{snapshot.replies} replies</span>
-              <span>{snapshot.shares} shares</span>
-              <span>{snapshot.clicks} clicks</span>
-            </div>
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: 640 }}>
+            <thead>
+              <tr className="border-b" style={{ borderColor: "var(--border)" }}>
+                {["date", "impressions", "likes", "replies", "shares", "clicks"].map((h) => (
+                  <th key={h} className="text-left text-xs uppercase tracking-[0.2em] pb-3 pr-6 font-medium" style={{ color: "var(--text-muted)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {snapshots.map((snapshot) => (
+                <tr key={snapshot.id} className="border-b" style={{ borderColor: "var(--border-sub)" }}>
+                  <td className="py-2.5 pr-6 tabular-nums">{new Date(snapshot.capturedAt).toLocaleDateString()}</td>
+                  <td className="py-2.5 pr-6 tabular-nums">{snapshot.impressions}</td>
+                  <td className="py-2.5 pr-6 tabular-nums">{snapshot.likes}</td>
+                  <td className="py-2.5 pr-6 tabular-nums">{snapshot.replies}</td>
+                  <td className="py-2.5 pr-6 tabular-nums">{snapshot.shares}</td>
+                  <td className="py-2.5 pr-6 tabular-nums">{snapshot.clicks}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>

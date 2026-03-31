@@ -142,7 +142,7 @@ export default function LocalBusinessPage() {
             <div className="space-y-3">
               {location.reviews.map((review) => (
                 <article key={review.id} className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
                     <span>{review.reviewerName ?? "anonymous"}</span>
                     <span>{review.starRating} stars</span>
                   </div>
@@ -178,7 +178,7 @@ export default function LocalBusinessPage() {
           <div className="space-y-3">
             {location?.posts.map((post) => (
               <article key={post.id} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>
+                <div className="flex items-center justify-between text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>
                   <span>{post.topicType}</span>
                   <span>{post.status}</span>
                 </div>

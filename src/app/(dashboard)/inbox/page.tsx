@@ -136,12 +136,12 @@ export default function InboxPage() {
         {!loading && items.length === 0 ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>No inbox items yet.</div> : null}
         {items.map((item) => (
           <article key={item.id} className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.2em]" style={{ color: "var(--text-muted)" }}>
+            <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em]" style={{ color: "var(--text-muted)" }}>
               <span>{item.platform.displayName}</span>
               <span>{item.channelType}</span>
               <span>{item.status}</span>
             </div>
-            <div className="flex flex-wrap gap-3 text-[10px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+            <div className="flex flex-wrap gap-3 text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
               <span>lead {item.leadStage}</span>
               {item.cannedResponseTree ? <span>tree {item.cannedResponseTree.name}</span> : null}
               {item.cannedResponseNodeKey ? <span>node {item.cannedResponseNodeKey}</span> : null}
@@ -158,7 +158,7 @@ export default function InboxPage() {
                 {item.leadSummary}
               </div>
             ) : null}
-            <label className="block text-[10px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+            <label className="block text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
               Lead stage
             </label>
             <select
@@ -172,7 +172,7 @@ export default function InboxPage() {
                 <option key={stage} value={stage}>{stage}</option>
               ))}
             </select>
-            <div className="flex flex-wrap gap-3 text-[10px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+            <div className="flex flex-wrap gap-3 text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
               {canDraft(item) ? (
                 <button
                   onClick={() => void runAction(item.id, "draft")}
@@ -210,7 +210,7 @@ export default function InboxPage() {
                 </button>
               ) : null}
             </div>
-            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+            <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
               {new Date(item.receivedAt).toLocaleString()}
             </div>
           </article>

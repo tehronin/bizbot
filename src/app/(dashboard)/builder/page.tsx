@@ -247,12 +247,12 @@ export default function BuilderPage() {
   const selectedProject = projectDetail?.project ?? projects.find((project) => project.id === selectedProjectId) ?? null;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-      <section className="space-y-6">
+    <div className="grid gap-5 xl:grid-cols-2">
+      <section className="space-y-5">
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="flex items-center justify-between gap-4 mb-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>builder mode</div>
+              <div className="text-xs uppercase tracking-[0.24em] font-medium mb-1" style={{ color: "var(--text-muted)" }}>builder mode</div>
               <div className="text-sm" style={{ color: "var(--text-dim)" }}>
                 Safe project creation, preset bootstrapping, typed package actions, and optional agentic Codex runs inside an external workspace.
               </div>
@@ -271,7 +271,7 @@ export default function BuilderPage() {
               { label: "agentic profile", value: status?.config.defaultAgenticProfile ?? "codex" },
             ].map((card) => (
               <div key={card.label} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-[10px] uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+                <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
                 <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
               </div>
             ))}
@@ -334,7 +334,7 @@ export default function BuilderPage() {
         </section>
       </section>
 
-      <section className="space-y-6">
+      <section className="space-y-5">
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>projects</div>
           <div className="space-y-3 text-sm max-h-[260px] overflow-auto">
@@ -372,17 +372,17 @@ export default function BuilderPage() {
             <>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-[10px] uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>path</div>
+                  <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>path</div>
                   <div className="text-sm">{selectedProject.relativePath}</div>
                 </div>
                 <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-[10px] uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>git</div>
+                  <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>git</div>
                   <div className="text-sm">{selectedProject.gitInitialized ? "initialized" : "not initialized"}</div>
                 </div>
               </div>
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-[10px] uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>bootstrap</div>
+                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>bootstrap</div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
                     <span>Initialize git</span>
@@ -399,7 +399,7 @@ export default function BuilderPage() {
               </div>
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-[10px] uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>package actions</div>
+                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>package actions</div>
                 <div>
                   <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Install packages</label>
                   <input value={installPackages} onChange={(event) => setInstallPackages(event.target.value)} placeholder="react react-dom" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
@@ -424,7 +424,7 @@ export default function BuilderPage() {
               </div>
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-[10px] uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>agentic task</div>
+                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>agentic task</div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Profile</label>
@@ -464,8 +464,8 @@ export default function BuilderPage() {
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{run.command ?? "command unavailable"}</div>
                 {run.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{run.summary}</div> : null}
-                {run.stdout ? <pre className="mt-2 text-[11px] whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-dim)" }}>{run.stdout}</pre> : null}
-                {run.stderr ? <pre className="mt-2 text-[11px] whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--danger)" }}>{run.stderr}</pre> : null}
+                {run.stdout ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-dim)" }}>{run.stdout}</pre> : null}
+                {run.stderr ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--danger)" }}>{run.stderr}</pre> : null}
               </div>
             ))}
           </div>

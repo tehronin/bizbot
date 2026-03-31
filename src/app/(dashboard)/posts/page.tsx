@@ -19,7 +19,7 @@ export default function PostsPage() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+    <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
       <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
         <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>new draft</div>
         <div className="space-y-3">
@@ -39,7 +39,7 @@ export default function PostsPage() {
           {loading && <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div>}
           {!loading && posts.map((post) => (
             <article key={post.id} className="border p-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-              <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.2em] mb-2" style={{ color: "var(--text-muted)" }}>
+              <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] mb-2" style={{ color: "var(--text-muted)" }}>
                 <span>{post.status}</span>
                 <span>{post.platformId}</span>
               </div>

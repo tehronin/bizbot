@@ -587,7 +587,7 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-              <div className="text-[10px] uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>codex adapter</div>
+              <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>codex adapter</div>
               <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
                 <span>Enable Codex adapter</span>
                 <input type="checkbox" checked={publicEnv.BIZBOT_BUILDER_CODEX_ENABLED === "true"} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CODEX_ENABLED", event.target.checked ? "true" : "false")} />
@@ -604,7 +604,7 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-              <div className="text-[10px] uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>claude code adapter</div>
+              <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>claude code adapter</div>
               <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
                 <span>Enable Claude Code adapter</span>
                 <input type="checkbox" checked={publicEnv.BIZBOT_BUILDER_CLAUDE_CODE_ENABLED === "true"} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CLAUDE_CODE_ENABLED", event.target.checked ? "true" : "false")} />

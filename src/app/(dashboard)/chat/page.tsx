@@ -71,8 +71,8 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="grid gap-4 h-full" style={{ gridTemplateRows: "1fr auto" }}>
-      <section className="grid gap-3 md:grid-cols-4">
+    <div className="grid gap-4 h-full" style={{ gridTemplateRows: "auto 1fr auto auto" }}>
+      <section className="grid gap-3 grid-cols-4">
         {[
           { label: "conversation", value: conversationId ?? "not started" },
           { label: "run", value: activeRun.runId ?? "idle" },
@@ -80,7 +80,7 @@ export default function ChatPage() {
           { label: "model", value: activeRun.model ?? "pending" },
         ].map((card) => (
           <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-            <div className="text-[10px] uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+            <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
             <div className="text-sm break-all" style={{ color: "var(--text-primary)" }}>{card.value}</div>
           </div>
         ))}
@@ -123,7 +123,7 @@ export default function ChatPage() {
               }}
             >
               <div className="flex items-center justify-between gap-3 mb-2">
-                <div className="text-[10px] uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
+                <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
                   {message.role}
                 </div>
                 {(message.role === "user" || message.role === "assistant") ? (
@@ -138,7 +138,7 @@ export default function ChatPage() {
                       setMemoryState("idle");
                       setMemoryError(null);
                     }}
-                    className="px-2 py-1 border text-[10px] uppercase tracking-[0.18em]"
+                    className="px-2 py-1 border text-xs uppercase tracking-[0.18em]"
                     style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
                   >
                     promote to memory
@@ -147,7 +147,7 @@ export default function ChatPage() {
               </div>
               {message.content}
               {message.role === "meta" ? (
-                <div className="flex flex-wrap gap-2 mt-3 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                <div className="flex flex-wrap gap-2 mt-3 text-xs" style={{ color: "var(--text-dim)" }}>
                   {message.profileLabel ? <span>lane {message.profileLabel}</span> : null}
                   {message.provider ? <span>provider {message.provider}</span> : null}
                   {message.model ? <span>model {message.model}</span> : null}
@@ -155,7 +155,7 @@ export default function ChatPage() {
                 </div>
               ) : null}
               {message.role === "tool" && message.round ? (
-                <div className="mt-2 text-[11px]" style={{ color: "var(--text-dim)" }}>round {message.round}</div>
+                <div className="mt-2 text-xs" style={{ color: "var(--text-dim)" }}>round {message.round}</div>
               ) : null}
               {message.role === "tool" && message.args ? (
                 <pre className="mt-3 overflow-auto text-xs" style={{ color: "var(--text-dim)" }}>{message.args}</pre>
@@ -176,7 +176,7 @@ export default function ChatPage() {
                 Convert a stable fact from chat into durable user memory. Edit the category, key, and value before saving.
               </div>
             </div>
-            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: memoryState === "saved" ? "var(--success)" : memoryState === "error" ? "var(--danger)" : "var(--text-dim)" }}>{memoryState}</div>
+            <div className="text-xs uppercase tracking-[0.16em]" style={{ color: memoryState === "saved" ? "var(--success)" : memoryState === "error" ? "var(--danger)" : "var(--text-dim)" }}>{memoryState}</div>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <div>

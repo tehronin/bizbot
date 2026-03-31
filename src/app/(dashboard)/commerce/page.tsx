@@ -254,8 +254,8 @@ export default function CommercePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-4">
+    <div className="space-y-5">
+      <section className="grid gap-4 grid-cols-4">
         {[
           { label: "mode", value: data?.status.mode ?? "local" },
           { label: "products", value: String(data?.status.productCount ?? 0) },
@@ -263,7 +263,7 @@ export default function CommercePage() {
           { label: "latest order", value: data?.orders[0]?.status ?? "none" },
         ].map((card) => (
           <div key={card.label} className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-            <div className="text-[10px] uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+            <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
             <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
           </div>
         ))}
@@ -271,7 +271,7 @@ export default function CommercePage() {
 
       {error ? <div className="text-sm" style={{ color: "var(--danger)" }}>{error}</div> : null}
 
-      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className="grid gap-5 xl:grid-cols-[0.42fr_0.58fr]">
         <section className="space-y-6">
           <section className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
             <div>
@@ -304,7 +304,7 @@ export default function CommercePage() {
               <input value={orderDraft.customerName} onChange={(event) => setOrderDraft((current) => ({ ...current, customerName: event.target.value }))} placeholder="Customer name" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
               <input value={orderDraft.customerEmail} onChange={(event) => setOrderDraft((current) => ({ ...current, customerEmail: event.target.value }))} placeholder="Customer email" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
             </div>
-            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2">
               <select value={orderDraft.status} onChange={(event) => setOrderDraft((current) => ({ ...current, status: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
                 <option value="draft">draft</option>
                 <option value="quoted">quoted</option>
@@ -312,6 +312,8 @@ export default function CommercePage() {
                 <option value="cancelled">cancelled</option>
               </select>
               <input value={orderDraft.currency} onChange={(event) => setOrderDraft((current) => ({ ...current, currency: event.target.value.toUpperCase() }))} placeholder="Currency" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
               <input value={orderDraft.quantity} onChange={(event) => setOrderDraft((current) => ({ ...current, quantity: event.target.value }))} placeholder="Qty" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
               <input value={orderDraft.unitPriceCents} onChange={(event) => setOrderDraft((current) => ({ ...current, unitPriceCents: event.target.value }))} placeholder="Unit cents" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
             </div>
@@ -380,7 +382,7 @@ export default function CommercePage() {
                         <div className="flex items-center justify-between gap-4">
                           <div>
                             <div className="text-sm">{product.name}</div>
-                            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{product.sku}</div>
+                            <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{product.sku}</div>
                           </div>
                           <div className="flex items-center gap-3">
                             <span>{formatMoney(product.priceCents, product.currency)}</span>
@@ -451,7 +453,7 @@ export default function CommercePage() {
                         <div className="flex items-center justify-between gap-4">
                           <div>
                             <div className="text-sm">{order.customerName ?? order.customerEmail ?? order.id}</div>
-                            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{order.status}</div>
+                            <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{order.status}</div>
                           </div>
                           <div className="flex items-center gap-3">
                             <span>{formatMoney(order.totalCents, order.currency)}</span>

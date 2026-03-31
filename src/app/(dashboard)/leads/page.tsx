@@ -676,54 +676,55 @@ export default function LeadsPage() {
   const selectedLead = leads.find((lead) => lead.id === selectedLeadId) ?? null;
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+    <div className="space-y-5">
+      <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>lead pipeline</div>
-            <div className="text-sm mt-2" style={{ color: "var(--text-dim)" }}>DM contacts now move through deterministic stages instead of disappearing into the inbox.</div>
+            <div className="text-xs uppercase tracking-[0.24em] font-medium" style={{ color: "var(--text-muted)" }}>lead pipeline</div>
+            <div className="text-sm mt-1" style={{ color: "var(--text-dim)" }}>DM contacts now move through deterministic stages instead of disappearing into the inbox.</div>
           </div>
           <button onClick={() => void load()} className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--accent)" }}>refresh</button>
         </div>
         {loading ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div> : null}
         {error ? <div className="text-sm" style={{ color: "var(--danger, #d16b6b)" }}>{error}</div> : null}
-        <div className="grid gap-4 xl:grid-cols-5">
+        <div className="grid gap-4 grid-cols-5">
           {STAGES.map((stage) => (
-            <div key={stage} className="space-y-3">
-              <div className="text-[11px] uppercase tracking-[0.2em]" style={{ color: "var(--text-muted)" }}>{stage}</div>
+            <div key={stage} className="space-y-3 min-w-0">
+              <div className="text-xs uppercase tracking-[0.2em] font-medium" style={{ color: "var(--text-muted)" }}>{stage}</div>
               {leads.filter((lead) => lead.leadStage === stage).map((lead) => (
-                <article key={lead.id} onClick={() => setSelectedLeadId(lead.id)} className="border p-3 space-y-3 cursor-pointer" style={{ borderColor: selectedLeadId === lead.id ? "var(--accent)" : "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
-                    <span>{lead.platform.displayName}</span>
-                    <span>{lead.leadScore}</span>
+                <article key={lead.id} onClick={() => setSelectedLeadId(lead.id)} className="border p-3 space-y-2 cursor-pointer" style={{ borderColor: selectedLeadId === lead.id ? "var(--accent)" : "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                    <span className="truncate">{lead.platform.displayName}</span>
+                    <span className="tabular-nums ml-2 shrink-0">{lead.leadScore}</span>
                   </div>
-                  <div className="text-sm whitespace-pre-wrap">{lead.content}</div>
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{lead.authorHandle ?? lead.authorName ?? "unknown lead"}</div>
-                  {lead.cannedResponseTree ? <div className="text-[11px]" style={{ color: "var(--accent)" }}>{lead.cannedResponseTree.name}</div> : null}
+                  <div className="text-sm line-clamp-3">{lead.content}</div>
+                  <div className="text-xs truncate" style={{ color: "var(--text-dim)" }}>{lead.authorHandle ?? lead.authorName ?? "unknown lead"}</div>
+                  {lead.cannedResponseTree ? <div className="text-xs truncate" style={{ color: "var(--accent)" }}>{lead.cannedResponseTree.name}</div> : null}
                   <select
                     value={lead.leadStage}
                     onChange={(event) => void updateLead(lead.id, event.target.value as LeadStage)}
-                    className="w-full bg-transparent border px-3 py-2 text-xs"
+                    onClick={(event) => event.stopPropagation()}
+                    className="w-full bg-transparent border px-2 py-1.5 text-xs"
                     style={{ borderColor: "var(--border)" }}
                   >
                     {STAGES.map((option) => (
                       <option key={option} value={option}>{option}</option>
                     ))}
                   </select>
-                  {lead.leadSummary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{lead.leadSummary}</div> : null}
+                  {lead.leadSummary ? <div className="text-xs leading-5 line-clamp-2" style={{ color: "var(--text-dim)" }}>{lead.leadSummary}</div> : null}
                 </article>
               ))}
             </div>
           ))}
         </div>
-        </section>
+      </section>
 
+      <div className="grid gap-5 xl:grid-cols-[0.55fr_0.45fr]">
         <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>canned response trees</div>
-            <div className="text-sm mt-2" style={{ color: "var(--text-dim)" }}>Deterministic DM flows that move contacts from greeting to website handoff, now editable as nodes and transitions instead of raw JSON.</div>
+            <div className="text-xs uppercase tracking-[0.24em] font-medium" style={{ color: "var(--text-muted)" }}>canned response trees</div>
+            <div className="text-sm mt-1" style={{ color: "var(--text-dim)" }}>Deterministic DM flows that move contacts from greeting to website handoff.</div>
           </div>
           <button onClick={() => void ensureDefaultTree()} className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--accent)" }}>ensure default</button>
         </div>
@@ -747,7 +748,7 @@ export default function LeadsPage() {
           <article className="border p-4 space-y-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
             {selectedTreeValidation && selectedTreeValidation.errors.length > 0 ? (
               <div className="border p-3 space-y-2 text-sm" style={{ borderColor: "var(--danger, #d16b6b)", background: "var(--bg-surface)", color: "var(--danger, #d16b6b)" }}>
-                <div className="text-[11px] uppercase tracking-[0.18em]">validation</div>
+                <div className="text-xs uppercase tracking-[0.18em]">validation</div>
                 {selectedTreeValidation.errors.map((issue) => (
                   <div key={issue}>{issue}</div>
                 ))}
@@ -770,7 +771,7 @@ export default function LeadsPage() {
               />
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="space-y-1">
-                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>root node</div>
+                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>root node</div>
                   <select
                     value={selectedTree.rootNodeKey}
                     onChange={(event) => updateTree(selectedTree.id, (tree) => ({ ...tree, rootNodeKey: event.target.value }))}
@@ -794,7 +795,7 @@ export default function LeadsPage() {
               </div>
               <div className="grid gap-3 md:grid-cols-3">
                 <label className="space-y-1 md:col-span-2">
-                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>include keywords</div>
+                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>include keywords</div>
                   <input
                     value={joinList(selectedTree.matchRules.includeAny)}
                     onChange={(event) => updateTree(selectedTree.id, (tree) => ({
@@ -807,7 +808,7 @@ export default function LeadsPage() {
                   />
                 </label>
                 <label className="space-y-1">
-                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>website URL</div>
+                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>website URL</div>
                   <input
                     value={selectedTree.matchRules.websiteUrl}
                     onChange={(event) => updateTree(selectedTree.id, (tree) => ({
@@ -821,7 +822,7 @@ export default function LeadsPage() {
                 </label>
               </div>
               <label className="space-y-1">
-                <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>exclude keywords</div>
+                <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>exclude keywords</div>
                 <input
                   value={joinList(selectedTree.matchRules.excludeAny)}
                   onChange={(event) => updateTree(selectedTree.id, (tree) => ({
@@ -836,7 +837,7 @@ export default function LeadsPage() {
             </div>
 
             <div className="flex items-center justify-between">
-              <div className="text-[11px] uppercase tracking-[0.2em]" style={{ color: "var(--text-muted)" }}>nodes</div>
+              <div className="text-xs uppercase tracking-[0.2em]" style={{ color: "var(--text-muted)" }}>nodes</div>
               <button
                 onClick={() => updateTree(selectedTree.id, (tree) => ({
                   ...tree,
@@ -854,7 +855,7 @@ export default function LeadsPage() {
               {selectedTree.nodes.map((node, nodeIndex) => (
                 <section key={`${node.key}-${nodeIndex}`} className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
                   <div className="flex items-center justify-between">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>node {nodeIndex + 1}</div>
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>node {nodeIndex + 1}</div>
                     <button onClick={() => removeNode(selectedTree.id, nodeIndex)} className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--danger, #d16b6b)" }}>remove</button>
                   </div>
                   {selectedTreeValidation?.nodeIssues[nodeIndex]?.length ? (
@@ -937,7 +938,7 @@ export default function LeadsPage() {
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>transitions</div>
+                      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>transitions</div>
                       <button
                         onClick={() => updateTree(selectedTree.id, (tree) => ({
                           ...tree,
@@ -1041,22 +1042,22 @@ export default function LeadsPage() {
         </section>
       </div>
 
-      <section className="grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
+      <div className="grid gap-5 xl:grid-cols-[0.38fr_0.62fr]">
         <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>CRM cockpit</div>
-              <div className="text-sm mt-2" style={{ color: "var(--text-dim)" }}>Selected contact, provider state, and sync controls.</div>
+              <div className="text-xs uppercase tracking-[0.24em] font-medium" style={{ color: "var(--text-muted)" }}>CRM cockpit</div>
+              <div className="text-sm mt-1" style={{ color: "var(--text-dim)" }}>Selected contact, provider state, and sync controls.</div>
             </div>
             <button onClick={() => void load()} className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--accent)" }}>refresh CRM</button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 grid-cols-2">
             {crmProviders.map((provider) => (
               <div key={provider.name} className="border p-3" style={{ borderColor: provider.active ? "var(--accent)" : "var(--border-sub)", background: "var(--bg-raised)" }}>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-sm">{provider.label}</span>
-                  <span className="text-[10px] uppercase tracking-[0.18em]" style={{ color: provider.connected ? "var(--success)" : "var(--danger)" }}>{provider.mode}</span>
+                  <span className="text-xs uppercase tracking-[0.18em]" style={{ color: provider.connected ? "var(--success)" : "var(--danger)" }}>{provider.mode}</span>
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{provider.active ? "active provider" : "available"}</div>
               </div>
@@ -1075,21 +1076,21 @@ export default function LeadsPage() {
                 </button>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 grid-cols-2">
                 <label className="space-y-1">
-                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Stage</div>
+                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Stage</div>
                   <select value={selectedLead.leadStage} onChange={(event) => void saveCrmContact(selectedLead.id, { stage: event.target.value as LeadStage })} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
                     {STAGES.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
                   </select>
                 </label>
                 <label className="space-y-1">
-                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Score</div>
+                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Score</div>
                   <input defaultValue={selectedLead.leadScore} onBlur={(event) => void saveCrmContact(selectedLead.id, { score: Number.parseInt(event.target.value, 10) || 0 })} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
                 </label>
               </div>
 
               <label className="space-y-1 block">
-                <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Summary</div>
+                <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Summary</div>
                 <textarea defaultValue={selectedLead.leadSummary ?? ""} onBlur={(event) => void saveCrmContact(selectedLead.id, { summary: event.target.value || null })} className="w-full min-h-28 bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
               </label>
             </div>
@@ -1100,13 +1101,13 @@ export default function LeadsPage() {
 
         <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div>
-            <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>notes and tasks</div>
-            <div className="text-sm mt-2" style={{ color: "var(--text-dim)" }}>Create local CRM activities and push them to the active provider when needed.</div>
+            <div className="text-xs uppercase tracking-[0.24em] font-medium" style={{ color: "var(--text-muted)" }}>notes and tasks</div>
+            <div className="text-sm mt-1" style={{ color: "var(--text-dim)" }}>Create local CRM activities and push them to the active provider when needed.</div>
           </div>
 
           {selectedLead ? (
             <>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[0.9fr_1.1fr]">
+              <div className="grid gap-4 xl:grid-cols-[0.45fr_0.55fr]">
                 <div className="space-y-3 border p-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <select value={activityDraft.type} onChange={(event) => setActivityDraft((current) => ({ ...current, type: event.target.value as ActivityDraft["type"] }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
@@ -1158,7 +1159,7 @@ export default function LeadsPage() {
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <div className="text-sm">{activity.title ?? activity.subject ?? activity.type}</div>
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{activity.type} • {activity.status}</div>
+                          <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{activity.type} • {activity.status}</div>
                         </div>
                         <div className="flex items-center gap-3">
                           <select
@@ -1192,7 +1193,7 @@ export default function LeadsPage() {
             <div className="text-sm leading-7" style={{ color: "var(--text-dim)" }}>Choose a pipeline contact to review notes and follow-up tasks.</div>
           )}
         </section>
-      </section>
+      </div>
     </div>
   );
 }

@@ -87,12 +87,12 @@ export default function OperationsPage() {
   const counts = data?.worker.counts ?? EMPTY_COUNTS;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-      <section className="space-y-6">
+    <div className="grid gap-5 xl:grid-cols-2">
+      <section className="space-y-5">
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="flex items-center justify-between gap-4 mb-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>operations</div>
+              <div className="text-xs uppercase tracking-[0.24em] font-medium mb-1" style={{ color: "var(--text-muted)" }}>operations</div>
               <div className="text-sm" style={{ color: "var(--text-dim)" }}>
                 Worker state, queue health, MCP connectivity, and recent agent runs.
               </div>
@@ -112,7 +112,7 @@ export default function OperationsPage() {
               { label: "stream aborts", value: String(data?.failures.streamAbortCount ?? 0) },
             ].map((card) => (
               <div key={card.label} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-[10px] uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+                <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
                 <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
               </div>
             ))}
@@ -124,7 +124,7 @@ export default function OperationsPage() {
           <div className="grid gap-3 sm:grid-cols-5 text-sm">
             {Object.entries(counts).map(([key, value]) => (
               <div key={key} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-[10px] uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{key}</div>
+                <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{key}</div>
                 <div>{value}</div>
               </div>
             ))}
@@ -158,7 +158,7 @@ export default function OperationsPage() {
         </section>
       </section>
 
-      <section className="space-y-6">
+      <section className="space-y-5">
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>recent runs</div>
           <div className="space-y-3 text-sm max-h-[420px] overflow-auto">

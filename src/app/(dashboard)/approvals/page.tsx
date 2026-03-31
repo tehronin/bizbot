@@ -25,7 +25,7 @@ export default function ApprovalsPage() {
         {!loading && approvals.length === 0 && <div className="text-sm" style={{ color: "var(--text-muted)" }}>No pending approvals.</div>}
         {approvals.map((approval) => (
           <article key={approval.id} className="border p-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>
+            <div className="flex items-center justify-between text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>
               <span>{approval.status}</span>
               <span>{new Date(approval.createdAt).toLocaleString()}</span>
             </div>
