@@ -1,5 +1,7 @@
 "use client";
 
+import { PaginationControls } from "@/components/layout/PaginationControls";
+import { usePagination } from "@/hooks/usePagination";
 import { useEffect, useState } from "react";
 
 interface OperationRun {
@@ -85,6 +87,8 @@ export default function OperationsPage() {
   }, []);
 
   const counts = data?.worker.counts ?? EMPTY_COUNTS;
+  const runsPagination = usePagination(data?.runs ?? [], 15);
+  const jobsPagination = usePagination(data?.jobs ?? [], 15);
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -161,8 +165,8 @@ export default function OperationsPage() {
       <section className="space-y-5">
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>recent runs</div>
-          <div className="space-y-3 text-sm max-h-[420px] overflow-auto">
-            {(data?.runs ?? []).map((run) => (
+          <div className="space-y-3 text-sm">
+            {runsPagination.pageItems.map((run) => (
               <div key={run.runId} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                 <div className="flex items-center justify-between gap-4">
                   <span>{run.profileLabel}</span>
@@ -177,13 +181,14 @@ export default function OperationsPage() {
                 {run.reply ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{run.reply}</div> : null}
               </div>
             ))}
+            <PaginationControls {...runsPagination} />
           </div>
         </section>
 
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>recent jobs</div>
-          <div className="space-y-3 text-sm max-h-[360px] overflow-auto">
-            {(data?.jobs ?? []).map((job) => (
+          <div className="space-y-3 text-sm">
+            {jobsPagination.pageItems.map((job) => (
               <div key={job.id} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                 <div className="flex items-center justify-between gap-4">
                   <span>{job.name}</span>
@@ -195,6 +200,7 @@ export default function OperationsPage() {
                 {job.failedReason ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{job.failedReason}</div> : null}
               </div>
             ))}
+            <PaginationControls {...jobsPagination} />
           </div>
         </section>
 

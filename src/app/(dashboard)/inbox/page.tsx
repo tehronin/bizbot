@@ -1,5 +1,7 @@
 "use client";
 
+import { PaginationControls } from "@/components/layout/PaginationControls";
+import { usePagination } from "@/hooks/usePagination";
 import { useEffect, useState } from "react";
 
 interface InboxItem {
@@ -36,6 +38,7 @@ export default function InboxPage() {
   const [loading, setLoading] = useState(true);
   const [actionItemId, setActionItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const itemsPagination = usePagination(items, 15);
 
   async function load(): Promise<void> {
     setLoading(true);
@@ -134,7 +137,7 @@ export default function InboxPage() {
         {loading ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div> : null}
         {error ? <div className="text-sm" style={{ color: "var(--danger, #d16b6b)" }}>{error}</div> : null}
         {!loading && items.length === 0 ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>No inbox items yet.</div> : null}
-        {items.map((item) => (
+        {itemsPagination.pageItems.map((item) => (
           <article key={item.id} className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
             <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em]" style={{ color: "var(--text-muted)" }}>
               <span>{item.platform.displayName}</span>
@@ -215,6 +218,7 @@ export default function InboxPage() {
             </div>
           </article>
         ))}
+        {!loading ? <PaginationControls {...itemsPagination} /> : null}
       </div>
     </section>
   );

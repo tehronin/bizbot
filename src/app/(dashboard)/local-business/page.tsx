@@ -1,5 +1,7 @@
 "use client";
 
+import { PaginationControls } from "@/components/layout/PaginationControls";
+import { usePagination } from "@/hooks/usePagination";
 import { useEffect, useState } from "react";
 
 interface GoogleReview {
@@ -40,6 +42,8 @@ export default function LocalBusinessPage() {
   const [postSummary, setPostSummary] = useState("");
   const [postUrl, setPostUrl] = useState("");
   const [hoursJson, setHoursJson] = useState('[{"openDay":"MONDAY","openTime":"09:00","closeDay":"MONDAY","closeTime":"17:00"}]');
+  const reviewsPagination = usePagination(location?.reviews ?? [], 10);
+  const postsPagination = usePagination(location?.posts ?? [], 10);
 
   async function load(sync = false): Promise<void> {
     setLoading(true);
@@ -140,7 +144,7 @@ export default function LocalBusinessPage() {
               </div>
             </div>
             <div className="space-y-3">
-              {location.reviews.map((review) => (
+              {reviewsPagination.pageItems.map((review) => (
                 <article key={review.id} className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="flex items-center justify-between text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
                     <span>{review.reviewerName ?? "anonymous"}</span>
@@ -164,6 +168,7 @@ export default function LocalBusinessPage() {
                   </button>
                 </article>
               ))}
+              <PaginationControls {...reviewsPagination} />
             </div>
           </>
         ) : null}
@@ -176,7 +181,7 @@ export default function LocalBusinessPage() {
           <input value={postUrl} onChange={(event) => setPostUrl(event.target.value)} placeholder="Call to action URL" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
           <button onClick={() => void createPost()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>publish post</button>
           <div className="space-y-3">
-            {location?.posts.map((post) => (
+            {postsPagination.pageItems.map((post) => (
               <article key={post.id} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                 <div className="flex items-center justify-between text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>
                   <span>{post.topicType}</span>
@@ -186,6 +191,7 @@ export default function LocalBusinessPage() {
                 {post.searchUrl ? <a href={post.searchUrl} target="_blank" rel="noreferrer" className="text-xs" style={{ color: "var(--accent)" }}>view on Google</a> : null}
               </article>
             ))}
+            <PaginationControls {...postsPagination} />
           </div>
         </section>
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { PaginationControls } from "@/components/layout/PaginationControls";
+import { usePagination } from "@/hooks/usePagination";
 import { useEffect, useState } from "react";
 
 type LeadStage = "LEAD" | "QUALIFIED" | "CONTACTED" | "CONVERTED" | "LOST";
@@ -674,6 +676,7 @@ export default function LeadsPage() {
   const selectedTree = trees.find((tree) => tree.id === selectedTreeId) ?? null;
   const selectedTreeValidation = selectedTree ? validateTree(selectedTree) : null;
   const selectedLead = leads.find((lead) => lead.id === selectedLeadId) ?? null;
+  const activitiesPagination = usePagination(crmActivities, 15);
 
   return (
     <div className="space-y-5">
@@ -1154,7 +1157,7 @@ export default function LeadsPage() {
                   </div>
                   {crmActivities.length === 0 ? (
                     <div className="text-sm leading-7" style={{ color: "var(--text-dim)" }}>No CRM activities yet for this contact.</div>
-                  ) : crmActivities.map((activity) => (
+                  ) : activitiesPagination.pageItems.map((activity) => (
                     <article key={activity.id} className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                       <div className="flex items-center justify-between gap-4">
                         <div>
@@ -1186,6 +1189,7 @@ export default function LeadsPage() {
                       </div>
                     </article>
                   ))}
+                  <PaginationControls {...activitiesPagination} />
                 </div>
               </div>
             </>

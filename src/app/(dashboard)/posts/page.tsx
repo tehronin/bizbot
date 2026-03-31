@@ -1,5 +1,7 @@
 "use client";
 
+import { PaginationControls } from "@/components/layout/PaginationControls";
+import { usePagination } from "@/hooks/usePagination";
 import { useState } from "react";
 import { usePosts } from "@/hooks/usePosts";
 
@@ -7,6 +9,7 @@ export default function PostsPage() {
   const { posts, loading, reload } = usePosts();
   const [content, setContent] = useState("");
   const [platformId, setPlatformId] = useState("");
+  const postsPagination = usePagination(posts, 15);
 
   async function createDraft(): Promise<void> {
     await fetch("/api/posts", {
@@ -37,7 +40,7 @@ export default function PostsPage() {
         </div>
         <div className="space-y-3">
           {loading && <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div>}
-          {!loading && posts.map((post) => (
+          {!loading && postsPagination.pageItems.map((post) => (
             <article key={post.id} className="border p-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
               <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] mb-2" style={{ color: "var(--text-muted)" }}>
                 <span>{post.status}</span>
@@ -46,6 +49,7 @@ export default function PostsPage() {
               <div className="text-sm whitespace-pre-wrap">{post.content}</div>
             </article>
           ))}
+          {!loading ? <PaginationControls {...postsPagination} /> : null}
         </div>
       </section>
     </div>

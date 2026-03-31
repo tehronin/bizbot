@@ -1,5 +1,7 @@
 "use client";
 
+import { PaginationControls } from "@/components/layout/PaginationControls";
+import { usePagination } from "@/hooks/usePagination";
 import { useEffect, useState } from "react";
 
 interface CommerceProduct {
@@ -149,6 +151,8 @@ export default function CommercePage() {
   const [editingOrderDraft, setEditingOrderDraft] = useState<EditableOrderDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const productsPagination = usePagination(data?.products ?? [], 15);
+  const ordersPagination = usePagination(data?.orders ?? [], 15);
 
   async function load(): Promise<void> {
     setError(null);
@@ -347,8 +351,8 @@ export default function CommercePage() {
         <section className="space-y-6">
           <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
             <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>products</div>
-            <div className="space-y-3 max-h-[420px] overflow-auto">
-              {(data?.products ?? []).map((product) => {
+            <div className="space-y-3">
+              {productsPagination.pageItems.map((product) => {
                 const isEditing = editingProductId === product.id && editingProductDraft !== null;
                 return (
                   <article key={product.id} className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
@@ -401,13 +405,14 @@ export default function CommercePage() {
                   </article>
                 );
               })}
+              <PaginationControls {...productsPagination} />
             </div>
           </section>
 
           <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
             <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>orders</div>
-            <div className="space-y-3 max-h-[520px] overflow-auto">
-              {(data?.orders ?? []).map((order) => {
+            <div className="space-y-3">
+              {ordersPagination.pageItems.map((order) => {
                 const isEditing = editingOrderId === order.id && editingOrderDraft !== null;
                 return (
                   <article key={order.id} className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
@@ -476,6 +481,7 @@ export default function CommercePage() {
                   </article>
                 );
               })}
+              <PaginationControls {...ordersPagination} />
             </div>
           </section>
         </section>

@@ -1,5 +1,7 @@
 "use client";
 
+import { PaginationControls } from "@/components/layout/PaginationControls";
+import { usePagination } from "@/hooks/usePagination";
 import { useEffect, useMemo, useState } from "react";
 
 interface BuilderConfig {
@@ -245,6 +247,8 @@ export default function BuilderPage() {
   }
 
   const selectedProject = projectDetail?.project ?? projects.find((project) => project.id === selectedProjectId) ?? null;
+  const projectsPagination = usePagination(projects, 15);
+  const runsPagination = usePagination(projectDetail?.runs ?? [], 15);
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -337,10 +341,10 @@ export default function BuilderPage() {
       <section className="space-y-5">
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>projects</div>
-          <div className="space-y-3 text-sm max-h-[260px] overflow-auto">
+          <div className="space-y-3 text-sm">
             {projects.length === 0 ? (
               <div style={{ color: "var(--text-dim)" }}>No builder projects yet.</div>
-            ) : projects.map((project) => (
+            ) : projectsPagination.pageItems.map((project) => (
               <button
                 key={project.id}
                 onClick={() => setSelectedProjectId(project.id)}
@@ -358,6 +362,7 @@ export default function BuilderPage() {
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.template} · {project.packageManager}</div>
               </button>
             ))}
+            <PaginationControls {...projectsPagination} />
           </div>
         </section>
 
@@ -453,10 +458,10 @@ export default function BuilderPage() {
 
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>recent runs</div>
-          <div className="space-y-3 text-sm max-h-[420px] overflow-auto">
+          <div className="space-y-3 text-sm">
             {(projectDetail?.runs ?? []).length === 0 ? (
               <div style={{ color: "var(--text-dim)" }}>No recorded runs for this project yet.</div>
-            ) : projectDetail?.runs.map((run) => (
+            ) : runsPagination.pageItems.map((run) => (
               <div key={run.id} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                 <div className="flex items-center justify-between gap-4">
                   <span>{run.title}</span>
@@ -468,6 +473,7 @@ export default function BuilderPage() {
                 {run.stderr ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--danger)" }}>{run.stderr}</pre> : null}
               </div>
             ))}
+            <PaginationControls {...runsPagination} />
           </div>
         </section>
       </section>
