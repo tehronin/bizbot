@@ -6,6 +6,10 @@ import { builderPlugin } from "@/lib/agent/plugins/BuilderPlugin";
 import { executeTool, getAllToolDefinitions, getBuiltinPlugins } from "@/lib/agent/plugins";
 import { canProfileUseTool } from "@/lib/agent/profiles";
 
+function asObjectResult<T extends object>(value: unknown): T {
+  return value as T;
+}
+
 function requireTool(name: string) {
   const tool = builderPlugin.tools.find((entry) => entry.name === name);
   expect(tool).toBeDefined();
@@ -32,7 +36,7 @@ describe("builder plugin", () => {
 
   it("reports an unsafe default workspace when it overlaps the repo", async () => {
     const tool = requireTool("builder_get_status");
-    const result = await tool.execute({}, {});
+    const result = asObjectResult<{ safe: boolean; reason: string }>(await tool.execute({}, {}));
 
     expect(result.safe).toBe(false);
     expect(String(result.reason)).toContain("BIZBOT_BUILDER_WORKSPACE_PATH");
@@ -44,7 +48,7 @@ describe("builder plugin", () => {
     await requireTool("builder_create_directory").execute({ path: "apps/demo/src" }, {});
     await requireTool("builder_write_file").execute({ path: "apps/demo/src/value.txt", content: "42" }, {});
     const readResult = await requireTool("builder_read_file").execute({ path: "apps/demo/src/value.txt" }, {});
-    const listResult = await requireTool("builder_list_files").execute({ subdir: "apps/demo/src" }, {});
+    const listResult = asObjectResult<{ files: Array<{ path: string }> }>(await requireTool("builder_list_files").execute({ subdir: "apps/demo/src" }, {}));
     const scaffoldResult = await requireTool("builder_scaffold_node_package").execute({
       projectDir: "apps/pkg",
       packageName: "pkg-demo",
@@ -74,9 +78,10 @@ describe("builder plugin", () => {
       command: "node",
       args: ["-e", "console.log('builder-ok')"],
     }, {});
+    const command = asObjectResult<{ ok: boolean; stdout: string }>(commandResult);
 
-    expect(commandResult.ok).toBe(true);
-    expect(commandResult.stdout.trim()).toBe("builder-ok");
+    expect(command.ok).toBe(true);
+    expect(command.stdout.trim()).toBe("builder-ok");
 
     await expect(() => requireTool("builder_run_command").execute({
       command: "npm",

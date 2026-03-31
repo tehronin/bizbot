@@ -10,6 +10,7 @@ export interface DelegationRequest {
   targetProfile: AgentProfile;
   task: string;
   conversationId: string;
+  userId?: string;
   provider?: LLMProvider;
   parentRunId?: string;
   delegatedByProfile?: AgentProfile;
@@ -48,6 +49,7 @@ export async function executeDelegatedRun(request: DelegationRequest): Promise<D
   const result = await executeAgentConversation({
     message: buildDelegatedUserMessage(request),
     conversationId: request.conversationId,
+    userId: request.userId,
     provider: request.provider,
     forcedProfile: request.targetProfile,
     parentRunId: request.parentRunId,

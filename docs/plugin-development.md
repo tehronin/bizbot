@@ -19,6 +19,13 @@ A plugin includes:
 
 Builtin plugins are normalized through `wrapBuiltinPlugin`, and the runtime registry lives in `src/lib/agent/plugins/registry.ts`.
 
+The builtin `memory` plugin exposes two distinct memory surfaces under the shared `memory_` prefix:
+
+- semantic memory tools for recall and search: `memory_remember`, `memory_recall`
+- explicit relational user memory tools for stable facts: `memory_get_facts`, `memory_set_fact`, `memory_forget_fact`
+
+Keep these layers separate. Explicit user memory is for durable, user-approved facts and should not be used as hidden profiling or as a substitute for graph or RAG retrieval.
+
 ## Creating a Plugin
 
 Run:

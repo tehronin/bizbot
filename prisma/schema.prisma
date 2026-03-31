@@ -21,6 +21,7 @@ model User {
   conversations Conversation[]
   posts         Post[]
   memories      Memory[]
+  userMemoryFacts UserMemoryFact[]
 }
 
 // ─────────────────── PLATFORMS ───────────────────
@@ -148,6 +149,23 @@ model Memory {
   updatedAt DateTime @updatedAt
 
   @@index([userId, category])
+}
+
+model UserMemoryFact {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  category  String
+  key       String
+  value     Json
+  source    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, key], name: "userId_key")
+  @@index([userId, category])
+  @@index([userId, key])
 }
 
 // ─────────────────── POLICIES ───────────────────

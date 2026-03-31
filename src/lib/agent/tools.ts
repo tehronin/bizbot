@@ -19,7 +19,7 @@ export interface ToolSchemaProperties {
 
 export interface ToolPropertySchema {
   [key: string]: ToolSchemaValue | undefined;
-  type: "string" | "number" | "boolean" | "object" | "array";
+  type: "string" | "number" | "boolean" | "object" | "array" | "json";
   description?: string;
   enum?: string[];
   items?: ToolPropertySchema;
@@ -39,6 +39,7 @@ export interface ToolParametersSchema {
 export interface ToolExecutionContext {
   conversationId?: string;
   runId?: string;
+  userId?: string;
   agentProfile?: string;
   provider?: string;
   signal?: AbortSignal;
@@ -212,6 +213,13 @@ function validateToolValue(
       }
 
       return nested;
+    }
+    case "json": {
+      if (!isJsonValue(resolvedValue)) {
+        throw new Error(`Tool argument ${path} must be valid JSON.`);
+      }
+
+      return resolvedValue;
     }
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { UserMemoryPanel } from "@/components/settings/UserMemoryPanel";
 
 interface SettingRecord {
   key: string;
@@ -700,6 +701,8 @@ export default function SettingsPage() {
       </section>
 
       <section className="space-y-6">
+        <UserMemoryPanel />
+
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="flex items-center justify-between mb-4">
             <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>runtime status</div>

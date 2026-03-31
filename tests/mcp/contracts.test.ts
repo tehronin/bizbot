@@ -89,8 +89,11 @@ describe("MCP contract snapshots", () => {
         "local_business_sync_posts",
         "local_business_sync_reviews",
         "local_business_update_hours",
+        "memory_forget_fact",
+        "memory_get_facts",
         "memory_recall",
         "memory_remember",
+        "memory_set_fact",
         "schedule_list",
       ]
     `);

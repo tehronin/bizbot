@@ -1,8 +1,10 @@
 import { buildContext, getOrCreateConversation, saveMessage } from "@/lib/agent/memory";
+import { formatMemoryFactsForPrompt, getActiveMemoryFacts } from "@/lib/agent/memory/service";
 import { chatComplete, getModelForProvider, type ChatRequestOptions, type LLMProvider } from "@/lib/agent/kernel";
 import { executeTool, getAllToolDefinitions } from "@/lib/agent/plugins";
 import { ensureMcpClientsInitialized } from "@/lib/mcp/client";
 import { buildAutonomySystemPrompt, getAgentRuntimeConfig } from "@/lib/agent/runtime";
+import { resolveAgentUserId } from "@/lib/agent/user-context";
 import {
   completeAgentRun,
   recordAgentRunToolCall,
@@ -40,6 +42,7 @@ export type AgentExecutionEvent =
 export interface AgentExecutionParams {
   message: string;
   conversationId?: string;
+  userId?: string;
   provider?: LLMProvider;
   forcedProfile?: AgentProfile;
   parentRunId?: string;
@@ -91,6 +94,7 @@ export async function executeAgentConversation(
   const {
     message,
     conversationId,
+    userId,
     provider,
     forcedProfile,
     parentRunId,
@@ -100,9 +104,9 @@ export async function executeAgentConversation(
   } = params;
   const { signal } = params;
   throwIfAborted(signal);
-  const userId = "local-user";
+  const resolvedUserId = resolveAgentUserId(userId);
   const runtimeConfig = getAgentRuntimeConfig();
-  const resolvedConversationId = await getOrCreateConversation(conversationId, userId);
+  const resolvedConversationId = await getOrCreateConversation(conversationId, resolvedUserId);
   const routedProfileDecision = routeAgentProfile(message);
   const profileDecision = forcedProfile
     ? {
@@ -121,7 +125,11 @@ export async function executeAgentConversation(
     console.warn("[agent executor] MCP client init skipped:", error);
   });
   throwIfAborted(signal);
-  const contextBlock = await buildContext(message, resolvedConversationId, userId);
+  const [explicitMemoryFacts, contextBlock] = await Promise.all([
+    getActiveMemoryFacts({ userId: resolvedUserId }),
+    buildContext(message, resolvedConversationId, resolvedUserId),
+  ]);
+  const explicitMemoryBlock = formatMemoryFactsForPrompt(explicitMemoryFacts);
   const tools = getAllToolDefinitions(runtimeConfig, { agentProfile: profileDecision.profile });
   const run = startAgentRun({
     conversationId: resolvedConversationId,
@@ -139,7 +147,9 @@ export async function executeAgentConversation(
     "You are BizBot, a local desktop social media agent. Use tools when they improve correctness, prefer deterministic tool outputs over guessing, and keep responses operational."
     + ` ${buildAutonomySystemPrompt(runtimeConfig)}`
     + ` ${profilePrompt.systemInstruction}`
+    + " Explicit user memory policy: use memory_get_facts when stable user preferences, identity, workflows, constraints, or operator settings are relevant. Use memory_set_fact only when the user explicitly asks BizBot to remember a stable fact or an approved onboarding/system flow requires it. Use memory_forget_fact only when the user explicitly asks BizBot to forget a stored fact. Never store secrets, credentials, tokens, payment details, ephemeral chat noise, or speculative inferences as stable memory."
     + ` Delegation options: ${profileDescriptor.delegationTargets.join(", ") || "none"}.`
+    + (explicitMemoryBlock ? `\n\n${explicitMemoryBlock}` : "")
     + (contextBlock ? `\n\nContext:\n${contextBlock}` : "");
 
   const messages: ChatMessage[] = [
@@ -151,7 +161,7 @@ export async function executeAgentConversation(
   ];
 
   await saveMessage(resolvedConversationId, "USER", message, {
-    userId,
+    userId: resolvedUserId,
     agentRunId: run.runId,
     agentProfile: profileDecision.profile,
   });
@@ -244,6 +254,7 @@ export async function executeAgentConversation(
                   agentProfile: profileDecision.profile,
                   conversationId: resolvedConversationId,
                   runId: run.runId,
+                  userId: resolvedUserId,
                   provider: resolvedProvider,
                   signal,
                 },
@@ -286,7 +297,7 @@ export async function executeAgentConversation(
       const assistantContent = response.content;
       throwIfAborted(signal);
       const assistantMetadata = {
-        userId,
+        userId: resolvedUserId,
         toolRoundCount: round,
         agentRunId: run.runId,
         agentProfile: profileDecision.profile,
@@ -323,7 +334,7 @@ export async function executeAgentConversation(
     const fallback = "I reached the maximum number of tool-use steps. Please try a simpler request.";
     throwIfAborted(signal);
     await saveMessage(resolvedConversationId, "ASSISTANT", fallback, {
-      userId,
+      userId: resolvedUserId,
       toolRoundCount: MAX_TOOL_ROUNDS,
       agentRunId: run.runId,
       agentProfile: profileDecision.profile,

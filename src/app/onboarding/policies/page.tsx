@@ -76,7 +76,7 @@ export default function OnboardingPoliciesPage() {
         </div>
         <div className="flex gap-3">
           <button onClick={() => void save()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>save</button>
-          <Link href="/onboarding/complete" className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>next</Link>
+          <Link href="/onboarding/memory" className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>next</Link>
         </div>
       </section>
     </main>

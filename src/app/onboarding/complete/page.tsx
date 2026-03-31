@@ -22,6 +22,7 @@ export default function OnboardingCompletePage() {
         </p>
         <div className="space-y-2 text-xs leading-6 mb-6" style={{ color: "var(--text-dim)" }}>
           <div>Review the settings page before going live with real accounts.</div>
+          <div>Seed explicit user memory with preferred name, timezone, workflows, and operator constraints before relying on long-running agent behavior.</div>
           <div>Meta webhook verification depends on the verify token you saved during onboarding.</div>
           <div>Workspace and knowledge folder paths now affect document retrieval and file tools.</div>
           <div>Google Business Profile review, post, and hours workflows depend on the account and location resource names you saved during onboarding.</div>
@@ -29,6 +30,7 @@ export default function OnboardingCompletePage() {
         <div className="flex gap-3">
           <button onClick={() => void finish()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>enter dashboard</button>
           <Link href="/settings" className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>settings</Link>
+          <Link href="/settings#explicit-user-memory" className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>seed memory</Link>
         </div>
       </section>
     </main>

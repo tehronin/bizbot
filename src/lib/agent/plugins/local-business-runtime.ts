@@ -14,7 +14,7 @@ type LocalBusinessPluginDeps = {
   getDashboard: typeof getGoogleBusinessDashboard;
   syncReviews: typeof syncGoogleBusinessReviews;
   syncPosts: typeof syncGoogleBusinessPosts;
-  listReviews: typeof db.googleBusinessReview.findMany;
+  listReviews: (args?: Parameters<typeof db.googleBusinessReview.findMany>[0]) => Promise<Awaited<ReturnType<typeof db.googleBusinessReview.findMany>>>;
   replyReview: typeof replyToGoogleBusinessReview;
   createPost: typeof createGoogleBusinessPost;
   updateHours: typeof updateGoogleBusinessHours;

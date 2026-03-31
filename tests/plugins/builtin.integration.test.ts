@@ -5,9 +5,10 @@ import { socialPlugin } from "@/lib/agent/plugins/SocialPlugin";
 import { resetCrmPluginTestDeps, setCrmPluginTestDeps } from "@/lib/agent/plugins/crm-runtime";
 import { resetLocalBusinessPluginTestDeps, setLocalBusinessPluginTestDeps } from "@/lib/agent/plugins/local-business-runtime";
 import { resetSocialPluginTestDeps, setSocialPluginTestDeps } from "@/lib/agent/plugins/social-runtime";
+import type { RegisteredToolDefinition } from "@/lib/agent/tools";
 import type { SocialClient } from "@/lib/social/types";
 
-function requireTool(tools: Array<{ name: string; execute: (args: Record<string, unknown>, context: Record<string, unknown>) => Promise<unknown> }>, name: string) {
+function requireTool(tools: RegisteredToolDefinition[], name: string) {
   const tool = tools.find((entry) => entry.name === name);
   expect(tool).toBeDefined();
   return tool!;

@@ -9,6 +9,7 @@ BizBot is a local-first business operations agent: social publishing, inbox hand
 BizBot is no longer just a social posting bot. The app now includes:
 
 - Agent chat with typed specialist routing and tool traces
+- Dual long-term memory paths: semantic recall plus explicit relational user memory
 - Builder Mode for sandboxed project scaffolding, codegen, and external build-workspace orchestration
 - Unified inbox and lead pipeline
 - CRM cockpit with notes, tasks, contact sync, and provider status
@@ -160,6 +161,7 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 
 - Streams run metadata, routing decisions, tool calls, and final outputs
 - Uses the typed specialist control plane
+- Lets operators promote a user or assistant message into explicit user memory
 - Can expose runtime state through MCP-aware flows
 
 ### Inbox
@@ -210,7 +212,14 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 
 - Runtime readiness surface for LLM, CRM, MCP, Redis, Memgraph, and provider config
 - Environment-backed configuration visibility
+- Explicit user memory panel for seeding, editing, filtering, and forgetting durable facts
 - Builder workspace, preset, allowlist, and optional CLI adapter controls
+
+### Onboarding
+
+- Dedicated memory-seeding step before completion
+- Reuses the same explicit user memory controls as Settings
+- Guides operators toward stable facts such as preferred name, timezone, workflows, and hard constraints
 
 ## CRM
 
@@ -342,6 +351,11 @@ Current repo/runtime assumptions:
 │ ├─ delegated sub-runs                                     │
 │ └─ durable run journal                                    │
 ├────────────────────────────────────────────────────────────┤
+│ Memory systems                                            │
+│ ├─ semantic memory in PostgreSQL + pgvector               │
+│ ├─ explicit relational user memory facts in PostgreSQL    │
+│ └─ graph and document context remain separate             │
+├────────────────────────────────────────────────────────────┤
 │ BullMQ worker                                             │
 │ ├─ inbox sync and processing                              │
 │ ├─ scheduled publishing                                   │
@@ -358,6 +372,25 @@ Current repo/runtime assumptions:
 │ └─ MCP clients and server                                 │
 └────────────────────────────────────────────────────────────┘
 ```
+
+## Memory Model
+
+BizBot now maintains two distinct long-term memory paths:
+
+- Semantic memory uses the existing `Memory` model and `memory_remember` / `memory_recall` tools for vector-backed recall and search.
+- Explicit user memory uses the `UserMemoryFact` model and `memory_get_facts` / `memory_set_fact` / `memory_forget_fact` tools for stable, user-approved identity details, preferences, workflows, constraints, and operator settings.
+
+The explicit memory layer is user-scoped, durable, relational, typed, and injected into the system prompt as a compact `[User Memory]` block. It is separate from graph retrieval, document retrieval, and semantic recall.
+
+The runtime now threads `userId` through the public agent API, delegated runs, tool execution context, and MCP fallback execution so both memory layers stay scoped consistently. When no user id is supplied, the runtime falls back to the local desktop default user.
+
+Operators can manage explicit memory in three places:
+
+- Settings: the main control-plane surface for browsing, editing, filtering, and forgetting facts.
+- Onboarding: a dedicated memory step for seeding durable facts before first real use.
+- Chat: a lightweight affordance for promoting a message into explicit memory after review.
+
+Explicit memory is only for durable, user-approved facts. It is not a place for secrets, credentials, payment details, temporary requests, speculative profiling, graph facts, or RAG content.
 
 ## API Surface
 
@@ -416,6 +449,7 @@ Compatibility redirects are retained at the legacy `/api/google-business/*` path
 - `/api/leads/[id]`
 - `/api/settings`
 - `/api/onboarding`
+- `/api/user-memory`
 
 ## Data Model Notes
 
@@ -426,6 +460,8 @@ The app still uses Prisma for core relational models, with `Setting` acting as a
 - HubSpot mapping metadata
 - runtime and worker state
 - integration snapshots and lightweight control-plane records
+
+Explicit stable user facts are stored separately in the dedicated `UserMemoryFact` relational model instead of `Setting`, so they can be queried, filtered, soft-forgotten, and injected into the agent prompt deterministically.
 
 ## Repository Structure
 

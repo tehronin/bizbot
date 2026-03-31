@@ -62,6 +62,7 @@ export const delegationPlugin = {
           targetProfile,
           task,
           conversationId: context.conversationId,
+          userId: context.userId,
           parentRunId: context.runId,
           delegatedByProfile: callerProfile,
           provider: context.provider as never,

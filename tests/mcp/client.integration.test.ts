@@ -215,7 +215,8 @@ async function startSseFixtureMcpServer(): Promise<{ server: http.Server; url: s
       }
 
       const parsedBody = body.length > 0 ? JSON.parse(body) : undefined;
-      await session.transport.handlePostMessage(req as http.IncomingMessage & { auth?: unknown }, res, parsedBody);
+      const requestWithAuth = req as Parameters<typeof session.transport.handlePostMessage>[0];
+      await session.transport.handlePostMessage(requestWithAuth, res, parsedBody);
       return;
     }
 

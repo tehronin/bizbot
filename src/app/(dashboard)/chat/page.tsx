@@ -1,11 +1,74 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { MEMORY_FACT_CATEGORIES, type MemoryFactCategory } from "@/lib/agent/memory/facts";
 import { useChat } from "@/hooks/useChat";
+
+function inferCategoryFromText(content: string): MemoryFactCategory {
+  const lower = content.toLowerCase();
+  if (/name|call me|i am|i'm/.test(lower)) return "identity";
+  if (/prefer|timezone|style|voice|tone/.test(lower)) return "preference";
+  if (/workflow|process|when replying|steps/.test(lower)) return "workflow";
+  if (/never|don't|do not|must not|avoid|constraint/.test(lower)) return "constraint";
+  if (/default|setting|lane|operator/.test(lower)) return "operator_setting";
+  return "other";
+}
+
+function inferKeyFromText(content: string): string {
+  return content
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48) || "remembered_fact";
+}
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
+  const [memoryDraft, setMemoryDraft] = useState<{
+    messageId: string;
+    category: MemoryFactCategory;
+    key: string;
+    value: string;
+  } | null>(null);
+  const [memoryState, setMemoryState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [memoryError, setMemoryError] = useState<string | null>(null);
   const { messages, sendMessage, isPending, activeRun, conversationId } = useChat();
+
+  const promotableMessages = useMemo(
+    () => messages.filter((message) => message.role === "user" || message.role === "assistant"),
+    [messages],
+  );
+
+  async function promoteToMemory(): Promise<void> {
+    if (!memoryDraft) {
+      return;
+    }
+
+    setMemoryState("saving");
+    setMemoryError(null);
+    try {
+      const response = await fetch("/api/user-memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: memoryDraft.category,
+          key: memoryDraft.key,
+          value: memoryDraft.value,
+          source: "user",
+        }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to store explicit memory fact.");
+      }
+      setMemoryState("saved");
+      setMemoryDraft(null);
+    } catch (error) {
+      setMemoryState("error");
+      setMemoryError(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   return (
     <div className="grid gap-4 h-full" style={{ gridTemplateRows: "1fr auto" }}>
@@ -59,8 +122,28 @@ export default function ChatPage() {
                         : "var(--bg-raised)",
               }}
             >
-              <div className="text-[10px] uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>
-                {message.role}
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div className="text-[10px] uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
+                  {message.role}
+                </div>
+                {(message.role === "user" || message.role === "assistant") ? (
+                  <button
+                    onClick={() => {
+                      setMemoryDraft({
+                        messageId: message.id,
+                        category: inferCategoryFromText(message.content),
+                        key: inferKeyFromText(message.content),
+                        value: message.content,
+                      });
+                      setMemoryState("idle");
+                      setMemoryError(null);
+                    }}
+                    className="px-2 py-1 border text-[10px] uppercase tracking-[0.18em]"
+                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  >
+                    promote to memory
+                  </button>
+                ) : null}
               </div>
               {message.content}
               {message.role === "meta" ? (
@@ -84,6 +167,49 @@ export default function ChatPage() {
           ))}
         </div>
       </section>
+      {memoryDraft ? (
+        <section className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>promote message to explicit memory</div>
+              <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+                Convert a stable fact from chat into durable user memory. Edit the category, key, and value before saving.
+              </div>
+            </div>
+            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: memoryState === "saved" ? "var(--success)" : memoryState === "error" ? "var(--danger)" : "var(--text-dim)" }}>{memoryState}</div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>category</label>
+              <select value={memoryDraft.category} onChange={(event) => setMemoryDraft((current) => current ? { ...current, category: event.target.value as MemoryFactCategory } : current)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                {MEMORY_FACT_CATEGORIES.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>key</label>
+              <input value={memoryDraft.key} onChange={(event) => setMemoryDraft((current) => current ? { ...current, key: event.target.value } : current)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>value</label>
+            <textarea value={memoryDraft.value} onChange={(event) => setMemoryDraft((current) => current ? { ...current, value: event.target.value } : current)} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+          </div>
+          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            Use this only for durable, user-approved facts. Do not promote temporary requests, guesses, secrets, or tool noise.
+          </div>
+          {memoryError ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{memoryError}</div> : null}
+          <div className="flex gap-2">
+            <button onClick={() => void promoteToMemory()} disabled={memoryState === "saving" || !memoryDraft.key.trim() || !memoryDraft.value.trim()} className="px-4 py-2 text-sm uppercase tracking-[0.18em] border disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+              {memoryState === "saving" ? "Saving" : "save memory fact"}
+            </button>
+            <button onClick={() => { setMemoryDraft(null); setMemoryState("idle"); setMemoryError(null); }} className="px-4 py-2 text-sm uppercase tracking-[0.18em] border" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+              cancel
+            </button>
+          </div>
+        </section>
+      ) : null}
       <form
         className="border p-3 flex gap-3"
         style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}

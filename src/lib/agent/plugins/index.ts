@@ -20,6 +20,7 @@ export interface ToolAccessContext {
   agentProfile?: AgentProfile;
   conversationId?: string;
   runId?: string;
+  userId?: string;
   provider?: string;
   signal?: AbortSignal;
 }
@@ -78,6 +79,7 @@ export async function executeTool(
   return tool.execute(args, {
     conversationId: options?.access?.conversationId,
     runId: options?.access?.runId,
+    userId: options?.access?.userId,
     agentProfile: options?.access?.agentProfile,
     provider: options?.access?.provider,
     signal: options?.access?.signal,

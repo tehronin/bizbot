@@ -25,7 +25,7 @@ const builtinPlugins: BizBotPlugin[] = [
   wrapBuiltinPlugin({ id: "builder", displayName: "Builder", description: "Sandboxed workspace scaffolding, file generation, and allowlisted command execution.", tags: ["builder", "workspace"] }, builderPlugin),
   wrapBuiltinPlugin({ id: "delegation", displayName: "Delegation", description: "Delegated sub-runs across specialist operator lanes.", tags: ["agent", "delegation"] }, delegationPlugin),
   wrapBuiltinPlugin({ id: "developer", displayName: "Developer", description: "Runtime inspection tools for workers, memories, and agent runs.", tags: ["developer", "debugging"] }, developerPlugin),
-  wrapBuiltinPlugin({ id: "memory", displayName: "Memory", description: "Semantic recall and memory storage tools.", tags: ["memory", "knowledge"] }, memoryPlugin),
+  wrapBuiltinPlugin({ id: "memory", displayName: "Memory", description: "Semantic recall plus explicit relational user memory tools.", tags: ["memory", "knowledge"] }, memoryPlugin),
   wrapBuiltinPlugin({ id: "files", displayName: "Files", description: "Workspace file operations.", tags: ["files", "workspace"] }, filePlugin),
   wrapBuiltinPlugin({ id: "graph", displayName: "Graph", description: "Knowledge graph search and context tools.", tags: ["graph", "knowledge"] }, graphPlugin),
   wrapBuiltinPlugin({ id: "local-business", displayName: "Local Business", description: "Google Business Profile reviews, posts, and hours.", tags: ["local-business", "reputation"] }, localBusinessPlugin),

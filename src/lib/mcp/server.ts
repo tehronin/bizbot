@@ -10,6 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getAgentWorkerStatus } from "@/lib/agent/heartbeat-queue";
 import { getKnowledgeStatus } from "@/lib/agent/knowledge-status";
 import { inspectMemories, listRecentConversations } from "@/lib/agent/memory";
+import { DEFAULT_AGENT_USER_ID } from "@/lib/agent/user-context";
 import { listAgentHeartbeatJobs } from "@/lib/agent/heartbeat-queue";
 import { listRecentAgentRuns } from "@/lib/agent/run-journal";
 import { listAgentProfileDescriptors } from "@/lib/agent/profiles";
@@ -56,6 +57,8 @@ function propertySchemaToZod(schema: ToolPropertySchema): z.ZodTypeAny {
       return z.boolean();
     case "array":
       return z.array(schema.items ? propertySchemaToZod(schema.items) : z.unknown());
+    case "json":
+      return z.unknown();
     case "object": {
       const shape: Record<string, z.ZodTypeAny> = {};
       const properties = schema.properties ?? {};
@@ -673,6 +676,7 @@ export function createBizBotMcpServer(): McpServer {
             config,
             access: {
               agentProfile: MCP_AGENT_PROFILE,
+              userId: DEFAULT_AGENT_USER_ID,
               provider: getActiveProvider(),
             },
           });

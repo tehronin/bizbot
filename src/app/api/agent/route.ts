@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as {
       message?: unknown;
       conversationId?: unknown;
+      userId?: unknown;
       provider?: unknown;
       stream?: unknown;
       forcedProfile?: AgentProfile;
@@ -66,6 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     const conversationId = typeof body.conversationId === "string" ? body.conversationId : undefined;
+    const userId = typeof body.userId === "string" ? body.userId : undefined;
     const provider = typeof body.provider === "string" ? body.provider : undefined;
     const stream = body.stream === true;
 
@@ -94,6 +96,7 @@ export async function POST(req: NextRequest) {
               await executeAgentConversation({
                 message,
                 conversationId,
+                userId,
                 provider: provider as LLMProvider | undefined,
                 signal: executionAbortController.signal,
                 onEvent: async (event: AgentExecutionEvent) => {
@@ -136,6 +139,7 @@ export async function POST(req: NextRequest) {
     const result = await executeAgentConversation({
       message,
       conversationId,
+      userId,
       provider: provider as LLMProvider | undefined,
     });
 
