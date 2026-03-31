@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   deleteBuilderProject: vi.fn(),
   runBuilderProjectBootstrap: vi.fn(),
   recordBuilderProjectCommand: vi.fn(),
+  launchBuilderProjectCommand: vi.fn(),
+  cancelBuilderProjectRun: vi.fn(),
   count: vi.fn(),
 }));
 
@@ -43,6 +45,8 @@ vi.mock("@/lib/builder/projects", () => ({
 
 vi.mock("@/lib/builder/commands", () => ({
   recordBuilderProjectCommand: mocks.recordBuilderProjectCommand,
+  launchBuilderProjectCommand: mocks.launchBuilderProjectCommand,
+  cancelBuilderProjectRun: mocks.cancelBuilderProjectRun,
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -58,6 +62,7 @@ import { GET as getProjects, POST as postProjects } from "@/app/api/builder/proj
 import { DELETE as deleteProject, GET as getProject, PATCH as patchProject } from "@/app/api/builder/projects/[id]/route";
 import { POST as postBootstrap } from "@/app/api/builder/projects/[id]/bootstrap/route";
 import { POST as postCommand } from "@/app/api/builder/projects/[id]/commands/route";
+import { POST as postCancelRun } from "@/app/api/builder/runs/[runId]/cancel/route";
 
 describe("builder routes", () => {
   beforeEach(() => {
@@ -108,6 +113,14 @@ describe("builder routes", () => {
       title: "Run Codex CLI task",
       result: { ok: true, stdout: "done", stderr: "", exitCode: 0 },
     });
+    mocks.launchBuilderProjectCommand.mockResolvedValue({
+      runId: "run-1",
+      title: "Run Codex CLI task",
+      command: "codex",
+      args: ["exec", "prompt"],
+      status: "RUNNING",
+    });
+    mocks.cancelBuilderProjectRun.mockResolvedValue({ runId: "run-1", status: "CANCELLED" });
     mocks.createBuilderProject.mockResolvedValue({
       id: "project-2",
       name: "Acme",
@@ -216,8 +229,8 @@ describe("builder routes", () => {
     });
     const payload = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(mocks.recordBuilderProjectCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "project-1" }), {
+    expect(response.status).toBe(202);
+    expect(mocks.launchBuilderProjectCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "project-1" }), {
       action: "run_agentic_task",
       profile: "codex",
       prompt: "Scaffold a health check route and add a basic test.",
@@ -225,6 +238,20 @@ describe("builder routes", () => {
       args: undefined,
     });
     expect(payload.runId).toBe("run-1");
+    expect(payload.status).toBe("RUNNING");
+  });
+
+  it("cancels a running builder run", async () => {
+    const response = await postCancelRun(new NextRequest("http://localhost/api/builder/runs/run-1/cancel", {
+      method: "POST",
+    }), {
+      params: Promise.resolve({ runId: "run-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.cancelBuilderProjectRun).toHaveBeenCalledWith("run-1");
+    expect(payload.status).toBe("CANCELLED");
   });
 
   it("lists projects from the collection route", async () => {

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import type { BuilderProjectCommandInput } from "@/lib/builder/commands";
-import { recordBuilderProjectCommand } from "@/lib/builder/commands";
+import { launchBuilderProjectCommand, recordBuilderProjectCommand } from "@/lib/builder/commands";
 import { getBuilderProject } from "@/lib/builder/projects";
 
 function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
@@ -60,7 +60,17 @@ export async function POST(
   try {
     const { id } = await context.params;
     const project = await getBuilderProject(id);
-    const execution = await recordBuilderProjectCommand(project, parseCommandPayload(await req.json()));
+    const payload = parseCommandPayload(await req.json());
+    if (payload.action === "run_agentic_task") {
+      const execution = await launchBuilderProjectCommand(project, payload);
+      return Response.json({
+        runId: execution.runId,
+        title: execution.title,
+        status: execution.status,
+      }, { status: 202 });
+    }
+
+    const execution = await recordBuilderProjectCommand(project, payload);
     return Response.json({
       runId: execution.runId,
       title: execution.title,

@@ -167,6 +167,29 @@ export async function createBuilderRun(input: CreateBuilderRunInput): Promise<Bu
   });
 }
 
+export async function updateBuilderRun(
+  runId: string,
+  result: { status?: BuilderRunStatus; stdout?: string; stderr?: string; summary?: string; metadata?: unknown; finishedAt?: Date | null },
+): Promise<BuilderRun> {
+  const run = await db.builderRun.update({
+    where: { id: runId },
+    data: {
+      ...(result.status !== undefined ? { status: result.status } : {}),
+      ...(result.stdout !== undefined ? { stdout: result.stdout } : {}),
+      ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+      ...(result.summary !== undefined ? { summary: result.summary } : {}),
+      ...(result.metadata !== undefined ? { metadata: result.metadata as never } : {}),
+      ...(result.finishedAt !== undefined ? { finishedAt: result.finishedAt } : {}),
+    },
+  });
+
+  if (result.status && result.status !== "RUNNING") {
+    await db.builderProject.update({ where: { id: run.projectId }, data: { lastRunStatus: result.status } });
+  }
+
+  return run;
+}
+
 export async function completeBuilderRun(
   runId: string,
   result: { status: BuilderRunStatus; stdout?: string; stderr?: string; summary?: string; metadata?: unknown },

@@ -73,6 +73,41 @@ interface BuilderRun {
   metadata?: Record<string, unknown> | null;
 }
 
+interface BuilderRunVerificationStep {
+  script: string;
+  ok: boolean;
+  exitCode: number | null;
+  timedOut: boolean;
+}
+
+interface BuilderRunIteration {
+  iteration: number;
+  changedFiles: string[];
+  verification: {
+    scripts: string[];
+    steps: BuilderRunVerificationStep[];
+    passed: boolean;
+    skipped: boolean;
+    summary: string;
+  };
+  review: {
+    verdict: "complete" | "retry" | "blocked" | "max_iterations";
+    reason: string;
+  };
+}
+
+interface BuilderRunLoopMetadata {
+  maxIterations: number;
+  finalVerdict?: "complete" | "blocked" | "max_iterations";
+  verified: boolean;
+  verificationSkipped: boolean;
+  selectedScripts: string[];
+  summary: string;
+  iterations: BuilderRunIteration[];
+  currentIteration?: number;
+  phase?: "acting" | "verifying" | "reviewing" | "complete";
+}
+
 interface BuilderStatusResponse {
   config: BuilderConfig;
   templates: BuilderTemplatePreset[];
@@ -94,6 +129,19 @@ interface BuilderProjectDetailResponse {
   error?: string;
 }
 
+function getRunLoopMetadata(metadata: Record<string, unknown> | null | undefined): BuilderRunLoopMetadata | null {
+  if (!metadata || typeof metadata !== "object") {
+    return null;
+  }
+
+  const candidate = metadata.loop;
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  return candidate as BuilderRunLoopMetadata;
+}
+
 const EMPTY_CREATE_PROJECT = {
   name: "",
   template: "node-cli",
@@ -113,6 +161,7 @@ export default function BuilderPage() {
   const [agenticModel, setAgenticModel] = useState("");
   const [bootstrapOptions, setBootstrapOptions] = useState({ initializeGit: true, installDependencies: false });
   const [saving, setSaving] = useState(false);
+  const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resultNotice, setResultNotice] = useState<string | null>(null);
 
@@ -185,6 +234,25 @@ export default function BuilderPage() {
     [status],
   );
 
+  const hasRunningRun = useMemo(
+    () => (projectDetail?.runs ?? []).some((run) => run.status === "RUNNING"),
+    [projectDetail],
+  );
+
+  useEffect(() => {
+    if (!selectedProjectId || !hasRunningRun) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refresh(selectedProjectId).catch((nextError) => {
+        setError(nextError instanceof Error ? nextError.message : "Failed to refresh builder progress.");
+      });
+    }, 2000);
+
+    return () => window.clearInterval(interval);
+  }, [hasRunningRun, selectedProjectId]);
+
   async function createProject(): Promise<void> {
     if (!createDraft.name.trim()) {
       setError("Project name is required.");
@@ -233,16 +301,43 @@ export default function BuilderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body ?? {}),
       });
-      const payload = (await response.json()) as { error?: string; runId?: string; result?: { ok?: boolean } };
+      const payload = (await response.json()) as { error?: string; runId?: string; status?: string; result?: { ok?: boolean } };
       if (!response.ok) {
         throw new Error(payload.error ?? "Builder action failed.");
       }
-      setResultNotice(payload.runId ? `Started run ${payload.runId}.` : "Builder action completed.");
+      setResultNotice(payload.status === "RUNNING"
+        ? `Started run ${payload.runId}. Polling live progress.`
+        : payload.runId
+          ? `Started run ${payload.runId}.`
+          : "Builder action completed.");
       await refresh(selectedProjectId);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Builder action failed.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function cancelRun(runId: string): Promise<void> {
+    setCancellingRunId(runId);
+    setError(null);
+    setResultNotice(null);
+    try {
+      const response = await fetch(`/api/builder/runs/${runId}/cancel`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as { error?: string; status?: string; runId?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to cancel builder run.");
+      }
+      setResultNotice(payload.status === "NOT_RUNNING"
+        ? `Run ${payload.runId} was no longer running.`
+        : `Cancellation requested for run ${payload.runId}.`);
+      await refresh(selectedProjectId);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to cancel builder run.");
+    } finally {
+      setCancellingRunId(null);
     }
   }
 
@@ -267,6 +362,7 @@ export default function BuilderPage() {
           </div>
           {error ? <div className="text-sm mb-3" style={{ color: "var(--danger)" }}>{error}</div> : null}
           {resultNotice ? <div className="text-sm mb-3" style={{ color: "var(--success)" }}>{resultNotice}</div> : null}
+          {hasRunningRun ? <div className="text-xs mb-3" style={{ color: "var(--text-dim)" }}>Polling live builder progress every 2 seconds.</div> : null}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
               { label: "workspace", value: status?.config.safe ? "safe" : "blocked" },
@@ -463,14 +559,70 @@ export default function BuilderPage() {
               <div style={{ color: "var(--text-dim)" }}>No recorded runs for this project yet.</div>
             ) : runsPagination.pageItems.map((run) => (
               <div key={run.id} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="flex items-center justify-between gap-4">
-                  <span>{run.title}</span>
-                  <span style={{ color: run.status === "FAILED" ? "var(--danger)" : run.status === "SUCCEEDED" ? "var(--success)" : "var(--text-dim)" }}>{run.status.toLowerCase()}</span>
-                </div>
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{run.command ?? "command unavailable"}</div>
-                {run.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{run.summary}</div> : null}
-                {run.stdout ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-dim)" }}>{run.stdout}</pre> : null}
-                {run.stderr ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--danger)" }}>{run.stderr}</pre> : null}
+                {(() => {
+                  const loop = getRunLoopMetadata(run.metadata);
+                  return (
+                    <>
+                      <div className="flex items-center justify-between gap-4">
+                        <span>{run.title}</span>
+                        <div className="flex items-center gap-3">
+                          {run.status === "RUNNING" ? (
+                            <button
+                              disabled={cancellingRunId === run.id}
+                              onClick={() => void cancelRun(run.id)}
+                              className="px-2 py-1 border text-[10px] uppercase tracking-[0.16em] disabled:opacity-50"
+                              style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                            >
+                              {cancellingRunId === run.id ? "cancelling" : "cancel"}
+                            </button>
+                          ) : null}
+                          <span style={{ color: run.status === "FAILED" ? "var(--danger)" : run.status === "SUCCEEDED" ? "var(--success)" : run.status === "CANCELLED" ? "var(--danger)" : "var(--text-dim)" }}>{run.status.toLowerCase()}</span>
+                        </div>
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{run.command ?? "command unavailable"}</div>
+                      {run.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{run.summary}</div> : null}
+                      {loop ? (
+                        <div className="mt-3 border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                          <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                            <span>{(loop.finalVerdict ?? run.status.toLowerCase()).replace(/_/g, " ")}</span>
+                            <span>{loop.iterations.length}/{loop.maxIterations} iterations</span>
+                            <span>{loop.verified ? "verified" : loop.verificationSkipped ? "verification skipped" : "not verified"}</span>
+                            {loop.selectedScripts.length > 0 ? <span>scripts {loop.selectedScripts.join(", ")}</span> : null}
+                            {loop.phase ? <span>phase {loop.phase}</span> : null}
+                            {loop.currentIteration ? <span>current {loop.currentIteration}</span> : null}
+                          </div>
+                          {run.status === "RUNNING" ? <div className="text-xs" style={{ color: "var(--accent)" }}>{loop.summary}</div> : null}
+                          {loop.iterations.map((iteration) => (
+                            <details key={`${run.id}-iteration-${iteration.iteration}`} className="border p-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                              <summary className="cursor-pointer text-xs flex flex-wrap gap-3" style={{ color: "var(--text-primary)" }}>
+                                <span>attempt {iteration.iteration}</span>
+                                <span style={{ color: iteration.review.verdict === "complete" ? "var(--success)" : iteration.review.verdict === "retry" ? "var(--accent)" : "var(--danger)" }}>
+                                  {iteration.review.verdict.replace(/_/g, " ")}
+                                </span>
+                                <span style={{ color: "var(--text-dim)" }}>{iteration.verification.summary}</span>
+                              </summary>
+                              <div className="mt-2 space-y-2 text-xs" style={{ color: "var(--text-dim)" }}>
+                                <div>{iteration.review.reason}</div>
+                                {iteration.changedFiles.length > 0 ? <div>changed files: {iteration.changedFiles.join(", ")}</div> : <div>changed files: none detected</div>}
+                                {iteration.verification.steps.length > 0 ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    {iteration.verification.steps.map((step) => (
+                                      <span key={`${run.id}-iteration-${iteration.iteration}-${step.script}`} className="border px-2 py-1" style={{ borderColor: step.ok ? "rgba(36,196,162,0.35)" : "rgba(255,90,90,0.35)", color: step.ok ? "var(--success)" : "var(--danger)" }}>
+                                        {step.script} {step.ok ? "passed" : `failed (${step.exitCode ?? "?"})`}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </details>
+                          ))}
+                        </div>
+                      ) : null}
+                      {run.stdout ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-dim)" }}>{run.stdout}</pre> : null}
+                      {run.stderr ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--danger)" }}>{run.stderr}</pre> : null}
+                    </>
+                  );
+                })()}
               </div>
             ))}
             <PaginationControls {...runsPagination} />

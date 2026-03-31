@@ -35,11 +35,15 @@ export interface BuilderCommandResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  cancelled: boolean;
 }
 
 export interface BuilderCommandOptions {
   cwd?: string;
   timeoutSeconds?: number;
+  signal?: AbortSignal;
+  onStdoutChunk?: (chunk: string) => void | Promise<void>;
+  onStderrChunk?: (chunk: string) => void | Promise<void>;
 }
 
 export function getBuilderWorkspaceStatus(): BuilderWorkspaceStatus {
@@ -239,6 +243,30 @@ export async function runBuilderCliCommand(
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let cancelled = false;
+    let resolved = false;
+
+    const finalize = (result: BuilderCommandResult): void => {
+      if (resolved) {
+        return;
+      }
+      resolved = true;
+      resolve(result);
+    };
+
+    const abortListener = (): void => {
+      cancelled = true;
+      child.kill("SIGTERM");
+    };
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        cancelled = true;
+        child.kill("SIGTERM");
+      } else {
+        options.signal.addEventListener("abort", abortListener, { once: true });
+      }
+    }
 
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -246,22 +274,28 @@ export async function runBuilderCliCommand(
     }, timeoutSeconds * 1000);
 
     child.stdout.on("data", (chunk) => {
-      stdout = appendBoundedOutput(stdout, String(chunk));
+      const text = String(chunk);
+      stdout = appendBoundedOutput(stdout, text);
+      void options.onStdoutChunk?.(text);
     });
 
     child.stderr.on("data", (chunk) => {
-      stderr = appendBoundedOutput(stderr, String(chunk));
+      const text = String(chunk);
+      stderr = appendBoundedOutput(stderr, text);
+      void options.onStderrChunk?.(text);
     });
 
     child.once("error", (error) => {
       clearTimeout(timeout);
+      options.signal?.removeEventListener("abort", abortListener);
       reject(error);
     });
 
     child.once("close", (exitCode, signal) => {
       clearTimeout(timeout);
-      resolve({
-        ok: exitCode === 0 && !timedOut,
+      options.signal?.removeEventListener("abort", abortListener);
+      finalize({
+        ok: exitCode === 0 && !timedOut && !cancelled,
         command,
         args,
         cwd: toWorkspaceRelativePath(workspaceRoot, cwd),
@@ -270,6 +304,7 @@ export async function runBuilderCliCommand(
         stdout,
         stderr,
         timedOut,
+        cancelled,
       });
     });
   });

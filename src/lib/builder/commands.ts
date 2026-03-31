@@ -1,11 +1,16 @@
 import type { BuilderProject, BuilderRunKind } from "@prisma/client";
 import { gitInitRepository } from "@/lib/builder/adapters/git";
-import { executeBuilderAgenticTask } from "@/lib/builder/agentic";
+import { buildBuilderAgenticExecution, executeBuilderAgenticTask } from "@/lib/builder/agentic";
 import { npmInstall, npmRunScript } from "@/lib/builder/adapters/npm";
 import { pnpmInstall, pnpmRunScript } from "@/lib/builder/adapters/pnpm";
 import { runNpxPackage } from "@/lib/builder/adapters/npx";
-import { completeBuilderRun, createBuilderRun, updateBuilderProject } from "@/lib/builder/projects";
+import { completeBuilderRun, createBuilderRun, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
 import type { BuilderCommandResult } from "@/lib/builder/workspace";
+
+const MAX_PROGRESS_OUTPUT_CHARS = 24_000;
+const PROGRESS_FLUSH_INTERVAL_MS = 250;
+
+const activeAgenticRuns = new Map<string, AbortController>();
 
 export type BuilderProjectCommandInput =
   | { action: "initialize_git" }
@@ -21,8 +26,41 @@ export interface BuilderProjectCommandExecution {
   command: string;
   args: string[];
   result: BuilderCommandResult;
+  summary?: string;
+  finalStatus?: "SUCCEEDED" | "FAILED" | "CANCELLED";
   projectUpdates?: { gitInitialized?: boolean };
   metadata?: Record<string, unknown>;
+}
+
+export interface BuilderProjectCommandLaunch {
+  runId: string;
+  title: string;
+  command: string;
+  args: string[];
+  status: "RUNNING";
+}
+
+function getAgenticFinalStatus(finalVerdict: string | undefined): "SUCCEEDED" | "FAILED" | "CANCELLED" {
+  if (finalVerdict === "complete") {
+    return "SUCCEEDED";
+  }
+  if (finalVerdict === "cancelled") {
+    return "CANCELLED";
+  }
+  return "FAILED";
+}
+
+function appendProgressOutput(current: string, chunk: string): string {
+  if (current.length >= MAX_PROGRESS_OUTPUT_CHARS) {
+    return current;
+  }
+
+  const next = `${current}${chunk}`;
+  if (next.length <= MAX_PROGRESS_OUTPUT_CHARS) {
+    return next;
+  }
+
+  return `${next.slice(0, MAX_PROGRESS_OUTPUT_CHARS)}\n[truncated output]`;
 }
 
 function assertPackages(packages: string[] | undefined, message: string): string[] {
@@ -124,10 +162,13 @@ export async function executeBuilderProjectCommand(
         command: execution.command,
         args: execution.args,
         result: execution.result,
+        summary: execution.loop.summary,
+        finalStatus: getAgenticFinalStatus(execution.loop.finalVerdict),
         metadata: {
           profileKey: execution.profile.key,
           profileLabel: execution.profile.displayName,
           requestedModel: input.model?.trim() || null,
+          loop: execution.loop,
         },
       };
     }
@@ -153,10 +194,10 @@ export async function recordBuilderProjectCommand(
   }
 
   await completeBuilderRun(run.id, {
-    status: execution.result.ok ? "SUCCEEDED" : "FAILED",
+    status: execution.finalStatus ?? (execution.result.ok ? "SUCCEEDED" : "FAILED"),
     stdout: execution.result.stdout,
     stderr: execution.result.stderr,
-    summary: execution.result.ok ? `${execution.title} completed.` : `${execution.title} failed with exit code ${execution.result.exitCode ?? "unknown"}.`,
+    summary: execution.summary ?? (execution.result.ok ? `${execution.title} completed.` : `${execution.title} failed with exit code ${execution.result.exitCode ?? "unknown"}.`),
     metadata: {
       ...execution.metadata,
       timedOut: execution.result.timedOut,
@@ -167,4 +208,156 @@ export async function recordBuilderProjectCommand(
   });
 
   return { ...execution, runId: run.id };
+}
+
+export async function launchBuilderProjectCommand(
+  project: BuilderProject,
+  input: Extract<BuilderProjectCommandInput, { action: "run_agentic_task" }>,
+): Promise<BuilderProjectCommandLaunch> {
+  const preview = await buildBuilderAgenticExecution(project, input);
+  const title = `Run ${preview.profile.displayName} task`;
+  const baseMetadata = {
+    profileKey: preview.profile.key,
+    profileLabel: preview.profile.displayName,
+    requestedModel: input.model?.trim() || null,
+  };
+
+  const run = await createBuilderRun({
+    projectId: project.id,
+    kind: "AGENTIC",
+    title,
+    command: preview.command,
+    args: preview.args,
+    metadata: {
+      ...baseMetadata,
+      loop: {
+        maxIterations: 3,
+        summary: "Queued builder task.",
+        iterations: [],
+      },
+    },
+  });
+
+  const abortController = new AbortController();
+  activeAgenticRuns.set(run.id, abortController);
+
+  let streamedStdout = "";
+  let streamedStderr = "";
+  let latestLoop: Record<string, unknown> | undefined;
+  let latestSummary = "Queued builder task.";
+  let flushTimer: NodeJS.Timeout | null = null;
+  let flushPromise: Promise<void> | null = null;
+
+  const flushProgress = async (): Promise<void> => {
+    if (flushPromise) {
+      await flushPromise;
+      return;
+    }
+
+    flushPromise = updateBuilderRun(run.id, {
+      stdout: streamedStdout || undefined,
+      stderr: streamedStderr || undefined,
+      summary: latestSummary,
+      metadata: {
+        ...baseMetadata,
+        ...(latestLoop ? { loop: latestLoop } : {}),
+      },
+    }).then(() => undefined).finally(() => {
+      flushPromise = null;
+    });
+
+    await flushPromise;
+  };
+
+  const scheduleFlush = (): void => {
+    if (flushTimer) {
+      return;
+    }
+
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      void flushProgress();
+    }, PROGRESS_FLUSH_INTERVAL_MS);
+  };
+
+  void executeBuilderAgenticTask(project, input, {
+    signal: abortController.signal,
+    onStdoutChunk: async (chunk) => {
+      streamedStdout = appendProgressOutput(streamedStdout, chunk);
+      scheduleFlush();
+    },
+    onStderrChunk: async (chunk) => {
+      streamedStderr = appendProgressOutput(streamedStderr, chunk);
+      scheduleFlush();
+    },
+    onProgress: async ({ loop, latestResult }) => {
+      latestLoop = loop as unknown as Record<string, unknown>;
+      latestSummary = loop.summary;
+      if (latestResult?.stdout !== undefined) {
+        streamedStdout = latestResult.stdout;
+      }
+      if (latestResult?.stderr !== undefined) {
+        streamedStderr = latestResult.stderr;
+      }
+      scheduleFlush();
+    },
+  }).then(async (execution) => {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    await flushProgress();
+    await completeBuilderRun(run.id, {
+      status: getAgenticFinalStatus(execution.loop.finalVerdict),
+      stdout: execution.result.stdout,
+      stderr: execution.result.stderr,
+      summary: execution.loop.summary,
+      metadata: {
+        ...baseMetadata,
+        loop: execution.loop,
+        timedOut: execution.result.timedOut,
+        exitCode: execution.result.exitCode,
+        signal: execution.result.signal,
+        cwd: execution.result.cwd,
+      },
+    });
+    activeAgenticRuns.delete(run.id);
+  }).catch(async (error) => {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    await flushProgress();
+    await completeBuilderRun(run.id, {
+      status: abortController.signal.aborted ? "CANCELLED" : "FAILED",
+      stderr: String(error),
+      summary: abortController.signal.aborted ? `${title} cancelled.` : `${title} failed: ${String(error)}`,
+      metadata: {
+        ...baseMetadata,
+        ...(latestLoop ? { loop: latestLoop } : {}),
+      },
+    });
+    activeAgenticRuns.delete(run.id);
+  });
+
+  return {
+    runId: run.id,
+    title,
+    command: preview.command,
+    args: preview.args,
+    status: "RUNNING",
+  };
+}
+
+export async function cancelBuilderProjectRun(runId: string): Promise<{ runId: string; status: "CANCELLED" | "NOT_RUNNING" }> {
+  const controller = activeAgenticRuns.get(runId);
+  if (!controller) {
+    return { runId, status: "NOT_RUNNING" };
+  }
+
+  controller.abort(new Error("Builder run cancelled by user."));
+  await updateBuilderRun(runId, {
+    summary: "Cancellation requested.",
+  });
+  return { runId, status: "CANCELLED" };
 }
