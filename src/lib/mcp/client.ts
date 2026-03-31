@@ -246,6 +246,20 @@ export function getMcpClientTools(): RegisteredToolDefinition[] {
   return tools;
 }
 
+export function getMcpClientToolCatalog(): Array<{
+  prefixedName: string;
+  originalName: string;
+  serverName: string;
+  description: string;
+}> {
+  return Array.from(connectedServers.values()).flatMap((server) => server.tools.map((tool) => ({
+    prefixedName: tool.name,
+    originalName: tool.name.replace(new RegExp(`^mcp_${server.config.name}_`), ""),
+    serverName: server.config.name,
+    description: tool.description,
+  })));
+}
+
 export function getMcpClientResources(): ImportedMcpResource[] {
   return Array.from(connectedServers.values()).flatMap((server) => server.resources.map((resource) => ({
     serverName: server.config.name,

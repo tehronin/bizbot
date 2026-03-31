@@ -18,6 +18,7 @@ BizBot is no longer just a social posting bot. The app now includes:
 - Approvals queue and publishing workflows
 - Analytics and runtime Operations views
 - MCP server and MCP client plumbing for tool exposure and imports
+- A high-trust MCP plugin design loop for inspection, validation, preview, and contract-impact testing
 
 The current dashboard surface is:
 
@@ -60,10 +61,13 @@ BizBot is set up so feature work can move through a plugin-shaped path instead o
 - Tool contracts are easier to review because schemas, descriptions, and ownership stay close together.
 - Runtime exposure stays predictable through the plugin registry instead of ad hoc imports.
 - MCP contract tests catch drift in the OSS-facing tool, prompt, and resource surface before it leaks into integrations.
+- Power users can inspect exactly how plugin changes alter tools, prompts, resources, and imported MCP provenance before shipping.
 
 ### Dev Tools For Feature Work
 
 - `npm run plugin:new -- <plugin-name>` scaffolds a starter plugin file and a matching test file.
+- `developer_*` tools expose plugin inspection, contract validation, naming checks, test suggestions, prompt/resource previews, and MCP catalog impact reports.
+- `bizbot://plugins/*` resources expose registry reports, naming rules, authoring checklists, and MCP surface previews for plugin authors.
 - Builder Mode adds a second path for feature work: create a project in `/builder`, bootstrap a preset, then iterate in a dedicated external workspace instead of inside the BizBot repo.
 - `src/lib/agent/plugins/contracts.ts` defines the formal BizBot plugin contract used by builtin and future external-style plugins.
 - `src/lib/agent/plugins/registry.ts` centralizes plugin registration, duplicate detection, and tool-to-plugin ownership mapping.
@@ -85,6 +89,16 @@ The intended feature path is:
 5. If the feature is MCP-visible, update or verify MCP contract coverage.
 
 That gives a developer one repeatable path from idea to shipped feature: scaffold, define schema, register, test, expose.
+
+### MCP Plugin Design Lab
+
+BizBot's MCP surface is intentionally broad and optimized for advanced users, not novice-safe guardrails.
+
+- Use `developer_plan_plugin` to turn a plugin goal into a suggested boundary and starter tool set.
+- Use `developer_check_tool_naming`, `developer_validate_plugin_contract`, and `developer_inspect_plugin_registry` before relying on a new namespace.
+- Use `developer_preview_tool_descriptor`, `developer_preview_prompt`, and `developer_preview_resource` to inspect the MCP-facing surface without digging through the codebase manually.
+- Use `developer_check_mcp_contract_impact` and `developer_suggest_plugin_tests` before updating builtin registry wiring or MCP snapshots.
+- Use `bizbot://plugins/registry-report`, `bizbot://plugins/mcp-surface-preview`, and `bizbot://plugins/contracts-status` when you want the current control-plane state as structured JSON.
 
 ## Builder Mode
 
@@ -267,6 +281,14 @@ The Local Business area is backed by the Google Business service.
 ## MCP
 
 BizBot can act as both an MCP server and an MCP client.
+
+The MCP surface now doubles as a plugin authoring lab for power users:
+
+- builtin plugin inspection and registry conflict explanation
+- tool naming guidance and schema suggestions
+- prompt, resource, and tool descriptor previews
+- MCP catalog and contract-impact visibility
+- imported external MCP provenance alongside builtin plugin ownership
 
 ### MCP Server
 

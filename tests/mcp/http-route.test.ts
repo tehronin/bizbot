@@ -55,6 +55,7 @@ describe("MCP HTTP route", () => {
 
     expect(result.status).toBe(200);
     expect(result.body.result.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "developer_inspect_plugin_registry" }),
       expect.objectContaining({ name: "developer_list_agent_runs" }),
       expect.objectContaining({ name: "crm_list_contacts" }),
       expect.objectContaining({ name: "local_business_get_status" }),
@@ -95,6 +96,11 @@ describe("MCP HTTP route", () => {
         mimeType: "application/json",
       }),
       expect.objectContaining({
+        uri: "bizbot://plugins/registry-report",
+        name: "plugins-registry-report",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
         uri: "bizbot://debug/system-status",
         name: "debug-system-status",
         mimeType: "application/json",
@@ -104,13 +110,13 @@ describe("MCP HTTP route", () => {
 
   it("reads a plugin discovery resource through JSON-RPC", async () => {
     const result = await callMcp("resources/read", {
-      uri: "bizbot://plugins/installed",
+      uri: "bizbot://plugins/registry-report",
     }, "read-1");
 
     expect(result.status).toBe(200);
     expect(result.body.result.contents).toHaveLength(1);
     expect(result.body.result.contents[0]).toEqual(expect.objectContaining({
-      uri: "bizbot://plugins/installed",
+      uri: "bizbot://plugins/registry-report",
       mimeType: "application/json",
       text: expect.any(String),
     }));
@@ -119,19 +125,33 @@ describe("MCP HTTP route", () => {
     expect(parsed).toEqual(expect.objectContaining({
       generatedAt: expect.any(String),
       plugins: expect.any(Array),
-      externalTools: expect.any(Array),
+      toolOwnership: expect.any(Array),
+      summary: expect.any(Object),
     }));
     expect(parsed.plugins).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: "crm",
-        tools: expect.arrayContaining([
-          expect.objectContaining({ name: "crm_list_contacts" }),
-        ]),
-      }),
-      expect.objectContaining({
-        id: "local-business",
-      }),
+      expect.objectContaining({ id: "crm" }),
+      expect.objectContaining({ id: "local-business" }),
     ]));
+    expect(parsed.toolOwnership).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toolName: "crm_list_contacts", ownerId: "crm" }),
+    ]));
+  });
+
+  it("executes a developer preview tool through JSON-RPC", async () => {
+    const result = await callMcp("tools/call", {
+      name: "developer_preview_prompt",
+      arguments: {
+        promptName: "inspect-agent-run",
+        args: { runId: "run-42" },
+      },
+    }, "call-preview-1");
+
+    expect(result.status).toBe(200);
+    expect(result.body.result.structuredContent).toEqual(expect.objectContaining({
+      prompt: expect.objectContaining({ name: "inspect-agent-run" }),
+      rendered: expect.objectContaining({ messages: expect.any(Array) }),
+    }));
+    expect(result.body.result.structuredContent.rendered.messages[0].text).toContain("run-42");
   });
 
   it("lists registered MCP prompts", async () => {

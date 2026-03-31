@@ -41,6 +41,69 @@ This scaffolds:
 
 After scaffolding, wire the plugin into the builtin registry if it is meant to ship with BizBot.
 
+The scaffold now includes:
+
+- stronger metadata placeholders
+- a starter schema with `additionalProperties: false`
+- starter tests for metadata, registry compatibility, schema presence, and happy-path execution
+- reminders to run naming and contract-impact checks before shipping
+
+## MCP Authoring Loop
+
+BizBot's MCP surface is a first-class plugin design, validation, preview, and testing loop for advanced users.
+
+Use these developer tools while iterating:
+
+- `developer_plan_plugin`
+- `developer_check_tool_naming`
+- `developer_inspect_plugin_registry`
+- `developer_inspect_plugin`
+- `developer_validate_plugin_contract`
+- `developer_preview_mcp_exposure`
+- `developer_preview_tool_descriptor`
+- `developer_preview_prompt`
+- `developer_preview_resource`
+- `developer_suggest_plugin_tests`
+- `developer_check_mcp_contract_impact`
+
+Use these resources when you want structured reports instead of ad hoc code spelunking:
+
+- `bizbot://plugins/registry-report`
+- `bizbot://plugins/naming-rules`
+- `bizbot://plugins/authoring-checklist`
+- `bizbot://plugins/mcp-surface-preview`
+- `bizbot://plugins/contracts-status`
+
+This loop is intentionally high-trust and power-user oriented. The goal is more inspectability and faster iteration, not less power.
+
+## Naming Conventions
+
+- Use lowercase snake_case tool names.
+- Keep a stable namespace prefix aligned with the plugin id where practical.
+- Follow existing BizBot namespaces such as `crm_`, `memory_`, `builder_`, `developer_`, and `local_business_`.
+- Prefer explicit verb phrases such as `inspect`, `preview`, `list`, `get`, `create`, `update`, `sync`, `suggest`, or `check`.
+- Avoid vague names such as `get_data`, `run_task`, or `do_thing`.
+- Keep imported MCP tools clearly distinguishable by preserving the `mcp_<server>_` prefix.
+
+## Preview Workflow
+
+Before relying on a plugin in the runtime:
+
+1. inspect the registry with `developer_inspect_plugin_registry`
+2. inspect or validate the specific plugin with `developer_inspect_plugin` and `developer_validate_plugin_contract`
+3. preview MCP-facing tools, prompts, and resources
+4. check contract impact against current catalogs
+5. add or update plugin tests before wiring the plugin into the builtin registry
+
+Prompt and resource catalogs remain server-owned today, so plugin work changes those catalogs only when `src/lib/mcp/server.ts` or the shared preview catalog is updated alongside the plugin.
+
+## Contract Verification Workflow
+
+- Use `developer_check_mcp_contract_impact` to see which tool names a plugin contributes and which MCP tests to review.
+- Keep `tests/mcp/contracts.test.ts` authoritative for `tools/list`, `prompts/list`, and `resources/list` snapshots.
+- Use `tests/mcp/http-route.test.ts` when you need route-level confidence for prompt/resource reads or tool calls.
+- For imported MCP overlap, inspect provenance through the registry report before choosing builtin tool names.
+
 ## Testing Strategy
 
 BizBot plugin development uses three layers of tests:
@@ -134,3 +197,4 @@ This keeps Builder Mode suitable for scaffolding or codegen work without giving 
 - Use stable prefixes.
 - Expose resources when data is inspectable, not action-oriented.
 - Treat plugin docs and tests as part of the public API.
+- Prefer warnings and diagnostics over surprise runtime collisions during authoring.
