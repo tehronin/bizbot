@@ -1,5 +1,6 @@
 import type { BuilderPackageManager } from "@prisma/client";
 import { NextRequest } from "next/server";
+import { getBuilderProjectOverview } from "@/lib/builder/orchestrator";
 import { deleteBuilderProject, getBuilderProject, listBuilderRuns, updateBuilderProject } from "@/lib/builder/projects";
 
 function parsePackageManager(value: unknown): BuilderPackageManager | undefined {
@@ -31,8 +32,8 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
-    const [project, runs] = await Promise.all([getBuilderProject(id), listBuilderRuns(id, 25)]);
-    return Response.json({ project, runs });
+    const overview = await getBuilderProjectOverview(id);
+    return Response.json(overview);
   } catch (error) {
     return Response.json({ error: String(error) }, { status: 500 });
   }

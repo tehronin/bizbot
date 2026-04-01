@@ -4,13 +4,13 @@ import { buildBuilderAgenticExecution, executeBuilderAgenticTask } from "@/lib/b
 import { npmInstall, npmRunScript } from "@/lib/builder/adapters/npm";
 import { pnpmInstall, pnpmRunScript } from "@/lib/builder/adapters/pnpm";
 import { runNpxPackage } from "@/lib/builder/adapters/npx";
-import { completeBuilderRun, createBuilderRun, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
+import { completeBuilderRun, createBuilderRun, getBuilderRun, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
+import { cancelBuilderRunController, registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
+import { updateBuilderTask } from "@/lib/builder/tasks";
 import type { BuilderCommandResult } from "@/lib/builder/workspace";
 
 const MAX_PROGRESS_OUTPUT_CHARS = 24_000;
 const PROGRESS_FLUSH_INTERVAL_MS = 250;
-
-const activeAgenticRuns = new Map<string, AbortController>();
 
 export type BuilderProjectCommandInput =
   | { action: "initialize_git" }
@@ -239,7 +239,7 @@ export async function launchBuilderProjectCommand(
   });
 
   const abortController = new AbortController();
-  activeAgenticRuns.set(run.id, abortController);
+  registerBuilderRunController(run.id, abortController);
 
   let streamedStdout = "";
   let streamedStderr = "";
@@ -321,7 +321,7 @@ export async function launchBuilderProjectCommand(
         cwd: execution.result.cwd,
       },
     });
-    activeAgenticRuns.delete(run.id);
+    unregisterBuilderRunController(run.id);
   }).catch(async (error) => {
     if (flushTimer) {
       clearTimeout(flushTimer);
@@ -337,7 +337,7 @@ export async function launchBuilderProjectCommand(
         ...(latestLoop ? { loop: latestLoop } : {}),
       },
     });
-    activeAgenticRuns.delete(run.id);
+    unregisterBuilderRunController(run.id);
   });
 
   return {
@@ -350,14 +350,34 @@ export async function launchBuilderProjectCommand(
 }
 
 export async function cancelBuilderProjectRun(runId: string): Promise<{ runId: string; status: "CANCELLED" | "NOT_RUNNING" }> {
-  const controller = activeAgenticRuns.get(runId);
-  if (!controller) {
+  const cancelled = cancelBuilderRunController(runId);
+  const run = await getBuilderRun(runId);
+  if (run.status !== "RUNNING") {
     return { runId, status: "NOT_RUNNING" };
   }
 
-  controller.abort(new Error("Builder run cancelled by user."));
-  await updateBuilderRun(runId, {
-    summary: "Cancellation requested.",
+  if (cancelled) {
+    await updateBuilderRun(runId, {
+      summary: "Cancellation requested.",
+    });
+    return { runId, status: "CANCELLED" };
+  }
+
+  await completeBuilderRun(runId, {
+    status: "CANCELLED",
+    summary: "Cancelled after the live Builder controller was no longer attached to this run.",
+    metadata: {
+      ...(run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata) ? run.metadata as Record<string, unknown> : {}),
+      cancellationReason: "missing_live_controller",
+    },
   });
+
+  if (run.taskId) {
+    await updateBuilderTask(run.taskId, {
+      status: "CANCELLED",
+      summary: "Cancelled after the live Builder controller was no longer attached to the run.",
+    }).catch(() => undefined);
+  }
+
   return { runId, status: "CANCELLED" };
 }

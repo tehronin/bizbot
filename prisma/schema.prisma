@@ -108,14 +108,19 @@ enum ApprovalStatus {
 
 // ─────────────────── CONVERSATIONS ───────────────────
 model Conversation {
-  id        String    @id @default(cuid())
-  title     String?
-  user      User      @relation(fields: [userId], references: [id])
-  userId    String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  title         String?
+  user          User      @relation(fields: [userId], references: [id])
+  userId        String
+  archivedAt    DateTime?
+  deletedAt     DateTime?
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  messages  Message[]
+  messages      Message[]
+
+  @@index([userId, archivedAt, deletedAt, lastMessageAt])
 }
 
 model Message {
@@ -451,6 +456,24 @@ enum BuilderRunKind {
   SCRIPT
   GENERATOR
   AGENTIC
+  ORCHESTRATION
+}
+
+enum BuilderTaskStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum BuilderTaskStage {
+  PLANNING
+  IMPLEMENTING
+  TESTING
+  REVIEW
+  DOCUMENTING
+  DONE
 }
 
 model BuilderProject {
@@ -462,10 +485,13 @@ model BuilderProject {
   packageManager BuilderPackageManager @default(NPM)
   gitInitialized Boolean               @default(false)
   lastRunStatus  BuilderRunStatus      @default(IDLE)
+  context        Json?
+  latestSessionSummary String?
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
   runs           BuilderRun[]
+  tasks          BuilderTask[]
 
   @@index([template, createdAt])
 }
@@ -486,6 +512,8 @@ model BuilderRun {
   id          String           @id @default(cuid())
   project     BuilderProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId   String
+  task        BuilderTask?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  taskId      String?
   kind        BuilderRunKind
   title       String
   status      BuilderRunStatus @default(RUNNING)
@@ -499,7 +527,31 @@ model BuilderRun {
   finishedAt  DateTime?
 
   @@index([projectId, startedAt])
+  @@index([taskId, startedAt])
   @@index([status, startedAt])
+}
+
+model BuilderTask {
+  id                 String            @id @default(cuid())
+  project            BuilderProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId          String
+  title              String
+  description        String
+  status             BuilderTaskStatus @default(PENDING)
+  stage              BuilderTaskStage  @default(PLANNING)
+  acceptanceCriteria Json?
+  summary            String?
+  parentTask         BuilderTask?      @relation("BuilderTaskHierarchy", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  parentTaskId       String?
+  childTasks         BuilderTask[]     @relation("BuilderTaskHierarchy")
+  metadata           Json?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  runs               BuilderRun[]
+
+  @@index([projectId, status, updatedAt])
+  @@index([projectId, stage, updatedAt])
 }
 
 model BuilderCliProfile {

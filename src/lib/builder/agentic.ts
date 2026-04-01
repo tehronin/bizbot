@@ -117,6 +117,18 @@ function getAvailabilityReason(profile: BuilderCliProfile): string {
     : `Builder CLI profile is unavailable: ${profile.displayName}`;
 }
 
+function isProfileReady(profile: BuilderCliProfile): boolean {
+  const metadata = (profile.metadata ?? {}) as Record<string, unknown>;
+  return metadata.ready === true;
+}
+
+function getReadinessReason(profile: BuilderCliProfile): string {
+  const metadata = (profile.metadata ?? {}) as Record<string, unknown>;
+  return typeof metadata.readinessReason === "string"
+    ? metadata.readinessReason
+    : `Builder CLI profile is not ready: ${profile.displayName}`;
+}
+
 function sanitizePrompt(prompt: string): string {
   return prompt.trim();
 }
@@ -399,9 +411,11 @@ export async function buildBuilderAgenticExecution(
   project: BuilderProject,
   input: BuilderAgenticTaskInput,
 ): Promise<BuilderAgenticTaskExecution> {
-  const config = getBuilderConfig();
-  const profileKey = input.profile?.trim() || config.defaultAgenticProfile;
+  const profileKey = input.profile?.trim();
   const prompt = sanitizePrompt(input.prompt);
+  if (!profileKey) {
+    throw new Error("No Builder agentic profile was selected. Choose an enabled CLI profile before running an agentic Builder task.");
+  }
   if (!prompt) {
     throw new Error("Agentic builder prompt is required.");
   }
@@ -415,6 +429,9 @@ export async function buildBuilderAgenticExecution(
   }
   if (!isProfileAvailable(profile)) {
     throw new Error(getAvailabilityReason(profile));
+  }
+  if (!isProfileReady(profile)) {
+    throw new Error(getReadinessReason(profile));
   }
 
   switch (profile.key) {

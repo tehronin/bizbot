@@ -70,6 +70,8 @@ describe("builder agentic loop", () => {
     packageManager: "NPM",
     gitInitialized: true,
     lastRunStatus: "IDLE",
+    context: null,
+    latestSessionSummary: null,
     createdAt: new Date("2026-03-31T00:00:00.000Z"),
     updatedAt: new Date("2026-03-31T00:00:00.000Z"),
   };
@@ -100,7 +102,11 @@ describe("builder agentic loop", () => {
       command: "codex",
       enabled: true,
       supportsNonInteractive: true,
-      metadata: { available: true },
+      metadata: {
+        available: true,
+        ready: true,
+        readinessReason: null,
+      },
     });
     mocks.listBuilderFilesRecursive.mockImplementation(() => Object.keys(virtualFiles).sort((left, right) => left.localeCompare(right)));
     mocks.readBuilderFile.mockImplementation((path: string) => {

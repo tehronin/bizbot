@@ -14,6 +14,8 @@ import { getEmbeddingConfig } from "@/lib/embeddings/embed";
 import { getBuiltinPlugins } from "@/lib/agent/plugins/registry";
 import { createPluginRegistry } from "@/lib/agent/plugins/registry";
 import { canProfileUseTool } from "@/lib/agent/profiles";
+import { getCurrentBuilderProjectOverview } from "@/lib/builder/orchestrator";
+import { listBuilderProjects } from "@/lib/builder/projects";
 import { getMcpClientPrompts, getMcpClientResources, getMcpClientStatus, getMcpClientToolCatalog, getMcpClientTools } from "@/lib/mcp/client";
 import { inspectPluginRegistry } from "@/lib/agent/plugins/inspection";
 import { getToolAnnotations, getToolDescription, getToolTitle, MCP_AGENT_PROFILE, MCP_BLOCKED_TOOLS } from "@/lib/mcp/tool-presentation";
@@ -337,6 +339,70 @@ async function buildDebugAgentRuns() {
   };
 }
 
+async function buildBuilderProjectsResource() {
+  const projects = await listBuilderProjects();
+  return {
+    generatedAt: new Date().toISOString(),
+    projects: projects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      slug: project.slug,
+      relativePath: project.relativePath,
+      template: project.template,
+      packageManager: project.packageManager,
+      lastRunStatus: project.lastRunStatus,
+      updatedAt: project.updatedAt,
+    })),
+  };
+}
+
+async function buildCurrentBuilderProjectResource() {
+  const overview = await getCurrentBuilderProjectOverview();
+  return overview ? {
+    generatedAt: new Date().toISOString(),
+    project: overview.project,
+    currentTask: overview.currentTask,
+    nextRecommendedStep: overview.nextRecommendedStep,
+  } : { generatedAt: new Date().toISOString(), project: null, currentTask: null, nextRecommendedStep: null };
+}
+
+async function buildCurrentBuilderPlanResource() {
+  const overview = await getCurrentBuilderProjectOverview();
+  return {
+    generatedAt: new Date().toISOString(),
+    projectId: overview?.project.id ?? null,
+    currentPlan: overview?.context.currentPlan ?? [],
+    currentTask: overview?.currentTask ?? null,
+  };
+}
+
+async function buildCurrentBuilderTasksResource() {
+  const overview = await getCurrentBuilderProjectOverview();
+  return {
+    generatedAt: new Date().toISOString(),
+    projectId: overview?.project.id ?? null,
+    tasks: overview?.tasks ?? [],
+  };
+}
+
+async function buildCurrentBuilderRunsResource() {
+  const overview = await getCurrentBuilderProjectOverview();
+  return {
+    generatedAt: new Date().toISOString(),
+    projectId: overview?.project.id ?? null,
+    runs: overview?.runs ?? [],
+  };
+}
+
+async function buildCurrentBuilderReviewResource() {
+  const overview = await getCurrentBuilderProjectOverview();
+  return {
+    generatedAt: new Date().toISOString(),
+    projectId: overview?.project.id ?? null,
+    review: overview?.latestReview ?? null,
+  };
+}
+
 async function buildCrmPipelineSummary() {
   const [providers, stageCounts, contacts] = await Promise.all([
     getCrmProviderStatuses(),
@@ -482,6 +548,12 @@ export function listBizBotResourceDefinitions(): BizBotResourceDefinition[] {
     { name: "plugins-authoring-checklist", uri: "bizbot://plugins/authoring-checklist", title: "Plugin Authoring Checklist", description: "Checklist for metadata, schemas, tests, registry registration, and MCP contract review", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), checklist: AUTHORING_CHECKLIST }) },
     { name: "plugins-mcp-surface-preview", uri: "bizbot://plugins/mcp-surface-preview", title: "Plugin MCP Surface Preview", description: "Current MCP tool, prompt, and resource catalogs with ownership and grouping details", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), tools: listCurrentMcpToolDescriptors(), prompts: listBizBotPromptDefinitions().map((prompt) => ({ name: prompt.name, title: prompt.title, description: prompt.description, ownerId: prompt.ownerId, group: prompt.group, arguments: prompt.arguments })), resources: listBizBotResourceDefinitions().map((resource) => ({ name: resource.name, uri: resource.uri, title: resource.title, description: resource.description, ownerId: resource.ownerId, group: resource.group, mimeType: resource.mimeType })) }) },
     { name: "plugins-contracts-status", uri: "bizbot://plugins/contracts-status", title: "Plugin Contracts Status", description: "Current MCP contract catalog shape and test coverage guidance for plugin authors", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), contractTests: { file: "tests/mcp/contracts.test.ts", routeFile: "tests/mcp/http-route.test.ts", snapshots: ["tools/list", "prompts/list", "resources/list"] }, currentCatalog: { toolNames: listCurrentMcpToolDescriptors().map((tool) => tool.name), promptNames: listBizBotPromptDefinitions().map((prompt) => prompt.name), resourceUris: listBizBotResourceDefinitions().map((resource) => resource.uri) }, history: { detectable: false, note: "BizBot does not currently persist historical MCP catalog snapshots outside the test file." } }) },
+    { name: "builder-projects", uri: "bizbot://builder/projects", title: "Builder Projects", description: "Persisted Builder projects and their durable identity", mimeType: "application/json", ownerId: "builder", group: "builder", read: buildBuilderProjectsResource },
+    { name: "builder-current-project", uri: "bizbot://builder/current-project", title: "Current Builder Project", description: "Current Builder project chosen from the newest open task or latest updated project", mimeType: "application/json", ownerId: "builder", group: "builder", read: buildCurrentBuilderProjectResource },
+    { name: "builder-current-plan", uri: "bizbot://builder/current-plan", title: "Current Builder Plan", description: "Current Builder plan projection for the active Builder project", mimeType: "application/json", ownerId: "builder", group: "builder", read: buildCurrentBuilderPlanResource },
+    { name: "builder-current-tasks", uri: "bizbot://builder/current-tasks", title: "Current Builder Tasks", description: "Current and recent Builder tasks for the active Builder project", mimeType: "application/json", ownerId: "builder", group: "builder", read: buildCurrentBuilderTasksResource },
+    { name: "builder-current-runs", uri: "bizbot://builder/current-runs", title: "Current Builder Runs", description: "Recent Builder runs for the active Builder project", mimeType: "application/json", ownerId: "builder", group: "builder", read: buildCurrentBuilderRunsResource },
+    { name: "builder-current-review", uri: "bizbot://builder/current-review", title: "Current Builder Review", description: "Latest structured Builder review for the active Builder project", mimeType: "application/json", ownerId: "builder", group: "builder", read: buildCurrentBuilderReviewResource },
     { name: "crm-pipeline-summary", uri: "bizbot://crm/pipeline-summary", title: "CRM Pipeline Summary", description: "Inbox-backed CRM pipeline state, provider readiness, and recent contacts", mimeType: "application/json", ownerId: "crm", group: "crm", read: buildCrmPipelineSummary },
     { name: "debug-system-status", uri: "bizbot://debug/system-status", title: "Debug System Status", description: "Runtime, LLM, worker, knowledge, inbox, and MCP state for debugging BizBot", mimeType: "application/json", ownerId: "developer", group: "debug", read: buildDebugSystemStatus },
     { name: "debug-database-summary", uri: "bizbot://debug/database-summary", title: "Debug Database Summary", description: "High-level row counts for core BizBot tables", mimeType: "application/json", ownerId: "developer", group: "debug", read: buildDebugDatabaseSummary },

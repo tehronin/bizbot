@@ -96,6 +96,10 @@ describe("builder plugin", () => {
 
   it("enforces lane gating for builder tools and exposes them to the MCP lane", () => {
     expect(canProfileUseTool("builder_operator", "builder_get_status")).toBe(true);
+    expect(canProfileUseTool("builder_operator", "builder_continue_task")).toBe(false);
+    expect(canProfileUseTool("builder_operator", "builder_run_agentic_task")).toBe(false);
+    expect(canProfileUseTool("builder_operator", "builder_run_script")).toBe(false);
+    expect(canProfileUseTool("builder_operator", "builder_run_command")).toBe(false);
     expect(canProfileUseTool("general_operator", "builder_get_status")).toBe(false);
     expect(canProfileUseTool("mcp_operator", "builder_get_status")).toBe(true);
 

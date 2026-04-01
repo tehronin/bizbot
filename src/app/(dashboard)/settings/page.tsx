@@ -148,7 +148,7 @@ const PUBLIC_ENV_DEFAULTS = {
   BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER: "NPM",
   BIZBOT_BUILDER_INIT_GIT: "true",
   BIZBOT_BUILDER_INSTALL_DEPS: "false",
-  BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE: "codex",
+  BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE: "",
   BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS: "900",
   BIZBOT_BUILDER_CODEX_ENABLED: "false",
   BIZBOT_BUILDER_CODEX_COMMAND: "codex",
@@ -638,7 +638,7 @@ export default function SettingsPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Default agentic profile</label>
-                <input value={publicEnv.BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <input value={publicEnv.BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE", event.target.value)} placeholder="Leave blank to require explicit profile selection" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
               </div>
               <div>
                 <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Agentic timeout seconds</label>
@@ -660,6 +660,9 @@ export default function SettingsPage() {
                   <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Codex model override</label>
                   <input value={publicEnv.BIZBOT_BUILDER_CODEX_MODEL} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CODEX_MODEL", event.target.value)} placeholder="optional" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
                 </div>
+              </div>
+              <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                Keep this disabled unless you intentionally validate the Codex auth path and non-interactive execution contract for Builder.
               </div>
             </div>
             <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>

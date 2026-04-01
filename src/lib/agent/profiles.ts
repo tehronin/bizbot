@@ -272,6 +272,13 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     delegationTargets: ["platform_operator", "general_operator"],
     toolPolicy: {
       allowedPrefixes: ["builder_", "memory_"],
+      deniedTools: [
+        "builder_plan_task",
+        "builder_continue_task",
+        "builder_run_agentic_task",
+        "builder_run_script",
+        "builder_run_command",
+      ],
     },
     prompt: {
       systemInstruction: "Builder lane: operate only inside the dedicated builder workspace, prefer deterministic scaffolds and bounded commands, and never target the BizBot repository.",

@@ -115,12 +115,22 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 ### Current Builder Behavior
 
 - `/builder` is a dedicated dashboard surface for project creation, bootstrap actions, script execution, and run history.
-- Builder projects are persisted with templates, package manager choice, run records, and CLI profile metadata.
+- Builder projects are persisted with templates, package manager choice, run records, CLI profile metadata, durable project context, and persistent Builder tasks.
 - The builder workspace must live outside the BizBot repository; overlap fails closed.
 - Raw command execution is allowlisted through `BIZBOT_BUILDER_ALLOWED_COMMANDS` and runs without shell expansion.
 - Presets currently cover `node-cli`, `vite-app`, `next-app`, and `plugin-package`.
 - An optional Codex adapter is wired through `builder_run_agentic_task` using `codex exec` for non-interactive runs when enabled and installed.
 - Claude Code is modeled as a future adapter slot under the same Builder Mode shell, not as a separate builtin product plugin.
+
+### Builder Mode v2
+
+- Builder now treats the database as canonical for project context, tasks, and reviews, while `.builder/` files inside the external workspace are projections regenerated from that canonical state.
+- `BuilderTask` lets the same unit of work continue across turns instead of treating every builder request as a one-shot command.
+- The dashboard shows current task, current plan, latest review, next step, and recent tasks per project.
+- `BuilderRun.summary` stays compact, while `BuilderRun.metadata.review` stores the canonical structured review.
+- Builder synthesizes compact prompts from task state plus selected instruction fragments instead of injecting whole files into every run.
+- Builder inspection is now exposed through stable MCP resources under `bizbot://builder/*`.
+- See `docs/builder-mode.md` for the v2 model and authority rules.
 
 ### Recommended Builder Workflow
 
@@ -143,6 +153,7 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Builder tools are exposed with the `builder_` prefix for bounded remote orchestration.
 - MCP exposure keeps Builder Mode inspectable and scriptable without mixing it into the general platform lane.
 - Builder tool access is routed through the dedicated `builder_operator` lane and also surfaced to the bounded `mcp_operator` profile.
+- `bizbot://builder/projects`, `bizbot://builder/current-project`, `bizbot://builder/current-plan`, `bizbot://builder/current-tasks`, `bizbot://builder/current-runs`, and `bizbot://builder/current-review` expose the active Builder state for inspection.
 
 ### MCP Helps Plugin Authors Too
 
@@ -184,9 +195,22 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 ### Chat
 
 - Streams run metadata, routing decisions, tool calls, and final outputs
+- Persists the current active conversation in the database and restores it across reloads
+- Supports manual New Chat without deleting prior conversations
+- Supports archive, restore, and explicit delete-from-archive controls
+- Includes an in-panel history canvas with Recent and Archived sections behind the clock/history control
 - Uses the typed specialist control plane
 - Lets operators promote a user or assistant message into explicit user memory
 - Can expose runtime state through MCP-aware flows
+
+#### Chat Lifecycle
+
+- The database is the canonical source of truth for conversations and messages
+- Local storage only remembers the selected active conversation id for reload recovery
+- Panel mode stays client-only, so `/chat` always reloads back into the normal chat panel instead of remaining stuck in history mode
+- Archived conversations can be opened for read-only inspection inside the history panel without restoring them
+- Restore is explicit and separate from open; delete is explicit, confirmed, and limited to archived history
+- Multi-tab synchronization is not real-time in this version; another tab will recover on the next refresh or reload cycle
 
 ### Inbox
 
@@ -227,10 +251,12 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 ### Builder
 
 - External project workspace management
+- DB-canonical project context with `.builder/` projection files
+- Persistent Builder tasks with continuation and retry behavior
 - Preset bootstrapping for new apps and plugin packages
 - Typed package, script, generator, and git actions
 - Optional Codex-backed non-interactive agentic task execution
-- Run logs and command output capture per builder project
+- Run logs, compact summaries, and structured review capture per builder project
 
 ### Settings
 

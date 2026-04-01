@@ -1,0 +1,693 @@
+import { createHash } from "crypto";
+import { existsSync } from "fs";
+import path from "path";
+import type { BuilderProject } from "@prisma/client";
+import type { AgentExecutionEvent } from "@/lib/agent/executor";
+import { getBuilderConfig, resolveBuilderWorkspacePath } from "@/lib/builder/config";
+import { npmInstall, npmRunScript } from "@/lib/builder/adapters/npm";
+import { pnpmInstall, pnpmRunScript } from "@/lib/builder/adapters/pnpm";
+import {
+  listBuilderFilesRecursive,
+  readBuilderFile,
+  type BuilderCommandResult,
+} from "@/lib/builder/workspace";
+import type {
+  BuilderAgenticIteration,
+  BuilderAgenticLoopMetadata,
+  BuilderAgenticProgressEvent,
+  BuilderAgenticTaskOptions,
+  BuilderAgenticVerificationReport,
+  BuilderAgenticVerificationStep,
+} from "@/lib/builder/agentic";
+
+const MAX_AGENTIC_ITERATIONS = 3;
+const MAX_CHANGED_FILES = 20;
+const MAX_SNAPSHOT_ENTRIES = 200;
+const MAX_METADATA_OUTPUT_CHARS = 2_000;
+const MAX_CAPTURED_OUTPUT_CHARS = 24_000;
+const VERIFICATION_SCRIPT_ORDER = ["build", "test", "lint"] as const;
+
+interface BuilderWorkspaceSnapshot {
+  fingerprint: string;
+  entries: Map<string, string>;
+}
+
+interface NativeBuilderTaskInput {
+  prompt: string;
+}
+
+interface NativeBuilderTaskResult {
+  result: BuilderCommandResult;
+  loop: BuilderAgenticLoopMetadata;
+}
+
+function sanitizePrompt(prompt: string): string {
+  return prompt.trim();
+}
+
+function truncateForMetadata(value: string): string {
+  if (value.length <= MAX_METADATA_OUTPUT_CHARS) {
+    return value;
+  }
+
+  return `${value.slice(0, MAX_METADATA_OUTPUT_CHARS)}\n[truncated ${value.length - MAX_METADATA_OUTPUT_CHARS} chars]`;
+}
+
+function appendBoundedOutput(current: string, chunk: string): string {
+  if (current.length >= MAX_CAPTURED_OUTPUT_CHARS) {
+    return current;
+  }
+
+  const next = `${current}${chunk}`;
+  if (next.length <= MAX_CAPTURED_OUTPUT_CHARS) {
+    return next;
+  }
+
+  return `${next.slice(0, MAX_CAPTURED_OUTPUT_CHARS)}\n[truncated output]`;
+}
+
+function buildSnapshotFingerprint(entries: Map<string, string>): string {
+  const hash = createHash("sha1");
+  for (const [key, value] of Array.from(entries.entries()).sort(([left], [right]) => left.localeCompare(right))) {
+    hash.update(key);
+    hash.update("\0");
+    hash.update(value);
+    hash.update("\0");
+  }
+
+  return hash.digest("hex");
+}
+
+function snapshotWorkspace(project: BuilderProject): BuilderWorkspaceSnapshot {
+  const entries = new Map<string, string>();
+  const paths = listBuilderFilesRecursive(project.relativePath, MAX_SNAPSHOT_ENTRIES);
+
+  for (const entryPath of paths) {
+    try {
+      entries.set(entryPath, readBuilderFile(entryPath));
+    } catch {
+      entries.set(entryPath, "<non-text-or-directory>");
+    }
+  }
+
+  return {
+    fingerprint: buildSnapshotFingerprint(entries),
+    entries,
+  };
+}
+
+function diffWorkspaceSnapshots(previous: BuilderWorkspaceSnapshot, next: BuilderWorkspaceSnapshot): string[] {
+  const changed = new Set<string>();
+
+  for (const [entryPath, value] of previous.entries.entries()) {
+    if (!next.entries.has(entryPath) || next.entries.get(entryPath) !== value) {
+      changed.add(entryPath);
+    }
+  }
+
+  for (const [entryPath, value] of next.entries.entries()) {
+    if (!previous.entries.has(entryPath) || previous.entries.get(entryPath) !== value) {
+      changed.add(entryPath);
+    }
+  }
+
+  return Array.from(changed)
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, MAX_CHANGED_FILES);
+}
+
+function getProjectPackageJsonPath(project: BuilderProject): string {
+  return `${project.relativePath.replace(/\/$/, "")}/package.json`;
+}
+
+function listVerificationScripts(project: BuilderProject): string[] {
+  try {
+    const raw = readBuilderFile(getProjectPackageJsonPath(project));
+    const parsed = JSON.parse(raw) as { scripts?: Record<string, unknown> };
+    const scripts = parsed?.scripts;
+    if (!scripts || typeof scripts !== "object") {
+      return [];
+    }
+
+    return VERIFICATION_SCRIPT_ORDER.filter((script) => typeof scripts[script] === "string");
+  } catch {
+    return [];
+  }
+}
+
+async function runVerificationScript(
+  project: BuilderProject,
+  script: string,
+  options: Pick<BuilderAgenticTaskOptions, "signal" | "onStdoutChunk" | "onStderrChunk">,
+): Promise<BuilderCommandResult> {
+  return project.packageManager === "PNPM"
+    ? pnpmRunScript(project.relativePath, script, [], options)
+    : npmRunScript(project.relativePath, script, [], options);
+}
+
+async function runProjectVerification(
+  project: BuilderProject,
+  options: Pick<BuilderAgenticTaskOptions, "signal" | "onStdoutChunk" | "onStderrChunk">,
+): Promise<BuilderAgenticVerificationReport> {
+  if (options.signal?.aborted) {
+    return {
+      scripts: [],
+      steps: [],
+      passed: false,
+      skipped: false,
+      summary: "Verification cancelled.",
+    };
+  }
+
+  const scripts = listVerificationScripts(project);
+  if (scripts.length === 0) {
+    return {
+      scripts: [],
+      steps: [],
+      passed: true,
+      skipped: true,
+      summary: "No build/test/lint scripts found; verification skipped.",
+    };
+  }
+
+  const nodeModulesPath = path.join(resolveBuilderWorkspacePath(project.relativePath), "node_modules");
+  if (!existsSync(nodeModulesPath)) {
+    const installResult = project.packageManager === "PNPM"
+      ? await pnpmInstall(project.relativePath)
+      : await npmInstall(project.relativePath);
+    if (!installResult.ok) {
+      return {
+        scripts,
+        steps: [{
+          script: "install",
+          ok: false,
+          exitCode: installResult.exitCode,
+          timedOut: installResult.timedOut,
+          stdout: truncateForMetadata(installResult.stdout),
+          stderr: truncateForMetadata(installResult.stderr),
+        }],
+        passed: false,
+        skipped: false,
+        summary: "Dependency installation failed before verification could run.",
+      };
+    }
+  }
+
+  const steps: BuilderAgenticVerificationStep[] = [];
+  for (const script of scripts) {
+    const result = await runVerificationScript(project, script, options);
+    steps.push({
+      script,
+      ok: result.ok,
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      stdout: truncateForMetadata(result.stdout),
+      stderr: truncateForMetadata(result.stderr),
+    });
+
+    if (!result.ok) {
+      return {
+        scripts,
+        steps,
+        passed: false,
+        skipped: false,
+        summary: `${script} failed during verification.`,
+      };
+    }
+  }
+
+  return {
+    scripts,
+    steps,
+    passed: true,
+    skipped: false,
+    summary: `Verification passed: ${scripts.join(", ")}.`,
+  };
+}
+
+function buildFailureSignature(
+  actResult: BuilderCommandResult,
+  verification: BuilderAgenticVerificationReport,
+  snapshot: BuilderWorkspaceSnapshot,
+): string {
+  return JSON.stringify({
+    actOk: actResult.ok,
+    exitCode: actResult.exitCode,
+    timedOut: actResult.timedOut,
+    verification: verification.steps.map((step) => ({
+      script: step.script,
+      ok: step.ok,
+      exitCode: step.exitCode,
+      timedOut: step.timedOut,
+    })),
+    fingerprint: snapshot.fingerprint,
+  });
+}
+
+function summarizeCommandResult(result: BuilderCommandResult): string {
+  if (result.cancelled) {
+    return "agent execution was cancelled";
+  }
+  if (result.ok) {
+    return "agent execution completed successfully";
+  }
+  if (result.timedOut) {
+    return "agent execution timed out";
+  }
+
+  return "agent execution failed";
+}
+
+function buildRepairPrompt(
+  basePrompt: string,
+  iteration: number,
+  actResult: BuilderCommandResult,
+  verification: BuilderAgenticVerificationReport,
+  changedFiles: string[],
+): string {
+  const verificationDetails = verification.steps.length > 0
+    ? verification.steps.map((step) => `${step.script}: ${step.ok ? "passed" : `failed (exit ${step.exitCode ?? "unknown"})`}`).join("; ")
+    : verification.summary;
+  const changedFilesText = changedFiles.length > 0 ? changedFiles.join(", ") : "none recorded";
+
+  return `${basePrompt}\n\nPrevious builder attempt ${iteration} did not finish cleanly. Review the current workspace, then make the smallest changes needed to satisfy the original request.\n\nAttempt result: ${summarizeCommandResult(actResult)}.\nVerification: ${verificationDetails}.\nChanged files detected: ${changedFilesText}.\n\nDo not restate the plan. Apply fixes and leave the project in a verifiable state.`;
+}
+
+function decideReviewVerdict(args: {
+  iteration: number;
+  actResult: BuilderCommandResult;
+  verification: BuilderAgenticVerificationReport;
+  changedFiles: string[];
+  previousFailureSignature: string | null;
+  currentFailureSignature: string;
+}): { verdict: "complete" | "retry" | "blocked" | "max_iterations" | "cancelled"; reason: string } {
+  const { iteration, actResult, verification, changedFiles, previousFailureSignature, currentFailureSignature } = args;
+
+  if (actResult.cancelled) {
+    return { verdict: "cancelled", reason: actResult.timedOut ? "Builder agent timed out." : "Builder run was cancelled." };
+  }
+
+  if (verification.passed) {
+    return {
+      verdict: "complete",
+      reason: verification.skipped
+        ? "Builder agent finished and no deterministic verification scripts were available."
+        : "Verification scripts passed.",
+    };
+  }
+
+  if (actResult.timedOut) {
+    return { verdict: "blocked", reason: "Builder agent timed out before verification passed." };
+  }
+
+  if (changedFiles.length === 0 && !actResult.ok) {
+    return { verdict: "blocked", reason: "Verification failed and the builder loop did not detect workspace changes." };
+  }
+
+  if (changedFiles.length === 0 && iteration >= MAX_AGENTIC_ITERATIONS) {
+    return { verdict: "blocked", reason: "Verification failed and no workspace changes detected after final iteration." };
+  }
+
+  if (previousFailureSignature === currentFailureSignature) {
+    return { verdict: "blocked", reason: "Builder loop hit the same failure twice without improving verification output." };
+  }
+
+  if (iteration >= MAX_AGENTIC_ITERATIONS) {
+    return { verdict: "max_iterations", reason: "Builder loop reached the maximum retry count." };
+  }
+
+  return { verdict: "retry", reason: "Verification failed; retrying with the current workspace and failure details." };
+}
+
+function buildLoopSummary(loop: BuilderAgenticLoopMetadata): string {
+  if (loop.finalVerdict === "complete") {
+    return `Builder loop completed after ${loop.iterations.length} iteration${loop.iterations.length === 1 ? "" : "s"}. ${loop.verified ? "Verification passed." : "Verification was skipped."}`;
+  }
+
+  if (loop.finalVerdict === "cancelled") {
+    return `Builder loop cancelled after ${loop.iterations.length} iteration${loop.iterations.length === 1 ? "" : "s"}.`;
+  }
+
+  const lastIteration = loop.iterations[loop.iterations.length - 1];
+  return `Builder loop stopped after ${loop.iterations.length} iteration${loop.iterations.length === 1 ? "" : "s"}: ${lastIteration?.review.reason ?? "unknown outcome"}`;
+}
+
+function buildProgressLoop(args: {
+  phase: BuilderAgenticLoopMetadata["phase"];
+  currentIteration: number;
+  iterations: BuilderAgenticIteration[];
+  summary: string;
+  selectedScripts: string[];
+}): BuilderAgenticLoopMetadata {
+  return {
+    maxIterations: MAX_AGENTIC_ITERATIONS,
+    verified: false,
+    verificationSkipped: false,
+    selectedScripts: args.selectedScripts,
+    summary: args.summary,
+    iterations: args.iterations,
+    currentIteration: args.currentIteration,
+    phase: args.phase,
+  };
+}
+
+async function emitProgress(
+  onProgress: BuilderAgenticTaskOptions["onProgress"],
+  event: BuilderAgenticProgressEvent,
+): Promise<void> {
+  if (!onProgress) {
+    return;
+  }
+
+  await onProgress(event);
+}
+
+function buildNativeBuilderMessage(project: BuilderProject, prompt: string): string {
+  return [
+    prompt,
+    "",
+    `Builder project id: ${project.id}`,
+    `Builder project path: ${project.relativePath}`,
+    "Operate only on this Builder project.",
+    "Use builder_get_project first if you need project context, then use this exact projectId for all project-scoped builder_* tool calls.",
+    "Do not call builder_plan_task, builder_continue_task, or builder_run_agentic_task.",
+    "The outer Builder loop runs deterministic verification after you finish. Do not run build, test, lint, dev, or other validation scripts yourself unless the user explicitly asked you to change or inspect those scripts.",
+    "Prefer the minimum tool sequence needed for the request. If the request names a specific file, inspect that file directly instead of broadly exploring the workspace.",
+    "For file-edit tasks, prefer builder_read_file followed by builder_write_file. Once the requested content is present, stop using tools and return a concise implementation summary.",
+    "If the requested change is already present, do not keep exploring. State that the workspace already satisfies the request and stop.",
+  ].join("\n");
+}
+
+function buildNativeResult(args: {
+  project: BuilderProject;
+  stdout: string;
+  stderr: string;
+  ok: boolean;
+  timedOut: boolean;
+  cancelled: boolean;
+}): BuilderCommandResult {
+  return {
+    ok: args.ok,
+    command: "bizbot-agent",
+    args: ["builder_operator", args.project.id],
+    cwd: args.project.relativePath,
+    exitCode: args.ok ? 0 : null,
+    signal: null,
+    stdout: args.stdout,
+    stderr: args.stderr,
+    timedOut: args.timedOut,
+    cancelled: args.cancelled,
+  };
+}
+
+async function streamStdout(chunk: string, options: BuilderAgenticTaskOptions): Promise<void> {
+  await options.onStdoutChunk?.(chunk);
+}
+
+async function streamStderr(chunk: string, options: BuilderAgenticTaskOptions): Promise<void> {
+  await options.onStderrChunk?.(chunk);
+}
+
+export async function executeNativeBuilderTask(
+  project: BuilderProject,
+  input: NativeBuilderTaskInput,
+  options: BuilderAgenticTaskOptions = {},
+): Promise<NativeBuilderTaskResult> {
+  const { executeAgentConversation } = await import("@/lib/agent/executor");
+  const config = getBuilderConfig();
+  const basePrompt = sanitizePrompt(input.prompt);
+  if (!basePrompt) {
+    throw new Error("Builder task prompt is required.");
+  }
+
+  let currentPrompt = basePrompt;
+  let previousSnapshot = snapshotWorkspace(project);
+  let previousFailureSignature: string | null = null;
+  let lastResult: BuilderCommandResult | null = null;
+  let lastVerification: BuilderAgenticVerificationReport | null = null;
+  const iterations: BuilderAgenticIteration[] = [];
+  const selectedScripts = listVerificationScripts(project);
+
+  for (let iteration = 1; iteration <= MAX_AGENTIC_ITERATIONS; iteration += 1) {
+    await emitProgress(options.onProgress, {
+      loop: buildProgressLoop({
+        phase: "acting",
+        currentIteration: iteration,
+        iterations,
+        selectedScripts,
+        summary: `Running native builder attempt ${iteration} of ${MAX_AGENTIC_ITERATIONS}.`,
+      }),
+    });
+
+    const executionSignal = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      executionSignal.abort(new Error("Builder agent timed out"));
+    }, config.agenticTimeoutSeconds * 1000);
+    const abortListener = () => executionSignal.abort(options.signal?.reason ?? new Error("Builder run was cancelled"));
+    if (options.signal) {
+      if (options.signal.aborted) {
+        abortListener();
+      } else {
+        options.signal.addEventListener("abort", abortListener, { once: true });
+      }
+    }
+
+    let stdout = "";
+    let stderr = "";
+    let reply = "";
+    let provider = "unknown";
+    let model = "unknown";
+    let cancelled = false;
+    let ok = false;
+
+    const appendStdout = async (line: string) => {
+      stdout = appendBoundedOutput(stdout, line);
+      await streamStdout(line, options);
+    };
+    const appendStderr = async (line: string) => {
+      stderr = appendBoundedOutput(stderr, line);
+      await streamStderr(line, options);
+    };
+
+    try {
+      const agentResult = await executeAgentConversation({
+        message: buildNativeBuilderMessage(project, currentPrompt),
+        forcedProfile: "builder_operator",
+        signal: executionSignal.signal,
+        onEvent: async (event: AgentExecutionEvent) => {
+          if (event.type === "meta") {
+            provider = event.provider;
+            model = event.model;
+            await appendStdout(`[meta] ${event.profile} via ${event.provider}/${event.model}\n`);
+            return;
+          }
+          if (event.type === "status") {
+            await appendStdout(`[status] ${event.message}\n`);
+            return;
+          }
+          if (event.type === "tool_call") {
+            await appendStdout(`[tool_call] ${event.name} ${JSON.stringify(event.args)}\n`);
+            return;
+          }
+          if (event.type === "tool_result") {
+            await appendStdout(`[tool_result] ${event.name} ${truncateForMetadata(event.result)}\n`);
+            return;
+          }
+          if (event.type === "assistant_message") {
+            reply = event.content;
+            await appendStdout(`[assistant] ${event.content}\n`);
+            return;
+          }
+          if (event.type === "done") {
+            reply = event.reply;
+            return;
+          }
+          if (event.type === "error") {
+            await appendStderr(`[error] ${event.error}\n`);
+          }
+        },
+      });
+
+      provider = agentResult.provider;
+      model = agentResult.model;
+      reply = agentResult.reply;
+      ok = true;
+    } catch (error) {
+      cancelled = executionSignal.signal.aborted;
+      await appendStderr(`${String(error)}\n`);
+    } finally {
+      clearTimeout(timeout);
+      options.signal?.removeEventListener("abort", abortListener);
+    }
+
+    const result = buildNativeResult({
+      project,
+      stdout: appendBoundedOutput(stdout, ok && reply ? `[final] ${reply}\n` : `provider=${provider} model=${model}\n`),
+      stderr,
+      ok,
+      timedOut,
+      cancelled,
+    });
+
+    await emitProgress(options.onProgress, {
+      loop: buildProgressLoop({
+        phase: "verifying",
+        currentIteration: iteration,
+        iterations,
+        selectedScripts,
+        summary: `Native builder attempt ${iteration} finished; running verification.`,
+      }),
+      latestResult: {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        ok: result.ok,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+      },
+    });
+
+    const nextSnapshot = snapshotWorkspace(project);
+    const changedFiles = diffWorkspaceSnapshots(previousSnapshot, nextSnapshot);
+    const verification = await runProjectVerification(project, {
+      signal: options.signal,
+      onStdoutChunk: options.onStdoutChunk,
+      onStderrChunk: options.onStderrChunk,
+    });
+    const failureSignature = buildFailureSignature(result, verification, nextSnapshot);
+    const review = decideReviewVerdict({
+      iteration,
+      actResult: result,
+      verification,
+      changedFiles,
+      previousFailureSignature,
+      currentFailureSignature: failureSignature,
+    });
+
+    iterations.push({
+      iteration,
+      prompt: currentPrompt,
+      command: `bizbot-agent:${provider}`,
+      args: ["builder_operator", project.id, model],
+      actResult: {
+        ok: result.ok,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        cwd: result.cwd,
+        stdout: truncateForMetadata(result.stdout),
+        stderr: truncateForMetadata(result.stderr),
+      },
+      verification,
+      review,
+      changedFiles,
+    });
+
+    const reviewLoop = buildProgressLoop({
+      phase: review.verdict === "complete" || review.verdict === "cancelled" ? "complete" : "reviewing",
+      currentIteration: iteration,
+      iterations,
+      selectedScripts: verification.scripts,
+      summary: review.reason,
+    });
+    if (review.verdict === "complete") {
+      reviewLoop.finalVerdict = "complete";
+      reviewLoop.verified = !verification.skipped;
+      reviewLoop.verificationSkipped = verification.skipped;
+    } else if (review.verdict === "cancelled") {
+      reviewLoop.finalVerdict = "cancelled";
+    }
+
+    await emitProgress(options.onProgress, {
+      loop: reviewLoop,
+      latestResult: {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        ok: result.ok,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+      },
+    });
+
+    lastResult = result;
+    lastVerification = verification;
+
+    if (review.verdict === "complete") {
+      const loop: BuilderAgenticLoopMetadata = {
+        maxIterations: MAX_AGENTIC_ITERATIONS,
+        finalVerdict: "complete",
+        verified: !verification.skipped,
+        verificationSkipped: verification.skipped,
+        selectedScripts: verification.scripts,
+        summary: "",
+        iterations,
+      };
+      loop.summary = buildLoopSummary(loop);
+      return { result, loop };
+    }
+
+    if (review.verdict === "cancelled") {
+      const loop: BuilderAgenticLoopMetadata = {
+        maxIterations: MAX_AGENTIC_ITERATIONS,
+        finalVerdict: "cancelled",
+        verified: false,
+        verificationSkipped: verification.skipped,
+        selectedScripts: verification.scripts,
+        summary: "",
+        iterations,
+      };
+      loop.summary = buildLoopSummary(loop);
+      return { result, loop };
+    }
+
+    if (review.verdict !== "retry") {
+      const loop: BuilderAgenticLoopMetadata = {
+        maxIterations: MAX_AGENTIC_ITERATIONS,
+        finalVerdict: review.verdict === "max_iterations" ? "max_iterations" : "blocked",
+        verified: false,
+        verificationSkipped: verification.skipped,
+        selectedScripts: verification.scripts,
+        summary: "",
+        iterations,
+      };
+      loop.summary = buildLoopSummary(loop);
+      return { result, loop };
+    }
+
+    currentPrompt = buildRepairPrompt(basePrompt, iteration, result, verification, changedFiles);
+    previousSnapshot = nextSnapshot;
+    previousFailureSignature = failureSignature;
+  }
+
+  const fallbackResult = lastResult ?? buildNativeResult({
+    project,
+    stdout: "",
+    stderr: "Builder loop exited before producing a result.",
+    ok: false,
+    timedOut: false,
+    cancelled: false,
+  });
+  const fallbackVerification = lastVerification ?? {
+    scripts: [],
+    steps: [],
+    passed: false,
+    skipped: false,
+    summary: "Verification did not run.",
+  };
+
+  const loop: BuilderAgenticLoopMetadata = {
+    maxIterations: MAX_AGENTIC_ITERATIONS,
+    finalVerdict: fallbackResult.cancelled ? "cancelled" : "max_iterations",
+    verified: false,
+    verificationSkipped: fallbackVerification.skipped,
+    selectedScripts: fallbackVerification.scripts,
+    summary: "",
+    iterations,
+  };
+  loop.summary = buildLoopSummary(loop);
+
+  return {
+    result: fallbackResult,
+    loop,
+  };
+}

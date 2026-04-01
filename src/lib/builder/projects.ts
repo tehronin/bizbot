@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { BuilderPackageManager, BuilderProject, BuilderRun, BuilderRunKind, BuilderRunStatus } from "@prisma/client";
+import type { BuilderPackageManager, BuilderProject, BuilderRun, BuilderRunKind, BuilderRunStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { assertBuilderWorkspaceSafe, resolveBuilderWorkspacePath } from "@/lib/builder/config";
 
@@ -17,10 +17,13 @@ export interface UpdateBuilderProjectInput {
   template?: string;
   packageManager?: BuilderPackageManager;
   gitInitialized?: boolean;
+  context?: Prisma.InputJsonValue;
+  latestSessionSummary?: string | null;
 }
 
 export interface CreateBuilderRunInput {
   projectId: string;
+  taskId?: string;
   kind: BuilderRunKind;
   title: string;
   command?: string;
@@ -93,7 +96,7 @@ async function resolveUniqueProjectPlacement(input: CreateBuilderProjectInput): 
 }
 
 export async function listBuilderProjects(): Promise<BuilderProject[]> {
-  return db.builderProject.findMany({ orderBy: { createdAt: "desc" } });
+  return db.builderProject.findMany({ orderBy: { updatedAt: "desc" } });
 }
 
 export async function getBuilderProject(projectId: string): Promise<BuilderProject> {
@@ -136,6 +139,8 @@ export async function updateBuilderProject(projectId: string, input: UpdateBuild
       ...(input.template !== undefined ? { template: input.template } : {}),
       ...(input.packageManager !== undefined ? { packageManager: input.packageManager } : {}),
       ...(input.gitInitialized !== undefined ? { gitInitialized: input.gitInitialized } : {}),
+      ...(input.context !== undefined ? { context: input.context as never } : {}),
+      ...(input.latestSessionSummary !== undefined ? { latestSessionSummary: input.latestSessionSummary } : {}),
     },
   });
 }
@@ -158,6 +163,7 @@ export async function createBuilderRun(input: CreateBuilderRunInput): Promise<Bu
   return db.builderRun.create({
     data: {
       projectId: input.projectId,
+      taskId: input.taskId,
       kind: input.kind,
       title: input.title,
       command: input.command,
@@ -171,6 +177,13 @@ export async function updateBuilderRun(
   runId: string,
   result: { status?: BuilderRunStatus; stdout?: string; stderr?: string; summary?: string; metadata?: unknown; finishedAt?: Date | null },
 ): Promise<BuilderRun> {
+  const existingRun = await getBuilderRun(runId);
+  if (existingRun.status !== "RUNNING") {
+    if (result.status === undefined || result.status !== existingRun.status) {
+      return existingRun;
+    }
+  }
+
   const run = await db.builderRun.update({
     where: { id: runId },
     data: {
@@ -194,6 +207,11 @@ export async function completeBuilderRun(
   runId: string,
   result: { status: BuilderRunStatus; stdout?: string; stderr?: string; summary?: string; metadata?: unknown },
 ): Promise<BuilderRun> {
+  const existingRun = await getBuilderRun(runId);
+  if (existingRun.status !== "RUNNING") {
+    return existingRun;
+  }
+
   const run = await db.builderRun.update({
     where: { id: runId },
     data: {

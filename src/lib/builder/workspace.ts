@@ -231,14 +231,19 @@ export async function runBuilderCliCommand(
     MAX_COMMAND_TIMEOUT_SECONDS,
     Math.max(1, Math.trunc(options.timeoutSeconds ?? DEFAULT_COMMAND_TIMEOUT_SECONDS)),
   );
+  const useShell = process.platform === "win32";
 
   return new Promise<BuilderCommandResult>((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(
+      command,
+      args,
+      {
       cwd,
       env: process.env,
-      shell: false,
+      shell: useShell,
       stdio: ["ignore", "pipe", "pipe"],
-    });
+      },
+    );
 
     let stdout = "";
     let stderr = "";

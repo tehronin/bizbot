@@ -37,7 +37,7 @@ describe("builder config", () => {
     process.env.BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER = "PNPM";
     process.env.BIZBOT_BUILDER_INIT_GIT = "false";
     process.env.BIZBOT_BUILDER_INSTALL_DEPS = "true";
-    process.env.BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE = "codex";
+    process.env.BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE = "";
     process.env.BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS = "1200";
 
     const config = getBuilderConfig();
@@ -50,7 +50,7 @@ describe("builder config", () => {
     expect(config.defaultPackageManager).toBe("PNPM");
     expect(config.initializeGitByDefault).toBe(false);
     expect(config.installDependenciesByDefault).toBe(true);
-    expect(config.defaultAgenticProfile).toBe("codex");
+    expect(config.defaultAgenticProfile).toBe("");
     expect(config.agenticTimeoutSeconds).toBe(1200);
     expect(resolveBuilderWorkspacePath("projects/demo")).toBe(path.resolve(workspaceRoot, "projects", "demo"));
   });

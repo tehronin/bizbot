@@ -5,7 +5,7 @@ import { getAppHomeDir } from "@/lib/runtime-paths";
 const DEFAULT_BUILDER_WORKSPACE_DIRNAME = "builder-workspace";
 const DEFAULT_TEMPLATE = "node-cli";
 const DEFAULT_PACKAGE_MANAGER = "NPM";
-const DEFAULT_AGENTIC_PROFILE = "codex";
+const DEFAULT_AGENTIC_PROFILE = "";
 const DEFAULT_AGENTIC_TIMEOUT_SECONDS = 900;
 
 export interface BuilderConfig {

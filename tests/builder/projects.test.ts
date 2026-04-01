@@ -60,6 +60,7 @@ vi.mock("@/lib/db", () => ({
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const record = {
           id: `run-${state.nextRunId++}`,
+          status: "RUNNING",
           startedAt: new Date(),
           ...data,
         };
@@ -82,7 +83,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { createBuilderProject, deleteBuilderProject, listBuilderProjects } from "@/lib/builder/projects";
+import { completeBuilderRun, createBuilderProject, createBuilderRun, deleteBuilderProject, listBuilderProjects, updateBuilderRun } from "@/lib/builder/projects";
 
 function createTempBuilderWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-builder-projects-"));
@@ -142,5 +143,36 @@ describe("builder projects", () => {
     expect(result.deletedFiles).toBe(false);
     expect(fs.existsSync(absolutePath)).toBe(true);
     expect(await listBuilderProjects()).toHaveLength(0);
+  });
+
+  it("does not overwrite a terminal run with late progress or completion updates", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const project = await createBuilderProject({ name: "Run Guard" });
+    const run = await createBuilderRun({
+      projectId: project.id as string,
+      kind: "ORCHESTRATION",
+      title: "Guarded run",
+      command: "builder-orchestrator",
+    });
+
+    const cancelled = await completeBuilderRun(run.id as string, {
+      status: "CANCELLED",
+      summary: "Cancelled deliberately.",
+    });
+    const lateProgress = await updateBuilderRun(run.id as string, {
+      summary: "This should not replace the cancelled state.",
+    });
+    const lateCompletion = await completeBuilderRun(run.id as string, {
+      status: "SUCCEEDED",
+      summary: "This should also be ignored.",
+    });
+
+    expect(cancelled.status).toBe("CANCELLED");
+    expect(lateProgress.status).toBe("CANCELLED");
+    expect(lateProgress.summary).toBe("Cancelled deliberately.");
+    expect(lateCompletion.status).toBe("CANCELLED");
+    expect(lateCompletion.summary).toBe("Cancelled deliberately.");
   });
 });

@@ -41,6 +41,13 @@ interface BuilderCliProfile {
     available?: boolean;
     resolvedCommand?: string | null;
     availabilityReason?: string | null;
+    healthy?: boolean;
+    healthReason?: string | null;
+    healthCheckedAt?: string | null;
+    authReady?: boolean;
+    authReason?: string | null;
+    ready?: boolean;
+    readinessReason?: string | null;
     commandSource?: string;
     platform?: string;
   };
@@ -55,8 +62,57 @@ interface BuilderProject {
   packageManager: "NPM" | "PNPM";
   gitInitialized: boolean;
   lastRunStatus: "IDLE" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
+  latestSessionSummary?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface BuilderPlanStep {
+  id: string;
+  label: string;
+  status: "pending" | "in_progress" | "completed";
+  notes?: string;
+}
+
+interface BuilderProjectContext {
+  objective: string | null;
+  architectureNotes: string[];
+  codingConventions: string[];
+  constraints: string[];
+  importantCommands: string[];
+  currentPlan: BuilderPlanStep[];
+  latestSessionSummary: string | null;
+  knownFailures: string[];
+  nextSteps: string[];
+  instructionNotes: string | null;
+  updatedAt: string | null;
+}
+
+interface BuilderTask {
+  id: string;
+  title: string;
+  description: string;
+  status: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
+  stage: "PLANNING" | "IMPLEMENTING" | "TESTING" | "REVIEW" | "DOCUMENTING" | "DONE";
+  summary?: string | null;
+  metadata?: {
+    retryCount?: number;
+    lastStageError?: string | null;
+    lastAttemptedStage?: string | null;
+    planSteps?: BuilderPlanStep[];
+  } | null;
+}
+
+interface BuilderReview {
+  taskId: string;
+  projectId: string;
+  status: string;
+  stage: string;
+  summary: string;
+  filesChanged: string[];
+  commandsExecuted: string[];
+  risks: string[];
+  nextSteps: string[];
 }
 
 interface BuilderRun {
@@ -125,7 +181,12 @@ interface BuilderProjectsResponse {
 
 interface BuilderProjectDetailResponse {
   project: BuilderProject;
+  context: BuilderProjectContext;
+  tasks: BuilderTask[];
+  currentTask: BuilderTask | null;
   runs: BuilderRun[];
+  latestReview: BuilderReview | null;
+  nextRecommendedStep: string | null;
   error?: string;
 }
 
@@ -156,8 +217,9 @@ export default function BuilderPage() {
   const [createDraft, setCreateDraft] = useState(EMPTY_CREATE_PROJECT);
   const [installPackages, setInstallPackages] = useState("");
   const [scriptName, setScriptName] = useState("build");
+  const [taskRequest, setTaskRequest] = useState("");
   const [agenticPrompt, setAgenticPrompt] = useState("");
-  const [agenticProfile, setAgenticProfile] = useState("codex");
+  const [agenticProfile, setAgenticProfile] = useState("");
   const [agenticModel, setAgenticModel] = useState("");
   const [bootstrapOptions, setBootstrapOptions] = useState({ initializeGit: true, installDependencies: false });
   const [saving, setSaving] = useState(false);
@@ -176,7 +238,6 @@ export default function BuilderPage() {
       initializeGit: payload.config.initializeGitByDefault,
       installDependencies: payload.config.installDependenciesByDefault,
     });
-    setAgenticProfile(payload.config.defaultAgenticProfile);
     return payload;
   }
 
@@ -212,9 +273,6 @@ export default function BuilderPage() {
     } else {
       setProjectDetail(null);
     }
-    if (!nextSelectedProjectId && !selectedProjectId && loadedStatus.config.defaultAgenticProfile) {
-      setAgenticProfile(loadedStatus.config.defaultAgenticProfile);
-    }
   }
 
   useEffect(() => {
@@ -230,9 +288,19 @@ export default function BuilderPage() {
   }, [selectedProjectId]);
 
   const enabledAgentProfiles = useMemo(
-    () => (status?.cliProfiles ?? []).filter((profile) => profile.enabled),
+    () => (status?.cliProfiles ?? []).filter((profile) => profile.enabled && profile.metadata?.ready === true),
     [status],
   );
+
+  useEffect(() => {
+    if (!agenticProfile) {
+      return;
+    }
+
+    if (!enabledAgentProfiles.some((profile) => profile.key === agenticProfile)) {
+      setAgenticProfile("");
+    }
+  }, [agenticProfile, enabledAgentProfiles]);
 
   const hasRunningRun = useMemo(
     () => (projectDetail?.runs ?? []).some((run) => run.status === "RUNNING"),
@@ -353,7 +421,7 @@ export default function BuilderPage() {
             <div>
               <div className="text-xs uppercase tracking-[0.24em] font-medium mb-1" style={{ color: "var(--text-muted)" }}>builder mode</div>
               <div className="text-sm" style={{ color: "var(--text-dim)" }}>
-                Safe project creation, preset bootstrapping, typed package actions, and optional agentic Codex runs inside an external workspace.
+                Safe project creation, preset bootstrapping, and typed package actions are the primary supported Builder path. Agentic CLI adapters stay opt-in and blocked unless they are explicitly ready.
               </div>
             </div>
             <button onClick={() => void refresh(selectedProjectId)} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
@@ -368,7 +436,7 @@ export default function BuilderPage() {
               { label: "workspace", value: status?.config.safe ? "safe" : "blocked" },
               { label: "projects", value: String(status?.projects.total ?? 0) },
               { label: "running", value: String(status?.projects.running ?? 0) },
-              { label: "agentic profile", value: status?.config.defaultAgenticProfile ?? "codex" },
+              { label: "agentic profile", value: status?.config.defaultAgenticProfile || "none configured" },
             ].map((card) => (
               <div key={card.label} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                 <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
@@ -422,12 +490,12 @@ export default function BuilderPage() {
                 <div className="flex items-center justify-between gap-4">
                   <span>{profile.displayName}</span>
                   <span style={{ color: profile.enabled ? (profile.metadata?.available ? "var(--success)" : "var(--danger)") : "var(--text-dim)" }}>
-                    {profile.enabled ? (profile.metadata?.available ? "enabled" : "enabled but unavailable") : "disabled"}
+                    {profile.enabled ? (profile.metadata?.ready ? "enabled and ready" : "enabled but blocked") : "disabled"}
                   </span>
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{profile.command}</div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{profile.description}</div>
-                {profile.metadata?.availabilityReason ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{profile.metadata.availabilityReason}</div> : null}
+                {profile.metadata?.readinessReason ? <div className="text-xs leading-6" style={{ color: profile.metadata.ready ? "var(--success)" : "var(--danger)" }}>{profile.metadata.readinessReason}</div> : null}
               </div>
             ))}
           </div>
@@ -480,6 +548,88 @@ export default function BuilderPage() {
                   <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>git</div>
                   <div className="text-sm">{selectedProject.gitInitialized ? "initialized" : "not initialized"}</div>
                 </div>
+                <div className="border p-3 sm:col-span-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>objective</div>
+                  <div className="text-sm" style={{ color: projectDetail?.context.objective ? "var(--text-primary)" : "var(--text-dim)" }}>
+                    {projectDetail?.context.objective ?? "No durable Builder objective recorded yet."}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>current task</div>
+                  {projectDetail?.currentTask ? (
+                    <>
+                      <div className="text-sm">{projectDetail.currentTask.title}</div>
+                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>{projectDetail.currentTask.stage.toLowerCase()} · {projectDetail.currentTask.status.toLowerCase()}</div>
+                      {projectDetail.currentTask.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail.currentTask.summary}</div> : null}
+                    </>
+                  ) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No Builder task is active yet.</div>}
+                </div>
+                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>next recommended step</div>
+                  <div className="text-sm" style={{ color: projectDetail?.nextRecommendedStep ? "var(--text-primary)" : "var(--text-dim)" }}>
+                    {projectDetail?.nextRecommendedStep ?? "No next step has been synthesized yet."}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder task</div>
+                <div>
+                  <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Task request</label>
+                  <textarea value={taskRequest} onChange={(event) => setTaskRequest(event.target.value)} rows={4} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} placeholder="Describe the next Builder step for this project." />
+                </div>
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  Builder tasks now run through BizBot's native in-process builder operator. The CLI profile section below remains available only for direct adapter prompts.
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button disabled={saving || !taskRequest.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/tasks`, { request: taskRequest })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                    start builder task
+                  </button>
+                  <button disabled={saving || !taskRequest.trim() || !projectDetail?.currentTask} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/tasks`, { request: taskRequest, taskId: projectDetail?.currentTask?.id })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                    continue current task
+                  </button>
+                  <button disabled={saving || !taskRequest.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/tasks`, { request: taskRequest, retryFailed: true })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                    retry last failed
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>plan</div>
+                  {(projectDetail?.context.currentPlan ?? []).length > 0 ? projectDetail?.context.currentPlan.map((step) => (
+                    <div key={step.id} className="text-xs leading-6" style={{ color: step.status === "completed" ? "var(--success)" : step.status === "in_progress" ? "var(--accent)" : "var(--text-dim)" }}>
+                      [{step.status.replace("_", " ")}] {step.label}
+                    </div>
+                  )) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No active plan recorded yet.</div>}
+                </div>
+                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>latest review</div>
+                  {projectDetail?.latestReview ? (
+                    <>
+                      <div className="text-sm">{projectDetail.latestReview.summary}</div>
+                      {projectDetail.latestReview.risks.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>Risks: {projectDetail.latestReview.risks.join("; ")}</div> : null}
+                      {projectDetail.latestReview.nextSteps.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Next: {projectDetail.latestReview.nextSteps.join("; ")}</div> : null}
+                    </>
+                  ) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No structured Builder review yet.</div>}
+                </div>
+              </div>
+
+              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>recent tasks</div>
+                {(projectDetail?.tasks ?? []).length > 0 ? projectDetail?.tasks.slice(0, 5).map((task) => (
+                  <div key={task.id} className="border p-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span>{task.title}</span>
+                      <span style={{ color: task.status === "FAILED" ? "var(--danger)" : task.status === "SUCCEEDED" ? "var(--success)" : "var(--text-dim)" }}>{task.status.toLowerCase()}</span>
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{task.stage.toLowerCase()} · {task.description}</div>
+                    {task.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{task.summary}</div> : null}
+                  </div>
+                )) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No Builder tasks recorded yet.</div>}
               </div>
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
@@ -525,12 +675,13 @@ export default function BuilderPage() {
               </div>
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>agentic task</div>
+                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>direct cli prompt</div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Profile</label>
                     <select value={agenticProfile} onChange={(event) => setAgenticProfile(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
-                      {(enabledAgentProfiles.length > 0 ? enabledAgentProfiles : status?.cliProfiles ?? []).map((profile) => (
+                      <option value="">Select a profile</option>
+                      {enabledAgentProfiles.map((profile) => (
                         <option key={profile.key} value={profile.key}>{profile.displayName}</option>
                       ))}
                     </select>
@@ -544,8 +695,8 @@ export default function BuilderPage() {
                   <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Prompt</label>
                   <textarea value={agenticPrompt} onChange={(event) => setAgenticPrompt(event.target.value)} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
                 </div>
-                <button disabled={saving || !agenticPrompt.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "run_agentic_task", profile: agenticProfile, prompt: agenticPrompt, model: agenticModel || undefined })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                  run agentic task
+                <button disabled={saving || !agenticPrompt.trim() || !agenticProfile} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "run_agentic_task", profile: agenticProfile, prompt: agenticPrompt, model: agenticModel || undefined })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                  run raw agentic prompt
                 </button>
               </div>
             </>

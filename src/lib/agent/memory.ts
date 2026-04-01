@@ -152,8 +152,8 @@ export async function listRecentConversations(options?: {
   const userId = options?.userId ?? DEFAULT_USER_ID;
 
   const conversations = await db.conversation.findMany({
-    where: { userId },
-    orderBy: { updatedAt: "desc" },
+    where: { userId, deletedAt: null },
+    orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
     take: limit,
     include: {
       _count: {
@@ -259,9 +259,17 @@ export async function saveMessage(
   content: string,
   metadata?: JsonObject,
 ): Promise<void> {
-  await db.message.create({
-    data: { conversationId, role, content, metadata },
-  });
+  const timestamp = new Date();
+
+  await db.$transaction([
+    db.message.create({
+      data: { conversationId, role, content, metadata },
+    }),
+    db.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: timestamp },
+    }),
+  ]);
 }
 
 export async function trimConversationMessages(
@@ -305,7 +313,7 @@ export async function getOrCreateScopedConversation(
   });
 
   const existing = await db.conversation.findFirst({
-    where: { userId, title },
+    where: { userId, title, archivedAt: null, deletedAt: null },
     select: { id: true },
     orderBy: { createdAt: "asc" },
   });
@@ -326,8 +334,9 @@ export async function getOrCreateConversation(
   userId = DEFAULT_USER_ID,
 ): Promise<string> {
   if (conversationId) {
-    const existing = await db.conversation.findUnique({
-      where: { id: conversationId },
+    const existing = await db.conversation.findFirst({
+      where: { id: conversationId, userId, archivedAt: null, deletedAt: null },
+      select: { id: true },
     });
     if (existing) return existing.id;
   }

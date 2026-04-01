@@ -3,7 +3,10 @@
 import type { BuilderPackageManager } from "@prisma/client";
 import { runBuilderProjectBootstrap } from "@/lib/builder/bootstrap";
 import { recordBuilderProjectCommand } from "@/lib/builder/commands";
-import { createBuilderProject, deleteBuilderProject, getBuilderProject, getBuilderRun, listBuilderProjects, listBuilderRuns } from "@/lib/builder/projects";
+import { loadBuilderProjectContext, syncBuilderProjectProjection } from "@/lib/builder/context";
+import { getBuilderProjectOverview, launchBuilderTask } from "@/lib/builder/orchestrator";
+import { createBuilderProject, deleteBuilderProject, getBuilderProject, getBuilderRun, listBuilderProjects, listBuilderRuns, updateBuilderProject } from "@/lib/builder/projects";
+import { listBuilderTasks } from "@/lib/builder/tasks";
 import {
   createBuilderDirectory,
   getBuilderWorkspaceStatus,
@@ -99,6 +102,25 @@ interface BuilderRunArgs {
   runId: string;
 }
 
+interface BuilderContinueTaskArgs {
+  projectId: string;
+  request: string;
+  taskId?: string;
+  retryFailed?: boolean;
+  profile?: string;
+  model?: string;
+}
+
+interface BuilderWriteProjectInstructionsArgs {
+  projectId: string;
+  objective?: string;
+  architectureNotes?: string[];
+  conventions?: string[];
+  constraints?: string[];
+  commands?: string[];
+  instructionNotes?: string;
+}
+
 export const builderPlugin = {
   tools: [
     registerTool(defineTool({
@@ -142,10 +164,91 @@ export const builderPlugin = {
         required: ["projectId"],
       },
       execute: async ({ projectId }: BuilderProjectArgs) => ({
-        project: await getBuilderProject(projectId),
-        runs: await listBuilderRuns(projectId, 25),
+        ...(await getBuilderProjectOverview(projectId)),
       }),
-    } satisfies ToolDefinition<BuilderProjectArgs, { project: Awaited<ReturnType<typeof getBuilderProject>>; runs: Awaited<ReturnType<typeof listBuilderRuns>> }>)),
+    } satisfies ToolDefinition<BuilderProjectArgs, Awaited<ReturnType<typeof getBuilderProjectOverview>>>)),
+    registerTool(defineTool({
+      name: "builder_list_tasks",
+      description: "List persisted Builder tasks for a Builder Mode project so work can continue across turns.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId }: BuilderProjectArgs) => ({ tasks: await listBuilderTasks(projectId, 25) }),
+    } satisfies ToolDefinition<BuilderProjectArgs, { tasks: Awaited<ReturnType<typeof listBuilderTasks>> }>)),
+    registerTool(defineTool({
+      name: "builder_plan_task",
+      description: "Start a persistent Builder task for a project using compact synthesized context instead of a one-shot raw prompt.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          request: { type: "string" },
+          profile: { type: "string", default: "codex" },
+          model: { type: "string" },
+        },
+        required: ["projectId", "request"],
+      },
+      execute: async ({ projectId, request, profile, model }: BuilderContinueTaskArgs) => launchBuilderTask(projectId, { request, profile, model }),
+    } satisfies ToolDefinition<BuilderContinueTaskArgs, Awaited<ReturnType<typeof launchBuilderTask>>>)),
+    registerTool(defineTool({
+      name: "builder_continue_task",
+      description: "Continue the current open Builder task, or reopen the most recent failed task when retryFailed is true.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          request: { type: "string" },
+          taskId: { type: "string" },
+          retryFailed: { type: "boolean" },
+          profile: { type: "string", default: "codex" },
+          model: { type: "string" },
+        },
+        required: ["projectId", "request"],
+      },
+      execute: async ({ projectId, request, taskId, retryFailed, profile, model }: BuilderContinueTaskArgs) =>
+        launchBuilderTask(projectId, { request, taskId, retryFailed, profile, model }),
+    } satisfies ToolDefinition<BuilderContinueTaskArgs, Awaited<ReturnType<typeof launchBuilderTask>>>)),
+    registerTool(defineTool({
+      name: "builder_write_project_instructions",
+      description: "Update durable Builder project instructions and sync them into the project's .builder projection files.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          objective: { type: "string" },
+          architectureNotes: { type: "array", items: { type: "string" } },
+          conventions: { type: "array", items: { type: "string" } },
+          constraints: { type: "array", items: { type: "string" } },
+          commands: { type: "array", items: { type: "string" } },
+          instructionNotes: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId, objective, architectureNotes, conventions, constraints, commands, instructionNotes }: BuilderWriteProjectInstructionsArgs) => {
+        const project = await getBuilderProject(projectId);
+        const { context } = loadBuilderProjectContext(project);
+        const nextContext = {
+          ...context,
+          ...(objective !== undefined ? { objective } : {}),
+          ...(architectureNotes !== undefined ? { architectureNotes } : {}),
+          ...(conventions !== undefined ? { codingConventions: conventions } : {}),
+          ...(constraints !== undefined ? { constraints } : {}),
+          ...(commands !== undefined ? { importantCommands: commands } : {}),
+          ...(instructionNotes !== undefined ? { instructionNotes } : {}),
+          updatedAt: new Date().toISOString(),
+        };
+        const updatedProject = await updateBuilderProject(projectId, {
+          context: nextContext as never,
+          latestSessionSummary: nextContext.latestSessionSummary,
+        });
+        syncBuilderProjectProjection({ project: updatedProject, context: nextContext });
+        return { project: updatedProject, context: nextContext };
+      },
+    } satisfies ToolDefinition<BuilderWriteProjectInstructionsArgs, { project: Awaited<ReturnType<typeof updateBuilderProject>>; context: ReturnType<typeof loadBuilderProjectContext>["context"] }>)),
     registerTool(defineTool({
       name: "builder_delete_project",
       description: "Delete a Builder Mode project record and optionally remove its reserved folder.",
