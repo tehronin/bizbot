@@ -27,6 +27,10 @@ const runtimeMocks = vi.hoisted(() => ({
   getAgentRuntimeConfig: vi.fn(),
 }));
 
+const ontologyMocks = vi.hoisted(() => ({
+  buildOntologyPromptBlock: vi.fn(),
+}));
+
 const runJournalMocks = vi.hoisted(() => ({
   startAgentRun: vi.fn(),
   completeAgentRun: vi.fn(),
@@ -64,6 +68,10 @@ vi.mock("@/lib/agent/runtime", () => ({
   getAgentRuntimeConfig: runtimeMocks.getAgentRuntimeConfig,
 }));
 
+vi.mock("@/lib/ontology/prompt", () => ({
+  buildOntologyPromptBlock: ontologyMocks.buildOntologyPromptBlock,
+}));
+
 vi.mock("@/lib/agent/run-journal", () => ({
   startAgentRun: runJournalMocks.startAgentRun,
   completeAgentRun: runJournalMocks.completeAgentRun,
@@ -94,6 +102,7 @@ describe("agent executor explicit memory", () => {
     runtimeMocks.ensureMcpClientsInitialized.mockResolvedValue(undefined);
     runtimeMocks.buildAutonomySystemPrompt.mockReturnValue("Autonomy enabled.");
     runtimeMocks.getAgentRuntimeConfig.mockReturnValue({ autonomyPreset: "approval_all_posts" });
+    ontologyMocks.buildOntologyPromptBlock.mockResolvedValue({ block: "", lines: [], omitted: true, reason: "empty" });
     runJournalMocks.startAgentRun.mockReturnValue({ runId: "run-1" });
   });
 
@@ -129,6 +138,44 @@ describe("agent executor explicit memory", () => {
 
     const systemPrompt = kernelMocks.chatComplete.mock.calls[0][0][0].content as string;
     expect(systemPrompt).not.toContain("[User Memory]");
+    expect(systemPrompt).toContain("Context:\nRecent conversation:\nUSER: hi");
+  });
+
+  it("injects a bounded ontology block separately from explicit user memory", async () => {
+    ontologyMocks.buildOntologyPromptBlock.mockResolvedValue({
+      block: [
+        "[Ontology Context]",
+        "- user: Sam",
+        "- preference: concise replies",
+        "[/Ontology Context]",
+      ].join("\n"),
+      lines: [],
+      omitted: false,
+    });
+
+    await executeAgentConversation({
+      message: "Draft a reply",
+      userId: "user-1",
+      forcedProfile: "content_operator",
+    });
+
+    const systemPrompt = kernelMocks.chatComplete.mock.calls[0][0][0].content as string;
+    expect(systemPrompt).toContain("[Ontology Context]");
+    expect(systemPrompt).toContain("preference: concise replies");
+    expect(systemPrompt.indexOf("[Ontology Context]")).toBeLessThan(systemPrompt.indexOf("Context:"));
+  });
+
+  it("survives ontology read failure and omits the block", async () => {
+    ontologyMocks.buildOntologyPromptBlock.mockRejectedValue(new Error("db unavailable"));
+
+    await executeAgentConversation({
+      message: "Draft a reply",
+      userId: "user-1",
+      forcedProfile: "content_operator",
+    });
+
+    const systemPrompt = kernelMocks.chatComplete.mock.calls[0][0][0].content as string;
+    expect(systemPrompt).not.toContain("[Ontology Context]");
     expect(systemPrompt).toContain("Context:\nRecent conversation:\nUSER: hi");
   });
 });

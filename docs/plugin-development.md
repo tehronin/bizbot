@@ -26,6 +26,8 @@ The builtin `memory` plugin exposes two distinct memory surfaces under the share
 
 Keep these layers separate. Explicit user memory is for durable, user-approved facts and should not be used as hidden profiling or as a substitute for graph or RAG retrieval.
 
+BizBot also has a core ontology layer under `src/lib/ontology/`. That ontology is not a plugin-owned feature. Future plugins should consume ontology services for canonical identity, preference, workflow, and constraint resolution instead of inventing parallel semantic stores.
+
 ## Creating a Plugin
 
 Run:
@@ -75,6 +77,8 @@ Use these resources when you want structured reports instead of ad hoc code spel
 - `bizbot://plugins/contracts-status`
 
 This loop is intentionally high-trust and power-user oriented. The goal is more inspectability and faster iteration, not less power.
+
+Ontology inspection follows the same developer-facing pattern: shared MCP resources under `bizbot://ontology/*` and narrow `developer_*` inspection tools. Runtime ontology prompt context remains separate from these inspection surfaces.
 
 ## Naming Conventions
 

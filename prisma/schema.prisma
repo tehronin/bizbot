@@ -22,6 +22,8 @@ model User {
   posts         Post[]
   memories      Memory[]
   userMemoryFacts UserMemoryFact[]
+  ontologyEntities OntologyEntity[]   @relation("UserOntologyEntities")
+  ontologyRelations OntologyRelation[] @relation("UserOntologyRelations")
 }
 
 // ─────────────────── PLATFORMS ───────────────────
@@ -171,6 +173,92 @@ model UserMemoryFact {
   @@unique([userId, key], name: "userId_key")
   @@index([userId, category])
   @@index([userId, key])
+}
+
+model OntologyEntity {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation("UserOntologyEntities", fields: [userId], references: [id], onDelete: Cascade)
+  scope       String
+  type        String
+  canonicalKey String
+  displayName String
+  description String?
+  attributes  Json
+  status      String
+  source      String
+  confidence  Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subjectRelations OntologyRelation[] @relation("OntologyRelationSubject")
+  objectRelations  OntologyRelation[] @relation("OntologyRelationObject")
+  aliases          OntologyAlias[]
+  evidence         OntologyEvidence[]
+
+  @@index([userId, scope, type, canonicalKey])
+  @@index([scope, type, canonicalKey])
+  @@index([status, scope])
+}
+
+model OntologyRelation {
+  id              String   @id @default(cuid())
+  userId          String?
+  user            User?    @relation("UserOntologyRelations", fields: [userId], references: [id], onDelete: Cascade)
+  scope           String
+  type            String
+  subjectEntityId String
+  objectEntityId  String
+  attributes      Json
+  source          String
+  confidence      Float
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subjectEntity OntologyEntity @relation("OntologyRelationSubject", fields: [subjectEntityId], references: [id], onDelete: Cascade)
+  objectEntity  OntologyEntity @relation("OntologyRelationObject", fields: [objectEntityId], references: [id], onDelete: Cascade)
+  evidence      OntologyEvidence[]
+
+  @@index([userId, scope, type])
+  @@index([subjectEntityId, type])
+  @@index([objectEntityId, type])
+  @@index([isActive, scope])
+}
+
+model OntologyAlias {
+  id              String   @id @default(cuid())
+  entityId        String
+  scope           String
+  value           String
+  normalizedValue String
+  kind            String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  entity OntologyEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@index([scope, normalizedValue])
+  @@index([entityId, kind])
+}
+
+model OntologyEvidence {
+  id             String   @id @default(cuid())
+  entityId       String?
+  relationId     String?
+  sourceKind     String
+  sourceRef      String
+  approvalMarker String?
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  entity   OntologyEntity?   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  relation OntologyRelation? @relation(fields: [relationId], references: [id], onDelete: Cascade)
+
+  @@index([entityId])
+  @@index([relationId])
+  @@index([sourceKind, sourceRef])
 }
 
 // ─────────────────── POLICIES ───────────────────

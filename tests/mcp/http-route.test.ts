@@ -56,6 +56,8 @@ describe("MCP HTTP route", () => {
     expect(result.status).toBe(200);
     expect(result.body.result.tools).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "developer_inspect_plugin_registry" }),
+      expect.objectContaining({ name: "developer_inspect_ontology_schema" }),
+      expect.objectContaining({ name: "developer_preview_ontology_context" }),
       expect.objectContaining({ name: "developer_list_agent_runs" }),
       expect.objectContaining({ name: "crm_list_contacts" }),
       expect.objectContaining({ name: "local_business_get_status" }),
@@ -105,6 +107,36 @@ describe("MCP HTTP route", () => {
         name: "debug-system-status",
         mimeType: "application/json",
       }),
+      expect.objectContaining({
+        uri: "bizbot://ontology/schema",
+        name: "ontology-schema",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://ontology/runtime-context-policy",
+        name: "ontology-runtime-context-policy",
+        mimeType: "application/json",
+      }),
+    ]));
+  });
+
+  it("keeps ontology inspection developer-facing and separate from runtime prompts", async () => {
+    const [toolsResult, resourcesResult] = await Promise.all([
+      callMcp("tools/list", {}, "tools-ontology"),
+      callMcp("resources/list", {}, "resources-ontology"),
+    ]);
+
+    expect(toolsResult.body.result.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "developer_search_ontology_entities" }),
+      expect.objectContaining({ name: "developer_explain_ontology_alias" }),
+      expect.objectContaining({ name: "developer_validate_ontology_relation" }),
+    ]));
+    expect(resourcesResult.body.result.resources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ uri: "bizbot://ontology/summary" }),
+      expect.objectContaining({ uri: "bizbot://ontology/promotion-rules" }),
+    ]));
+    expect(toolsResult.body.result.tools).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "ontology_search_entities" }),
     ]));
   });
 

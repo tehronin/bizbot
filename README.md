@@ -12,7 +12,7 @@ BizBot is no longer just a social posting bot. The app now includes:
 
 - Agent chat with typed specialist routing and tool traces
 - Chat history controls for recent, archived, restore, and delete flows
-- Dual long-term memory paths: semantic recall plus explicit relational user memory
+- Three knowledge lanes: semantic recall, explicit relational user memory, and a core ontology layer for canonical typed entities and relations
 - Builder Mode for sandboxed project scaffolding, persistent task orchestration, and external build-workspace execution
 - Unified inbox and lead pipeline
 - CRM cockpit with notes, tasks, contact sync, and provider status
@@ -53,6 +53,19 @@ The legacy `/google-business` route still exists as a compatibility redirect to 
 - Runs as an MCP server for VS Code and other MCP clients
 - Imports external MCP servers through configured client connections
 - Creates and manages external builder projects without letting scaffolding work mutate the BizBot repo itself
+- Keeps graph-style canonical context separate from semantic memory, explicit user memory, and developer inspection catalogs
+
+## Ontology Core v1
+
+BizBot now ships a core ontology layer for canonical typed entities and relations.
+
+- Postgres is the canonical ontology store through `OntologyEntity`, `OntologyRelation`, `OntologyAlias`, and `OntologyEvidence`.
+- Ontology promotion is deterministic and derives only from allowlisted explicit user memory facts such as identity, preference, workflow, constraint, and operator setting.
+- Runtime can inject a small fail-soft `[Ontology Context]` block without mixing in developer diagnostics or inspection metadata.
+- Developer inspection follows the existing MCP patterns through `bizbot://ontology/*` resources and narrow `developer_*` ontology tools.
+- Ontology stays separate from semantic recall, explicit user memory CRUD, and plugin-owned storage.
+
+See `docs/ontology.md` for scope, precedence, ambiguity behavior, lifecycle policy, promotion rules, and governance expectations.
 
 ## Developer Workflow
 

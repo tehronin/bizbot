@@ -5,6 +5,7 @@ import { executeTool, getAllToolDefinitions } from "@/lib/agent/plugins";
 import { ensureMcpClientsInitialized } from "@/lib/mcp/client";
 import { buildAutonomySystemPrompt, getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { resolveAgentUserId } from "@/lib/agent/user-context";
+import { buildOntologyPromptBlock } from "@/lib/ontology/prompt";
 import {
   completeAgentRun,
   recordAgentRunToolCall,
@@ -125,11 +126,16 @@ export async function executeAgentConversation(
     console.warn("[agent executor] MCP client init skipped:", error);
   });
   throwIfAborted(signal);
-  const [explicitMemoryFacts, contextBlock] = await Promise.all([
+  const [explicitMemoryFacts, contextBlock, ontologyPrompt] = await Promise.all([
     getActiveMemoryFacts({ userId: resolvedUserId }),
     buildContext(message, resolvedConversationId, resolvedUserId),
+    buildOntologyPromptBlock(resolvedUserId).catch((error) => {
+      console.warn("[agent executor] ontology context skipped:", error);
+      return { block: "", lines: [], omitted: true, reason: "read_failed" };
+    }),
   ]);
   const explicitMemoryBlock = formatMemoryFactsForPrompt(explicitMemoryFacts);
+  const ontologyBlock = ontologyPrompt.omitted ? "" : ontologyPrompt.block;
   const tools = getAllToolDefinitions(runtimeConfig, { agentProfile: profileDecision.profile });
   const run = startAgentRun({
     conversationId: resolvedConversationId,
@@ -150,6 +156,7 @@ export async function executeAgentConversation(
     + " Explicit user memory policy: use memory_get_facts when stable user preferences, identity, workflows, constraints, or operator settings are relevant. Use memory_set_fact only when the user explicitly asks BizBot to remember a stable fact or an approved onboarding/system flow requires it. Use memory_forget_fact only when the user explicitly asks BizBot to forget a stored fact. Never store secrets, credentials, tokens, payment details, ephemeral chat noise, or speculative inferences as stable memory."
     + ` Delegation options: ${profileDescriptor.delegationTargets.join(", ") || "none"}.`
     + (explicitMemoryBlock ? `\n\n${explicitMemoryBlock}` : "")
+    + (ontologyBlock ? `\n\n${ontologyBlock}` : "")
     + (contextBlock ? `\n\nContext:\n${contextBlock}` : "");
 
   const messages: ChatMessage[] = [

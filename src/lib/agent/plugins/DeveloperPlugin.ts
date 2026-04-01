@@ -14,6 +14,9 @@ import {
   listRecentConversations,
 } from "@/lib/agent/memory";
 import { getMcpClientToolCatalog } from "@/lib/mcp/client";
+import { buildOntologyPromptBlock } from "@/lib/ontology/prompt";
+import { resolveOntologyAlias, searchOntologyEntities } from "@/lib/ontology/search";
+import { getOntologySchemaSummary, validateOntologyRelationInput } from "@/lib/ontology/service";
 import {
   buildSuggestedPluginTests,
   explainRegistryConflict,
@@ -100,6 +103,31 @@ interface PluginPlanArgs {
 
 interface ToolSchemaSuggestionArgs {
   toolNames: string[];
+}
+
+interface OntologySearchArgs {
+  query: string;
+  userId?: string;
+  scope?: "user" | "runtime" | "global";
+  limit?: number;
+}
+
+interface OntologyAliasArgs {
+  alias: string;
+  userId?: string;
+  type?: string;
+}
+
+interface OntologyContextArgs {
+  userId: string;
+}
+
+interface OntologyRelationValidationArgs {
+  userId?: string;
+  scope: "user" | "runtime" | "global";
+  type: string;
+  subjectEntityId: string;
+  objectEntityId: string;
 }
 
 interface PromptPreviewResult {
@@ -532,6 +560,87 @@ export const developerPlugin = {
         return { descriptor };
       },
     } satisfies ToolDefinition<ToolDescriptorArgs, ToolDescriptorPreviewResult>)),
+    registerTool(defineTool({
+      name: "developer_inspect_ontology_schema",
+      description: "Inspect ontology v1 schema, scopes, statuses, canonical types, and runtime budget policy.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      execute: async () => ({
+        schema: await getOntologySchemaSummary(),
+      }),
+    } satisfies ToolDefinition<Record<string, never>, { schema: Awaited<ReturnType<typeof getOntologySchemaSummary>> }>)),
+    registerTool(defineTool({
+      name: "developer_search_ontology_entities",
+      description: "Search ontology entities by canonical key, scoped name, or alias for developer inspection.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          userId: { type: "string" },
+          scope: { type: "string", enum: ["user", "runtime", "global"] },
+          limit: { type: "number", default: 20 },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+      execute: async ({ query, userId, scope, limit }: OntologySearchArgs) => ({
+        results: await searchOntologyEntities({ query, userId, scope, limit }),
+      }),
+    } satisfies ToolDefinition<OntologySearchArgs, { results: Awaited<ReturnType<typeof searchOntologyEntities>> }>)),
+    registerTool(defineTool({
+      name: "developer_preview_ontology_context",
+      description: "Preview the bounded runtime ontology context block for a specific user without injecting it into a prompt.",
+      parameters: {
+        type: "object",
+        properties: {
+          userId: { type: "string" },
+        },
+        required: ["userId"],
+        additionalProperties: false,
+      },
+      execute: async ({ userId }: OntologyContextArgs) => ({
+        preview: await buildOntologyPromptBlock(userId),
+      }),
+    } satisfies ToolDefinition<OntologyContextArgs, { preview: Awaited<ReturnType<typeof buildOntologyPromptBlock>> }>)),
+    registerTool(defineTool({
+      name: "developer_explain_ontology_alias",
+      description: "Explain how an ontology alias resolves under scope precedence or why it remains ambiguous.",
+      parameters: {
+        type: "object",
+        properties: {
+          alias: { type: "string" },
+          userId: { type: "string" },
+          type: { type: "string" },
+        },
+        required: ["alias"],
+        additionalProperties: false,
+      },
+      execute: async ({ alias, userId, type }: OntologyAliasArgs) => ({
+        resolution: await resolveOntologyAlias({ alias, userId, type }),
+      }),
+    } satisfies ToolDefinition<OntologyAliasArgs, { resolution: Awaited<ReturnType<typeof resolveOntologyAlias>> }>)),
+    registerTool(defineTool({
+      name: "developer_validate_ontology_relation",
+      description: "Validate ontology relation shape, scope, and referenced entities without mutating ontology state.",
+      parameters: {
+        type: "object",
+        properties: {
+          userId: { type: "string" },
+          scope: { type: "string", enum: ["user", "runtime", "global"] },
+          type: { type: "string" },
+          subjectEntityId: { type: "string" },
+          objectEntityId: { type: "string" },
+        },
+        required: ["scope", "type", "subjectEntityId", "objectEntityId"],
+        additionalProperties: false,
+      },
+      execute: async (args: OntologyRelationValidationArgs) => ({
+        validation: await validateOntologyRelationInput(args),
+      }),
+    } satisfies ToolDefinition<OntologyRelationValidationArgs, { validation: Awaited<ReturnType<typeof validateOntologyRelationInput>> }>)),
     registerTool(defineTool({
       name: "developer_suggest_plugin_tests",
       description: "Suggest focused plugin, schema, failure-path, and MCP contract tests for a builtin plugin or source file.",
