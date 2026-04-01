@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { AgenticSetupDrawer } from "@/components/chat/AgenticSetupDrawer";
 import { MEMORY_FACT_CATEGORIES, type MemoryFactCategory } from "@/lib/agent/memory/facts";
@@ -33,7 +33,7 @@ function inferKeyFromText(content: string): string {
     .slice(0, 48) || "remembered_fact";
 }
 
-export default function ChatPage() {
+function ChatPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [input, setInput] = useState("");
@@ -350,5 +350,13 @@ export default function ChatPage() {
       </div>
       <AgenticSetupDrawer open={setupOpen} closeHref={closeSetupHref} />
     </>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="h-full" />}>
+      <ChatPageContent />
+    </Suspense>
   );
 }

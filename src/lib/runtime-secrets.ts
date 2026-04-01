@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { readEnv, writeEnv } from "@/lib/env";
 
@@ -36,19 +37,52 @@ const MANAGED_SECRET_ENV_KEYS = [
 
 export type ManagedSecretEnvKey = typeof MANAGED_SECRET_ENV_KEYS[number];
 
+interface CachedSecretValue {
+  source: "env" | "db";
+  value: string;
+}
+
+const SECRET_DB_UNAVAILABLE_COOLDOWN_MS = 5_000;
+
 const globalForRuntimeSecrets = globalThis as typeof globalThis & {
-  bizbotRuntimeSecretCache?: Map<string, string>;
+  bizbotRuntimeSecretCache?: Map<string, CachedSecretValue>;
+  bizbotRuntimeSecretDbUnavailableAt?: number;
 };
 
-function getSecretCache(): Map<string, string> {
+function getSecretCache(): Map<string, CachedSecretValue> {
   if (!globalForRuntimeSecrets.bizbotRuntimeSecretCache) {
-    globalForRuntimeSecrets.bizbotRuntimeSecretCache = new Map<string, string>();
+    globalForRuntimeSecrets.bizbotRuntimeSecretCache = new Map<string, CachedSecretValue>();
   }
   return globalForRuntimeSecrets.bizbotRuntimeSecretCache;
 }
 
+function isSecretDatabaseUnavailable(): boolean {
+  const unavailableAt = globalForRuntimeSecrets.bizbotRuntimeSecretDbUnavailableAt;
+  return typeof unavailableAt === "number" && (Date.now() - unavailableAt) < SECRET_DB_UNAVAILABLE_COOLDOWN_MS;
+}
+
+function markSecretDatabaseUnavailable(): void {
+  globalForRuntimeSecrets.bizbotRuntimeSecretDbUnavailableAt = Date.now();
+}
+
+function clearSecretDatabaseUnavailable(): void {
+  delete globalForRuntimeSecrets.bizbotRuntimeSecretDbUnavailableAt;
+}
+
 function getSecretSettingKey(key: string): string {
   return `${SECRET_STORE_PREFIX}${key}`;
+}
+
+function isPrismaUnavailableError(error: unknown): boolean {
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /Can't reach database server|Error validating datasource|Connection refused/i.test(error.message);
 }
 
 function getEnvSnapshot(): Record<string, string> {
@@ -136,7 +170,8 @@ export async function saveEncryptedSecrets(env: Record<string, string>): Promise
         update: { value: JSON.stringify(encryptSecret(key, value)) },
         create: { key: getSecretSettingKey(key), value: JSON.stringify(encryptSecret(key, value)) },
       }).then(() => {
-        cache.set(key, value);
+        clearSecretDatabaseUnavailable();
+        cache.set(key, { source: "db", value });
       }),
     ),
   );
@@ -146,16 +181,35 @@ export async function getSecretValue(key: ManagedSecretEnvKey): Promise<string |
   const snapshot = getEnvSnapshot();
   const direct = snapshot[key]?.trim();
   if (direct) {
-    getSecretCache().set(key, direct);
+    getSecretCache().set(key, { source: "env", value: direct });
     return direct;
   }
 
   const cache = getSecretCache();
-  if (cache.has(key)) {
-    return cache.get(key);
+  const cached = cache.get(key);
+  if (cached?.source === "env") {
+    cache.delete(key);
+  } else if (cached?.source === "db") {
+    return cached.value;
   }
 
-  const record = await db.setting.findUnique({ where: { key: getSecretSettingKey(key) }, select: { value: true } });
+  if (isSecretDatabaseUnavailable()) {
+    return undefined;
+  }
+
+  let record: { value: string } | null;
+  try {
+    record = await db.setting.findUnique({ where: { key: getSecretSettingKey(key) }, select: { value: true } });
+  } catch (error) {
+    if (isPrismaUnavailableError(error)) {
+      markSecretDatabaseUnavailable();
+      return undefined;
+    }
+    throw error;
+  }
+
+  clearSecretDatabaseUnavailable();
+
   if (!record?.value) {
     return undefined;
   }
@@ -163,7 +217,7 @@ export async function getSecretValue(key: ManagedSecretEnvKey): Promise<string |
   try {
     const payload = JSON.parse(record.value) as StoredEncryptedSecret;
     const decrypted = decryptSecret(key, payload);
-    cache.set(key, decrypted);
+    cache.set(key, { source: "db", value: decrypted });
     return decrypted;
   } catch {
     return undefined;
@@ -179,11 +233,17 @@ export function getSecretValueSync(key: ManagedSecretEnvKey): string | undefined
   const snapshot = getEnvSnapshot();
   const direct = snapshot[key]?.trim();
   if (direct) {
-    getSecretCache().set(key, direct);
+    getSecretCache().set(key, { source: "env", value: direct });
     return direct;
   }
 
-  return getSecretCache().get(key);
+  const cached = getSecretCache().get(key);
+  if (cached?.source === "env") {
+    getSecretCache().delete(key);
+    return undefined;
+  }
+
+  return cached?.value;
 }
 
 export function hasSecretValueSync(key: ManagedSecretEnvKey): boolean {
