@@ -116,7 +116,8 @@ describe("${pascalName}Plugin", () => {
 // - replace the ping tool with real workflow-specific tools
 // - add failure-path tests for missing/invalid arguments
 // - run developer_check_tool_naming and developer_check_mcp_contract_impact
-// - review tests/mcp/contracts.test.ts if this plugin will be added to the builtin registry
+// - review tests/mcp/contracts.test.ts if this plugin changes MCP tools, prompts, or resources
+// - review tests/mcp/http-route.test.ts if this plugin needs MCP prompt/resource reads or route-visible behavior changes
 `);
 
 console.log(`Created ${pluginFile}`);

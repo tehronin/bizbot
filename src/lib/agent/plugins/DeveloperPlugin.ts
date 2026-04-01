@@ -678,8 +678,8 @@ export const developerPlugin = {
           plugin: plugin.metadata,
           impact: {
             addedTools: inspection.exposure.tools,
-            promptsChanged: false,
-            resourcesChanged: false,
+            promptsChanged: inspection.exposure.notes.some((note) => note.includes("Prompt and resource catalogs are currently server-owned")),
+            resourcesChanged: inspection.exposure.notes.some((note) => note.includes("Prompt and resource catalogs are currently server-owned")),
             notes: inspection.exposure.notes,
           },
           currentCatalog: {

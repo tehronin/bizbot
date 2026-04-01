@@ -451,7 +451,8 @@ export const AUTHORING_CHECKLIST = [
   "Write tool descriptions that explain task, scope, and side effects.",
   "Prefer strict parameter schemas and consider additionalProperties: false for structured inputs.",
   "Add registry and tool exposure tests in tests/plugins/.",
-  "Review tests/mcp/contracts.test.ts if your plugin changes tools/list.",
+  "Review tests/mcp/contracts.test.ts if your work changes tools/list, prompts/list, or resources/list.",
+  "Review tests/mcp/http-route.test.ts when your work changes MCP prompt/resource reads, tool calls, or route-visible behavior.",
   "Use developer_* inspection and preview tools before relying on a new plugin in the runtime.",
 ];
 

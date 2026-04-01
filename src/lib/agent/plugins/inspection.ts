@@ -462,6 +462,7 @@ export function buildSuggestedPluginTests(plugin: InspectablePluginShape): strin
     tests.push(`assert ${tool.name} returns a stable structured result for the happy path`);
   }
 
-  tests.push("review tests/mcp/contracts.test.ts if the plugin changes the MCP tool catalog");
+  tests.push("review tests/mcp/contracts.test.ts if the plugin changes the MCP tool, prompt, or resource catalogs");
+  tests.push("review tests/mcp/http-route.test.ts if the plugin requires MCP prompt/resource reads or route-visible behavior changes");
   return tests;
 }
