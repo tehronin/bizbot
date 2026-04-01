@@ -441,7 +441,7 @@ export async function updateAgenticSetup(input: {
 }): Promise<AgenticSetupPayload> {
   const currentSession = await getStoredSession();
 
-  let nextSession =
+  const nextSession =
     input.action === "reset"
       ? { ...DEFAULT_SESSION }
       : mergeSession(currentSession, input.session);

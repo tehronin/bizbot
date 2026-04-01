@@ -94,15 +94,19 @@ export class FacebookBrowserClient implements SocialClient {
     }
   }
 
-  async reply(_replyToId: string, _content: string): Promise<SocialReply> {
+  async reply(replyToId: string, content: string): Promise<SocialReply> {
+    void replyToId;
+    void content;
     throw new Error("Browser reply not implemented — use Graph API client");
   }
 
-  async getMentions(_limit?: number): Promise<SocialMention[]> {
+  async getMentions(limit?: number): Promise<SocialMention[]> {
+    void limit;
     return []; // Not reliably accessible via browser automation
   }
 
-  async getAnalytics(_postId: string): Promise<EngagementMetrics> {
+  async getAnalytics(postId: string): Promise<EngagementMetrics> {
+    void postId;
     return { likes: 0, replies: 0, shares: 0, impressions: 0 };
   }
 }

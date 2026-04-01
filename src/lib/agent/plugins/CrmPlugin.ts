@@ -78,7 +78,7 @@ export const crmPlugin = {
       name: "crm_get_provider_status",
       description: "Inspect CRM provider availability, active provider selection, and HubSpot stub readiness.",
       parameters: { type: "object", properties: {} },
-      execute: async (_args: CrmProviderStatusArgs) => {
+      execute: async () => {
         const deps = getCrmPluginDeps();
         return {
           activeProvider: deps.getActiveProviderName(),

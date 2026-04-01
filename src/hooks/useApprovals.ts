@@ -19,17 +19,38 @@ export function useApprovals() {
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    fetch("/api/approvals")
-      .then((res) => res.json() as Promise<ApprovalsResponse>)
-      .then((data) => setApprovals(data.approvals ?? data.pendingApprovals ?? []))
-      .finally(() => setLoading(false));
+  const fetchApprovals = useCallback(async (): Promise<ApprovalRecord[]> => {
+    const response = await fetch("/api/approvals");
+    const data = (await response.json()) as ApprovalsResponse;
+    return data.approvals ?? data.pendingApprovals ?? [];
   }, []);
 
+  const reload = useCallback(() => {
+    setLoading(true);
+    fetchApprovals()
+      .then((nextApprovals) => setApprovals(nextApprovals))
+      .finally(() => setLoading(false));
+  }, [fetchApprovals]);
+
   useEffect(() => {
-    reload();
-  }, [reload]);
+    let cancelled = false;
+
+    void fetchApprovals()
+      .then((nextApprovals) => {
+        if (!cancelled) {
+          setApprovals(nextApprovals);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchApprovals]);
 
   return { approvals, loading, reload };
 }

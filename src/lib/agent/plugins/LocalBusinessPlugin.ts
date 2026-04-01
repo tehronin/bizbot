@@ -41,7 +41,7 @@ export const localBusinessPlugin = {
       name: "local_business_get_status",
       description: "Inspect Google Business Profile readiness and the latest local dashboard snapshot.",
       parameters: { type: "object", properties: {} },
-      execute: async (_args: LocalBusinessStatusArgs) => ({
+      execute: async () => ({
         configured: await getLocalBusinessPluginDeps().isConfigured(),
         dashboard: await getLocalBusinessPluginDeps().getDashboard(false),
       }),
@@ -63,7 +63,7 @@ export const localBusinessPlugin = {
       name: "local_business_sync_reviews",
       description: "Sync Google Business reviews into the local dashboard store.",
       parameters: { type: "object", properties: {} },
-      execute: async (_args: LocalBusinessStatusArgs) => ({
+      execute: async () => ({
         reviews: await getLocalBusinessPluginDeps().syncReviews(),
       }),
     } satisfies ToolDefinition<LocalBusinessStatusArgs, { reviews: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["syncReviews"]>> }>)),
@@ -71,7 +71,7 @@ export const localBusinessPlugin = {
       name: "local_business_sync_posts",
       description: "Sync Google Business posts into the local dashboard store.",
       parameters: { type: "object", properties: {} },
-      execute: async (_args: LocalBusinessStatusArgs) => ({
+      execute: async () => ({
         posts: await getLocalBusinessPluginDeps().syncPosts(),
       }),
     } satisfies ToolDefinition<LocalBusinessStatusArgs, { posts: Awaited<ReturnType<ReturnType<typeof getLocalBusinessPluginDeps>["syncPosts"]>> }>)),

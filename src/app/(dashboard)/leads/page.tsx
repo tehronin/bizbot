@@ -2,7 +2,7 @@
 
 import { PaginationControls } from "@/components/layout/PaginationControls";
 import { usePagination } from "@/hooks/usePagination";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 type LeadStage = "LEAD" | "QUALIFIED" | "CONTACTED" | "CONVERTED" | "LOST";
 type TreeLeadStage = "" | LeadStage;
@@ -446,6 +446,12 @@ export default function LeadsPage() {
     setCrmActivities(data.activities ?? []);
   }
 
+  const loadLeadActivities = useEffectEvent((contactId: string, filters: ActivityFilters) => {
+    void loadActivities(contactId, filters).catch((loadError) => {
+      setError(String(loadError));
+    });
+  });
+
   async function saveCrmContact(contactId: string, updates: {
     summary?: string | null;
     score?: number;
@@ -668,9 +674,7 @@ export default function LeadsPage() {
       return;
     }
 
-    void loadActivities(selectedLeadId, activityFilters).catch((loadError) => {
-      setError(String(loadError));
-    });
+    loadLeadActivities(selectedLeadId, activityFilters);
   }, [selectedLeadId, activityFilters]);
 
   const selectedTree = trees.find((tree) => tree.id === selectedTreeId) ?? null;

@@ -16,7 +16,7 @@ import { createPluginRegistry } from "@/lib/agent/plugins/registry";
 import { canProfileUseTool } from "@/lib/agent/profiles";
 import { getCurrentBuilderProjectOverview } from "@/lib/builder/orchestrator";
 import { listBuilderProjects } from "@/lib/builder/projects";
-import { getMcpClientPrompts, getMcpClientResources, getMcpClientStatus, getMcpClientToolCatalog, getMcpClientTools } from "@/lib/mcp/client";
+import { getMcpClientStatus, getMcpClientToolCatalog, getMcpClientTools } from "@/lib/mcp/client";
 import { inspectPluginRegistry } from "@/lib/agent/plugins/inspection";
 import { getToolAnnotations, getToolDescription, getToolTitle, MCP_AGENT_PROFILE, MCP_BLOCKED_TOOLS } from "@/lib/mcp/tool-presentation";
 import {

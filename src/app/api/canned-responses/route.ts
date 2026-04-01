@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import { ensureDefaultCannedResponseTree, listCannedResponseTrees } from "@/lib/inbox/canned-responses";
 
 export async function GET() {
@@ -6,7 +5,7 @@ export async function GET() {
   return Response.json({ trees });
 }
 
-export async function POST(_req: NextRequest) {
+export async function POST() {
   const tree = await ensureDefaultCannedResponseTree();
   return Response.json({ tree }, { status: 201 });
 }

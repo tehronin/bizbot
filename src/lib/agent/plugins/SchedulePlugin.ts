@@ -53,7 +53,7 @@ export const schedulePlugin = {
       name: "schedule_list",
       description: "List all scheduled posts.",
       parameters: { type: "object", properties: {} },
-      execute: async (_args: ScheduleListArgs) => {
+      execute: async () => {
         const posts = await db.post.findMany({
           where: { status: "SCHEDULED" },
           include: { platform: true },

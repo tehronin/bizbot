@@ -276,23 +276,47 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then((res) => res.json() as Promise<SettingsResponse>)
-      .then((data) => {
-        setSettings(data.settings ?? []);
+    let cancelled = false;
+
+    async function loadSettingsPage(): Promise<void> {
+      try {
+        const [settingsResponse, runtimeResponse] = await Promise.all([
+          fetch("/api/settings"),
+          fetch("/api/llm"),
+        ]);
+
+        const [settingsData, runtimeData] = await Promise.all([
+          settingsResponse.json() as Promise<SettingsResponse>,
+          runtimeResponse.json() as Promise<LlmStatusResponse>,
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setSettings(settingsData.settings ?? []);
         setPublicEnv((current) => {
           const next = { ...current };
-          for (const [key, value] of Object.entries(data.env ?? {})) {
+          for (const [key, value] of Object.entries(settingsData.env ?? {})) {
             if (isPublicEnvKey(key)) {
               next[key] = value;
             }
           }
           return next;
         });
-      })
-      .catch(() => {});
+        setRuntime(runtimeData);
+      } catch {
+        if (!cancelled) {
+          // Ignore initial settings bootstrap failures; the page remains editable.
+        }
+      }
+    }
 
-    void refreshRuntime().catch(() => {});
+    void loadSettingsPage();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function save(): Promise<void> {

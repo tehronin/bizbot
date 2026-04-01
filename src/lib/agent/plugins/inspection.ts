@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { JsonObject, RegisteredToolDefinition, ToolParametersSchema } from "@/lib/agent/tools";
+import type { JsonObject, ToolParametersSchema } from "@/lib/agent/tools";
 import type { BizBotPlugin, BizBotPluginMetadata } from "@/lib/agent/plugins/contracts";
 
 export type InspectionSeverity = "error" | "warning" | "suggestion";

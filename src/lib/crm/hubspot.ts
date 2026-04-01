@@ -29,7 +29,7 @@ interface HubSpotSearchResponse {
   results?: HubSpotContactRecord[];
 }
 
-interface HubSpotContactResponse extends HubSpotContactRecord {}
+type HubSpotContactResponse = HubSpotContactRecord;
 
 interface HubSpotContactMapRecord {
   hubspotContactId: string;

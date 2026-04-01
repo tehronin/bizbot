@@ -2,7 +2,7 @@
 
 import { PaginationControls } from "@/components/layout/PaginationControls";
 import { usePagination } from "@/hooks/usePagination";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 
 interface BuilderConfig {
   workspaceRoot: string;
@@ -265,7 +265,7 @@ export default function BuilderPage() {
 
   async function refresh(nextSelectedProjectId?: string | null): Promise<void> {
     setError(null);
-    const loadedStatus = await loadStatus();
+    await loadStatus();
     const loadedProjects = await loadProjects(nextSelectedProjectId);
     const projectId = nextSelectedProjectId ?? selectedProjectId ?? loadedProjects[0]?.id ?? null;
     if (projectId) {
@@ -275,8 +275,14 @@ export default function BuilderPage() {
     }
   }
 
+  const refreshBuilderData = useEffectEvent((nextSelectedProjectId?: string | null) => {
+    void refresh(nextSelectedProjectId).catch((nextError) => {
+      setError(nextError instanceof Error ? nextError.message : "Failed to refresh builder data.");
+    });
+  });
+
   useEffect(() => {
-    void refresh();
+    refreshBuilderData();
   }, []);
 
   useEffect(() => {
@@ -313,9 +319,7 @@ export default function BuilderPage() {
     }
 
     const interval = window.setInterval(() => {
-      void refresh(selectedProjectId).catch((nextError) => {
-        setError(nextError instanceof Error ? nextError.message : "Failed to refresh builder progress.");
-      });
+      refreshBuilderData(selectedProjectId);
     }, 2000);
 
     return () => window.clearInterval(interval);
@@ -582,7 +586,7 @@ export default function BuilderPage() {
                   <textarea value={taskRequest} onChange={(event) => setTaskRequest(event.target.value)} rows={4} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} placeholder="Describe the next Builder step for this project." />
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                  Builder tasks now run through BizBot's native in-process builder operator. The CLI profile section below remains available only for direct adapter prompts.
+                  Builder tasks now run through BizBot&apos;s native in-process builder operator. The CLI profile section below remains available only for direct adapter prompts.
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <button disabled={saving || !taskRequest.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/tasks`, { request: taskRequest })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>

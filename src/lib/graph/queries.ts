@@ -6,7 +6,7 @@
  */
 
 import { runRead, runWrite } from "./client";
-import type { JsonObject, JsonValue } from "@/lib/agent/tools";
+import type { JsonObject } from "@/lib/agent/tools";
 
 interface GraphSearchResult extends JsonObject {
   type: string;

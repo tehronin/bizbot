@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import {
   MEMORY_FACT_CATEGORIES,
   MEMORY_FACT_CATEGORY_LABELS,
@@ -94,8 +94,12 @@ export function UserMemoryPanel({ userId = DEFAULT_AGENT_USER_ID }: { userId?: s
     }
   }
 
-  useEffect(() => {
+  const loadUserFacts = useEffectEvent(() => {
     void loadFacts();
+  });
+
+  useEffect(() => {
+    loadUserFacts();
   }, [userId]);
 
   const filteredFacts = useMemo(() => {

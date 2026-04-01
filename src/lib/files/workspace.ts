@@ -7,7 +7,7 @@
 
 import fs from "fs";
 import path from "path";
-import { getDefaultWorkspaceDirname, getAppHomeDir, resolveFromAppHome } from "@/lib/runtime-paths";
+import { getDefaultWorkspaceDirname, resolveFromAppHome } from "@/lib/runtime-paths";
 
 function getWorkspaceRoot(): string {
   const envPath = process.env.BIZBOT_WORKSPACE_PATH?.trim();

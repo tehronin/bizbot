@@ -348,29 +348,6 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
     && stored?.secretPresence.GOOGLE_AI_API_KEY,
   );
 
-  async function applyGoogleQuickStart(): Promise<void> {
-    if (!session) {
-      return;
-    }
-
-    const nextSession: AgenticSetupSession = {
-      ...session,
-      step: "llm",
-      status: "in_progress",
-      selectedChatProvider: "google",
-      selectedEmbeddingProvider: "google",
-      useCases: {
-        ...session.useCases,
-        knowledge: false,
-      },
-      confirmedLocalChatProvider: false,
-      confirmedLocalEmbeddingProvider: false,
-      skipped: [...session.skipped.filter((entry) => entry !== ADVANCED_PROVIDER_FLAG), QUICK_START_GOOGLE_FLAG],
-    };
-
-    await persist(nextSession, "resume");
-  }
-
   async function activateCoreAgent(): Promise<void> {
     if (!session || !form.googleApiKey.trim()) {
       setError("Add a Google AI API key to activate the core agent.");

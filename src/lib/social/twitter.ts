@@ -196,7 +196,8 @@ export class TwitterClient implements SocialClient {
       .slice(0, limit);
   }
 
-  async sendDirectMessage(recipientId: string, content: string, _replyToId?: string): Promise<SocialReply> {
+  async sendDirectMessage(recipientId: string, content: string, replyToId?: string): Promise<SocialReply> {
+    void replyToId;
     const client = await this.getClient();
     const result = await client.v1.sendDm({
       recipient_id: recipientId,

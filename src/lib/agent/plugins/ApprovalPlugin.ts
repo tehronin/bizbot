@@ -48,7 +48,7 @@ export const approvalPlugin = {
       name: "approval_get_pending",
       description: "Get all posts waiting for approval.",
       parameters: { type: "object", properties: {} },
-      execute: async (_args: ApprovalPendingArgs) => {
+      execute: async () => {
         const approvals = await db.postApproval.findMany({
           where: { status: "PENDING" },
           include: { post: { include: { platform: true } } },

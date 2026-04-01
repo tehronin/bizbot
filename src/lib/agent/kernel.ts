@@ -20,7 +20,6 @@ import {
   ToolParametersSchema,
   ToolPropertySchema,
   ToolCall,
-  ToolExecutionResult,
   isJsonObject,
   isJsonValue,
   parseToolArguments,

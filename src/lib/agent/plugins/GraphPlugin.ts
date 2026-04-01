@@ -1,6 +1,6 @@
 /** GraphPlugin — Query and update the Memgraph knowledge graph. */
 
-import { upsertTopic, upsertEntity, linkEntityToTopic, searchGraph, getContextForPost } from "@/lib/graph/queries";
+import { upsertTopic, upsertEntity, searchGraph, getContextForPost } from "@/lib/graph/queries";
 import { defineTool, registerTool, type JsonObject, type ToolDefinition } from "@/lib/agent/tools";
 
 interface TopicArgs {

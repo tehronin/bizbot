@@ -52,7 +52,7 @@ export const commercePlugin = {
       name: "commerce_get_status",
       description: "Inspect the local commerce catalog and order pipeline status.",
       parameters: { type: "object", properties: {} },
-      execute: async (_args: CommerceStatusArgs) => ({
+      execute: async () => ({
         commerce: await getCommerceStatus(),
       }),
     } satisfies ToolDefinition<CommerceStatusArgs, { commerce: Awaited<ReturnType<typeof getCommerceStatus>> }>)),

@@ -231,7 +231,6 @@ export function useChat(): UseChatResult {
   const [activeRun, setActiveRun] = useState<ActiveRunState>(IDLE_ACTIVE_RUN);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isLoadingHistoryConversation, setIsLoadingHistoryConversation] = useState(false);
-  const [hasFreshChat, setHasFreshChat] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   async function loadBootstrap(nextConversationId: string | null, replaceCurrent: boolean): Promise<void> {
@@ -254,7 +253,6 @@ export function useChat(): UseChatResult {
 
     if (replaceCurrent) {
       setMessages(payload.currentConversation ? mapConversationMessages(payload.currentConversation.messages) : []);
-      setHasFreshChat(payload.currentConversationId === null);
       setActiveRun(IDLE_ACTIVE_RUN);
     }
 
@@ -284,7 +282,6 @@ export function useChat(): UseChatResult {
     setIsBootstrapping(true);
     try {
       await loadBootstrap(nextConversationId, true);
-      setHasFreshChat(false);
     } finally {
       setIsBootstrapping(false);
     }
@@ -295,7 +292,6 @@ export function useChat(): UseChatResult {
     setMessages([]);
     setActiveRun(IDLE_ACTIVE_RUN);
     setHistoryConversation(null);
-    setHasFreshChat(true);
     persistSelectedConversationId(null);
   }
 
@@ -348,7 +344,6 @@ export function useChat(): UseChatResult {
     setIsBootstrapping(true);
     try {
       await loadBootstrap(nextConversationId, true);
-      setHasFreshChat(false);
     } finally {
       setIsBootstrapping(false);
     }
@@ -375,7 +370,6 @@ export function useChat(): UseChatResult {
     if (!trimmed) return;
 
     setMessages((current) => [...current, createEntry("user", trimmed)]);
-    setHasFreshChat(false);
 
     startTransition(() => {
       fetch("/api/agent", {

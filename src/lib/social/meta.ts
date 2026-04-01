@@ -258,7 +258,8 @@ export class FacebookClient implements SocialClient {
     return listMetaDirectMessages(await this.getHttp(), getMetaPageId(), "messenger", getMetaPageId(), limit);
   }
 
-  async sendDirectMessage(recipientId: string, content: string, _replyToId?: string): Promise<SocialReply> {
+  async sendDirectMessage(recipientId: string, content: string, replyToId?: string): Promise<SocialReply> {
+    void replyToId;
     const http = await this.getHttp();
     const response = await withRetry(() =>
       http.post(`/${getMetaPageId()}/messages`, {

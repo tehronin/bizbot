@@ -19,18 +19,39 @@ export function usePosts(status?: string) {
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const reload = useCallback(() => {
-    setLoading(true);
+  const fetchPosts = useCallback(async (): Promise<PostRecord[]> => {
     const query = status ? `?status=${status}` : "";
-    fetch(`/api/posts${query}`)
-      .then((res) => res.json() as Promise<PostsResponse>)
-      .then((data) => setPosts(data.posts ?? []))
-      .finally(() => setLoading(false));
+    const response = await fetch(`/api/posts${query}`);
+    const data = (await response.json()) as PostsResponse;
+    return data.posts ?? [];
   }, [status]);
 
+  const reload = useCallback(() => {
+    setLoading(true);
+    fetchPosts()
+      .then((nextPosts) => setPosts(nextPosts))
+      .finally(() => setLoading(false));
+  }, [fetchPosts]);
+
   useEffect(() => {
-    reload();
-  }, [reload]);
+    let cancelled = false;
+
+    void fetchPosts()
+      .then((nextPosts) => {
+        if (!cancelled) {
+          setPosts(nextPosts);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchPosts]);
 
   return { posts, loading, reload };
 }

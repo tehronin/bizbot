@@ -1,7 +1,7 @@
 import type { BuilderPackageManager } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { getBuilderProjectOverview } from "@/lib/builder/orchestrator";
-import { deleteBuilderProject, getBuilderProject, listBuilderRuns, updateBuilderProject } from "@/lib/builder/projects";
+import { deleteBuilderProject, updateBuilderProject } from "@/lib/builder/projects";
 
 function parsePackageManager(value: unknown): BuilderPackageManager | undefined {
   return value === "PNPM" || value === "NPM" ? value : undefined;

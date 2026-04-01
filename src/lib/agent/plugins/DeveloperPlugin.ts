@@ -1,6 +1,6 @@
 /** DeveloperPlugin — Inspect BizBot runtime queues, jobs, memories, and conversations. */
 
-import type { JsonObject, JsonValue, ToolParametersSchema } from "@/lib/agent/tools";
+import type { JsonObject, ToolParametersSchema } from "@/lib/agent/tools";
 import {
   enqueueAgentHeartbeat,
   getAgentWorkerStatus,
@@ -263,7 +263,7 @@ export const developerPlugin = {
       name: "developer_get_worker_status",
       description: "Inspect BullMQ heartbeat worker status, scheduler state, and queue counts.",
       parameters: { type: "object", properties: {} },
-      execute: async (_args: WorkerStatusArgs) => ({
+      execute: async () => ({
         worker: await getAgentWorkerStatus(),
       }),
     } satisfies ToolDefinition<WorkerStatusArgs, { worker: Awaited<ReturnType<typeof getAgentWorkerStatus>> }>)),
