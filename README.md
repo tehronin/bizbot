@@ -285,6 +285,7 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 - Runtime readiness surface for LLM, CRM, MCP, Redis, Memgraph, and provider config
 - Explicit agent-LLM role and embedding-role selectors with provider readiness state
 - Environment-backed configuration visibility
+- Knowledge ingest dashboard for local document upload, inventory, skip/index status, manual reindex, chunk preview, and in-panel preview filtering
 - Explicit user memory panel for seeding, editing, filtering, and forgetting durable facts
 - Builder workspace, preset, allowlist, and optional CLI adapter controls
 
@@ -465,6 +466,13 @@ BizBot now maintains two distinct long-term memory paths:
 
 The explicit memory layer is user-scoped, durable, relational, typed, and injected into the system prompt as a compact `[User Memory]` block. It is separate from graph retrieval, document retrieval, and semantic recall.
 
+Local document retrieval is now operator-visible in Settings instead of being a hidden background path.
+
+- The knowledge folder is still the canonical local docs source under the configured workspace path.
+- Supported docs can be uploaded directly from Settings, where operators can also inspect indexed, pending, and skipped files.
+- The knowledge panel exposes manual reindex actions, upload rejection feedback, and per-file chunk preview with local search and match navigation.
+- Retrieval remains the same bounded text RAG path under the hood: supported local files are chunked, embedded into the `Memory` table, and recalled into prompt context as company docs.
+
 The runtime now threads `userId` through the public agent API, delegated runs, tool execution context, and MCP fallback execution so both memory layers stay scoped consistently. When no user id is supplied, the runtime falls back to the local desktop default user.
 
 Operators can manage explicit memory in three places:
@@ -528,6 +536,7 @@ Compatibility redirects are retained at the legacy `/api/google-business/*` path
 - `/api/canned-responses`
 - `/api/canned-responses/[id]`
 - `/api/files`
+- `/api/knowledge`
 - `/api/leads`
 - `/api/leads/[id]`
 - `/api/settings`
@@ -637,6 +646,7 @@ Copy `.env.example` and fill in only the providers you actually intend to use.
 | `BIZBOT_AGENT_HEARTBEAT_SECONDS`           | Worker interval                          |
 | `BIZBOT_KNOWLEDGE_ENABLED`                 | Enable knowledge indexing                |
 | `BIZBOT_KNOWLEDGE_PATH`                    | Knowledge folder path                    |
+| `BIZBOT_WORKSPACE_PATH`                    | Local workspace root for files and docs  |
 | `BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY` | Process webhook inbox items immediately  |
 
 The intended production split is Google for embeddings and MiniMax for the main agent/tool-calling LLM. Saving credentials only makes a provider available; operators still explicitly choose the active agent role in Settings or onboarding.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { KnowledgePanel } from "@/components/settings/KnowledgePanel";
 import { UserMemoryPanel } from "@/components/settings/UserMemoryPanel";
 
 interface SettingRecord {
@@ -258,6 +259,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingRecord[]>([]);
   const [runtime, setRuntime] = useState<LlmStatusResponse | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [knowledgeRefreshNonce, setKnowledgeRefreshNonce] = useState(0);
 
   async function refreshRuntime(): Promise<void> {
     const response = await fetch("/api/llm");
@@ -314,6 +316,7 @@ export default function SettingsPage() {
       setSecretEnv({ ...EMPTY_SECRETS });
       setSaveState("saved");
       await refreshRuntime();
+      setKnowledgeRefreshNonce((current) => current + 1);
     } catch {
       setSaveState("error");
     }
@@ -766,6 +769,8 @@ export default function SettingsPage() {
         <UserMemoryPanel />
 
         <div className="space-y-6">
+          <KnowledgePanel refreshNonce={knowledgeRefreshNonce} />
+
           <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
             <div className="flex items-center justify-between mb-4">
               <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>runtime status</div>
