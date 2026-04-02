@@ -126,7 +126,7 @@ export function getModelForProvider(provider: LLMProvider): string {
     case "google":
       return process.env.GOOGLE_MODEL ?? "gemini-3-flash-preview";
     case "minimax":
-      return process.env.MINIMAX_MODEL ?? "abab6.5s-chat";
+      return process.env.MINIMAX_MODEL ?? "MiniMax-M2.7";
   }
 }
 

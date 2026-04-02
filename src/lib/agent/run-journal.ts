@@ -159,6 +159,21 @@ export interface UsageLedgerSnapshot {
   entries: UsageLedgerEntry[];
 }
 
+export interface ConversationUsageSummary {
+  conversationId: string | null;
+  runId: string | null;
+  profile: AgentProfile | null;
+  profileLabel: string | null;
+  provider: LLMProvider | null;
+  model: string | null;
+  startedAt: string | null;
+  requestCount: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedPromptTokens: number;
+}
+
 export interface StartAgentRunInput {
   conversationId: string;
   profile: AgentProfile;
@@ -204,8 +219,60 @@ function listRunFiles(): string[] {
     .map((entry) => path.join(root, entry));
 }
 
+function normalizeUsageTotals(record: AgentRunRecord): AgentRunUsageTotals {
+  const usage = record.usage;
+  const promptTokens = usage?.promptTokens ?? 0;
+  const completionTokens = usage?.completionTokens ?? 0;
+  const totalTokens = usage?.totalTokens ?? (promptTokens + completionTokens);
+  const cachedPromptTokens = usage?.cachedPromptTokens ?? 0;
+
+  if (Array.isArray(usage?.rounds)) {
+    return {
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      cachedPromptTokens,
+      rounds: usage.rounds,
+    };
+  }
+
+  // Older journal files stored aggregate usage totals without per-round detail.
+  if (totalTokens > 0 || promptTokens > 0 || completionTokens > 0 || cachedPromptTokens > 0) {
+    return {
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      cachedPromptTokens,
+      rounds: [{
+        round: 1,
+        provider: record.provider,
+        model: record.model,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        cachedPromptTokens,
+      }],
+    };
+  }
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    cachedPromptTokens,
+    rounds: [],
+  };
+}
+
+function normalizeRunRecord(record: AgentRunRecord): AgentRunRecord {
+  return {
+    ...record,
+    usage: normalizeUsageTotals(record),
+  };
+}
+
 function readAllRuns(): AgentRunRecord[] {
-  return listRunFiles().map((filePath) => JSON.parse(fs.readFileSync(filePath, "utf8")) as AgentRunRecord);
+  return listRunFiles().map((filePath) => normalizeRunRecord(JSON.parse(fs.readFileSync(filePath, "utf8")) as AgentRunRecord));
 }
 
 function createUsageLedgerEntryId(day: string, provider: LLMProvider, model: string): string {
@@ -266,7 +333,7 @@ function readRun(runId: string): AgentRunRecord {
     throw new Error(`Agent run not found: ${runId}`);
   }
 
-  return JSON.parse(fs.readFileSync(filePath, "utf8")) as AgentRunRecord;
+  return normalizeRunRecord(JSON.parse(fs.readFileSync(filePath, "utf8")) as AgentRunRecord);
 }
 
 function readRunOrNull(runId: string): AgentRunRecord | null {
@@ -460,6 +527,70 @@ export function getAgentRun(runId: string): AgentRunRecord {
 
 export function listAgentRuns(): AgentRunRecord[] {
   return readAllRuns().sort((left, right) => getRecordTimestamp(right) - getRecordTimestamp(left));
+}
+
+export function getConversationUsageSummary(conversationId: string | null | undefined): ConversationUsageSummary {
+  if (!conversationId) {
+    return {
+      conversationId: null,
+      runId: null,
+      profile: null,
+      profileLabel: null,
+      provider: null,
+      model: null,
+      startedAt: null,
+      requestCount: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cachedPromptTokens: 0,
+    };
+  }
+
+  const runs = listAgentRuns().filter((record) => record.conversationId === conversationId);
+  const latestRun = runs[0];
+
+  if (!latestRun) {
+    return {
+      conversationId,
+      runId: null,
+      profile: null,
+      profileLabel: null,
+      provider: null,
+      model: null,
+      startedAt: null,
+      requestCount: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cachedPromptTokens: 0,
+    };
+  }
+
+  const totals = runs.reduce((accumulator, record) => ({
+    requestCount: accumulator.requestCount + record.usage.rounds.length,
+    promptTokens: accumulator.promptTokens + record.usage.promptTokens,
+    completionTokens: accumulator.completionTokens + record.usage.completionTokens,
+    totalTokens: accumulator.totalTokens + record.usage.totalTokens,
+    cachedPromptTokens: accumulator.cachedPromptTokens + record.usage.cachedPromptTokens,
+  }), {
+    requestCount: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    cachedPromptTokens: 0,
+  });
+
+  return {
+    conversationId,
+    runId: latestRun.runId,
+    profile: latestRun.profile,
+    profileLabel: latestRun.profileLabel,
+    provider: latestRun.provider,
+    model: latestRun.model,
+    startedAt: latestRun.startedAt,
+    ...totals,
+  };
 }
 
 export function getUsageLedgerSnapshot(): UsageLedgerSnapshot {

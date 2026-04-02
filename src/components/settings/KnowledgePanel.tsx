@@ -361,9 +361,9 @@ export function KnowledgePanel({ refreshNonce = 0 }: { refreshNonce?: number }) 
   }
 
   return (
-    <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
+    <section className="border p-4 space-y-4 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0 flex-1">
           <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>knowledge ingest</div>
           <div className="text-sm mt-2" style={{ color: "var(--text-primary)" }}>
             Manage the local knowledge folder, upload supported text docs, and force reindexing when operators need retrieval to catch up.
@@ -372,13 +372,13 @@ export function KnowledgePanel({ refreshNonce = 0 }: { refreshNonce?: number }) 
             Supported types: {ACCEPTED_FILE_TYPES.replaceAll(",", ", ")}.
           </div>
           {dashboard?.summary ? (
-            <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs mt-2 leading-6 break-all" style={{ color: "var(--text-dim)" }}>
               Root: {dashboard.summary.absolutePath}
             </div>
           ) : null}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap shrink-0">
           <div className="text-xs uppercase tracking-[0.18em]" style={{ color: panelState === "error" ? "var(--danger)" : panelState === "saving" ? "var(--accent)" : "var(--text-dim)" }}>
             {panelState}
           </div>

@@ -8,16 +8,40 @@ import { db } from "@/lib/db";
 import { readEnv, writeEnv, maskEnvValues } from "@/lib/env";
 import { filterVisibleSettings, saveEncryptedSecrets } from "@/lib/runtime-secrets";
 
+const LEGACY_MINIMAX_MODEL = "abab6.5s-chat";
+const DEFAULT_MINIMAX_MODEL = "MiniMax-M2.7";
+
 function applyEnvUpdatesToProcessEnv(env: Record<string, string>): void {
   for (const [key, value] of Object.entries(env)) {
     process.env[key] = value;
   }
 }
 
+function normalizeEnvSettings(env: Record<string, string>): { env: Record<string, string>; changed: boolean } {
+  if (env.MINIMAX_MODEL !== LEGACY_MINIMAX_MODEL) {
+    return { env, changed: false };
+  }
+
+  return {
+    env: {
+      ...env,
+      MINIMAX_MODEL: DEFAULT_MINIMAX_MODEL,
+    },
+    changed: true,
+  };
+}
+
 export async function GET() {
   const settings = filterVisibleSettings(await db.setting.findMany());
   const raw = await readEnv();
-  return Response.json({ settings, env: maskEnvValues(raw) });
+  const normalized = normalizeEnvSettings(raw);
+
+  if (normalized.changed) {
+    await writeEnv(normalized.env);
+    applyEnvUpdatesToProcessEnv(normalized.env);
+  }
+
+  return Response.json({ settings, env: maskEnvValues(normalized.env) });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -40,9 +64,10 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (body.env) {
-      await writeEnv(body.env);
-      applyEnvUpdatesToProcessEnv(body.env);
-      await saveEncryptedSecrets(body.env);
+      const normalized = normalizeEnvSettings(body.env);
+      await writeEnv(normalized.env);
+      applyEnvUpdatesToProcessEnv(normalized.env);
+      await saveEncryptedSecrets(normalized.env);
     }
 
     return Response.json({ updated: true });

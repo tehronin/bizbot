@@ -4,8 +4,10 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatWorkspaceContent } from "@/components/chat/ChatWorkspace";
-import type { ChatConversationDetail, ChatConversationSummary } from "@/lib/chat/types";
+import type { ChatConversationDetail, ChatConversationHistoryFilters, ChatConversationPagination, ChatConversationSummary } from "@/lib/chat/types";
 import type { UseChatResult } from "@/hooks/useChat";
+
+const PAGE_SIZE = 6;
 
 vi.mock("@/components/chat/AgenticSetupDrawer", () => ({
   AgenticSetupDrawer: () => null,
@@ -43,10 +45,29 @@ function createDetail(overrides?: Partial<ChatConversationDetail>): ChatConversa
 
 function Harness() {
   const [conversationId, setConversationId] = useState<string | null>("active-1");
-  const [recentConversations, setRecentConversations] = useState<ChatConversationSummary[]>([
+  const [currentConversation, setCurrentConversation] = useState<ChatConversationDetail | null>(createDetail({ id: "active-1", label: "Ops triage", title: "Ops triage", archivedAt: null }));
+  const [allRecentConversations, setAllRecentConversations] = useState<ChatConversationSummary[]>([
     createSummary(),
+    createSummary({
+      id: "active-2",
+      title: "Roadmap follow-up",
+      label: "Roadmap follow-up",
+      preview: "Need a sharper archive flow.",
+      updatedAt: "2026-04-01T12:30:00.000Z",
+      lastMessageAt: "2026-04-01T12:30:00.000Z",
+      messageCount: 4,
+    }),
+    ...Array.from({ length: 5 }, (_, index) => createSummary({
+      id: `active-extra-${index + 1}`,
+      title: `Extra active ${index + 1}`,
+      label: `Extra active ${index + 1}`,
+      preview: `Extra active preview ${index + 1}`,
+      updatedAt: `2026-04-0${index + 1}T09:00:00.000Z`,
+      lastMessageAt: `2026-04-0${index + 1}T09:30:00.000Z`,
+      messageCount: index + 1,
+    })),
   ]);
-  const [archivedConversations, setArchivedConversations] = useState<ChatConversationSummary[]>([
+  const [allArchivedConversations, setAllArchivedConversations] = useState<ChatConversationSummary[]>([
     createSummary({
       id: "archived-1",
       title: null,
@@ -55,46 +76,191 @@ function Harness() {
       archivedAt: "2026-04-01T13:00:00.000Z",
       lastMessageAt: "2026-04-01T11:05:00.000Z",
     }),
+    ...Array.from({ length: 6 }, (_, index) => createSummary({
+      id: `archived-extra-${index + 1}`,
+      title: `Archived extra ${index + 1}`,
+      label: `Archived extra ${index + 1}`,
+      preview: `Archived preview ${index + 1}`,
+      archivedAt: `2026-03-0${index + 1}T13:00:00.000Z`,
+      lastMessageAt: `2026-03-0${index + 1}T11:05:00.000Z`,
+    })),
   ]);
+  const [historyFilters, setHistoryFilters] = useState<ChatConversationHistoryFilters>({ search: "", from: null, to: null });
+  const [recentPage, setRecentPage] = useState(1);
+  const [archivedPage, setArchivedPage] = useState(1);
   const [historyConversation, setHistoryConversation] = useState<ChatConversationDetail | null>(null);
+
+  function applyFilters(items: ChatConversationSummary[]) {
+    return items.filter((entry) => {
+      const matchesSearch = historyFilters.search
+        ? `${entry.label} ${entry.preview ?? ""}`.toLowerCase().includes(historyFilters.search.toLowerCase())
+        : true;
+      const updatedDate = entry.updatedAt.slice(0, 10);
+      const matchesFrom = historyFilters.from ? updatedDate >= historyFilters.from : true;
+      const matchesTo = historyFilters.to ? updatedDate <= historyFilters.to : true;
+      return matchesSearch && matchesFrom && matchesTo;
+    });
+  }
+
+  function buildPagination(items: ChatConversationSummary[], currentPage: number): ChatConversationPagination {
+    const totalItems = items.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+    return {
+      currentPage: Math.min(currentPage, totalPages),
+      pageSize: PAGE_SIZE,
+      totalItems,
+      totalPages,
+    };
+  }
+
+  function slicePage(items: ChatConversationSummary[], pagination: ChatConversationPagination) {
+    const start = (pagination.currentPage - 1) * pagination.pageSize;
+    return items.slice(start, start + pagination.pageSize);
+  }
+
+  const filteredRecent = applyFilters(allRecentConversations);
+  const filteredArchived = applyFilters(allArchivedConversations);
+  const recentPagination = buildPagination(filteredRecent, recentPage);
+  const archivedPagination = buildPagination(filteredArchived, archivedPage);
+  const recentConversations = slicePage(filteredRecent, recentPagination);
+  const archivedConversations = slicePage(filteredArchived, archivedPagination);
+
+  function buildDetail(nextConversationId: string): ChatConversationDetail {
+    const summary = allRecentConversations.find((entry) => entry.id === nextConversationId)
+      ?? allArchivedConversations.find((entry) => entry.id === nextConversationId)
+      ?? createSummary({ id: nextConversationId, label: nextConversationId, title: nextConversationId });
+
+    return createDetail({
+      ...summary,
+      title: summary.title,
+      label: summary.label,
+      preview: summary.preview,
+      archivedAt: summary.archivedAt,
+      lastMessageAt: summary.lastMessageAt,
+      messageCount: summary.messageCount,
+      messages: [
+        { id: `m-${nextConversationId}-1`, role: "USER", content: `Opened ${summary.label}.`, createdAt: summary.createdAt },
+        { id: `m-${nextConversationId}-2`, role: "ASSISTANT", content: `Previewing ${summary.label}.`, createdAt: summary.updatedAt },
+      ],
+    });
+  }
 
   const chat: UseChatResult = {
     messages: [{ id: "entry-1", role: "assistant", content: "Here is the live chat." }],
     conversationId,
+    currentConversation,
     recentConversations,
     archivedConversations,
+    recentPagination,
+    archivedPagination,
+    historyFilters,
     historyConversation,
     isPending: false,
     isBootstrapping: false,
     isLoadingHistoryConversation: false,
-    activeRun: { conversationId, runId: null, profile: null, profileLabel: null, provider: null, model: null },
+    isLoadingHistoryLists: false,
+    modelPricing: {
+      "gpt-4o": {
+        promptUsdPerMillion: 10,
+        completionUsdPerMillion: 20,
+      },
+    },
+    activeRun: {
+      conversationId,
+      runId: "run-live-1",
+      profile: null,
+      profileLabel: null,
+      provider: "openai",
+      model: "gpt-4o",
+      startedAt: "2026-04-01T12:00:00.000Z",
+      requestCount: 3,
+      promptTokens: 120,
+      completionTokens: 45,
+      totalTokens: 165,
+      cachedPromptTokens: 12,
+    },
     sendMessage: vi.fn(async () => undefined),
-    startNewChat: vi.fn(() => setConversationId(null)),
+    startNewChat: vi.fn(() => {
+      setConversationId(null);
+      setCurrentConversation(null);
+    }),
     loadConversation: vi.fn(async (nextConversationId: string) => {
       setConversationId(nextConversationId);
+      setCurrentConversation(buildDetail(nextConversationId));
       setHistoryConversation(null);
     }),
+    archiveConversation: vi.fn(async (nextConversationId: string) => {
+      const archivedSummary = allRecentConversations.find((entry) => entry.id === nextConversationId);
+      if (!archivedSummary) {
+        return;
+      }
+
+      setAllRecentConversations((current) => current.filter((entry) => entry.id !== nextConversationId));
+      setAllArchivedConversations((current) => [
+        {
+          ...archivedSummary,
+          archivedAt: "2026-04-01T14:00:00.000Z",
+        },
+        ...current,
+      ]);
+
+      if (conversationId === nextConversationId) {
+        setConversationId(null);
+        setCurrentConversation(null);
+      }
+
+      if (historyConversation?.id === nextConversationId) {
+        setHistoryConversation(null);
+      }
+    }),
     archiveCurrentConversation: vi.fn(async () => {
-      setArchivedConversations((current) => [
+      setAllArchivedConversations((current) => [
         createSummary({ id: "active-1", title: "Ops triage", archivedAt: "2026-04-01T14:00:00.000Z", preview: "Latest assistant reply" }),
         ...current,
       ]);
-      setRecentConversations([]);
+      setAllRecentConversations((current) => current.filter((entry) => entry.id !== "active-1"));
       setConversationId(null);
+      setCurrentConversation(null);
     }),
-    openHistoryConversation: vi.fn(async () => {
-      setHistoryConversation(createDetail());
+    openHistoryConversation: vi.fn(async (nextConversationId: string) => {
+      setHistoryConversation(buildDetail(nextConversationId));
     }),
-    restoreConversation: vi.fn(async () => {
-      setConversationId("archived-1");
+    restoreConversation: vi.fn(async (nextConversationId: string) => {
+      const restoredSummary = allArchivedConversations.find((entry) => entry.id === nextConversationId);
+      setConversationId(nextConversationId);
+      setCurrentConversation(buildDetail(nextConversationId));
       setHistoryConversation(null);
-      setArchivedConversations([]);
-      setRecentConversations([createSummary({ id: "archived-1", title: null, label: "Archived ops thread", preview: "Thread archived for review." })]);
+      setAllArchivedConversations((current) => current.filter((entry) => entry.id !== nextConversationId));
+      if (restoredSummary) {
+        setAllRecentConversations((current) => [
+          {
+            ...restoredSummary,
+            archivedAt: null,
+            preview: "Thread archived for review.",
+          },
+          ...current,
+        ]);
+      }
     }),
-    deleteConversation: vi.fn(async () => {
-      setArchivedConversations([]);
-      setHistoryConversation(null);
+    deleteConversation: vi.fn(async (nextConversationId: string) => {
+      setAllArchivedConversations((current) => current.filter((entry) => entry.id !== nextConversationId));
+      setAllRecentConversations((current) => current.filter((entry) => entry.id !== nextConversationId));
+      setHistoryConversation((current) => current?.id === nextConversationId ? null : current);
+      setConversationId((current) => current === nextConversationId ? null : current);
+      setCurrentConversation((current) => current?.id === nextConversationId ? null : current);
     }),
+    applyHistoryFilters: vi.fn(async (nextFilters: ChatConversationHistoryFilters) => {
+      setHistoryFilters(nextFilters);
+      setRecentPage(1);
+      setArchivedPage(1);
+    }),
+    clearHistoryFilters: vi.fn(async () => {
+      setHistoryFilters({ search: "", from: null, to: null });
+      setRecentPage(1);
+      setArchivedPage(1);
+    }),
+    setRecentHistoryPage: (value) => setRecentPage((current) => typeof value === "function" ? value(current) : value),
+    setArchivedHistoryPage: (value) => setArchivedPage((current) => typeof value === "function" ? value(current) : value),
   };
 
   return <ChatWorkspaceContent chat={chat} setupOpen={false} closeSetupHref="/chat" />;
@@ -105,6 +271,7 @@ describe("chat workspace history panel", () => {
     render(<Harness />);
 
     expect(screen.getByText("active conversation")).toBeTruthy();
+    expect(screen.getByText(/tokens/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open history" }));
     expect(screen.getByText("conversation history")).toBeTruthy();
 
@@ -112,35 +279,38 @@ describe("chat workspace history panel", () => {
     expect(screen.getByText("active conversation")).toBeTruthy();
   });
 
-  it("renders archived chats and opens them for viewing without restoring", async () => {
+  it("opens a history conversation for preview without restoring it", async () => {
     render(<Harness />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open history" }));
     expect(screen.getByText("Archived ops thread")).toBeTruthy();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Open" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Preview" })[0]);
 
     await waitFor(() => {
       expect(screen.getByText("History preview")).toBeTruthy();
-      expect(screen.getByText("Thread archived for review.")).toBeTruthy();
+      expect(screen.getByText("Previewing Ops triage.")).toBeTruthy();
     });
 
-    expect(screen.getAllByText("Archived ops thread").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("No archived chats yet.")).toBeNull();
   });
 
-  it("shows archive in the live panel and delete only in archived history", async () => {
+  it("shows archive and delete actions from the history page for active chats", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<Harness />);
 
     expect(screen.getByRole("button", { name: "Archive Chat" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Open history" }));
-    expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
+    const recentSection = screen.getByText("Recent").closest("div");
+    expect(recentSection).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(screen.getByText("No archived chats yet.")).toBeTruthy());
+    fireEvent.click(screen.getAllByRole("button", { name: "Archive" })[0]);
+    await waitFor(() => expect(screen.getByText("8 total")).toBeTruthy());
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[0]);
+    await waitFor(() => expect(screen.queryByText("Roadmap follow-up")).toBeNull());
+
     expect(confirmSpy).toHaveBeenCalled();
   });
 
@@ -148,11 +318,58 @@ describe("chat workspace history panel", () => {
     render(<Harness />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open history" }));
-    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Restore" })[0]);
 
     await waitFor(() => {
       expect(screen.getByText("active conversation")).toBeTruthy();
       expect(screen.getByText("Archived ops thread")).toBeTruthy();
     });
+  });
+
+  it("paginates recent and archived history lists", async () => {
+    render(<Harness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open history" }));
+
+    expect(screen.getAllByText(/page 1 \/ 2/i).length).toBe(2);
+    expect(screen.queryByText("Extra active 5")).toBeNull();
+    expect(screen.queryByText("Archived extra 6")).toBeNull();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "next" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "next" })[1]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Extra active 5")).toBeTruthy();
+      expect(screen.getByText("Archived extra 6")).toBeTruthy();
+    });
+  });
+
+  it("applies shared search and date filters to both history lists", async () => {
+    render(<Harness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open history" }));
+    fireEvent.change(screen.getByPlaceholderText("Search titles, summaries, or messages"), { target: { value: "roadmap" } });
+    fireEvent.change(screen.getByLabelText("updated from"), { target: { value: "2026-04-01" } });
+    fireEvent.change(screen.getByLabelText("updated to"), { target: { value: "2026-04-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Roadmap follow-up")).toBeTruthy();
+      expect(screen.getByText("1 total")).toBeTruthy();
+      expect(screen.getByText("No archived chats match the current filters.")).toBeTruthy();
+    });
+  });
+
+  it("shows live run metrics in the active conversation header", async () => {
+    render(<Harness />);
+
+    expect(screen.getByText(/requests/i)).toBeTruthy();
+    expect(screen.getByText(/tokens/i)).toBeTruthy();
+    expect(screen.getByText(/cost/i)).toBeTruthy();
+    expect(screen.getByText(/165/)).toBeTruthy();
+    expect(screen.getByText(/120/)).toBeTruthy();
+    expect(screen.getByText(/45/)).toBeTruthy();
+    expect(screen.getByText(/\$0\.0021/)).toBeTruthy();
+    expect(screen.getByText(/cached/i)).toBeTruthy();
   });
 });

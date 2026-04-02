@@ -147,7 +147,7 @@ const PUBLIC_ENV_DEFAULTS = {
   EMBEDDING_DIMENSIONS: "1536",
   LLM_TEMPERATURE: "0.2",
   LLM_MAX_TOKENS: "4096",
-  MINIMAX_MODEL: "abab6.5s-chat",
+  MINIMAX_MODEL: "MiniMax-M2.7",
   MINIMAX_BASE_URL: "https://api.minimax.chat/v1",
   BIZBOT_AUTONOMY_PRESET: "approval_all_posts",
   BIZBOT_AGENT_HEARTBEAT_SECONDS: "300",
@@ -519,7 +519,7 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-              Keep the embedding dimension aligned with the model that populated your pgvector column. The current default path expects 1536. For the intended production split, leave embeddings on Google and switch the agent role to MiniMax.
+              Keep the embedding dimension aligned with the model that populated your pgvector column. The current default path expects 1536. For the intended production split, leave embeddings on Google and switch the agent role to MiniMax M2.7.
             </div>
           </div>
         </div>
@@ -815,19 +815,19 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+      <section className="grid gap-6 min-[1700px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <UserMemoryPanel />
 
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0">
           <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-            <div className="flex items-center justify-between gap-4">
-              <div>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="min-w-0 flex-1">
                 <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>usage ledger</div>
                 <div className="mt-2 text-sm" style={{ color: "var(--text-dim)" }}>
                   Review daily token totals, inspect underlying run records, and remove stale journal entries.
                 </div>
               </div>
-              <Link href="/settings/usage-ledger" className="border px-3 py-2 text-xs uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+              <Link href="/settings/usage-ledger" className="border px-3 py-2 text-xs uppercase tracking-[0.16em] shrink-0" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
                 open ledger
               </Link>
             </div>
@@ -837,7 +837,7 @@ export default function SettingsPage() {
 
           <KnowledgePanel refreshNonce={knowledgeRefreshNonce} />
 
-          <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <section className="border p-4 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
             <div className="flex items-center justify-between mb-4">
               <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>runtime status</div>
               <div className="text-xs uppercase tracking-[0.18em]" style={{ color: saveState === "saved" ? "var(--success)" : saveState === "error" ? "var(--danger)" : "var(--text-dim)" }}>
@@ -846,9 +846,9 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-3 text-sm">
               {runtimeCards.map((card) => (
-                <div key={card.label} className="flex justify-between border-b pb-2 gap-4" style={{ borderColor: "var(--border-sub)" }}>
-                  <span style={{ color: "var(--text-muted)" }}>{card.label}</span>
-                  <span>{card.value}</span>
+                <div key={card.label} className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}>
+                  <span className="min-w-0" style={{ color: "var(--text-muted)" }}>{card.label}</span>
+                  <span className="min-w-0 break-all text-right">{card.value}</span>
                 </div>
               ))}
               {runtime?.checks.embedding.error ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{runtime.checks.embedding.error}</div> : null}
@@ -857,17 +857,17 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <section className="border p-4 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
             <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>requirements check</div>
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>LLM configured</span><span>{runtime?.checks.chat.ok ? "yes" : "needs attention"}</span></div>
-              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>CRM provider</span><span>{runtime?.crm.activeProvider ?? publicEnv.CRM_PROVIDER}</span></div>
-              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>MCP HTTP auth</span><span>{runtime?.mcp.authRequired ? "required" : "disabled"}</span></div>
-              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Redis configured</span><span>{runtime?.infrastructure.redisConfigured ? "yes" : "local default"}</span></div>
-              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Memgraph configured</span><span>{runtime?.infrastructure.memgraphConfigured ? "yes" : "no"}</span></div>
-              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Knowledge folder exists</span><span>{runtime?.knowledge.exists ? "yes" : "no"}</span></div>
-              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Meta page IDs present</span><span>{metaPageId && instagramAccountId ? "yes" : "partial"}</span></div>
-              <div className="flex justify-between border-b pb-2" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Webhook immediate processing</span><span>{publicEnv.BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY === "true" ? "enabled" : "disabled"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>LLM configured</span><span className="min-w-0 break-all text-right">{runtime?.checks.chat.ok ? "yes" : "needs attention"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>CRM provider</span><span className="min-w-0 break-all text-right">{runtime?.crm.activeProvider ?? publicEnv.CRM_PROVIDER}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>MCP HTTP auth</span><span className="min-w-0 break-all text-right">{runtime?.mcp.authRequired ? "required" : "disabled"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Redis configured</span><span className="min-w-0 break-all text-right">{runtime?.infrastructure.redisConfigured ? "yes" : "local default"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Memgraph configured</span><span className="min-w-0 break-all text-right">{runtime?.infrastructure.memgraphConfigured ? "yes" : "no"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Knowledge folder exists</span><span className="min-w-0 break-all text-right">{runtime?.knowledge.exists ? "yes" : "no"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Meta page IDs present</span><span className="min-w-0 break-all text-right">{metaPageId && instagramAccountId ? "yes" : "partial"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Webhook immediate processing</span><span className="min-w-0 break-all text-right">{publicEnv.BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY === "true" ? "enabled" : "disabled"}</span></div>
               <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
                 When new product features add operational requirements, this page should be updated alongside the codepath so operators can satisfy them here instead of editing env files blindly.
               </div>

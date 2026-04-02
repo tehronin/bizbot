@@ -1,4 +1,23 @@
+import type { AgentProfile } from "@/lib/agent/profiles";
+import type { LLMProvider } from "@/lib/agent/kernel";
+import type { UsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
+
 export const CHAT_PREVIEW_MAX_CHARS = 80;
+export const DEFAULT_CHAT_HISTORY_PAGE_SIZE = 6;
+export const MAX_CHAT_HISTORY_PAGE_SIZE = 50;
+
+export interface ChatConversationHistoryFilters {
+  search: string;
+  from: string | null;
+  to: string | null;
+}
+
+export interface ChatConversationPagination {
+  currentPage: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
 
 export interface ChatConversationMessage {
   id: string;
@@ -23,11 +42,31 @@ export interface ChatConversationDetail extends ChatConversationSummary {
   messages: ChatConversationMessage[];
 }
 
+export interface ChatConversationUsageSummary {
+  conversationId: string | null;
+  runId: string | null;
+  profile: AgentProfile | null;
+  profileLabel: string | null;
+  provider: LLMProvider | null;
+  model: string | null;
+  startedAt: string | null;
+  requestCount: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedPromptTokens: number;
+}
+
 export interface ChatConversationBootstrap {
   currentConversationId: string | null;
   currentConversation: ChatConversationDetail | null;
+  activeRun: ChatConversationUsageSummary;
+  modelPricing: Record<string, UsageLedgerModelPricing>;
   recentConversations: ChatConversationSummary[];
   archivedConversations: ChatConversationSummary[];
+  recentPagination: ChatConversationPagination;
+  archivedPagination: ChatConversationPagination;
+  historyFilters: ChatConversationHistoryFilters;
 }
 
 export function truncateChatPreview(value: string, maxChars = CHAT_PREVIEW_MAX_CHARS): string {

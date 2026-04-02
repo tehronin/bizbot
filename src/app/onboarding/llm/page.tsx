@@ -10,7 +10,7 @@ const CHAT_MODELS: Record<ChatProvider, string[]> = {
   google: ["gemini-3-flash-preview", "gemini-2.5-flash"],
   openai: ["gpt-4o", "gpt-4.1-mini"],
   anthropic: ["claude-3-5-sonnet-20241022", "claude-3-7-sonnet-latest"],
-  minimax: ["abab6.5s-chat"],
+  minimax: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed", "M2-her", "abab6.5s-chat"],
 };
 
 const EMBEDDING_MODELS: Record<string, string[]> = {
@@ -33,7 +33,7 @@ export default function OnboardingLlmPage() {
     google: "gemini-3-flash-preview",
     openai: "gpt-4o",
     anthropic: "claude-3-5-sonnet-20241022",
-    minimax: "abab6.5s-chat",
+    minimax: "MiniMax-M2.7",
   });
   const [embeddingProvider, setEmbeddingProvider] = useState("google");
   const [embeddingModel, setEmbeddingModel] = useState("gemini-embedding-001");
@@ -180,7 +180,7 @@ export default function OnboardingLlmPage() {
               <div>
                 <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Embedding role</label>
                 <div className="text-xs leading-6 mt-2" style={{ color: "var(--text-dim)" }}>
-                  Controls vector generation only. For the intended split, keep embeddings on Google and use MiniMax for the agent role.
+                  Controls vector generation only. For the intended split, keep embeddings on Google and use MiniMax M2.7 for the agent role.
                 </div>
               </div>
               <div className="text-xs uppercase tracking-[0.16em]" style={{ color: selectedEmbeddingReadiness.ready ? "var(--success)" : "var(--danger)" }}>
@@ -209,7 +209,7 @@ export default function OnboardingLlmPage() {
               ))}
             </select>
             <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-              The recommended split is Google embeddings plus MiniMax for the agent role. Changing credentials does not auto-switch the active role.
+              The recommended split is Google embeddings plus MiniMax M2.7 for the agent role. Changing credentials does not auto-switch the active role.
             </div>
           </div>
         </div>
@@ -232,7 +232,7 @@ export default function OnboardingLlmPage() {
           </div>
         </div>
         <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-          Suggested first-run path: enter Google and MiniMax credentials, keep Embedding role on Google, then explicitly set Agent LLM role to MiniMax once it shows as ready.
+          Suggested first-run path: enter Google and MiniMax credentials, keep Embedding role on Google, then explicitly set Agent LLM role to MiniMax M2.7 once it shows as ready.
         </div>
         <div className="flex gap-3">
           <button onClick={() => void save()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>save</button>

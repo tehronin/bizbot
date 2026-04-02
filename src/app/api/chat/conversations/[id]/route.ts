@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import {
-  deleteArchivedConversation,
+  deleteConversation,
   getConversationDetail,
 } from "@/lib/chat/conversations";
 
@@ -27,7 +27,7 @@ export async function DELETE(
     const { id } = await context.params;
     const userId = req.nextUrl.searchParams.get("userId") ?? undefined;
 
-    await deleteArchivedConversation(id, userId);
+    await deleteConversation(id, userId);
     return Response.json({ deleted: true });
   } catch (error) {
     return Response.json({ error: String(error) }, { status: 400 });

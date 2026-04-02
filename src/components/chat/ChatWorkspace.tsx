@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AgenticSetupDrawer } from "@/components/chat/AgenticSetupDrawer";
+import { PaginationControls } from "@/components/layout/PaginationControls";
 import { useChat, type ChatEntry, type UseChatResult } from "@/hooks/useChat";
 import { MEMORY_FACT_CATEGORIES, type MemoryFactCategory } from "@/lib/agent/memory/facts";
+import { getResolvedUsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
 
 type PanelMode = "chat" | "history";
 
@@ -38,6 +40,19 @@ function formatTimestamp(value: string | null): string {
   }
 
   return new Date(value).toLocaleString();
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatUsd(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  }).format(value);
 }
 
 function HistoryIcon() {
@@ -188,8 +203,43 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   } | null>(null);
   const [memoryState, setMemoryState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [historySearchDraft, setHistorySearchDraft] = useState(chat.historyFilters.search);
+  const [historyFromDraft, setHistoryFromDraft] = useState(chat.historyFilters.from ?? "");
+  const [historyToDraft, setHistoryToDraft] = useState(chat.historyFilters.to ?? "");
 
-  const currentConversation = chat.recentConversations.find((conversation) => conversation.id === chat.conversationId) ?? null;
+  const currentConversation = chat.currentConversation;
+  const hasHistoryFilters = Boolean(chat.historyFilters.search || chat.historyFilters.from || chat.historyFilters.to);
+  const activeRunCostEstimate = useMemo(() => {
+    const pricing = getResolvedUsageLedgerModelPricing(
+      chat.activeRun.model ?? "",
+      chat.activeRun.provider ?? undefined,
+      chat.modelPricing,
+    );
+
+    return ((chat.activeRun.promptTokens / 1_000_000) * pricing.promptUsdPerMillion)
+      + ((chat.activeRun.completionTokens / 1_000_000) * pricing.completionUsdPerMillion);
+  }, [chat.activeRun.completionTokens, chat.activeRun.model, chat.activeRun.promptTokens, chat.activeRun.provider, chat.modelPricing]);
+
+  useEffect(() => {
+    setHistorySearchDraft(chat.historyFilters.search);
+    setHistoryFromDraft(chat.historyFilters.from ?? "");
+    setHistoryToDraft(chat.historyFilters.to ?? "");
+  }, [chat.historyFilters]);
+
+  function paginationRange(page: { currentPage: number; pageSize: number; totalItems: number }) {
+    if (page.totalItems === 0) {
+      return { startItem: 0, endItem: 0 };
+    }
+
+    const startItem = (page.currentPage - 1) * page.pageSize + 1;
+    return {
+      startItem,
+      endItem: Math.min(startItem + page.pageSize - 1, page.totalItems),
+    };
+  }
+
+  const recentRange = paginationRange(chat.recentPagination);
+  const archivedRange = paginationRange(chat.archivedPagination);
 
   async function promoteToMemory(): Promise<void> {
     if (!memoryDraft) {
@@ -221,10 +271,10 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
     }
   }
 
-  async function handleArchiveConversation(): Promise<void> {
+  async function handleArchiveConversation(nextConversationId: string): Promise<void> {
     setActionError(null);
     try {
-      await chat.archiveCurrentConversation();
+      await chat.archiveConversation(nextConversationId);
       setPanelMode("history");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
@@ -261,13 +311,45 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   }
 
   async function handleDeleteConversation(nextConversationId: string): Promise<void> {
-    if (typeof window !== "undefined" && !window.confirm("Delete this archived conversation? This removes it from history.")) {
+    const conversation = chat.recentConversations.find((entry) => entry.id === nextConversationId)
+      ?? chat.archivedConversations.find((entry) => entry.id === nextConversationId)
+      ?? null;
+    const label = conversation?.label ?? "this conversation";
+    const stateLabel = conversation?.archivedAt ? "archived" : "active";
+
+    if (typeof window !== "undefined" && !window.confirm(`Delete ${stateLabel} conversation "${label}"? This removes it from history.`)) {
       return;
     }
 
     setActionError(null);
     try {
       await chat.deleteConversation(nextConversationId);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleApplyHistoryFilters(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setActionError(null);
+    try {
+      await chat.applyHistoryFilters({
+        search: historySearchDraft,
+        from: historyFromDraft || null,
+        to: historyToDraft || null,
+      });
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleClearHistoryFilters(): Promise<void> {
+    setActionError(null);
+    setHistorySearchDraft("");
+    setHistoryFromDraft("");
+    setHistoryToDraft("");
+    try {
+      await chat.clearHistoryFilters();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
     }
@@ -291,15 +373,39 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
         </section>
 
         <section className="border p-4 flex items-center justify-between gap-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="text-xs uppercase tracking-[0.24em] mb-1" style={{ color: "var(--text-muted)" }}>
               {panelMode === "chat" ? "active conversation" : "conversation history"}
             </div>
             <div className="text-sm" style={{ color: "var(--text-primary)" }}>
               {panelMode === "chat"
                 ? (currentConversation?.label ?? "New chat")
-                : "Recent and archived chats"}
+                : "Manage recent and archived chats"}
             </div>
+            {panelMode === "chat" ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs" style={{ color: "var(--text-dim)" }}>
+                <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>requests</span> {formatNumber(chat.activeRun.requestCount)}
+                </div>
+                <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>tokens</span> {formatNumber(chat.activeRun.totalTokens)}
+                </div>
+                <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>prompt</span> {formatNumber(chat.activeRun.promptTokens)}
+                </div>
+                <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>completion</span> {formatNumber(chat.activeRun.completionTokens)}
+                </div>
+                <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>cost</span> {formatUsd(activeRunCostEstimate)}
+                </div>
+                {chat.activeRun.cachedPromptTokens > 0 ? (
+                  <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                    <span style={{ color: "var(--text-muted)" }}>cached</span> {formatNumber(chat.activeRun.cachedPromptTokens)}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -316,7 +422,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
             </button>
             <button
               type="button"
-              onClick={() => void handleArchiveConversation()}
+              onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
               disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
               className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
               style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
@@ -370,39 +476,163 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
               </div>
             </>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] h-full">
-              <div className="space-y-4">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>Recent</div>
-                  <div className="space-y-2">
-                    {chat.recentConversations.length === 0 ? (
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] h-full">
+              <div className="space-y-4 min-w-0">
+                <form onSubmit={(event) => void handleApplyHistoryFilters(event)} className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>history filters</div>
+                      <div className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>Search titles and messages, then narrow both lists by updated date.</div>
+                    </div>
+                    {chat.isLoadingHistoryLists ? (
+                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>refreshing</div>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,180px))_auto]">
+                    <label className="space-y-1.5">
+                      <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>search</span>
+                      <input
+                        aria-label="history search"
+                        value={historySearchDraft}
+                        onChange={(event) => setHistorySearchDraft(event.target.value)}
+                        placeholder="Search titles, summaries, or messages"
+                        className="w-full border px-3 py-2 text-sm"
+                        style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-primary)" }}
+                      />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>updated from</span>
+                      <input
+                        aria-label="updated from"
+                        type="date"
+                        value={historyFromDraft}
+                        onChange={(event) => setHistoryFromDraft(event.target.value)}
+                        className="w-full border px-3 py-2 text-sm"
+                        style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-primary)" }}
+                      />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>updated to</span>
+                      <input
+                        aria-label="updated to"
+                        type="date"
+                        value={historyToDraft}
+                        onChange={(event) => setHistoryToDraft(event.target.value)}
+                        className="w-full border px-3 py-2 text-sm"
+                        style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-primary)" }}
+                      />
+                    </label>
+                    <div className="flex gap-2 items-end">
+                      <button
+                        type="submit"
+                        disabled={chat.isLoadingHistoryLists}
+                        className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleClearHistoryFilters()}
+                        disabled={!hasHistoryFilters && !historySearchDraft && !historyFromDraft && !historyToDraft}
+                        className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>recent chats</div>
+                    <div className="mt-2 text-xl" style={{ color: "var(--text-primary)" }}>{chat.recentPagination.totalItems}</div>
+                    <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{hasHistoryFilters ? "Matching active conversations after filters." : "Active conversations you can preview, open, archive, or delete."}</div>
+                  </div>
+                  <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>archived chats</div>
+                    <div className="mt-2 text-xl" style={{ color: "var(--text-primary)" }}>{chat.archivedPagination.totalItems}</div>
+                    <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{hasHistoryFilters ? "Matching archived conversations after filters." : "Archived conversations remain inspectable, restorable, and deletable."}</div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 2xl:grid-cols-2">
+                  <div className="border p-4 space-y-3 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>Recent</div>
+                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{chat.recentPagination.totalItems} total</div>
+                    </div>
+                    <div className="space-y-2">
+                    {chat.recentPagination.totalItems === 0 ? (
                       <div className="border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
-                        No active chats yet.
+                        {hasHistoryFilters ? "No active chats match the current filters." : "No active chats yet."}
                       </div>
                     ) : chat.recentConversations.map((conversation) => (
                       <div key={conversation.id} className="border p-3" style={{ borderColor: conversation.id === chat.conversationId ? "var(--accent)" : "var(--border)" }}>
                         <div className="text-sm" style={{ color: "var(--text-primary)" }}>{conversation.label}</div>
                         <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{conversation.preview ?? "No messages yet"}</div>
-                        <div className="text-[11px] mt-2" style={{ color: "var(--text-muted)" }}>{formatTimestamp(conversation.lastMessageAt)}</div>
-                        <button
-                          type="button"
-                          onClick={() => void handleSwitchConversation(conversation.id)}
-                          className="mt-3 px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                        >
-                          Open Chat
-                        </button>
+                        <div className="text-[11px] mt-2 flex items-center justify-between gap-3" style={{ color: "var(--text-muted)" }}>
+                          <span>{formatTimestamp(conversation.lastMessageAt)}</span>
+                          <span>{conversation.messageCount} messages</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenArchivedConversation(conversation.id)}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                          >
+                            Preview
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleSwitchConversation(conversation.id)}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                          >
+                            Open Chat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleArchiveConversation(conversation.id)}
+                            disabled={chat.isPending || chat.isBootstrapping}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                          >
+                            Archive
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteConversation(conversation.id)}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     ))}
+                    </div>
+                    <PaginationControls
+                      currentPage={chat.recentPagination.currentPage}
+                      totalPages={chat.recentPagination.totalPages}
+                      startItem={recentRange.startItem}
+                      endItem={recentRange.endItem}
+                      totalItems={chat.recentPagination.totalItems}
+                      setCurrentPage={chat.setRecentHistoryPage}
+                    />
                   </div>
-                </div>
 
-                <div>
-                  <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>Archived</div>
-                  <div className="space-y-2">
-                    {chat.archivedConversations.length === 0 ? (
+                  <div className="border p-4 space-y-3 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>Archived</div>
+                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{chat.archivedPagination.totalItems} total</div>
+                    </div>
+                    <div className="space-y-2">
+                    {chat.archivedPagination.totalItems === 0 ? (
                       <div className="border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
-                        No archived chats yet.
+                        {hasHistoryFilters ? "No archived chats match the current filters." : "No archived chats yet."}
                       </div>
                     ) : chat.archivedConversations.map((conversation) => (
                       <div key={conversation.id} className="border p-3" style={{ borderColor: chat.historyConversation?.id === conversation.id ? "var(--accent)" : "var(--border)" }}>
@@ -418,7 +648,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                             className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
                             style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
                           >
-                            Open
+                            Preview
                           </button>
                           <button
                             type="button"
@@ -439,13 +669,22 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                         </div>
                       </div>
                     ))}
+                    </div>
+                    <PaginationControls
+                      currentPage={chat.archivedPagination.currentPage}
+                      totalPages={chat.archivedPagination.totalPages}
+                      startItem={archivedRange.startItem}
+                      endItem={archivedRange.endItem}
+                      totalItems={chat.archivedPagination.totalItems}
+                      setCurrentPage={chat.setArchivedHistoryPage}
+                    />
                   </div>
                 </div>
               </div>
 
-              <div className="border p-4 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+              <div className="border p-4 overflow-auto min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
                 {chat.isLoadingHistoryConversation ? (
-                  <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading conversation…</div>
+                  <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading conversation...</div>
                 ) : chat.historyConversation ? (
                   <div className="space-y-4">
                     <div>
@@ -454,6 +693,50 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       <div className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>
                         {chat.historyConversation.archivedAt ? `Archived ${formatTimestamp(chat.historyConversation.archivedAt)}` : "Active"}
                       </div>
+                      <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>
+                        {chat.historyConversation.messageCount} messages · last updated {formatTimestamp(chat.historyConversation.lastMessageAt)}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {chat.historyConversation.archivedAt ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void handleRestoreConversation(chat.historyConversation!.id)}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteConversation(chat.historyConversation!.id)}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void handleSwitchConversation(chat.historyConversation!.id)}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                          >
+                            Open Chat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteConversation(chat.historyConversation!.id)}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
                     </div>
                     <MessageGroups messages={chat.historyConversation.messages.map((message) => (
                       message.role === "USER"
@@ -467,7 +750,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   </div>
                 ) : (
                   <div className="text-sm" style={{ color: "var(--text-muted)" }}>
-                    Select an archived chat to inspect it without restoring it.
+                    Select a recent or archived chat to preview it, then archive, restore, open, or delete it from here.
                   </div>
                 )}
               </div>

@@ -215,9 +215,9 @@ export function UserMemoryPanel({ userId = DEFAULT_AGENT_USER_ID }: { userId?: s
   }
 
   return (
-    <section id="explicit-user-memory" className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-2">
+    <section id="explicit-user-memory" className="border p-4 space-y-4 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-2 min-w-0 flex-1">
           <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>explicit user memory</div>
           <div className="text-sm" style={{ color: "var(--text-dim)" }}>
             Store only stable, user-approved identity details, preferences, workflows, constraints, and operator settings. This feeds the executor’s [User Memory] prompt block directly.

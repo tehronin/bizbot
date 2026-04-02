@@ -56,7 +56,7 @@ The legacy `/google-business` route still exists as a compatibility redirect to 
 - Syncs Google Business Profile reviews and posts, drafts replies, and updates business hours
 - Exposes a runtime operations surface for jobs, failures, and control-plane state
 - Exposes a plugin catalog for enabling builtin plugins and managing external MCP integrations
-- Tracks daily token usage, request counts, and model-based cost estimates in Settings
+- Tracks daily token usage, request counts, and model-based cost estimates in Settings, plus live per-conversation usage and cost estimates in Chat
 - Runs as an MCP server for VS Code and other MCP clients
 - Imports external MCP servers through configured client connections
 - Creates and manages external builder projects without letting scaffolding work mutate the BizBot repo itself
@@ -228,23 +228,24 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 - Streams run metadata, routing decisions, tool calls, and final outputs
 - Persists the current active conversation in the database and restores it across reloads
 - Supports manual New Chat without deleting prior conversations
-- Supports archive, restore, and explicit delete-from-archive controls
-- Includes an in-panel history canvas with Recent and Archived sections behind the History control
-- Lets operators open archived conversations in read-only mode before deciding whether to restore or delete them
+- Supports archive, restore, and explicit confirmed delete controls from the history panel for both active and archived conversations
+- Includes an in-panel history canvas with Recent and Archived sections, server-backed pagination, shared search, and date filters behind the History control
+- Lets operators preview recent or archived conversations in read-only mode before deciding whether to open, archive, restore, or delete them
 - Uses the typed specialist control plane
 - Lets operators promote a user or assistant message into explicit user memory
 - Uses rolling conversation summaries so ongoing threads do not depend entirely on raw recent-turn inclusion
+- Shows live per-conversation request, token, cached-token, and cost estimates in the active chat header
 - Can expose runtime state through MCP-aware flows
 
 #### Chat Lifecycle
 
 - The database is the canonical source of truth for conversations and messages
 - Each conversation can also persist a prompt-only rolling summary used to compress older thread context without adding synthetic summary rows to the visible transcript
-- Local storage only remembers the selected active conversation id for reload recovery
+- Client storage only remembers the selected active conversation id for reload recovery; conversation usage and cost counters hydrate from persisted run-journal state
 - Panel mode stays client-only, so `/chat` always reloads back into the normal chat panel instead of remaining stuck in history mode
 - Recent conversations stay separate from archived conversations, and archive or restore does not destroy message history
-- Archived conversations can be opened for read-only inspection inside the history panel without restoring them
-- Restore is explicit and separate from open; delete is explicit, confirmed, and limited to archived history
+- Recent and archived conversations can be opened for read-only inspection inside the history panel without mutating state
+- Restore is explicit and separate from open; delete is explicit, confirmed, and available from history for active or archived conversations
 - Multi-tab synchronization is not real-time in this version; another tab will recover on the next refresh or reload cycle
 
 ### Inbox
@@ -303,7 +304,7 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 - Explicit agent-LLM role and embedding-role selectors with provider readiness state
 - Environment-backed configuration visibility
 - Entry point to the dedicated plugins catalog for builtin and external integration management
-- Settings-linked usage ledger with date/provider filters, CSV export, saved model pricing presets, and delete controls for local run journals
+- Settings-linked usage ledger with date/provider filters, CSV export, saved model pricing presets that also feed live chat cost estimates, and delete controls for local run journals
 - Knowledge ingest dashboard for local document upload, inventory, skip/index status, manual reindex, chunk preview, and in-panel preview filtering
 - Explicit user memory panel for seeding, editing, filtering, and forgetting durable facts
 - Builder workspace, preset, allowlist, and optional CLI adapter controls
@@ -653,24 +654,24 @@ Copy `.env.example` and fill in only the providers you actually intend to use.
 
 ### LLM and Agent Runtime
 
-| Variable                                   | Purpose                                  |
-| ------------------------------------------ | ---------------------------------------- |
-| `ACTIVE_LLM_PROVIDER`                      | Active LLM provider                      |
-| `GOOGLE_AI_API_KEY`                        | Google GenAI API key                     |
-| `GOOGLE_MODEL`                             | Default Google chat model                |
-| `MINIMAX_API_KEY`                          | MiniMax API key                          |
-| `MINIMAX_MODEL`                            | Default MiniMax chat model               |
-| `MINIMAX_BASE_URL`                         | MiniMax-compatible API base URL          |
-| `EMBEDDING_PROVIDER`                       | Embedding provider                       |
-| `EMBEDDING_MODEL`                          | Embedding model                          |
-| `BIZBOT_AUTONOMY_PRESET`                   | Approval/autonomy mode                   |
-| `BIZBOT_AGENT_HEARTBEAT_SECONDS`           | Worker interval                          |
-| `BIZBOT_KNOWLEDGE_ENABLED`                 | Enable knowledge indexing                |
-| `BIZBOT_KNOWLEDGE_PATH`                    | Knowledge folder path                    |
-| `BIZBOT_WORKSPACE_PATH`                    | Local workspace root for files and docs  |
-| `BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY` | Process webhook inbox items immediately  |
+| Variable                                   | Purpose                                                 |
+| ------------------------------------------ | ------------------------------------------------------- |
+| `ACTIVE_LLM_PROVIDER`                      | Active LLM provider                                     |
+| `GOOGLE_AI_API_KEY`                        | Google GenAI API key                                    |
+| `GOOGLE_MODEL`                             | Default Google chat model                               |
+| `MINIMAX_API_KEY`                          | MiniMax API key                                         |
+| `MINIMAX_MODEL`                            | Default MiniMax chat model (defaults to `MiniMax-M2.7`) |
+| `MINIMAX_BASE_URL`                         | MiniMax-compatible API base URL                         |
+| `EMBEDDING_PROVIDER`                       | Embedding provider                                      |
+| `EMBEDDING_MODEL`                          | Embedding model                                         |
+| `BIZBOT_AUTONOMY_PRESET`                   | Approval/autonomy mode                                  |
+| `BIZBOT_AGENT_HEARTBEAT_SECONDS`           | Worker interval                                         |
+| `BIZBOT_KNOWLEDGE_ENABLED`                 | Enable knowledge indexing                               |
+| `BIZBOT_KNOWLEDGE_PATH`                    | Knowledge folder path                                   |
+| `BIZBOT_WORKSPACE_PATH`                    | Local workspace root for files and docs                 |
+| `BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY` | Process webhook inbox items immediately                 |
 
-The intended production split is Google for embeddings and MiniMax for the main agent/tool-calling LLM. Saving credentials only makes a provider available; operators still explicitly choose the active agent role in Settings or onboarding.
+The intended production split is Google for embeddings and MiniMax M2.7 for the main agent/tool-calling LLM. Saving credentials only makes a provider available; operators still explicitly choose the active agent role in Settings or onboarding.
 
 ### MCP Variables
 

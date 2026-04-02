@@ -44,7 +44,7 @@ const CHAT_MODEL_OPTIONS: Record<LLMProvider, string[]> = {
   anthropic: ["claude-3-5-sonnet-20241022", "claude-3-7-sonnet-latest"],
   ollama: ["gemma3", "gemma3:4b", "gemma3:12b", "llama3.2"],
   google: ["gemini-3-flash-preview", "gemini-2.5-flash"],
-  minimax: ["abab6.5s-chat"],
+  minimax: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed", "M2-her", "abab6.5s-chat"],
 };
 
 const EMBEDDING_MODEL_OPTIONS = {

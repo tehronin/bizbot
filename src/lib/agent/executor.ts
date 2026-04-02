@@ -34,6 +34,17 @@ export type AgentExecutionEvent =
       provider: LLMProvider;
       model: string;
     }
+  | {
+      type: "usage";
+      runId: string;
+      conversationId: string;
+      round: number;
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+      cachedPromptTokens: number;
+      requestCount: number;
+    }
   | { type: "status"; message: string; round?: number }
   | { type: "tool_call"; round: number; toolCallId: string; name: string; args: object }
   | { type: "tool_result"; round: number; toolCallId: string; name: string; result: string }
@@ -237,7 +248,7 @@ export async function executeAgentConversation(
       throwIfAborted(signal);
 
       if (response.usage) {
-        recordAgentRunRoundUsage(run.runId, {
+        const updatedRun = recordAgentRunRoundUsage(run.runId, {
           round,
           provider: response.provider,
           model: response.model,
@@ -245,6 +256,18 @@ export async function executeAgentConversation(
           completionTokens: response.usage.completionTokens ?? 0,
           totalTokens: response.usage.totalTokens ?? 0,
           cachedPromptTokens: response.usage.cachedPromptTokens ?? 0,
+        });
+
+        await emit(onEvent, {
+          type: "usage",
+          runId: run.runId,
+          conversationId: resolvedConversationId,
+          round,
+          promptTokens: updatedRun.usage.promptTokens,
+          completionTokens: updatedRun.usage.completionTokens,
+          totalTokens: updatedRun.usage.totalTokens,
+          cachedPromptTokens: updatedRun.usage.cachedPromptTokens,
+          requestCount: updatedRun.usage.rounds.length,
         });
       }
 

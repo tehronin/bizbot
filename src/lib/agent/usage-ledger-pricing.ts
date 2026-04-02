@@ -6,18 +6,24 @@ export interface UsageLedgerModelPricing {
 }
 
 const DEFAULT_MODEL_PRICING: Record<string, UsageLedgerModelPricing> = {
-  "gemini-3-flash-preview": { promptUsdPerMillion: 0.35, completionUsdPerMillion: 1.05 },
+  "gemini-3-flash-preview": { promptUsdPerMillion: 0.5, completionUsdPerMillion: 3 },
+  "gemini-2.5-flash": { promptUsdPerMillion: 0.3, completionUsdPerMillion: 2.5 },
   "gpt-4o": { promptUsdPerMillion: 5, completionUsdPerMillion: 15 },
   "claude-3-5-sonnet-20241022": { promptUsdPerMillion: 3, completionUsdPerMillion: 15 },
+  "MiniMax-M2.7": { promptUsdPerMillion: 0.3, completionUsdPerMillion: 1.2 },
+  "MiniMax-M2.7-highspeed": { promptUsdPerMillion: 0.6, completionUsdPerMillion: 2.4 },
+  "MiniMax-M2.5": { promptUsdPerMillion: 0.3, completionUsdPerMillion: 1.2 },
+  "MiniMax-M2.5-highspeed": { promptUsdPerMillion: 0.6, completionUsdPerMillion: 2.4 },
+  "M2-her": { promptUsdPerMillion: 0.3, completionUsdPerMillion: 1.2 },
   "abab6.5s-chat": { promptUsdPerMillion: 1.1, completionUsdPerMillion: 8 },
   "gemma3": { promptUsdPerMillion: 0, completionUsdPerMillion: 0 },
 };
 
 const PROVIDER_FALLBACK_PRICING: Record<string, UsageLedgerModelPricing> = {
-  google: { promptUsdPerMillion: 0.35, completionUsdPerMillion: 1.05 },
+  google: { promptUsdPerMillion: 0.5, completionUsdPerMillion: 3 },
   openai: { promptUsdPerMillion: 5, completionUsdPerMillion: 15 },
   anthropic: { promptUsdPerMillion: 3, completionUsdPerMillion: 15 },
-  minimax: { promptUsdPerMillion: 1.1, completionUsdPerMillion: 8 },
+  minimax: { promptUsdPerMillion: 0.3, completionUsdPerMillion: 1.2 },
   ollama: { promptUsdPerMillion: 0, completionUsdPerMillion: 0 },
 };
 
@@ -39,6 +45,14 @@ export function getDefaultUsageLedgerModelPricing(model: string, provider?: stri
   return DEFAULT_MODEL_PRICING[model]
     ?? (provider ? PROVIDER_FALLBACK_PRICING[provider] : undefined)
     ?? { promptUsdPerMillion: 0, completionUsdPerMillion: 0 };
+}
+
+export function getResolvedUsageLedgerModelPricing(
+  model: string,
+  provider?: string,
+  pricingByModel?: Record<string, UsageLedgerModelPricing>,
+): UsageLedgerModelPricing {
+  return pricingByModel?.[model] ?? getDefaultUsageLedgerModelPricing(model, provider);
 }
 
 export function parseUsageLedgerModelPricingSetting(value: string | null | undefined): Record<string, UsageLedgerModelPricing> {

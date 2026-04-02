@@ -11,6 +11,7 @@ vi.mock("@/lib/files/workspace", () => ({
 import {
   deleteAgentRun,
   deleteUsageLedgerEntry,
+  getConversationUsageSummary,
   getUsageLedgerSnapshot,
   listAgentRuns,
   listUsageLedgerRuns,
@@ -177,5 +178,115 @@ describe("run journal usage ledger", () => {
     expect(deleted.deletedCount).toBe(1);
     expect(listAgentRuns()).toHaveLength(0);
     expect(getUsageLedgerSnapshot().entries).toHaveLength(0);
+  });
+
+  it("loads legacy run files that do not include usage rounds", () => {
+    const runsDir = path.join(tempWorkspaceRoot, ".bizbot", "agent-runs");
+    fs.mkdirSync(runsDir, { recursive: true });
+
+    fs.writeFileSync(path.join(runsDir, "legacy-run.json"), JSON.stringify({
+      runId: "legacy-run",
+      conversationId: "conversation-legacy",
+      profile: "general_operator",
+      profileLabel: "General",
+      profileMission: "Legacy run",
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      status: "completed",
+      startedAt: "2026-04-01T10:00:00.000Z",
+      updatedAt: "2026-04-01T10:05:00.000Z",
+      finishedAt: "2026-04-01T10:05:00.000Z",
+      userMessage: "legacy",
+      availableTools: [],
+      childRunIds: [],
+      toolPolicy: {
+        allowedPrefixes: [],
+        allowedTools: [],
+        deniedTools: [],
+      },
+      roundsCompleted: 1,
+      toolCallCount: 0,
+      toolEvents: [],
+      usage: {
+        promptTokens: 120,
+        completionTokens: 30,
+        totalTokens: 150,
+        cachedPromptTokens: 0,
+      },
+      reply: "ok",
+    }, null, 2), "utf8");
+
+    const snapshot = getUsageLedgerSnapshot();
+
+    expect(snapshot.entries).toHaveLength(1);
+    expect(snapshot.entries[0]?.requestCount).toBe(1);
+    expect(snapshot.entries[0]?.totalTokens).toBe(150);
+
+    const runs = listUsageLedgerRuns(snapshot.entries[0]!.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.requestCount).toBe(1);
+    expect(runs[0]?.averageTokensPerRequest).toBe(150);
+  });
+
+  it("aggregates usage totals across all runs in a conversation and keeps latest run metadata", () => {
+    const olderRun = startAgentRun({
+      conversationId: "conversation-shared",
+      profile: "general_operator",
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      userMessage: "first",
+      availableTools: [],
+    });
+    recordAgentRunRoundUsage(olderRun.runId, {
+      round: 1,
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      promptTokens: 100,
+      completionTokens: 20,
+      totalTokens: 120,
+      cachedPromptTokens: 3,
+    });
+    completeAgentRun(olderRun.runId, { status: "completed", roundsCompleted: 1, reply: "done" });
+
+    const newerRun = startAgentRun({
+      conversationId: "conversation-shared",
+      profile: "content_operator",
+      provider: "openai",
+      model: "gpt-4o",
+      userMessage: "second",
+      availableTools: [],
+    });
+    recordAgentRunRoundUsage(newerRun.runId, {
+      round: 1,
+      provider: "openai",
+      model: "gpt-4o",
+      promptTokens: 50,
+      completionTokens: 25,
+      totalTokens: 75,
+      cachedPromptTokens: 0,
+    });
+    recordAgentRunRoundUsage(newerRun.runId, {
+      round: 2,
+      provider: "openai",
+      model: "gpt-4o",
+      promptTokens: 40,
+      completionTokens: 15,
+      totalTokens: 55,
+      cachedPromptTokens: 1,
+    });
+    completeAgentRun(newerRun.runId, { status: "completed", roundsCompleted: 2, reply: "done" });
+
+    const summary = getConversationUsageSummary("conversation-shared");
+
+    expect(summary.conversationId).toBe("conversation-shared");
+    expect(summary.runId).toBe(newerRun.runId);
+    expect(summary.profile).toBe("content_operator");
+    expect(summary.provider).toBe("openai");
+    expect(summary.model).toBe("gpt-4o");
+    expect(summary.requestCount).toBe(3);
+    expect(summary.promptTokens).toBe(190);
+    expect(summary.completionTokens).toBe(60);
+    expect(summary.totalTokens).toBe(250);
+    expect(summary.cachedPromptTokens).toBe(4);
   });
 });
