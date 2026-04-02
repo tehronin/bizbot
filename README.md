@@ -1,6 +1,8 @@
 # BizBot
 
-BizBot is a local-first business operations agent: social publishing, inbox handling, CRM, commerce, local-business reputation work, approvals, and operator debugging in one app.
+BizBot is a local-first agent orchestration platform: a desktop-native control plane for running specialist agents through typed lanes, deterministic tools, durable run state, and inspectable MCP surfaces.
+
+It is designed more like an agent OS than a single-purpose app. BizBot combines routing, delegation, approvals, memory, ontology, builder workflows, and runtime debugging with a plugin-first development environment for shipping new capabilities safely. Several experimental plugins and plugin-authoring loops are already built in, and the platform is structured to keep expanding through that system instead of collapsing back into one giant prompt and one giant runtime file.
 
 ![BizBot Setup Preview](docs/readme-setup-preview.png)
 
