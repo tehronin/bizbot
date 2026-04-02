@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { KnowledgePanel } from "@/components/settings/KnowledgePanel";
 import { UserMemoryPanel } from "@/components/settings/UserMemoryPanel";
+import { PluginsPanel } from "../../../components/settings/PluginsPanel";
 
 interface SettingRecord {
   key: string;
@@ -25,6 +27,17 @@ interface LlmStatusResponse {
     available: boolean;
     active: boolean;
     reason: string;
+    capabilities: {
+      usageReliability: {
+        supported: boolean;
+        reliability: "verified" | "compatible" | "unverified";
+        notes: string;
+      };
+      supportsToolCalling: boolean;
+      supportsParallelToolCalls: boolean;
+      supportsStreaming: boolean;
+      nativeExtras: string[];
+    };
   }>;
   generation: {
     maxTokens: number;
@@ -156,6 +169,7 @@ const PUBLIC_ENV_DEFAULTS = {
   BIZBOT_BUILDER_CODEX_MODEL: "",
   BIZBOT_BUILDER_CLAUDE_CODE_ENABLED: "false",
   BIZBOT_BUILDER_CLAUDE_CODE_COMMAND: "claude",
+  BIZBOT_CONVERSATION_BRIDGE_ENABLED: "false",
   CRM_PROVIDER: "internal",
   HUBSPOT_PORTAL_ID: "",
   HUBSPOT_BASE_URL: "https://api.hubapi.com",
@@ -429,9 +443,20 @@ export default function SettingsPage() {
             </select>
             <div className="grid gap-2">
               {providerStatuses.map((status) => (
-                <div key={status.provider} className="flex items-center justify-between border px-3 py-2 text-xs uppercase tracking-[0.14em]" style={{ borderColor: status.active ? "var(--accent)" : "var(--border)", color: "var(--text-primary)", background: status.active ? "var(--accent-glow)" : "transparent" }}>
-                  <span>{status.provider}</span>
-                  <span style={{ color: status.available ? "var(--success)" : "var(--text-dim)" }}>{status.reason}</span>
+                <div key={status.provider} className="border px-3 py-2 text-xs" style={{ borderColor: status.active ? "var(--accent)" : "var(--border)", color: "var(--text-primary)", background: status.active ? "var(--accent-glow)" : "transparent" }}>
+                  <div className="flex items-center justify-between gap-4 uppercase tracking-[0.14em]">
+                    <span>{status.provider}</span>
+                    <span style={{ color: status.available ? "var(--success)" : "var(--text-dim)" }}>{status.reason}</span>
+                  </div>
+                  <div className="mt-2 leading-6" style={{ color: "var(--text-dim)" }}>
+                    Usage telemetry: {status.capabilities.usageReliability.reliability}.
+                    {" "}{status.capabilities.usageReliability.notes}
+                  </div>
+                  {status.capabilities.nativeExtras.length > 0 ? (
+                    <div className="leading-6" style={{ color: "var(--text-dim)" }}>
+                      Native extras: {status.capabilities.nativeExtras.join(", ")}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -546,7 +571,8 @@ export default function SettingsPage() {
           <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
             <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>MCP and infrastructure</div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>MCP servers JSON</label>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Advanced MCP servers JSON</label>
+              <div className="text-xs leading-6 mb-2" style={{ color: "var(--text-dim)" }}>Prefer the plugins page for normal create, edit, enable, and disconnect workflows. Use this only for raw recovery or bulk edits.</div>
               <textarea value={publicEnv.MCP_SERVERS} onChange={(event) => updatePublicEnv("MCP_SERVERS", event.target.value)} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
             </div>
             <div>
@@ -793,6 +819,22 @@ export default function SettingsPage() {
         <UserMemoryPanel />
 
         <div className="space-y-6">
+          <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>usage ledger</div>
+                <div className="mt-2 text-sm" style={{ color: "var(--text-dim)" }}>
+                  Review daily token totals, inspect underlying run records, and remove stale journal entries.
+                </div>
+              </div>
+              <Link href="/settings/usage-ledger" className="border px-3 py-2 text-xs uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                open ledger
+              </Link>
+            </div>
+          </section>
+
+          <PluginsPanel />
+
           <KnowledgePanel refreshNonce={knowledgeRefreshNonce} />
 
           <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>

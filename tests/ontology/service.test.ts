@@ -4,9 +4,11 @@ const mocks = vi.hoisted(() => ({
   userUpsert: vi.fn(),
   userFindUnique: vi.fn(),
   entityFindFirst: vi.fn(),
+  entityFindMany: vi.fn(),
   entityCreate: vi.fn(),
   entityUpdate: vi.fn(),
   relationFindFirst: vi.fn(),
+  relationFindMany: vi.fn(),
   relationCreate: vi.fn(),
   relationUpdate: vi.fn(),
   aliasFindFirst: vi.fn(),
@@ -23,11 +25,13 @@ vi.mock("@/lib/db", () => ({
     },
     ontologyEntity: {
       findFirst: mocks.entityFindFirst,
+      findMany: mocks.entityFindMany,
       create: mocks.entityCreate,
       update: mocks.entityUpdate,
     },
     ontologyRelation: {
       findFirst: mocks.relationFindFirst,
+      findMany: mocks.relationFindMany,
       create: mocks.relationCreate,
       update: mocks.relationUpdate,
     },
@@ -47,6 +51,7 @@ import {
   ensureOntologyAlias,
   ensureOntologyEntity,
   ensureOntologyRelation,
+  getOntologyTypeVocabulary,
 } from "@/lib/ontology/service";
 
 describe("ontology service", () => {
@@ -171,5 +176,19 @@ describe("ontology service", () => {
       sourceKind: "user_memory_fact",
       sourceRef: "fact-1",
     })).rejects.toThrow("exactly one target");
+  });
+
+  it("merges builtin and persisted ontology vocabulary", async () => {
+    mocks.entityFindMany.mockResolvedValue([{ type: "project" }, { type: "custom_entity" }]);
+    mocks.relationFindMany.mockResolvedValue([{ type: "references_project" }, { type: "custom_relation" }]);
+
+    const vocabulary = await getOntologyTypeVocabulary();
+
+    expect(vocabulary.entityTypes).toEqual(expect.arrayContaining(["conversation", "project", "custom_entity"]));
+    expect(vocabulary.relationTypes).toEqual(expect.arrayContaining(["participates_in_conversation", "references_project", "custom_relation"]));
+    expect(vocabulary.defaults).toEqual({
+      conversationScope: "runtime",
+      conversationProjectRelationships: ["references_project", "requests_builder_work"],
+    });
   });
 });

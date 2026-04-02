@@ -11,7 +11,7 @@ import { getActiveCrmProvider, getCrmProviderStatuses, listCrmContacts } from "@
 import { getActiveProvider, getConfiguredProviders, getGenerationConfig, getModelForProvider } from "@/lib/agent/kernel";
 import { getAgentCapabilities, getAgentRuntimeConfig, getAutonomyDescription } from "@/lib/agent/runtime";
 import { getEmbeddingConfig } from "@/lib/embeddings/embed";
-import { getBuiltinPlugins } from "@/lib/agent/plugins/registry";
+import { getBuiltinPlugins, getEnabledBuiltinPlugins } from "@/lib/agent/plugins/registry";
 import { createPluginRegistry } from "@/lib/agent/plugins/registry";
 import { canProfileUseTool } from "@/lib/agent/profiles";
 import { getCurrentBuilderProjectOverview } from "@/lib/builder/orchestrator";
@@ -73,7 +73,7 @@ function canExposeToolInMcp(name: string): boolean {
 }
 
 export function listCurrentMcpToolDescriptors(): Array<ToolDescriptor & { title: string; annotations: ReturnType<typeof getToolAnnotations>; ownerId: string; ownerKind: string }> {
-  const registry = createPluginRegistry(getBuiltinPlugins(), getMcpClientTools());
+  const registry = createPluginRegistry(getEnabledBuiltinPlugins(), getMcpClientTools());
   return registry.tools
     .filter((tool) => canExposeToolInMcp(tool.name))
     .map((tool) => ({
@@ -541,7 +541,7 @@ export function listBizBotResourceDefinitions(): BizBotResourceDefinition[] {
       return { ...mapped, runtimeConfig: getAgentRuntimeConfig() };
     } },
     { name: "plugins-installed", uri: "bizbot://plugins/installed", title: "Installed Plugins", description: "Builtin plugin metadata plus exposed MCP tool coverage for each plugin", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => {
-      const registry = createPluginRegistry(getBuiltinPlugins(), getMcpClientTools());
+      const registry = createPluginRegistry(getEnabledBuiltinPlugins(), getMcpClientTools());
       const allowedToolNames = new Set(listCurrentMcpToolDescriptors().map((tool) => tool.name));
       const plugins = registry.plugins.map((plugin) => ({
         ...plugin.metadata,

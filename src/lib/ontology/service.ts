@@ -1,6 +1,8 @@
 import type { JsonValue } from "@/lib/agent/tools";
 import { db } from "@/lib/db";
 import {
+  CONVERSATION_PROJECT_RELATIONSHIPS,
+  CONVERSATION_SCOPE,
   ONTOLOGY_ALIAS_KINDS,
   ONTOLOGY_BOOTSTRAP_VOCABULARY,
   ONTOLOGY_EVIDENCE_SOURCE_KINDS,
@@ -403,6 +405,38 @@ export async function getOntologySummary(): Promise<{
   };
 }
 
+export async function getOntologyTypeVocabulary() {
+  const [entityRows, relationRows] = await Promise.all([
+    db.ontologyEntity.findMany({
+      select: { type: true },
+      distinct: ["type"],
+    }),
+    db.ontologyRelation.findMany({
+      select: { type: true },
+      distinct: ["type"],
+    }),
+  ]);
+
+  const entityTypes = Array.from(new Set([
+    ...ONTOLOGY_ENTITY_TYPES,
+    ...entityRows.map((row) => row.type),
+  ])).sort((left, right) => left.localeCompare(right));
+  const relationTypes = Array.from(new Set([
+    ...ONTOLOGY_RELATION_TYPES,
+    ...relationRows.map((row) => row.type),
+  ])).sort((left, right) => left.localeCompare(right));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    entityTypes,
+    relationTypes,
+    defaults: {
+      conversationScope: CONVERSATION_SCOPE,
+      conversationProjectRelationships: [...CONVERSATION_PROJECT_RELATIONSHIPS],
+    },
+  };
+}
+
 export async function getOntologySchemaSummary() {
   return {
     generatedAt: new Date().toISOString(),
@@ -417,6 +451,10 @@ export async function getOntologySchemaSummary() {
     promptPolicy: ONTOLOGY_RUNTIME_CONTEXT_POLICY,
     promotion: ONTOLOGY_PROMOTION_RULE_SUMMARY,
     bootstrap: ONTOLOGY_BOOTSTRAP_VOCABULARY,
+    defaults: {
+      conversationScope: CONVERSATION_SCOPE,
+      conversationProjectRelationships: [...CONVERSATION_PROJECT_RELATIONSHIPS],
+    },
   };
 }
 

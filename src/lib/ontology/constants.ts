@@ -16,6 +16,22 @@ export const ONTOLOGY_ENTITY_TYPES = [
   "goal",
   "policy",
   "profile",
+  "conversation",
+  "project",
+] as const;
+
+export const CONVERSATION_SCOPE = "runtime" as const;
+
+export const CONVERSATION_RELATION_TYPES = [
+  "participates_in_conversation",
+  "references_project",
+  "requests_builder_work",
+  "surfaces_approval_queue",
+] as const;
+
+export const CONVERSATION_PROJECT_RELATIONSHIPS = [
+  "references_project",
+  "requests_builder_work",
 ] as const;
 
 export const ONTOLOGY_RELATION_TYPES = [
@@ -25,6 +41,7 @@ export const ONTOLOGY_RELATION_TYPES = [
   "has_constraint",
   "configured_with",
   "pursues_goal",
+  ...CONVERSATION_RELATION_TYPES,
 ] as const;
 
 export const ONTOLOGY_PROMPT_MAX_LINES = 8;
@@ -40,6 +57,10 @@ export const ONTOLOGY_RUNTIME_RELATION_PRIORITY: Record<string, number> = {
   uses_workflow: 3,
   configured_with: 4,
   pursues_goal: 5,
+  participates_in_conversation: 6,
+  references_project: 7,
+  requests_builder_work: 8,
+  surfaces_approval_queue: 9,
 };
 
 export const ONTOLOGY_BOOTSTRAP_VOCABULARY = {

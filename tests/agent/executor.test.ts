@@ -292,4 +292,37 @@ describe("agent executor explicit memory", () => {
       cachedPromptTokens: 20,
     });
   });
+
+  it("records Google usage metadata including cached prompt tokens", async () => {
+    kernelMocks.chatComplete.mockResolvedValue({
+      content: "reply",
+      toolCalls: [],
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      metadata: {
+        googleSearchQueries: "bizbot google flash 3",
+      },
+      usage: {
+        promptTokens: 310,
+        completionTokens: 44,
+        totalTokens: 354,
+        cachedPromptTokens: 128,
+      },
+    });
+
+    await executeAgentConversation({
+      message: "Summarize the current Google Flash 3 runtime status",
+      forcedProfile: "content_operator",
+    });
+
+    expect(runJournalMocks.recordAgentRunRoundUsage).toHaveBeenCalledWith("run-1", {
+      round: 1,
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      promptTokens: 310,
+      completionTokens: 44,
+      totalTokens: 354,
+      cachedPromptTokens: 128,
+    });
+  });
 });

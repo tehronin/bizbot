@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getAgentWorkerStatus } from "@/lib/agent/heartbeat-queue";
 import {
   getActiveProvider,
+  getProviderCapabilityFlags,
   getConfiguredProviders,
   getGenerationConfig,
   getModelForProvider,
@@ -35,6 +36,7 @@ interface ProviderStatus {
   available: boolean;
   active: boolean;
   reason: string;
+  capabilities: ReturnType<typeof getProviderCapabilityFlags>;
 }
 
 const CHAT_MODEL_OPTIONS: Record<LLMProvider, string[]> = {
@@ -91,6 +93,7 @@ async function getProviderStatuses(
           available: false,
           active: provider === activeProvider,
           reason: "Missing credentials",
+          capabilities: getProviderCapabilityFlags(provider),
         } satisfies ProviderStatus;
       }
 
@@ -107,6 +110,7 @@ async function getProviderStatuses(
           : provider === "ollama"
             ? "Ollama is not responding"
             : "Configured but failing health check",
+        capabilities: getProviderCapabilityFlags(provider),
       } satisfies ProviderStatus;
     }),
   );

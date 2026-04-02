@@ -42,6 +42,20 @@ export interface LLMUsage {
   cachedPromptTokens?: number;
 }
 
+export interface ProviderUsageReliability {
+  supported: boolean;
+  reliability: "verified" | "compatible" | "unverified";
+  notes: string;
+}
+
+export interface ProviderCapabilityFlags {
+  usageReliability: ProviderUsageReliability;
+  supportsToolCalling: boolean;
+  supportsParallelToolCalls: boolean;
+  supportsStreaming: boolean;
+  nativeExtras: string[];
+}
+
 export interface LLMResponse {
   content: string;
   provider: LLMProvider;
@@ -121,6 +135,71 @@ export function getGenerationConfig(): GenerationConfig {
     maxTokens: Math.max(64, Math.trunc(parseNumericEnv(process.env.LLM_MAX_TOKENS, 4096))),
     temperature: Math.min(2, Math.max(0, parseNumericEnv(process.env.LLM_TEMPERATURE, 0.2))),
   };
+}
+
+export function getProviderCapabilityFlags(provider: LLMProvider): ProviderCapabilityFlags {
+  switch (provider) {
+    case "openai":
+      return {
+        usageReliability: {
+          supported: true,
+          reliability: "compatible",
+          notes: "Usage counters come from the OpenAI chat completion payload.",
+        },
+        supportsToolCalling: true,
+        supportsParallelToolCalls: true,
+        supportsStreaming: true,
+        nativeExtras: [],
+      };
+    case "anthropic":
+      return {
+        usageReliability: {
+          supported: true,
+          reliability: "compatible",
+          notes: "Anthropic usage counters are mapped from native message usage fields.",
+        },
+        supportsToolCalling: true,
+        supportsParallelToolCalls: false,
+        supportsStreaming: true,
+        nativeExtras: [],
+      };
+    case "ollama":
+      return {
+        usageReliability: {
+          supported: false,
+          reliability: "unverified",
+          notes: "Local Ollama usage counters vary by model and OpenAI-compatibility layer.",
+        },
+        supportsToolCalling: true,
+        supportsParallelToolCalls: true,
+        supportsStreaming: true,
+        nativeExtras: [],
+      };
+    case "google":
+      return {
+        usageReliability: {
+          supported: true,
+          reliability: "verified",
+          notes: "Gemini usageMetadata is captured and recorded per round, including cached prompt tokens when provided.",
+        },
+        supportsToolCalling: true,
+        supportsParallelToolCalls: false,
+        supportsStreaming: true,
+        nativeExtras: ["search-grounding", "code-execution"],
+      };
+    case "minimax":
+      return {
+        usageReliability: {
+          supported: true,
+          reliability: "unverified",
+          notes: "MiniMax uses the OpenAI-compatible path but its usage reporting still needs focused validation before cost tracking depends on it.",
+        },
+        supportsToolCalling: true,
+        supportsParallelToolCalls: true,
+        supportsStreaming: true,
+        nativeExtras: [],
+      };
+  }
 }
 
 function toOpenAITools(tools: ToolDescriptor[] | undefined) {

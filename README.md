@@ -22,7 +22,8 @@ BizBot is no longer just a social posting bot. The app now includes:
 - Commerce workspace with local products and orders
 - Local Business workspace for Google Business Profile reviews, posts, and hours
 - Approvals queue and publishing workflows
-- Analytics and runtime Operations views
+- Dedicated plugin catalog for builtin toggles and external MCP integration management
+- Analytics, runtime Operations telemetry, and a settings-linked usage ledger for daily token accounting and cost estimates
 - MCP server and MCP client plumbing for tool exposure and imports
 - A high-trust MCP plugin design loop for inspection, validation, preview, and contract-impact testing
 
@@ -38,6 +39,7 @@ The current dashboard surface is:
 - `/approvals`
 - `/analytics`
 - `/operations`
+- `/plugins`
 - `/settings`
 
 The legacy `/google-business` route still exists as a compatibility redirect to `/local-business`.
@@ -53,6 +55,8 @@ The legacy `/google-business` route still exists as a compatibility redirect to 
 - Publishes, schedules, and approves social posts
 - Syncs Google Business Profile reviews and posts, drafts replies, and updates business hours
 - Exposes a runtime operations surface for jobs, failures, and control-plane state
+- Exposes a plugin catalog for enabling builtin plugins and managing external MCP integrations
+- Tracks daily token usage, request counts, and model-based cost estimates in Settings
 - Runs as an MCP server for VS Code and other MCP clients
 - Imports external MCP servers through configured client connections
 - Creates and manages external builder projects without letting scaffolding work mutate the BizBot repo itself
@@ -277,6 +281,8 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 
 - Runtime and worker visibility
 - Queue and execution summaries
+- Provider and model visibility for recent runs
+- Per-run token telemetry for prompt, completion, total, and cached prompt usage
 - Operational debugging surface for the control plane
 
 ### Builder
@@ -296,6 +302,8 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 - Runtime readiness surface for LLM, CRM, MCP, Redis, Memgraph, and provider config
 - Explicit agent-LLM role and embedding-role selectors with provider readiness state
 - Environment-backed configuration visibility
+- Entry point to the dedicated plugins catalog for builtin and external integration management
+- Settings-linked usage ledger with date/provider filters, CSV export, saved model pricing presets, and delete controls for local run journals
 - Knowledge ingest dashboard for local document upload, inventory, skip/index status, manual reindex, chunk preview, and in-panel preview filtering
 - Explicit user memory panel for seeding, editing, filtering, and forgetting durable facts
 - Builder workspace, preset, allowlist, and optional CLI adapter controls

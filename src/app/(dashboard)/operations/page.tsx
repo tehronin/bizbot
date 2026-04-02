@@ -7,10 +7,18 @@ import { useEffect, useState } from "react";
 interface OperationRun {
   runId: string;
   profileLabel: string;
+  provider: string;
+  model: string;
   status: string;
   updatedAt: string;
   toolCallCount: number;
   roundsCompleted: number;
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    cachedPromptTokens: number;
+  };
   reply?: string;
   error?: string;
 }
@@ -174,6 +182,13 @@ export default function OperationsPage() {
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
                   {run.toolCallCount} tool calls across {run.roundsCompleted} rounds
+                </div>
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  {run.provider} · {run.model}
+                </div>
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  {run.usage.totalTokens} total tokens · {run.usage.promptTokens} prompt · {run.usage.completionTokens} completion
+                  {run.usage.cachedPromptTokens > 0 ? ` · ${run.usage.cachedPromptTokens} cached` : ""}
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{run.runId}</div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{new Date(run.updatedAt).toLocaleString()}</div>

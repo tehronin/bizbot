@@ -22,10 +22,11 @@ function isTextContentPart(value: unknown): value is { type: "text"; text: strin
     && typeof (value as { text?: unknown }).text === "string";
 }
 
-interface McpServerConfig {
+export interface McpServerConfig {
   name: string;
   url: string;
   authToken?: string;
+  enabled?: boolean;
 }
 
 interface ConnectedServer {
@@ -67,12 +68,19 @@ export function resetMcpClientLogger(): void {
  * Expects a JSON array stored under key "mcp_servers":
  *   [{ "name": "github", "url": "http://localhost:4000/mcp", "authToken": "..." }]
  */
-async function loadServerConfigs(): Promise<McpServerConfig[]> {
+function normalizeServerConfigs(configs: McpServerConfig[]): McpServerConfig[] {
+  return configs.map((config) => ({
+    ...config,
+    enabled: config.enabled ?? true,
+  }));
+}
+
+export async function getConfiguredMcpServerConfigs(): Promise<McpServerConfig[]> {
   // Check env first (simple JSON array), fall back to DB settings
   const envValue = process.env.MCP_SERVERS;
   if (envValue) {
     try {
-      return JSON.parse(envValue) as McpServerConfig[];
+      return normalizeServerConfigs(JSON.parse(envValue) as McpServerConfig[]);
     } catch {
       mcpClientLogger.warn("[mcp-client] MCP_SERVERS env is not valid JSON, skipping");
     }
@@ -81,10 +89,15 @@ async function loadServerConfigs(): Promise<McpServerConfig[]> {
   try {
     const setting = await db.setting.findUnique({ where: { key: "mcp_servers" } });
     if (!setting) return [];
-    return JSON.parse(setting.value) as McpServerConfig[];
+    return normalizeServerConfigs(JSON.parse(setting.value) as McpServerConfig[]);
   } catch {
     return [];
   }
+}
+
+async function loadServerConfigs(): Promise<McpServerConfig[]> {
+  const configs = await getConfiguredMcpServerConfigs();
+  return configs.filter((config) => config.enabled !== false);
 }
 
 /**
@@ -311,6 +324,11 @@ export async function closeMcpClients(): Promise<void> {
   }
 
   initPromise = null;
+}
+
+export async function reconnectMcpClients(): Promise<void> {
+  await closeMcpClients();
+  await ensureMcpClientsInitialized();
 }
 
 /**

@@ -11,9 +11,9 @@ import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { canProfileUseTool } from "@/lib/agent/profiles";
 import { getMcpClientTools } from "@/lib/mcp/client";
 import { createBizBotPlugin, wrapBuiltinPlugin } from "./contracts";
-import { getBuiltinPlugins, createPluginRegistry } from "./registry";
+import { getBuiltinPlugins, getEnabledBuiltinPlugins, createPluginRegistry } from "./registry";
 
-export { createBizBotPlugin, wrapBuiltinPlugin, getBuiltinPlugins, createPluginRegistry };
+export { createBizBotPlugin, wrapBuiltinPlugin, getBuiltinPlugins, getEnabledBuiltinPlugins, createPluginRegistry };
 export type { BizBotPlugin, BizBotPluginMetadata } from "./contracts";
 
 export interface ToolAccessContext {
@@ -50,7 +50,7 @@ function canExposeTool(name: string, config: AgentRuntimeConfig, access?: ToolAc
 }
 
 function getFullToolRegistry(): RegisteredToolDefinition[] {
-  return createPluginRegistry(getBuiltinPlugins(), getMcpClientTools()).tools;
+  return createPluginRegistry(getEnabledBuiltinPlugins(), getMcpClientTools()).tools;
 }
 
 export function getAllToolDefinitions(

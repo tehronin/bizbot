@@ -5,6 +5,7 @@ import { approvalPlugin } from "./ApprovalPlugin";
 import { builderPlugin } from "./BuilderPlugin";
 import { browserPlugin } from "./BrowserPlugin";
 import { competitorPlugin } from "./CompetitorPlugin";
+import { conversationBridgePlugin } from "./ConversationBridgePlugin";
 import { commercePlugin } from "./CommercePlugin";
 import { contentPlugin } from "./ContentPlugin";
 import { crmPlugin } from "./CrmPlugin";
@@ -15,25 +16,41 @@ import { graphPlugin } from "./GraphPlugin";
 import { localBusinessPlugin } from "./LocalBusinessPlugin";
 import { memoryPlugin } from "./MemoryPlugin";
 import { schedulePlugin } from "./SchedulePlugin";
+import { BUILTIN_PLUGIN_TOGGLES, getBuiltinPluginToggle, isBuiltinPluginEnabled } from "./settings";
 import { socialPlugin } from "./SocialPlugin";
 
-const builtinPlugins: BizBotPlugin[] = [
-  wrapBuiltinPlugin({ id: "social", displayName: "Social", description: "Social publishing, replies, mentions, and analytics.", tags: ["social", "publishing"] }, socialPlugin),
-  wrapBuiltinPlugin({ id: "commerce", displayName: "Commerce", description: "Local-first products and orders for sales workflows.", tags: ["commerce", "sales"] }, commercePlugin),
-  wrapBuiltinPlugin({ id: "content", displayName: "Content", description: "Content drafting, refinement, and policy checks.", tags: ["content", "drafting"] }, contentPlugin),
-  wrapBuiltinPlugin({ id: "crm", displayName: "CRM", description: "CRM contacts, activities, and provider synchronization.", tags: ["crm", "sales"] }, crmPlugin),
-  wrapBuiltinPlugin({ id: "builder", displayName: "Builder", description: "Sandboxed workspace scaffolding, file generation, and allowlisted command execution.", tags: ["builder", "workspace"] }, builderPlugin),
-  wrapBuiltinPlugin({ id: "delegation", displayName: "Delegation", description: "Delegated sub-runs across specialist operator lanes.", tags: ["agent", "delegation"] }, delegationPlugin),
-  wrapBuiltinPlugin({ id: "developer", displayName: "Developer", description: "Runtime inspection tools for workers, memories, and agent runs.", tags: ["developer", "debugging"] }, developerPlugin),
-  wrapBuiltinPlugin({ id: "memory", displayName: "Memory", description: "Semantic recall plus explicit relational user memory tools.", tags: ["memory", "knowledge"] }, memoryPlugin),
-  wrapBuiltinPlugin({ id: "files", displayName: "Files", description: "Workspace file operations.", tags: ["files", "workspace"] }, filePlugin),
-  wrapBuiltinPlugin({ id: "graph", displayName: "Graph", description: "Knowledge graph search and context tools.", tags: ["graph", "knowledge"] }, graphPlugin),
-  wrapBuiltinPlugin({ id: "local-business", displayName: "Local Business", description: "Google Business Profile reviews, posts, and hours.", tags: ["local-business", "reputation"] }, localBusinessPlugin),
-  wrapBuiltinPlugin({ id: "schedule", displayName: "Schedule", description: "Publishing schedule management.", tags: ["schedule", "publishing"] }, schedulePlugin),
-  wrapBuiltinPlugin({ id: "approval", displayName: "Approval", description: "Approval queue workflows and decisions.", tags: ["approval", "governance"] }, approvalPlugin),
-  wrapBuiltinPlugin({ id: "browser", displayName: "Browser", description: "Playwright-backed web browsing and extraction.", tags: ["browser", "research"] }, browserPlugin),
-  wrapBuiltinPlugin({ id: "competitor", displayName: "Competitor", description: "Competitor watch configuration and checks.", tags: ["competitor", "research"] }, competitorPlugin),
-];
+const builtinPluginModules = {
+  social: socialPlugin,
+  commerce: commercePlugin,
+  content: contentPlugin,
+  crm: crmPlugin,
+  builder: builderPlugin,
+  delegation: delegationPlugin,
+  developer: developerPlugin,
+  memory: memoryPlugin,
+  files: filePlugin,
+  graph: graphPlugin,
+  "local-business": localBusinessPlugin,
+  schedule: schedulePlugin,
+  approval: approvalPlugin,
+  browser: browserPlugin,
+  competitor: competitorPlugin,
+  "conversation-bridge": conversationBridgePlugin,
+} as const;
+
+const builtinPlugins: BizBotPlugin[] = BUILTIN_PLUGIN_TOGGLES.map((plugin) => {
+  const pluginModule = builtinPluginModules[plugin.id as keyof typeof builtinPluginModules];
+  if (!pluginModule) {
+    throw new Error(`Missing builtin plugin module: ${plugin.id}`);
+  }
+
+  return wrapBuiltinPlugin({
+    id: plugin.id,
+    displayName: plugin.displayName,
+    description: plugin.description,
+    tags: plugin.tags,
+  }, pluginModule);
+});
 
 export interface BizBotPluginRegistry {
   plugins: BizBotPlugin[];
@@ -41,8 +58,25 @@ export interface BizBotPluginRegistry {
   toolToPluginId: Map<string, string>;
 }
 
-export function getBuiltinPlugins(): BizBotPlugin[] {
-  return [...builtinPlugins];
+export function getBuiltinPlugins(options?: { includeDisabled?: boolean }): BizBotPlugin[] {
+  const includeDisabled = options?.includeDisabled ?? true;
+  return builtinPlugins.filter((plugin) => includeDisabled || isBuiltinPluginEnabled(plugin.metadata.id));
+}
+
+export function getEnabledBuiltinPlugins(): BizBotPlugin[] {
+  return getBuiltinPlugins({ includeDisabled: false });
+}
+
+export function getBuiltinPluginTooling(id: string): { envKey: string; defaultEnabled: boolean } | null {
+  const plugin = getBuiltinPluginToggle(id);
+  if (!plugin) {
+    return null;
+  }
+
+  return {
+    envKey: plugin.envKey,
+    defaultEnabled: plugin.defaultEnabled,
+  };
 }
 
 export function createPluginRegistry(
