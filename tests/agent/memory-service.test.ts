@@ -24,6 +24,7 @@ import {
   forgetMemoryFact,
   formatMemoryFactsForPrompt,
   getActiveMemoryFacts,
+  getRelevantMemoryFacts,
   setMemoryFact,
 } from "@/lib/agent/memory/service";
 
@@ -183,5 +184,51 @@ describe("explicit memory service", () => {
       "[/User Memory]",
     ].join("\n"));
     expect(formatMemoryFactsForPrompt([])).toBe("");
+  });
+
+  it("returns a relevance-ranked top slice for prompt injection", async () => {
+    mocks.findMany.mockResolvedValue([
+      {
+        id: "fact-1",
+        userId: "user-1",
+        category: "preference",
+        key: "preferred_tone",
+        value: "concise and direct",
+        source: "user",
+        isActive: true,
+        createdAt: new Date("2026-03-31T12:00:00.000Z"),
+        updatedAt: new Date(),
+      },
+      {
+        id: "fact-2",
+        userId: "user-1",
+        category: "workflow",
+        key: "reply_review_step",
+        value: "check for compliance before sending",
+        source: "user",
+        isActive: true,
+        createdAt: new Date("2026-03-31T12:00:00.000Z"),
+        updatedAt: new Date("2026-03-31T12:05:00.000Z"),
+      },
+      {
+        id: "fact-3",
+        userId: "user-1",
+        category: "identity",
+        key: "favorite_snack",
+        value: "pretzels",
+        source: "user",
+        isActive: true,
+        createdAt: new Date("2026-03-31T12:00:00.000Z"),
+        updatedAt: new Date("2026-03-31T12:05:00.000Z"),
+      },
+    ]);
+
+    const facts = await getRelevantMemoryFacts({
+      userId: "user-1",
+      query: "Draft a concise reply and follow my review workflow",
+      maxFacts: 2,
+    });
+
+    expect(facts.map((fact) => fact.key)).toEqual(["preferred_tone", "reply_review_step"]);
   });
 });

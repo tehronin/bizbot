@@ -2,7 +2,7 @@
 
 import { PaginationControls } from "@/components/layout/PaginationControls";
 import { usePagination } from "@/hooks/usePagination";
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 interface BuilderConfig {
   workspaceRoot: string;
@@ -18,6 +18,7 @@ interface BuilderConfig {
   installDependenciesByDefault: boolean;
   defaultAgenticProfile: string;
   agenticTimeoutSeconds: number;
+  agenticMaxIterations: number;
 }
 
 interface BuilderTemplatePreset {
@@ -100,7 +101,40 @@ interface BuilderTask {
     lastStageError?: string | null;
     lastAttemptedStage?: string | null;
     planSteps?: BuilderPlanStep[];
+    lastRetryAt?: string | null;
+    currentIteration?: number | null;
+    maxIterations?: number | null;
+    latestLoopSummary?: string | null;
+    resumeFromIteration?: number | null;
   } | null;
+}
+
+interface BuilderTaskHistoryEntry {
+  runId: string;
+  taskId: string | null;
+  projectId: string;
+  iteration: number | null;
+  verdict: string;
+  status: string;
+  summary: string | null;
+  stdout: string | null;
+  stderr: string | null;
+  timestamp: string;
+  finishedAt: string | null;
+}
+
+interface BuilderTaskHistoryResponse {
+  history: BuilderTaskHistoryEntry[];
+  error?: string;
+}
+
+interface BuilderStats {
+  totalRuns: number;
+  totalTasksRun: number;
+  successRate: number;
+  avgIterationsPerTask: number;
+  avgIterationsPerRun: number;
+  statusCounts: Record<string, number>;
 }
 
 interface BuilderReview {
@@ -190,6 +224,45 @@ interface BuilderProjectDetailResponse {
   error?: string;
 }
 
+type BuilderShortcutAction = "retry-last-failed-task" | "open-current-task-logs" | "cancel-running-task";
+
+function normalizeBuilderShortcutAction(value: string | null | undefined): BuilderShortcutAction | null {
+  switch (value) {
+    case "retry-last-failed-task":
+    case "open-current-task-logs":
+    case "cancel-running-task":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function readBuilderShortcutFromHash(): BuilderShortcutAction | null {
+  if (typeof window === "undefined" || !window.location.hash) {
+    return null;
+  }
+
+  const match = window.location.hash.match(/builder-shortcut=([^&]+)/);
+  return normalizeBuilderShortcutAction(match ? decodeURIComponent(match[1] ?? "") : null);
+}
+
+function clearBuilderShortcutHash(): void {
+  if (typeof window === "undefined" || !window.location.hash.includes("builder-shortcut=")) {
+    return;
+  }
+
+  const nextUrl = `${window.location.pathname}${window.location.search}`;
+  window.history.replaceState(null, "", nextUrl);
+}
+
+function formatPercentage(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "0%";
+  }
+
+  return `${Math.round(value * 100)}%`;
+}
+
 function getRunLoopMetadata(metadata: Record<string, unknown> | null | undefined): BuilderRunLoopMetadata | null {
   if (!metadata || typeof metadata !== "object") {
     return null;
@@ -213,7 +286,10 @@ export default function BuilderPage() {
   const [status, setStatus] = useState<BuilderStatusResponse | null>(null);
   const [projects, setProjects] = useState<BuilderProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [projectDetail, setProjectDetail] = useState<BuilderProjectDetailResponse | null>(null);
+  const [taskHistory, setTaskHistory] = useState<BuilderTaskHistoryEntry[]>([]);
+  const [builderStats, setBuilderStats] = useState<BuilderStats | null>(null);
   const [createDraft, setCreateDraft] = useState(EMPTY_CREATE_PROJECT);
   const [installPackages, setInstallPackages] = useState("");
   const [scriptName, setScriptName] = useState("build");
@@ -224,8 +300,11 @@ export default function BuilderPage() {
   const [bootstrapOptions, setBootstrapOptions] = useState({ initializeGit: true, installDependencies: false });
   const [saving, setSaving] = useState(false);
   const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
+  const [highlightedRunId, setHighlightedRunId] = useState<string | null>(null);
+  const [pendingShortcutAction, setPendingShortcutAction] = useState<BuilderShortcutAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resultNotice, setResultNotice] = useState<string | null>(null);
+  const recentRunsRef = useRef<HTMLElement | null>(null);
 
   async function loadStatus(): Promise<BuilderStatusResponse> {
     const response = await fetch("/api/builder/status");
@@ -261,6 +340,31 @@ export default function BuilderPage() {
       throw new Error(payload.error ?? "Failed to load builder project details.");
     }
     setProjectDetail(payload);
+    setSelectedTaskId((current) => {
+      if (current && payload.tasks.some((task) => task.id === current)) {
+        return current;
+      }
+
+      return payload.currentTask?.id ?? payload.tasks[0]?.id ?? null;
+    });
+  }
+
+  async function loadBuilderStats(projectId: string): Promise<void> {
+    const response = await fetch(`/api/analytics/builder-stats?projectId=${encodeURIComponent(projectId)}`);
+    const payload = (await response.json()) as BuilderStats & { error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load builder stats.");
+    }
+    setBuilderStats(payload);
+  }
+
+  async function loadTaskHistory(taskId: string): Promise<void> {
+    const response = await fetch(`/api/builder/tasks/${taskId}/history`);
+    const payload = (await response.json()) as BuilderTaskHistoryResponse;
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load task history.");
+    }
+    setTaskHistory(payload.history);
   }
 
   async function refresh(nextSelectedProjectId?: string | null): Promise<void> {
@@ -292,6 +396,28 @@ export default function BuilderPage() {
       });
     }
   }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setBuilderStats(null);
+      return;
+    }
+
+    void loadBuilderStats(selectedProjectId).catch((nextError) => {
+      setError(nextError instanceof Error ? nextError.message : "Failed to load builder stats.");
+    });
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (!selectedTaskId) {
+      setTaskHistory([]);
+      return;
+    }
+
+    void loadTaskHistory(selectedTaskId).catch((nextError) => {
+      setError(nextError instanceof Error ? nextError.message : "Failed to load task history.");
+    });
+  }, [selectedTaskId]);
 
   const enabledAgentProfiles = useMemo(
     () => (status?.cliProfiles ?? []).filter((profile) => profile.enabled && profile.metadata?.ready === true),
@@ -390,6 +516,31 @@ export default function BuilderPage() {
     }
   }
 
+  async function resumeTask(taskId: string, options?: { fromIteration?: number; profile?: string; model?: string }): Promise<void> {
+    setSaving(true);
+    setError(null);
+    setResultNotice(null);
+    try {
+      const response = await fetch(`/api/builder/tasks/${taskId}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(options ?? {}),
+      });
+      const payload = (await response.json()) as { error?: string; runId?: string; taskId?: string; status?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to resume builder task.");
+      }
+      setResultNotice(payload.runId ? `Resumed task ${payload.taskId} as run ${payload.runId}.` : "Builder task resumed.");
+      if (selectedProjectId) {
+        await refresh(selectedProjectId);
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to resume builder task.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function cancelRun(runId: string): Promise<void> {
     setCancellingRunId(runId);
     setError(null);
@@ -413,7 +564,99 @@ export default function BuilderPage() {
     }
   }
 
+  function focusRunLogs(runId?: string): void {
+    const targetRun = runId
+      ? projectDetail?.runs.find((run) => run.id === runId) ?? null
+      : projectDetail?.runs?.[0] ?? null;
+    if (!targetRun) {
+      setResultNotice("No builder run logs are available for this project yet.");
+      return;
+    }
+
+    setHighlightedRunId(targetRun.id);
+    recentRunsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setResultNotice(`Focused logs for run ${targetRun.id}.`);
+  }
+
+  const handleDesktopShortcut = useEffectEvent((action: BuilderShortcutAction) => {
+    if (!selectedProjectId || !projectDetail) {
+      return;
+    }
+
+    if (action === "open-current-task-logs") {
+      focusRunLogs();
+      setPendingShortcutAction(null);
+      return;
+    }
+
+    if (saving || cancellingRunId) {
+      return;
+    }
+
+    if (action === "cancel-running-task") {
+      const runningRun = projectDetail.runs.find((run) => run.status === "RUNNING");
+      if (!runningRun) {
+        setResultNotice("No running builder run is available to cancel.");
+        setPendingShortcutAction(null);
+        return;
+      }
+
+      void cancelRun(runningRun.id).finally(() => {
+        setPendingShortcutAction(null);
+      });
+      return;
+    }
+
+    const failedTask = projectDetail.tasks.find((task) => task.status === "FAILED");
+    if (!failedTask) {
+      setResultNotice("No failed builder task is available to retry.");
+      setPendingShortcutAction(null);
+      return;
+    }
+
+    void resumeTask(failedTask.id, {
+      fromIteration: failedTask.metadata?.currentIteration ?? failedTask.metadata?.resumeFromIteration ?? undefined,
+    }).finally(() => {
+      setPendingShortcutAction(null);
+    });
+  });
+
+  useEffect(() => {
+    const handleHashShortcut = () => {
+      const action = readBuilderShortcutFromHash();
+      if (action) {
+        setPendingShortcutAction(action);
+        clearBuilderShortcutHash();
+      }
+    };
+
+    const handleCustomShortcut = (event: Event) => {
+      const detail = (event as CustomEvent<{ action?: string }>).detail;
+      const action = normalizeBuilderShortcutAction(detail?.action);
+      if (action) {
+        setPendingShortcutAction(action);
+      }
+    };
+
+    handleHashShortcut();
+    window.addEventListener("hashchange", handleHashShortcut);
+    window.addEventListener("bizbot:builder-shortcut", handleCustomShortcut as EventListener);
+    return () => {
+      window.removeEventListener("hashchange", handleHashShortcut);
+      window.removeEventListener("bizbot:builder-shortcut", handleCustomShortcut as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingShortcutAction) {
+      return;
+    }
+
+    handleDesktopShortcut(pendingShortcutAction);
+  }, [pendingShortcutAction]);
+
   const selectedProject = projectDetail?.project ?? projects.find((project) => project.id === selectedProjectId) ?? null;
+  const selectedTask = projectDetail?.tasks.find((task) => task.id === selectedTaskId) ?? projectDetail?.currentTask ?? null;
   const projectsPagination = usePagination(projects, 15);
   const runsPagination = usePagination(projectDetail?.runs ?? [], 15);
 
@@ -563,11 +806,12 @@ export default function BuilderPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>current task</div>
-                  {projectDetail?.currentTask ? (
+                  {selectedTask ? (
                     <>
-                      <div className="text-sm">{projectDetail.currentTask.title}</div>
-                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>{projectDetail.currentTask.stage.toLowerCase()} · {projectDetail.currentTask.status.toLowerCase()}</div>
-                      {projectDetail.currentTask.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail.currentTask.summary}</div> : null}
+                      <div className="text-sm">{selectedTask.title}</div>
+                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>{selectedTask.stage.toLowerCase()} · {selectedTask.status.toLowerCase()}</div>
+                      {selectedTask.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{selectedTask.summary}</div> : null}
+                      {selectedTask.metadata?.latestLoopSummary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{selectedTask.metadata.latestLoopSummary}</div> : null}
                     </>
                   ) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No Builder task is active yet.</div>}
                 </div>
@@ -580,6 +824,33 @@ export default function BuilderPage() {
               </div>
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder stats</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>project scoped</div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { label: "success rate", value: formatPercentage(builderStats?.successRate) },
+                    { label: "avg iterations / task", value: String(builderStats?.avgIterationsPerTask ?? 0) },
+                    { label: "avg iterations / run", value: String(builderStats?.avgIterationsPerRun ?? 0) },
+                    { label: "total runs", value: String(builderStats?.totalRuns ?? 0) },
+                  ].map((card) => (
+                    <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                      <div className="text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+                      <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+                    </div>
+                  ))}
+                </div>
+                {builderStats ? (
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    Status counts: {Object.entries(builderStats.statusCounts).length > 0
+                      ? Object.entries(builderStats.statusCounts).map(([statusKey, count]) => `${statusKey.toLowerCase()}: ${count}`).join("; ")
+                      : "none recorded"}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                 <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder task</div>
                 <div>
                   <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Task request</label>
@@ -587,6 +858,9 @@ export default function BuilderPage() {
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
                   Builder tasks now run through BizBot&apos;s native in-process builder operator. The CLI profile section below remains available only for direct adapter prompts.
+                </div>
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  Desktop shortcuts: Ctrl+Shift+R retries the latest failed task, Ctrl+Shift+L focuses current logs, and Ctrl+Shift+K cancels the active run.
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <button disabled={saving || !taskRequest.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/tasks`, { request: taskRequest })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
@@ -597,6 +871,12 @@ export default function BuilderPage() {
                   </button>
                   <button disabled={saving || !taskRequest.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/tasks`, { request: taskRequest, retryFailed: true })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
                     retry last failed
+                  </button>
+                  <button disabled={saving || !selectedTask || selectedTask.status === "RUNNING" || selectedTask.status === "PENDING"} onClick={() => selectedTask ? void resumeTask(selectedTask.id) : undefined} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                    resume selected task
+                  </button>
+                  <button disabled={!projectDetail?.runs?.length} onClick={() => focusRunLogs()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                    open current logs
                   </button>
                 </div>
               </div>
@@ -623,17 +903,53 @@ export default function BuilderPage() {
               </div>
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>recent tasks</div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>recent tasks</div>
+                  {selectedTask ? <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>history target: {selectedTask.title}</div> : null}
+                </div>
                 {(projectDetail?.tasks ?? []).length > 0 ? projectDetail?.tasks.slice(0, 5).map((task) => (
-                  <div key={task.id} className="border p-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                  <button key={task.id} onClick={() => setSelectedTaskId(task.id)} className="w-full border p-2 text-left" style={{ borderColor: task.id === selectedTaskId ? "var(--accent)" : "var(--border)", background: task.id === selectedTaskId ? "var(--accent-glow)" : "var(--bg-surface)" }}>
                     <div className="flex items-center justify-between gap-3 text-sm">
                       <span>{task.title}</span>
                       <span style={{ color: task.status === "FAILED" ? "var(--danger)" : task.status === "SUCCEEDED" ? "var(--success)" : "var(--text-dim)" }}>{task.status.toLowerCase()}</span>
                     </div>
                     <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{task.stage.toLowerCase()} · {task.description}</div>
                     {task.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{task.summary}</div> : null}
-                  </div>
+                  </button>
                 )) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No Builder tasks recorded yet.</div>}
+              </div>
+
+              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>task history</div>
+                  {selectedTask ? <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{selectedTask.status.toLowerCase()}</div> : null}
+                </div>
+                {selectedTask ? (
+                  taskHistory.length > 0 ? taskHistory.map((entry) => (
+                    <div key={`${entry.runId}-${entry.iteration ?? "run"}`} className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span>
+                          {entry.iteration ? `iteration ${entry.iteration}` : "run replay"}
+                        </span>
+                        <span style={{ color: entry.verdict === "complete" || entry.status === "SUCCEEDED" ? "var(--success)" : entry.verdict === "retry" ? "var(--accent)" : "var(--danger)" }}>
+                          {entry.verdict.replace(/_/g, " ")}
+                        </span>
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        {new Date(entry.timestamp).toLocaleString()} · run {entry.runId}
+                      </div>
+                      {entry.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{entry.summary}</div> : null}
+                      <div className="flex flex-wrap gap-3">
+                        <button disabled={saving || selectedTask.status === "RUNNING"} onClick={() => void resumeTask(selectedTask.id, { fromIteration: entry.iteration ?? undefined })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                          resume from here
+                        </button>
+                        <button onClick={() => focusRunLogs(entry.runId)} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                          show run logs
+                        </button>
+                      </div>
+                    </div>
+                  )) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No task history recorded for the selected task yet.</div>
+                ) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>Select a task to inspect its run history.</div>}
               </div>
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
@@ -707,13 +1023,13 @@ export default function BuilderPage() {
           )}
         </section>
 
-        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+        <section ref={recentRunsRef} className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>recent runs</div>
           <div className="space-y-3 text-sm">
             {(projectDetail?.runs ?? []).length === 0 ? (
               <div style={{ color: "var(--text-dim)" }}>No recorded runs for this project yet.</div>
             ) : runsPagination.pageItems.map((run) => (
-              <div key={run.id} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div key={run.id} className="border p-3" style={{ borderColor: highlightedRunId === run.id ? "var(--accent)" : "var(--border-sub)", background: highlightedRunId === run.id ? "var(--accent-glow)" : "var(--bg-raised)" }}>
                 {(() => {
                   const loop = getRunLoopMetadata(run.metadata);
                   return (

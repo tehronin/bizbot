@@ -114,6 +114,8 @@ model Conversation {
   title         String?
   user          User      @relation(fields: [userId], references: [id])
   userId        String
+  promptSummary String?
+  promptSummaryUpdatedAt DateTime?
   archivedAt    DateTime?
   deletedAt     DateTime?
   lastMessageAt DateTime?

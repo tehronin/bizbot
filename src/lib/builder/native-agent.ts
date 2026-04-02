@@ -20,7 +20,6 @@ import type {
   BuilderAgenticVerificationStep,
 } from "@/lib/builder/agentic";
 
-const MAX_AGENTIC_ITERATIONS = 3;
 const MAX_CHANGED_FILES = 20;
 const MAX_SNAPSHOT_ENTRIES = 200;
 const MAX_METADATA_OUTPUT_CHARS = 2_000;
@@ -275,13 +274,14 @@ function buildRepairPrompt(
 
 function decideReviewVerdict(args: {
   iteration: number;
+  maxIterations: number;
   actResult: BuilderCommandResult;
   verification: BuilderAgenticVerificationReport;
   changedFiles: string[];
   previousFailureSignature: string | null;
   currentFailureSignature: string;
 }): { verdict: "complete" | "retry" | "blocked" | "max_iterations" | "cancelled"; reason: string } {
-  const { iteration, actResult, verification, changedFiles, previousFailureSignature, currentFailureSignature } = args;
+  const { iteration, maxIterations, actResult, verification, changedFiles, previousFailureSignature, currentFailureSignature } = args;
 
   if (actResult.cancelled) {
     return { verdict: "cancelled", reason: actResult.timedOut ? "Builder agent timed out." : "Builder run was cancelled." };
@@ -304,7 +304,7 @@ function decideReviewVerdict(args: {
     return { verdict: "blocked", reason: "Verification failed and the builder loop did not detect workspace changes." };
   }
 
-  if (changedFiles.length === 0 && iteration >= MAX_AGENTIC_ITERATIONS) {
+  if (changedFiles.length === 0 && iteration >= maxIterations) {
     return { verdict: "blocked", reason: "Verification failed and no workspace changes detected after final iteration." };
   }
 
@@ -312,7 +312,7 @@ function decideReviewVerdict(args: {
     return { verdict: "blocked", reason: "Builder loop hit the same failure twice without improving verification output." };
   }
 
-  if (iteration >= MAX_AGENTIC_ITERATIONS) {
+  if (iteration >= maxIterations) {
     return { verdict: "max_iterations", reason: "Builder loop reached the maximum retry count." };
   }
 
@@ -333,6 +333,7 @@ function buildLoopSummary(loop: BuilderAgenticLoopMetadata): string {
 }
 
 function buildProgressLoop(args: {
+  maxIterations: number;
   phase: BuilderAgenticLoopMetadata["phase"];
   currentIteration: number;
   iterations: BuilderAgenticIteration[];
@@ -340,7 +341,7 @@ function buildProgressLoop(args: {
   selectedScripts: string[];
 }): BuilderAgenticLoopMetadata {
   return {
-    maxIterations: MAX_AGENTIC_ITERATIONS,
+    maxIterations: args.maxIterations,
     verified: false,
     verificationSkipped: false,
     selectedScripts: args.selectedScripts,
@@ -415,6 +416,7 @@ export async function executeNativeBuilderTask(
 ): Promise<NativeBuilderTaskResult> {
   const { executeAgentConversation } = await import("@/lib/agent/executor");
   const config = getBuilderConfig();
+  const maxIterations = config.agenticMaxIterations;
   const basePrompt = sanitizePrompt(input.prompt);
   if (!basePrompt) {
     throw new Error("Builder task prompt is required.");
@@ -428,14 +430,15 @@ export async function executeNativeBuilderTask(
   const iterations: BuilderAgenticIteration[] = [];
   const selectedScripts = listVerificationScripts(project);
 
-  for (let iteration = 1; iteration <= MAX_AGENTIC_ITERATIONS; iteration += 1) {
+  for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
     await emitProgress(options.onProgress, {
       loop: buildProgressLoop({
+        maxIterations,
         phase: "acting",
         currentIteration: iteration,
         iterations,
         selectedScripts,
-        summary: `Running native builder attempt ${iteration} of ${MAX_AGENTIC_ITERATIONS}.`,
+        summary: `Running native builder attempt ${iteration} of ${maxIterations}.`,
       }),
     });
 
@@ -533,6 +536,7 @@ export async function executeNativeBuilderTask(
 
     await emitProgress(options.onProgress, {
       loop: buildProgressLoop({
+        maxIterations,
         phase: "verifying",
         currentIteration: iteration,
         iterations,
@@ -558,6 +562,7 @@ export async function executeNativeBuilderTask(
     const failureSignature = buildFailureSignature(result, verification, nextSnapshot);
     const review = decideReviewVerdict({
       iteration,
+      maxIterations,
       actResult: result,
       verification,
       changedFiles,
@@ -584,6 +589,7 @@ export async function executeNativeBuilderTask(
     });
 
     const reviewLoop = buildProgressLoop({
+      maxIterations,
       phase: review.verdict === "complete" || review.verdict === "cancelled" ? "complete" : "reviewing",
       currentIteration: iteration,
       iterations,
@@ -614,7 +620,7 @@ export async function executeNativeBuilderTask(
 
     if (review.verdict === "complete") {
       const loop: BuilderAgenticLoopMetadata = {
-        maxIterations: MAX_AGENTIC_ITERATIONS,
+        maxIterations,
         finalVerdict: "complete",
         verified: !verification.skipped,
         verificationSkipped: verification.skipped,
@@ -628,7 +634,7 @@ export async function executeNativeBuilderTask(
 
     if (review.verdict === "cancelled") {
       const loop: BuilderAgenticLoopMetadata = {
-        maxIterations: MAX_AGENTIC_ITERATIONS,
+        maxIterations,
         finalVerdict: "cancelled",
         verified: false,
         verificationSkipped: verification.skipped,
@@ -642,7 +648,7 @@ export async function executeNativeBuilderTask(
 
     if (review.verdict !== "retry") {
       const loop: BuilderAgenticLoopMetadata = {
-        maxIterations: MAX_AGENTIC_ITERATIONS,
+        maxIterations,
         finalVerdict: review.verdict === "max_iterations" ? "max_iterations" : "blocked",
         verified: false,
         verificationSkipped: verification.skipped,
@@ -676,7 +682,7 @@ export async function executeNativeBuilderTask(
   };
 
   const loop: BuilderAgenticLoopMetadata = {
-    maxIterations: MAX_AGENTIC_ITERATIONS,
+    maxIterations,
     finalVerdict: fallbackResult.cancelled ? "cancelled" : "max_iterations",
     verified: false,
     verificationSkipped: fallbackVerification.skipped,

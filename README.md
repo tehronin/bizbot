@@ -12,6 +12,7 @@ BizBot is no longer just a social posting bot. The app now includes:
 
 - Agent chat with typed specialist routing and tool traces
 - Chat history controls for recent, archived, restore, and delete flows
+- Prompt-aware chat context assembly with rolling conversation summaries, retrieval gating, and token-usage journaling
 - Three knowledge lanes: semantic recall, explicit relational user memory, and a core ontology layer for canonical typed entities and relations
 - Builder Mode for sandboxed project scaffolding, persistent task orchestration, and external build-workspace execution
 - Unified inbox and lead pipeline
@@ -135,6 +136,8 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Presets currently cover `node-cli`, `vite-app`, `next-app`, and `plugin-package`.
 - The preferred orchestration path is the native in-process Builder loop, which runs project-scoped work through the `builder_operator` lane and deterministic verification.
 - Verification installs project dependencies on first run when needed, then executes the smallest deterministic scripts available in `build`, `test`, `lint` order.
+- The Builder dashboard now exposes project-scoped stats, per-task history, resume-from-iteration flows, and quick log focus controls.
+- Desktop packaging includes Builder shortcuts for retry-last-failed-task, open-current-task-logs, and cancel-running-task.
 - Low-level Builder commands and optional CLI adapters still exist for bounded operations, but persistent task orchestration is now the default path.
 - Claude Code is modeled as a future adapter slot under the same Builder Mode shell, not as a separate builtin product plugin.
 
@@ -142,10 +145,12 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 
 - Builder now treats the database as canonical for project context, tasks, and reviews, while `.builder/` files inside the external workspace are projections regenerated from that canonical state.
 - `BuilderTask` lets the same unit of work continue across turns instead of treating every builder request as a one-shot command.
-- The dashboard shows current task, current plan, latest review, next step, and recent tasks per project.
+- The dashboard shows current task, current plan, latest review, next step, recent tasks, task history, and project-level Builder stats.
 - `/api/builder/projects/[id]` returns the project overview used by the dashboard, and `/api/builder/projects/[id]/tasks` launches project-scoped orchestration runs.
+- `/api/builder/tasks/[taskId]/history` and `/api/builder/tasks/[taskId]/resume` expose task replay and resumability for the selected Builder task.
 - `BuilderRun.summary` stays compact, while `BuilderRun.metadata.review` stores the canonical structured review.
 - Builder synthesizes compact prompts from task state plus selected instruction fragments instead of injecting whole files into every run.
+- Task metadata persists loop iteration, loop phase, latest loop summary, retry timing, and resume targets so the UI and orchestration loop can continue from the current workspace state.
 - Builder inspection is now exposed through stable MCP resources under `bizbot://builder/*`.
 - See `docs/builder-mode.md` for the v2 model and authority rules.
 
@@ -163,7 +168,7 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - `BIZBOT_BUILDER_ALLOWED_COMMANDS` controls the raw command allowlist.
 - `BIZBOT_BUILDER_DEFAULT_TEMPLATE` and `BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER` set project defaults.
 - `BIZBOT_BUILDER_INIT_GIT` and `BIZBOT_BUILDER_INSTALL_DEPS` set bootstrap defaults.
-- `BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE`, `BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS`, and the `BIZBOT_BUILDER_CODEX_*` values control optional agentic execution.
+- `BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE`, `BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS`, `BIZBOT_BUILDER_AGENTIC_MAX_ITERATIONS`, and the `BIZBOT_BUILDER_CODEX_*` values control optional agentic execution.
 
 ### Builder Over MCP
 
@@ -205,6 +210,8 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 - Lane-aware tool gating
 - Delegated sub-runs with parent/child lineage
 - Durable run journaling under `.bizbot/agent-runs`
+- Prompt assembly telemetry for explicit memory, conversation summaries, recent turns, semantic recall, graph context, and docs context
+- Per-round provider token usage accounting when the upstream model returns usage metadata
 - Live tool trace streaming in Chat
 - MCP resources for runtime and debugging visibility
 
@@ -220,11 +227,13 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 - Lets operators open archived conversations in read-only mode before deciding whether to restore or delete them
 - Uses the typed specialist control plane
 - Lets operators promote a user or assistant message into explicit user memory
+- Uses rolling conversation summaries so ongoing threads do not depend entirely on raw recent-turn inclusion
 - Can expose runtime state through MCP-aware flows
 
 #### Chat Lifecycle
 
 - The database is the canonical source of truth for conversations and messages
+- Each conversation can also persist a prompt-only rolling summary used to compress older thread context without adding synthetic summary rows to the visible transcript
 - Local storage only remembers the selected active conversation id for reload recovery
 - Panel mode stays client-only, so `/chat` always reloads back into the normal chat panel instead of remaining stuck in history mode
 - Recent conversations stay separate from archived conversations, and archive or restore does not destroy message history
@@ -393,6 +402,8 @@ Current repo/runtime assumptions:
 
 - `npm run dev` starts the Next.js app and worker supervisor
 - `npm run build` passes on the current app state
+- `npm run lint` validates the application code surface
+- `npx tsc --noEmit` validates the current type surface directly
 - `npm run plugin:new -- <plugin-name>` scaffolds the starting point for new plugin-based features
 - `npx vitest run tests/builder tests/plugins tests/mcp` validates Builder Mode, plugin registry behavior, and MCP exposure together
 - `npm run test:app` isolates the general Vitest suite from MCP transport coverage

@@ -17,6 +17,7 @@ afterEach(() => {
   delete process.env.BIZBOT_BUILDER_INSTALL_DEPS;
   delete process.env.BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE;
   delete process.env.BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS;
+  delete process.env.BIZBOT_BUILDER_AGENTIC_MAX_ITERATIONS;
 });
 
 describe("builder config", () => {
@@ -39,6 +40,7 @@ describe("builder config", () => {
     process.env.BIZBOT_BUILDER_INSTALL_DEPS = "true";
     process.env.BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE = "";
     process.env.BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS = "1200";
+    process.env.BIZBOT_BUILDER_AGENTIC_MAX_ITERATIONS = "5";
 
     const config = getBuilderConfig();
 
@@ -52,6 +54,7 @@ describe("builder config", () => {
     expect(config.installDependenciesByDefault).toBe(true);
     expect(config.defaultAgenticProfile).toBe("");
     expect(config.agenticTimeoutSeconds).toBe(1200);
+    expect(config.agenticMaxIterations).toBe(5);
     expect(resolveBuilderWorkspacePath("projects/demo")).toBe(path.resolve(workspaceRoot, "projects", "demo"));
   });
 });

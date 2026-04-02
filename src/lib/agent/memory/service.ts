@@ -8,7 +8,9 @@ import {
 import { db } from "@/lib/db";
 const MAX_MEMORY_FACT_SERIALIZED_CHARS = 2_048;
 const MAX_PROMPT_FACTS = 12;
+const DEFAULT_RELEVANT_PROMPT_FACTS = 5;
 const MAX_PROMPT_VALUE_CHARS = 240;
+const STOP_WORDS = new Set(["a", "an", "and", "are", "for", "from", "how", "i", "in", "is", "it", "of", "on", "or", "please", "reply", "the", "to", "what", "with", "write"]);
 
 export interface MemoryFactRecord {
   id: string;
@@ -219,4 +221,92 @@ export function formatMemoryFactsForPrompt(
   });
 
   return `[User Memory]\n${lines.join("\n")}\n[/User Memory]`;
+}
+
+export interface GetRelevantMemoryFactsParams {
+  userId: string;
+  query: string;
+  maxFacts?: number;
+}
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
+}
+
+function getCategoryQueryWeight(category: MemoryFactCategory, query: string): number {
+  const normalized = query.toLowerCase();
+
+  switch (category) {
+    case "identity":
+      return /\b(name|who am i|about me|identity|timezone|location)\b/.test(normalized) ? 8 : 0;
+    case "preference":
+      return /\b(prefer|preference|tone|voice|style|concise|verbose|draft|reply|post|write)\b/.test(normalized) ? 10 : 0;
+    case "workflow":
+      return /\b(workflow|routine|steps|process|review|approval|publish|draft|retry|run)\b/.test(normalized) ? 5 : 0;
+    case "constraint":
+      return /\b(never|always|must|cannot|can't|do not|policy|constraint|avoid)\b/.test(normalized) ? 7 : 0;
+    case "operator_setting":
+      return /\b(setting|configure|config|provider|model|desktop|workspace|runtime)\b/.test(normalized) ? 5 : 0;
+    default:
+      return /\b(remember|context|history)\b/.test(normalized) ? 2 : 0;
+  }
+}
+
+function computePromptFactScore(fact: MemoryFactRecord, queryTokens: Set<string>, query: string): number {
+  const valueText = serializeJson(fact.value).toLowerCase();
+  const haystackTokens = new Set([...tokenize(fact.key), ...tokenize(valueText), ...tokenize(fact.category)]);
+  let score = getCategoryQueryWeight(fact.category, query);
+
+  for (const token of queryTokens) {
+    if (haystackTokens.has(token)) {
+      score += fact.key.includes(token) ? 5 : 3;
+    }
+  }
+
+  if (query.toLowerCase().includes(fact.key)) {
+    score += 8;
+  }
+
+  const ageHours = Math.max(0, (Date.now() - Date.parse(fact.updatedAt)) / (60 * 60 * 1000));
+  if (ageHours <= 24) {
+    score += 2;
+  } else if (ageHours <= 24 * 7) {
+    score += 1;
+  }
+
+  return score;
+}
+
+export async function getRelevantMemoryFacts(params: GetRelevantMemoryFactsParams): Promise<MemoryFactRecord[]> {
+  const query = params.query.trim();
+  if (!query) {
+    return [];
+  }
+
+  const maxFacts = Math.max(1, Math.min(params.maxFacts ?? DEFAULT_RELEVANT_PROMPT_FACTS, MAX_PROMPT_FACTS));
+  const facts = await getActiveMemoryFacts({ userId: params.userId });
+  if (facts.length === 0) {
+    return [];
+  }
+
+  const queryTokens = new Set(tokenize(query));
+  const scoredFacts = facts
+    .map((fact) => ({
+      fact,
+      score: computePromptFactScore(fact, queryTokens, query),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      return Date.parse(right.fact.updatedAt) - Date.parse(left.fact.updatedAt);
+    });
+
+  return scoredFacts.slice(0, maxFacts).map((entry) => entry.fact);
 }

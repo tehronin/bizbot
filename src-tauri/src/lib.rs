@@ -8,7 +8,15 @@ use std::{
   time::{Duration, Instant},
 };
 
-use tauri::{path::BaseDirectory, Manager, RunEvent, State};
+use tauri::{
+  menu::{Menu, MenuItem, Submenu},
+  path::BaseDirectory,
+  Manager, RunEvent, State,
+};
+
+const MENU_ID_RETRY_LAST_FAILED_TASK: &str = "builder.retry_last_failed_task";
+const MENU_ID_OPEN_CURRENT_TASK_LOGS: &str = "builder.open_current_task_logs";
+const MENU_ID_CANCEL_RUNNING_TASK: &str = "builder.cancel_running_task";
 
 #[derive(Default)]
 struct ManagedProcesses {
@@ -163,6 +171,56 @@ fn start_bundled_runtime(app: &tauri::App, processes: State<'_, ManagedProcesses
   }
 }
 
+fn install_builder_shortcuts_menu(app: &tauri::App) -> tauri::Result<()> {
+  let retry_item = MenuItem::with_id(
+    app,
+    MENU_ID_RETRY_LAST_FAILED_TASK,
+    "Retry Last Failed Task",
+    true,
+    Some("Ctrl+Shift+R"),
+  )?;
+  let open_logs_item = MenuItem::with_id(
+    app,
+    MENU_ID_OPEN_CURRENT_TASK_LOGS,
+    "Open Current Task Logs",
+    true,
+    Some("Ctrl+Shift+L"),
+  )?;
+  let cancel_run_item = MenuItem::with_id(
+    app,
+    MENU_ID_CANCEL_RUNNING_TASK,
+    "Cancel Running Task",
+    true,
+    Some("Ctrl+Shift+K"),
+  )?;
+
+  let builder_submenu = Submenu::with_items(
+    app,
+    "Builder",
+    true,
+    &[&retry_item, &open_logs_item, &cancel_run_item],
+  )?;
+  let menu = Menu::with_items(app, &[&builder_submenu])?;
+  app.set_menu(menu)?;
+  Ok(())
+}
+
+fn dispatch_builder_shortcut(app: &tauri::AppHandle, action: &str) {
+  let Some(window) = app.get_webview_window("main") else {
+    return;
+  };
+
+  let script = format!(
+    "window.dispatchEvent(new CustomEvent('bizbot:builder-shortcut', {{ detail: {{ action: {:?} }} }})); if (!window.location.pathname.startsWith('/builder')) {{ window.location.assign('/builder#builder-shortcut={}'); }}",
+    action,
+    action,
+  );
+
+  if let Err(error) = window.eval(&script) {
+    log::warn!("failed to dispatch builder shortcut {action}: {error}");
+  }
+}
+
 fn shutdown_managed_processes(processes: State<'_, ManagedProcesses>) {
   if let Ok(mut children) = processes.children.lock() {
     for child in children.iter_mut() {
@@ -188,12 +246,19 @@ fn shutdown_managed_processes(processes: State<'_, ManagedProcesses>) {
 pub fn run() {
   tauri::Builder::default()
     .manage(ManagedProcesses::default())
+    .on_menu_event(|app, event| match event.id().as_ref() {
+      MENU_ID_RETRY_LAST_FAILED_TASK => dispatch_builder_shortcut(app, "retry-last-failed-task"),
+      MENU_ID_OPEN_CURRENT_TASK_LOGS => dispatch_builder_shortcut(app, "open-current-task-logs"),
+      MENU_ID_CANCEL_RUNNING_TASK => dispatch_builder_shortcut(app, "cancel-running-task"),
+      _ => {}
+    })
     .setup(|app| {
       app.handle().plugin(
         tauri_plugin_log::Builder::default()
           .level(log::LevelFilter::Info)
           .build(),
       )?;
+      install_builder_shortcuts_menu(app)?;
       let processes = app.state::<ManagedProcesses>();
       start_bundled_runtime(app, processes);
       Ok(())

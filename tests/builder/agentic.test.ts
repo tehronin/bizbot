@@ -95,6 +95,7 @@ describe("builder agentic loop", () => {
     mocks.getBuilderConfig.mockReturnValue({
       defaultAgenticProfile: "codex",
       agenticTimeoutSeconds: 900,
+      agenticMaxIterations: 3,
     });
     mocks.getBuilderCliProfile.mockResolvedValue({
       key: "codex",

@@ -5,6 +5,8 @@ export interface AgentRuntimeConfig {
   heartbeatSeconds: number;
   knowledgePath: string;
   knowledgeEnabled: boolean;
+  toolMaxRounds: number;
+  toolResultMaxChars: number;
 }
 
 export interface AgentCapabilities {
@@ -16,6 +18,8 @@ export interface AgentCapabilities {
 }
 
 const DEFAULT_HEARTBEAT_SECONDS = 300;
+const DEFAULT_TOOL_MAX_ROUNDS = 8;
+const DEFAULT_TOOL_RESULT_MAX_CHARS = 8_000;
 
 function parsePositiveInteger(raw: string | undefined, fallback: number): number {
   if (!raw) {
@@ -64,6 +68,8 @@ export function getAgentRuntimeConfig(): AgentRuntimeConfig {
     heartbeatSeconds: Math.max(15, parsePositiveInteger(process.env.BIZBOT_AGENT_HEARTBEAT_SECONDS, DEFAULT_HEARTBEAT_SECONDS)),
     knowledgePath: process.env.BIZBOT_KNOWLEDGE_PATH ?? "knowledge",
     knowledgeEnabled: parseBoolean(process.env.BIZBOT_KNOWLEDGE_ENABLED, true),
+    toolMaxRounds: Math.max(1, parsePositiveInteger(process.env.BIZBOT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_TOOL_MAX_ROUNDS)),
+    toolResultMaxChars: Math.max(512, parsePositiveInteger(process.env.BIZBOT_AGENT_MAX_TOOL_RESULT_CHARS, DEFAULT_TOOL_RESULT_MAX_CHARS)),
   };
 }
 

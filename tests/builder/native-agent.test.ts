@@ -106,6 +106,7 @@ describe("native builder agent", () => {
 
     mocks.getBuilderConfig.mockReturnValue({
       agenticTimeoutSeconds: 60,
+      agenticMaxIterations: 3,
     });
     mocks.listBuilderFilesRecursive.mockImplementation(() => Object.keys(virtualFiles).sort((left, right) => left.localeCompare(right)));
     mocks.readBuilderFile.mockImplementation((filePath: string) => {

@@ -25,24 +25,28 @@ export interface ToolAccessContext {
   signal?: AbortSignal;
 }
 
-function canExposeTool(name: string, config: AgentRuntimeConfig, access?: ToolAccessContext): boolean {
+function getToolAccessDenialReason(name: string, config: AgentRuntimeConfig, access?: ToolAccessContext): string | null {
   if (config.autonomyPreset === "manual_only") {
     if (name === "social_post" || name === "social_reply") {
-      return false;
+      return `autonomy preset '${config.autonomyPreset}' blocks tool '${name}'`;
     }
   }
 
   if (config.autonomyPreset === "reply_only") {
     if (name === "social_post") {
-      return false;
+      return `autonomy preset '${config.autonomyPreset}' blocks tool '${name}'`;
     }
   }
 
   if (access?.agentProfile && !canProfileUseTool(access.agentProfile, name)) {
-    return false;
+    return `tool '${name}' is not allowed for profile '${access.agentProfile}'`;
   }
 
-  return true;
+  return null;
+}
+
+function canExposeTool(name: string, config: AgentRuntimeConfig, access?: ToolAccessContext): boolean {
+  return getToolAccessDenialReason(name, config, access) === null;
 }
 
 function getFullToolRegistry(): RegisteredToolDefinition[] {
@@ -67,8 +71,10 @@ export async function executeTool(
   },
 ): Promise<ToolExecutionResult> {
   const config = options?.config ?? getAgentRuntimeConfig();
-  if (!canExposeTool(name, config, options?.access)) {
-    throw new Error(`Tool not allowed for this execution lane: ${name}`);
+  const denialReason = getToolAccessDenialReason(name, config, options?.access);
+  if (denialReason) {
+    console.warn(`[tool blocked] profile=${options?.access?.agentProfile ?? "unknown"} tool=${name} reason=${denialReason}`);
+    throw new Error(denialReason);
   }
 
   const tool = getFullToolRegistry().find((entry) => entry.name === name);

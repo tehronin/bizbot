@@ -5,11 +5,14 @@ const mocks = vi.hoisted(() => ({
   getBuilderConfig: vi.fn(),
   syncBuilderCliProfiles: vi.fn(),
   syncBuilderTemplatePresets: vi.fn(),
+  getBuilderStats: vi.fn(),
   getBuilderProjectOverview: vi.fn(),
   launchBuilderTask: vi.fn(),
   createBuilderProject: vi.fn(),
   listBuilderProjects: vi.fn(),
   getBuilderProject: vi.fn(),
+  getBuilderTask: vi.fn(),
+  getBuilderTaskHistory: vi.fn(),
   listBuilderRuns: vi.fn(),
   updateBuilderProject: vi.fn(),
   deleteBuilderProject: vi.fn(),
@@ -41,6 +44,10 @@ vi.mock("@/lib/builder/orchestrator", () => ({
   launchBuilderTask: mocks.launchBuilderTask,
 }));
 
+vi.mock("@/lib/builder/analytics", () => ({
+  getBuilderStats: mocks.getBuilderStats,
+}));
+
 vi.mock("@/lib/builder/projects", () => ({
   createBuilderProject: mocks.createBuilderProject,
   listBuilderProjects: mocks.listBuilderProjects,
@@ -48,6 +55,11 @@ vi.mock("@/lib/builder/projects", () => ({
   listBuilderRuns: mocks.listBuilderRuns,
   updateBuilderProject: mocks.updateBuilderProject,
   deleteBuilderProject: mocks.deleteBuilderProject,
+}));
+
+vi.mock("@/lib/builder/tasks", () => ({
+  getBuilderTask: mocks.getBuilderTask,
+  getBuilderTaskHistory: mocks.getBuilderTaskHistory,
 }));
 
 vi.mock("@/lib/builder/commands", () => ({
@@ -71,6 +83,9 @@ import { POST as postBootstrap } from "@/app/api/builder/projects/[id]/bootstrap
 import { POST as postCommand } from "@/app/api/builder/projects/[id]/commands/route";
 import { GET as getTasks, POST as postTask } from "@/app/api/builder/projects/[id]/tasks/route";
 import { POST as postCancelRun } from "@/app/api/builder/runs/[runId]/cancel/route";
+import { GET as getTaskHistory } from "@/app/api/builder/tasks/[taskId]/history/route";
+import { POST as postResumeTask } from "@/app/api/builder/tasks/[taskId]/resume/route";
+import { GET as getBuilderStats } from "@/app/api/analytics/builder-stats/route";
 
 describe("builder routes", () => {
   beforeEach(() => {
@@ -89,6 +104,7 @@ describe("builder routes", () => {
       installDependenciesByDefault: false,
       defaultAgenticProfile: "",
       agenticTimeoutSeconds: 900,
+      agenticMaxIterations: 3,
     });
     mocks.syncBuilderTemplatePresets.mockResolvedValue([
       { id: "template-1", key: "node-cli", displayName: "Node CLI", description: "desc", enabled: true, defaultPackageManager: "NPM" },
@@ -109,6 +125,36 @@ describe("builder routes", () => {
       packageManager: "NPM",
       gitInitialized: false,
       lastRunStatus: "IDLE",
+    });
+    mocks.getBuilderTask.mockResolvedValue({
+      id: "task-1",
+      projectId: "project-1",
+      title: "Implement health check",
+      description: "Add a health check route.",
+      metadata: { lastUserRequest: "Add a health check route and verify the tests." },
+    });
+    mocks.getBuilderTaskHistory.mockResolvedValue([
+      {
+        runId: "run-1",
+        taskId: "task-1",
+        projectId: "project-1",
+        iteration: 1,
+        verdict: "retry",
+        status: "FAILED",
+        summary: "Tests failed.",
+        stdout: "attempt 1",
+        stderr: "build failed",
+        timestamp: new Date("2025-01-01T00:00:00.000Z"),
+        finishedAt: new Date("2025-01-01T00:01:00.000Z"),
+      },
+    ]);
+    mocks.getBuilderStats.mockResolvedValue({
+      totalRuns: 3,
+      totalTasksRun: 3,
+      successRate: 0.67,
+      avgIterationsPerTask: 2,
+      avgIterationsPerRun: 1.67,
+      statusCounts: { SUCCEEDED: 2, FAILED: 1 },
     });
     mocks.getBuilderProjectOverview.mockResolvedValue({
       project: {
@@ -196,6 +242,7 @@ describe("builder routes", () => {
 
     expect(response.status).toBe(200);
     expect(payload.config.defaultAgenticProfile).toBe("");
+    expect(payload.config.agenticMaxIterations).toBe(3);
     expect(payload.projects).toEqual({ total: 2, running: 1 });
     expect(payload.cliProfiles[0]?.key).toBe("codex");
   });
@@ -345,10 +392,79 @@ describe("builder routes", () => {
       request: "Add a health check route and verify the tests.",
       taskId: undefined,
       retryFailed: undefined,
+      fromIteration: undefined,
       profile: "codex",
       model: "gpt-5-codex",
     });
     expect(payload.taskId).toBe("task-1");
+  });
+
+  it("forwards an explicit iteration when starting a builder task", async () => {
+    const response = await postTask(new NextRequest("http://localhost/api/builder/projects/project-1/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        request: "Resume the fix from iteration 2.",
+        taskId: "task-1",
+        retryFailed: true,
+        fromIteration: 2,
+      }),
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+
+    expect(response.status).toBe(202);
+    expect(mocks.launchBuilderTask).toHaveBeenCalledWith("project-1", {
+      request: "Resume the fix from iteration 2.",
+      taskId: "task-1",
+      retryFailed: true,
+      fromIteration: 2,
+      profile: undefined,
+      model: undefined,
+    });
+  });
+
+  it("returns task history from the dedicated history route", async () => {
+    const response = await getTaskHistory(new Request("http://localhost/api/builder/tasks/task-1/history"), {
+      params: Promise.resolve({ taskId: "task-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.getBuilderTaskHistory).toHaveBeenCalledWith("task-1");
+    expect(payload.history).toHaveLength(1);
+    expect(payload.history[0]?.iteration).toBe(1);
+  });
+
+  it("resumes a task using the task-specific resume route", async () => {
+    const response = await postResumeTask(new NextRequest("http://localhost/api/builder/tasks/task-1/resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fromIteration: 2, profile: "codex" }),
+    }), {
+      params: Promise.resolve({ taskId: "task-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(202);
+    expect(mocks.launchBuilderTask).toHaveBeenCalledWith("project-1", {
+      request: "Add a health check route and verify the tests.",
+      taskId: "task-1",
+      retryFailed: true,
+      fromIteration: 2,
+      profile: "codex",
+      model: undefined,
+    });
+    expect(payload.taskId).toBe("task-1");
+  });
+
+  it("returns builder stats from the analytics route", async () => {
+    const response = await getBuilderStats(new NextRequest("http://localhost/api/analytics/builder-stats?projectId=project-1"));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.getBuilderStats).toHaveBeenCalledWith("project-1");
+    expect(payload.successRate).toBe(0.67);
   });
 
   it("lists projects from the collection route", async () => {

@@ -25,6 +25,10 @@ export function composeBuilderTaskPrompt(args: {
     `Project identity: ${args.project.name} (${args.project.relativePath}) using template ${args.project.template} and package manager ${args.project.packageManager}.`,
     `Current task: ${args.task.title}.`,
     `Current stage: ${args.stage}.`,
+    metadata.resumeFromIteration
+      ? `Resume target: use iteration ${metadata.resumeFromIteration} as the recovery reference while working from the current workspace state.`
+      : "Resume target: none.",
+    metadata.latestLoopSummary ? `Latest loop summary: ${metadata.latestLoopSummary}` : "Latest loop summary: none recorded.",
     `Success criteria: ${acceptanceCriteria.length > 0 ? acceptanceCriteria.join("; ") : "complete the task, validate the result, and leave a clear review summary."}`,
     joinList("Top constraints", args.context.constraints, "stay within workspace, prefer deterministic changes, keep outputs reviewable"),
     joinList("Important commands", args.context.importantCommands),

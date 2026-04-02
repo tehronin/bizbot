@@ -7,6 +7,7 @@ const DEFAULT_TEMPLATE = "node-cli";
 const DEFAULT_PACKAGE_MANAGER = "NPM";
 const DEFAULT_AGENTIC_PROFILE = "";
 const DEFAULT_AGENTIC_TIMEOUT_SECONDS = 900;
+const DEFAULT_AGENTIC_MAX_ITERATIONS = 3;
 
 export interface BuilderConfig {
   workspaceRoot: string;
@@ -22,6 +23,7 @@ export interface BuilderConfig {
   installDependenciesByDefault: boolean;
   defaultAgenticProfile: string;
   agenticTimeoutSeconds: number;
+  agenticMaxIterations: number;
 }
 
 function parseBoolean(raw: string | undefined, fallback: boolean): boolean {
@@ -115,6 +117,7 @@ export function getBuilderConfig(): BuilderConfig {
     installDependenciesByDefault: parseBoolean(process.env.BIZBOT_BUILDER_INSTALL_DEPS, false),
     defaultAgenticProfile: process.env.BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE?.trim() || DEFAULT_AGENTIC_PROFILE,
     agenticTimeoutSeconds: parsePositiveInteger(process.env.BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS, DEFAULT_AGENTIC_TIMEOUT_SECONDS),
+    agenticMaxIterations: Math.max(1, parsePositiveInteger(process.env.BIZBOT_BUILDER_AGENTIC_MAX_ITERATIONS, DEFAULT_AGENTIC_MAX_ITERATIONS)),
   };
 }
 

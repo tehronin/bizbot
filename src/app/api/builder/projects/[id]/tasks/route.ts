@@ -5,6 +5,7 @@ function parseTaskPayload(value: object | null): {
   request: string;
   taskId?: string;
   retryFailed?: boolean;
+  fromIteration?: number;
   profile?: string;
   model?: string;
 } {
@@ -21,6 +22,9 @@ function parseTaskPayload(value: object | null): {
     request: candidate.request,
     taskId: typeof candidate.taskId === "string" ? candidate.taskId : undefined,
     retryFailed: typeof candidate.retryFailed === "boolean" ? candidate.retryFailed : undefined,
+    fromIteration: typeof candidate.fromIteration === "number" && Number.isFinite(candidate.fromIteration) && candidate.fromIteration > 0
+      ? Math.trunc(candidate.fromIteration)
+      : undefined,
     profile: typeof candidate.profile === "string" ? candidate.profile : undefined,
     model: typeof candidate.model === "string" ? candidate.model : undefined,
   };

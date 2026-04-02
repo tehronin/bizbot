@@ -7,13 +7,14 @@ import { composeBuilderTaskPrompt } from "@/lib/builder/prompt";
 import { buildBuilderStructuredReview } from "@/lib/builder/review";
 import { createBuilderRun, getBuilderProject, listBuilderRuns, updateBuilderProject, updateBuilderRun, completeBuilderRun } from "@/lib/builder/projects";
 import { registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
-import { getBuilderTask, listBuilderTasks, resolveBuilderContinuationTask, updateBuilderTask, updateBuilderTaskStage } from "@/lib/builder/tasks";
+import { getBuilderTask, listBuilderTasks, resolveBuilderContinuationTask, updateBuilderTask, updateBuilderTaskExecutionState, updateBuilderTaskStage } from "@/lib/builder/tasks";
 import { defaultBuilderProjectContext, normalizeBuilderProjectContext, normalizeBuilderTaskMetadata, trimReviewSummary, type BuilderProjectContextState, type BuilderStructuredReview } from "@/lib/builder/types";
 
 export interface BuilderOrchestrationInput {
   request: string;
   taskId?: string;
   retryFailed?: boolean;
+  fromIteration?: number;
   profile?: string;
   model?: string;
 }
@@ -138,6 +139,7 @@ export async function orchestrateBuilderTask(
     request,
     taskId: input.taskId,
     retryFailed: input.retryFailed,
+    fromIteration: input.fromIteration,
     requestedProfile: input.profile,
     requestedModel: input.model,
   });
@@ -166,6 +168,14 @@ export async function orchestrateBuilderTask(
     lastUserRequest: request,
     requestedProfile: input.profile ?? null,
     requestedModel: input.model ?? null,
+  });
+  await updateBuilderTaskExecutionState(task.id, {
+    summary: `Planning builder task ${task.title}.`,
+    currentIteration: input.fromIteration ?? null,
+    loopPhase: "planning",
+    latestLoopSummary: `Planning builder task ${task.title}.`,
+    resumeFromIteration: input.fromIteration ?? null,
+    lastRunId: run.id,
   });
 
   const planningContext = {
@@ -213,6 +223,22 @@ export async function orchestrateBuilderTask(
   }, {
     ...options,
     onProgress: async (event: BuilderAgenticProgressEvent) => {
+      const progressStage = event.loop.phase === "verifying"
+        ? "TESTING"
+        : event.loop.phase === "reviewing"
+          ? "REVIEW"
+          : "IMPLEMENTING";
+      await updateBuilderTaskExecutionState(task.id, {
+        summary: trimReviewSummary(event.loop.summary, 500),
+        stage: progressStage,
+        currentIteration: event.loop.currentIteration ?? null,
+        maxIterations: event.loop.maxIterations,
+        loopPhase: event.loop.phase ?? null,
+        latestLoopSummary: event.loop.summary,
+        lastRetryAt: event.loop.currentIteration && event.loop.currentIteration > 1 ? new Date().toISOString() : undefined,
+        resumeFromIteration: input.fromIteration ?? null,
+        lastRunId: run.id,
+      });
       await updateRunProgress(run.id, {
         taskId: task.id,
         stage: event.loop.phase ?? "IMPLEMENTING",
@@ -246,6 +272,12 @@ export async function orchestrateBuilderTask(
       lastUserRequest: request,
       requestedProfile: input.profile ?? null,
       requestedModel: input.model ?? null,
+      currentIteration: loopResult.loop.iterations.length > 0 ? loopResult.loop.iterations.length : null,
+      maxIterations: loopResult.loop.maxIterations,
+      loopPhase: loopResult.loop.finalVerdict ?? loopResult.loop.phase ?? null,
+      latestLoopSummary: review.summary,
+      resumeFromIteration: input.fromIteration ?? null,
+      lastRunId: run.id,
     },
   });
 
@@ -299,6 +331,7 @@ export async function launchBuilderTask(projectId: string, input: BuilderOrchest
     request,
     taskId: input.taskId,
     retryFailed: input.retryFailed,
+    fromIteration: input.fromIteration,
     requestedProfile: input.profile,
     requestedModel: input.model,
   });

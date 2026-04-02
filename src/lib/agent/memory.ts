@@ -21,6 +21,12 @@ interface MemoryFallbackRow {
 interface RecentMessageRow {
   role: string;
   content: string;
+  createdAt: Date;
+}
+
+interface ConversationSummaryRow {
+  promptSummary: string | null;
+  promptSummaryUpdatedAt: Date | null;
 }
 
 export interface MemoryEntry {
@@ -54,7 +60,364 @@ export interface ConversationMessageInspectorEntry {
   createdAt: string;
 }
 
+export interface RetrievalDecision {
+  included: boolean;
+  reason: string;
+  resultCount: number;
+  chars: number;
+}
+
+export interface BuildContextResult {
+  text: string;
+  blocks: {
+    conversationSummary: string;
+    recentConversation: string;
+    semanticRecall: string;
+    graph: string;
+    knowledgeDocs: string;
+  };
+  retrieval: {
+    conversationSummary: RetrievalDecision;
+    recentConversation: RetrievalDecision;
+    semanticRecall: RetrievalDecision;
+    graph: RetrievalDecision;
+    knowledgeDocs: RetrievalDecision;
+  };
+}
+
 const DEFAULT_USER_ID = "local-user";
+const RECENT_CONVERSATION_MAX_AGE_MS = 30 * 60 * 1000;
+const RECENT_RAW_MESSAGE_WINDOW = 6;
+const SUMMARY_MAX_CHARS = 1_200;
+const SUMMARY_LINE_MAX_CHARS = 180;
+const SUMMARY_MESSAGE_LIMIT = 80;
+
+function buildSkippedDecision(reason: string): RetrievalDecision {
+  return {
+    included: false,
+    reason,
+    resultCount: 0,
+    chars: 0,
+  };
+}
+
+function buildIncludedDecision(reason: string, resultCount: number, chars: number): RetrievalDecision {
+  return {
+    included: true,
+    reason,
+    resultCount,
+    chars,
+  };
+}
+
+function isShortFollowUp(message: string): boolean {
+  return message.trim().split(/\s+/).filter(Boolean).length <= 18;
+}
+
+function truncate(text: string, maxChars: number): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+
+  return `${text.slice(0, maxChars - 3)}...`;
+}
+
+function shouldUseConversationHistory(userMessage: string): { include: boolean; reason: string } {
+  const normalized = userMessage.trim().toLowerCase();
+  if (!normalized) {
+    return { include: false, reason: "message is empty" };
+  }
+
+  if (/\b(new topic|separate question|unrelated|ignore previous|start over|different subject)\b/.test(normalized)) {
+    return { include: false, reason: "message explicitly starts a new topic" };
+  }
+
+  const continuityPattern = /\b(that|it|this|those|them|continue|again|previous|earlier|same|above|follow up|follow-up|retry|fix that|what about|also|instead)\b/;
+  if (continuityPattern.test(normalized) || isShortFollowUp(normalized) || normalized.endsWith("?")) {
+    return { include: true, reason: "message looks like a continuation of the current thread" };
+  }
+
+  return { include: false, reason: "message does not appear to continue the current thread" };
+}
+
+function shouldIncludeRecentConversation(userMessage: string, recentMessages: RecentMessageRow[]): { include: boolean; reason: string } {
+  if (recentMessages.length === 0) {
+    return { include: false, reason: "no conversation history available" };
+  }
+
+  const historyIntent = shouldUseConversationHistory(userMessage);
+  if (!historyIntent.include) {
+    return historyIntent;
+  }
+
+  const latestMessageAgeMs = Date.now() - recentMessages[0].createdAt.getTime();
+  if (latestMessageAgeMs <= RECENT_CONVERSATION_MAX_AGE_MS) {
+    return { include: true, reason: "conversation is recent and the message looks continuous" };
+  }
+
+  return { include: false, reason: "conversation history exists, but the most recent raw turns are stale" };
+}
+
+function buildSummaryLine(message: RecentMessageRow): string {
+  const roleLabel = message.role === "USER" ? "User" : message.role === "ASSISTANT" ? "Assistant" : message.role;
+  const compact = message.content.replace(/\s+/g, " ").trim();
+  return `- ${roleLabel}: ${truncate(compact, SUMMARY_LINE_MAX_CHARS)}`;
+}
+
+function buildConversationSummaryText(messages: RecentMessageRow[]): string {
+  const meaningfulMessages = messages.filter((message) => message.role === "USER" || message.role === "ASSISTANT");
+  if (meaningfulMessages.length <= RECENT_RAW_MESSAGE_WINDOW) {
+    return "";
+  }
+
+  const summarySource = meaningfulMessages.slice(0, -RECENT_RAW_MESSAGE_WINDOW);
+  if (summarySource.length === 0) {
+    return "";
+  }
+
+  const lines: string[] = ["Earlier conversation summary:"];
+  for (const message of summarySource) {
+    const nextLine = buildSummaryLine(message);
+    const nextText = [...lines, nextLine].join("\n");
+    if (nextText.length > SUMMARY_MAX_CHARS) {
+      lines.push(`- ${summarySource.length - (lines.length - 1)} earlier turns omitted for brevity.`);
+      break;
+    }
+    lines.push(nextLine);
+  }
+
+  return lines.join("\n");
+}
+
+async function refreshConversationPromptSummary(conversationId: string): Promise<void> {
+  const messages = await db.message.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "asc" },
+    take: SUMMARY_MESSAGE_LIMIT,
+    select: {
+      role: true,
+      content: true,
+      createdAt: true,
+    },
+  });
+
+  const promptSummary = buildConversationSummaryText(messages);
+  await db.conversation.update({
+    where: { id: conversationId },
+    data: {
+      promptSummary: promptSummary || null,
+      promptSummaryUpdatedAt: promptSummary ? new Date() : null,
+    },
+  });
+}
+
+async function buildConversationSummaryBlock(
+  userMessage: string,
+  conversationId: string | undefined,
+): Promise<{ text: string; decision: RetrievalDecision }> {
+  if (!conversationId) {
+    return { text: "", decision: buildSkippedDecision("no conversation id supplied") };
+  }
+
+  const historyIntent = shouldUseConversationHistory(userMessage);
+  if (!historyIntent.include) {
+    return { text: "", decision: buildSkippedDecision(historyIntent.reason) };
+  }
+
+  const conversation = await db.conversation.findUnique({
+    where: { id: conversationId },
+    select: {
+      promptSummary: true,
+      promptSummaryUpdatedAt: true,
+    },
+  }) as ConversationSummaryRow | null;
+
+  const promptSummary = conversation?.promptSummary?.trim() ?? "";
+  if (!promptSummary) {
+    return { text: "", decision: buildSkippedDecision("no rolling conversation summary is available yet") };
+  }
+
+  return {
+    text: promptSummary,
+    decision: buildIncludedDecision(historyIntent.reason, 1, promptSummary.length),
+  };
+}
+
+function shouldRecallSemanticMemory(userMessage: string): { include: boolean; reason: string } {
+  const normalized = userMessage.toLowerCase();
+  const pattern = /\b(remember|preference|prefer|my name|about me|i like|i dislike|always|never|workflow|routine|style|voice|tone|persona|schedule|timezone|history|what did i say|what do i usually)\b/;
+  return pattern.test(normalized)
+    ? { include: true, reason: "message asks about user identity, preference, or workflow context" }
+    : { include: false, reason: "message does not target long-term user memory" };
+}
+
+function shouldSearchGraph(userMessage: string): { include: boolean; reason: string } {
+  const normalized = userMessage.toLowerCase();
+  const pattern = /\b(who is|what is|relationship|related to|connected to|between|owner|owns|entity|entities|graph|ontology|person|company|topic|lead|account)\b/;
+  return pattern.test(normalized)
+    ? { include: true, reason: "message appears to ask about entities or relationships" }
+    : { include: false, reason: "message does not appear to require graph traversal" };
+}
+
+function shouldSearchKnowledgeDocs(userMessage: string): { include: boolean; reason: string } {
+  const normalized = userMessage.toLowerCase();
+  const pattern = /\b(how to|how do i|where is|which file|command|config|configure|setup|install|run|build|deploy|policy|doc|docs|readme|endpoint|api|operational|troubleshoot|error|fix|workspace)\b/;
+  return pattern.test(normalized)
+    ? { include: true, reason: "message appears to ask for factual or operational guidance" }
+    : { include: false, reason: "message does not appear to need knowledge-document retrieval" };
+}
+
+async function buildRecentConversationBlock(
+  conversationId: string | undefined,
+): Promise<{ text: string; messages: RecentMessageRow[]; decision: RetrievalDecision }> {
+  if (!conversationId) {
+    return { text: "", messages: [], decision: buildSkippedDecision("no conversation id supplied") };
+  }
+
+  const recentMessages = await db.message.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+    select: {
+      role: true,
+      content: true,
+      createdAt: true,
+    },
+  });
+
+  return {
+    text: recentMessages
+      .reverse()
+      .map((message) => `${message.role}: ${message.content}`)
+      .join("\n"),
+    messages: recentMessages,
+    decision: buildIncludedDecision("recent conversation queried for gating", recentMessages.length, 0),
+  };
+}
+
+async function buildSemanticRecallBlock(userMessage: string, userId: string): Promise<{ text: string; decision: RetrievalDecision }> {
+  const gate = shouldRecallSemanticMemory(userMessage);
+  if (!gate.include) {
+    return { text: "", decision: buildSkippedDecision(gate.reason) };
+  }
+
+  const memories = await recall(userMessage, 5, userId);
+  if (memories.length === 0) {
+    return { text: "", decision: buildSkippedDecision("semantic recall returned no relevant memories") };
+  }
+
+  const text = memories.map((m) => `- [${m.category}] ${m.key}: ${m.value}`).join("\n");
+  return {
+    text,
+    decision: buildIncludedDecision(gate.reason, memories.length, text.length),
+  };
+}
+
+async function buildGraphBlock(userMessage: string): Promise<{ text: string; decision: RetrievalDecision }> {
+  const gate = shouldSearchGraph(userMessage);
+  if (!gate.include) {
+    return { text: "", decision: buildSkippedDecision(gate.reason) };
+  }
+
+  try {
+    const graphResults = await searchGraph(userMessage, 5);
+    if (graphResults.length === 0) {
+      return { text: "", decision: buildSkippedDecision("graph search returned no matches") };
+    }
+
+    const text = graphResults.map((g) => `- ${g.type}: ${g.name}`).join("\n");
+    return {
+      text,
+      decision: buildIncludedDecision(gate.reason, graphResults.length, text.length),
+    };
+  } catch {
+    return { text: "", decision: buildSkippedDecision("graph search unavailable") };
+  }
+}
+
+async function buildKnowledgeDocsBlock(userMessage: string): Promise<{ text: string; decision: RetrievalDecision }> {
+  const gate = shouldSearchKnowledgeDocs(userMessage);
+  if (!gate.include) {
+    return { text: "", decision: buildSkippedDecision(gate.reason) };
+  }
+
+  try {
+    const knowledgeResults = await searchKnowledgeDocuments(userMessage, 3);
+    if (knowledgeResults.length === 0) {
+      return { text: "", decision: buildSkippedDecision("knowledge search returned no matches") };
+    }
+
+    const text = knowledgeResults.map((doc) => `- ${doc.path}: ${doc.snippet}`).join("\n");
+    return {
+      text,
+      decision: buildIncludedDecision(gate.reason, knowledgeResults.length, text.length),
+    };
+  } catch {
+    return { text: "", decision: buildSkippedDecision("knowledge search unavailable") };
+  }
+}
+
+export async function buildContextForPrompt(
+  userMessage: string,
+  conversationId?: string,
+  userId = DEFAULT_USER_ID,
+): Promise<BuildContextResult> {
+  const recentConversationBase = await buildRecentConversationBlock(conversationId);
+  const conversationSummaryPromise = buildConversationSummaryBlock(userMessage, conversationId);
+  const recentConversationGate = shouldIncludeRecentConversation(userMessage, recentConversationBase.messages);
+
+  const semanticRecallPromise = buildSemanticRecallBlock(userMessage, userId);
+  const graphPromise = buildGraphBlock(userMessage);
+  const knowledgeDocsPromise = buildKnowledgeDocsBlock(userMessage);
+  const [conversationSummary, semanticRecall, graph, knowledgeDocs] = await Promise.all([
+    conversationSummaryPromise,
+    semanticRecallPromise,
+    graphPromise,
+    knowledgeDocsPromise,
+  ]);
+
+  const recentConversationText = recentConversationGate.include && recentConversationBase.text
+    ? recentConversationBase.text
+    : "";
+  const recentConversationDecision = recentConversationGate.include && recentConversationBase.text
+    ? buildIncludedDecision(recentConversationGate.reason, recentConversationBase.text.split("\n").length, recentConversationBase.text.length)
+    : buildSkippedDecision(recentConversationGate.reason);
+
+  const parts: string[] = [];
+  if (conversationSummary.text) {
+    parts.push(conversationSummary.text);
+  }
+  if (recentConversationText) {
+    parts.push(`Recent conversation:\n${recentConversationText}`);
+  }
+  if (semanticRecall.text) {
+    parts.push(`Relevant memories:\n${semanticRecall.text}`);
+  }
+  if (graph.text) {
+    parts.push(`Knowledge graph:\n${graph.text}`);
+  }
+  if (knowledgeDocs.text) {
+    parts.push(`Company docs:\n${knowledgeDocs.text}`);
+  }
+
+  return {
+    text: parts.join("\n\n"),
+    blocks: {
+      conversationSummary: conversationSummary.text,
+      recentConversation: recentConversationText,
+      semanticRecall: semanticRecall.text,
+      graph: graph.text,
+      knowledgeDocs: knowledgeDocs.text,
+    },
+    retrieval: {
+      conversationSummary: conversationSummary.decision,
+      recentConversation: recentConversationDecision,
+      semanticRecall: semanticRecall.decision,
+      graph: graph.decision,
+      knowledgeDocs: knowledgeDocs.decision,
+    },
+  };
+}
 
 /** Store a new memory entry with embedding. */
 export async function remember(
@@ -196,60 +559,8 @@ export async function buildContext(
   conversationId?: string,
   userId = DEFAULT_USER_ID,
 ): Promise<string> {
-  const parts: string[] = [];
-
-  // Recent conversation messages
-  if (conversationId) {
-    const recent = await db.message.findMany({
-      where: { conversationId },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    });
-    if (recent.length > 0) {
-      parts.push(
-        "Recent conversation:\n" +
-          recent
-            .reverse()
-            .map((message: RecentMessageRow) => `${message.role}: ${message.content}`)
-            .join("\n"),
-      );
-    }
-  }
-
-  // Semantic memory recall
-  const memories = await recall(userMessage, 5, userId);
-  if (memories.length > 0) {
-    parts.push(
-      "Relevant memories:\n" +
-        memories.map((m) => `- [${m.category}] ${m.key}: ${m.value}`).join("\n"),
-    );
-  }
-
-  // Knowledge graph context
-  try {
-    const graphResults = await searchGraph(userMessage, 5);
-    if (graphResults.length > 0) {
-      parts.push(
-        "Knowledge graph:\n" +
-          graphResults.map((g) => `- ${g.type}: ${g.name}`).join("\n"),
-      );
-    }
-  } catch {
-    // Memgraph may not be available
-  }
-
-  try {
-    const knowledgeResults = await searchKnowledgeDocuments(userMessage, 3);
-    if (knowledgeResults.length > 0) {
-      parts.push(
-        "Company docs:\n" + knowledgeResults.map((doc) => `- ${doc.path}: ${doc.snippet}`).join("\n"),
-      );
-    }
-  } catch {
-    // Local knowledge folder may not exist yet
-  }
-
-  return parts.join("\n\n");
+  const result = await buildContextForPrompt(userMessage, conversationId, userId);
+  return result.text;
 }
 
 /** Save a message to the conversation history. */
@@ -270,6 +581,10 @@ export async function saveMessage(
       data: { lastMessageAt: timestamp },
     }),
   ]);
+
+  void refreshConversationPromptSummary(conversationId).catch((error) => {
+    console.warn("[agent memory] failed to refresh conversation summary:", error);
+  });
 }
 
 export async function trimConversationMessages(

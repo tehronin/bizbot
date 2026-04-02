@@ -16,13 +16,39 @@ export interface ResolveBuilderTaskInput {
   request: string;
   taskId?: string;
   retryFailed?: boolean;
+  fromIteration?: number;
   acceptanceCriteria?: string[];
   requestedProfile?: string;
   requestedModel?: string;
 }
 
+export interface ResumeBuilderTaskInput {
+  request: string;
+  fromIteration?: number;
+  requestedProfile?: string;
+  requestedModel?: string;
+}
+
+export interface BuilderTaskHistoryEntry {
+  runId: string;
+  taskId: string | null;
+  projectId: string;
+  iteration: number | null;
+  verdict: string;
+  status: string;
+  summary: string | null;
+  stdout: string | null;
+  stderr: string | null;
+  timestamp: Date;
+  finishedAt: Date | null;
+}
+
 function toInputJsonValue(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
+}
+
+function normalizeIteration(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : undefined;
 }
 
 function buildTaskTitle(request: string): string {
@@ -132,17 +158,70 @@ export async function updateBuilderTaskStage(taskId: string, input: {
   });
 }
 
-async function reopenFailedTask(task: BuilderTask, input: ResolveBuilderTaskInput): Promise<BuilderTask> {
+export async function updateBuilderTaskExecutionState(taskId: string, input: {
+  summary?: string | null;
+  status?: BuilderTaskStatus;
+  stage?: BuilderTaskStage;
+  error?: string | null;
+  currentIteration?: number | null;
+  maxIterations?: number | null;
+  loopPhase?: string | null;
+  latestLoopSummary?: string | null;
+  lastRetryAt?: string | null;
+  resumeFromIteration?: number | null;
+  lastRunId?: string | null;
+}): Promise<BuilderTask> {
+  const task = await getBuilderTask(taskId);
   const metadata = normalizeBuilderTaskMetadata(task.metadata);
+
+  return updateBuilderTask(taskId, {
+    ...(input.summary !== undefined ? { summary: input.summary } : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    metadata: toInputJsonValue({
+      ...metadata,
+      ...(input.error !== undefined ? { lastStageError: input.error } : {}),
+      ...(input.currentIteration !== undefined ? { currentIteration: input.currentIteration } : {}),
+      ...(input.maxIterations !== undefined ? { maxIterations: input.maxIterations } : {}),
+      ...(input.loopPhase !== undefined ? { loopPhase: input.loopPhase } : {}),
+      ...(input.latestLoopSummary !== undefined ? { latestLoopSummary: input.latestLoopSummary } : {}),
+      ...(input.lastRetryAt !== undefined ? { lastRetryAt: input.lastRetryAt } : {}),
+      ...(input.resumeFromIteration !== undefined ? { resumeFromIteration: input.resumeFromIteration } : {}),
+      ...(input.lastRunId !== undefined ? { lastRunId: input.lastRunId } : {}),
+    }),
+  });
+}
+
+export async function resumeBuilderTask(taskId: string, input: ResumeBuilderTaskInput): Promise<BuilderTask> {
+  const task = await getBuilderTask(taskId);
+  const metadata = normalizeBuilderTaskMetadata(task.metadata);
+  if (task.status === "RUNNING" || task.status === "PENDING") {
+    return task;
+  }
+
+  const resumeFromIteration = normalizeIteration(input.fromIteration) ?? metadata.currentIteration ?? metadata.resumeFromIteration ?? undefined;
+  const resumedAt = new Date().toISOString();
   return updateBuilderTask(task.id, {
     status: "RUNNING",
     stage: metadata.lastAttemptedStage ?? task.stage,
+    summary: resumeFromIteration
+      ? `Resuming builder task from iteration ${resumeFromIteration} using the current workspace state.`
+      : "Resuming builder task using the current workspace state.",
     metadata: toInputJsonValue({
       ...metadata,
       retryCount: metadata.retryCount + 1,
+      lastStageError: null,
       lastUserRequest: input.request.trim(),
       requestedProfile: input.requestedProfile ?? metadata.requestedProfile,
       requestedModel: input.requestedModel ?? metadata.requestedModel,
+      lastRetryAt: resumedAt,
+      currentIteration: resumeFromIteration ?? null,
+      loopPhase: "planning",
+      latestLoopSummary: resumeFromIteration
+        ? `Resume requested from iteration ${resumeFromIteration}.`
+        : "Resume requested.",
+      resumeFromIteration: resumeFromIteration ?? null,
+      lastRunId: null,
     }),
   });
 }
@@ -152,6 +231,14 @@ export async function resolveBuilderContinuationTask(input: ResolveBuilderTaskIn
     const explicitTask = await getBuilderTask(input.taskId);
     if (explicitTask.projectId !== input.projectId) {
       throw new Error("Builder task does not belong to the selected project.");
+    }
+    if (input.retryFailed || input.fromIteration !== undefined) {
+      return resumeBuilderTask(explicitTask.id, {
+        request: input.request,
+        fromIteration: input.fromIteration,
+        requestedProfile: input.requestedProfile,
+        requestedModel: input.requestedModel,
+      });
     }
     return explicitTask;
   }
@@ -176,7 +263,12 @@ export async function resolveBuilderContinuationTask(input: ResolveBuilderTaskIn
       orderBy: { updatedAt: "desc" },
     });
     if (failedTask) {
-      return reopenFailedTask(failedTask, input);
+      return resumeBuilderTask(failedTask.id, {
+        request: input.request,
+        fromIteration: input.fromIteration,
+        requestedProfile: input.requestedProfile,
+        requestedModel: input.requestedModel,
+      });
     }
   }
 
@@ -190,6 +282,64 @@ export async function resolveBuilderContinuationTask(input: ResolveBuilderTaskIn
       lastUserRequest: input.request.trim(),
       requestedProfile: input.requestedProfile ?? null,
       requestedModel: input.requestedModel ?? null,
+      resumeFromIteration: normalizeIteration(input.fromIteration) ?? null,
     }),
+  });
+}
+
+export async function getBuilderTaskHistory(taskId: string): Promise<BuilderTaskHistoryEntry[]> {
+  await getBuilderTask(taskId);
+  const runs = await db.builderRun.findMany({
+    where: { taskId },
+    orderBy: { startedAt: "asc" },
+  });
+
+  return runs.flatMap((run) => {
+    const metadata = run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata)
+      ? run.metadata as Record<string, unknown>
+      : null;
+    const loop = metadata?.loop && typeof metadata.loop === "object" && !Array.isArray(metadata.loop)
+      ? metadata.loop as Record<string, unknown>
+      : null;
+    const iterations = Array.isArray(loop?.iterations) ? loop.iterations as Array<Record<string, unknown>> : [];
+
+    if (iterations.length === 0) {
+      return [{
+        runId: run.id,
+        taskId: run.taskId,
+        projectId: run.projectId,
+        iteration: null,
+        verdict: run.status,
+        status: run.status,
+        summary: run.summary,
+        stdout: run.stdout,
+        stderr: run.stderr,
+        timestamp: run.startedAt,
+        finishedAt: run.finishedAt,
+      } satisfies BuilderTaskHistoryEntry];
+    }
+
+    return iterations.map((iteration) => {
+      const review = iteration.review && typeof iteration.review === "object"
+        ? iteration.review as Record<string, unknown>
+        : null;
+      const actResult = iteration.actResult && typeof iteration.actResult === "object"
+        ? iteration.actResult as Record<string, unknown>
+        : null;
+
+      return {
+        runId: run.id,
+        taskId: run.taskId,
+        projectId: run.projectId,
+        iteration: typeof iteration.iteration === "number" ? iteration.iteration : null,
+        verdict: typeof review?.verdict === "string" ? review.verdict : run.status,
+        status: run.status,
+        summary: typeof review?.reason === "string" ? review.reason : run.summary,
+        stdout: typeof actResult?.stdout === "string" ? actResult.stdout : run.stdout,
+        stderr: typeof actResult?.stderr === "string" ? actResult.stderr : run.stderr,
+        timestamp: run.startedAt,
+        finishedAt: run.finishedAt,
+      } satisfies BuilderTaskHistoryEntry;
+    });
   });
 }

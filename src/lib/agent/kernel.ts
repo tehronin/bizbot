@@ -35,11 +35,19 @@ export interface GenerationConfig {
   temperature: number;
 }
 
+export interface LLMUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  cachedPromptTokens?: number;
+}
+
 export interface LLMResponse {
   content: string;
   provider: LLMProvider;
   model: string;
   toolCalls: ToolCall[];
+  usage?: LLMUsage;
   metadata?: JsonObject;
   providerState?: JsonObject;
 }
@@ -394,6 +402,60 @@ function parseAnthropicResponse(response: Anthropic.Messages.Message): {
   return { content: contentParts.join("\n").trim(), toolCalls };
 }
 
+function extractOpenAIUsage(response: OpenAI.Chat.Completions.ChatCompletion): LLMUsage | undefined {
+  if (!response.usage) {
+    return undefined;
+  }
+
+  return {
+    promptTokens: response.usage.prompt_tokens,
+    completionTokens: response.usage.completion_tokens,
+    totalTokens: response.usage.total_tokens,
+  };
+}
+
+function extractAnthropicUsage(response: Anthropic.Messages.Message): LLMUsage | undefined {
+  if (!response.usage) {
+    return undefined;
+  }
+
+  const promptTokens = response.usage.input_tokens;
+  const completionTokens = response.usage.output_tokens;
+  const cachedPromptTokens = (response.usage as {
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  }).cache_read_input_tokens;
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens: promptTokens + completionTokens,
+    cachedPromptTokens,
+  };
+}
+
+function extractGoogleUsage(response: unknown): LLMUsage | undefined {
+  const usageMetadata = (response as {
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      totalTokenCount?: number;
+      cachedContentTokenCount?: number;
+    };
+  }).usageMetadata;
+
+  if (!usageMetadata) {
+    return undefined;
+  }
+
+  return {
+    promptTokens: usageMetadata.promptTokenCount,
+    completionTokens: usageMetadata.candidatesTokenCount,
+    totalTokens: usageMetadata.totalTokenCount,
+    cachedPromptTokens: usageMetadata.cachedContentTokenCount,
+  };
+}
+
 function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] {
   const anthropicMessages: Anthropic.MessageParam[] = [];
 
@@ -471,6 +533,7 @@ export async function chatComplete(
         provider: "openai",
         model,
         toolCalls: parseOpenAIToolCalls(responseMessage),
+        usage: extractOpenAIUsage(response),
       };
     }
 
@@ -498,7 +561,13 @@ export async function chatComplete(
         signal: options?.signal,
       });
       const parsed = parseAnthropicResponse(response);
-      return { content: parsed.content, provider: "anthropic", model, toolCalls: parsed.toolCalls };
+      return {
+        content: parsed.content,
+        provider: "anthropic",
+        model,
+        toolCalls: parsed.toolCalls,
+        usage: extractAnthropicUsage(response),
+      };
     }
 
     case "ollama": {
@@ -525,6 +594,7 @@ export async function chatComplete(
         provider: "ollama",
         model,
         toolCalls: parseOpenAIToolCalls(responseMessage),
+        usage: extractOpenAIUsage(response),
       };
     }
 
@@ -575,6 +645,7 @@ export async function chatComplete(
           name: toolCall.name ?? "unknown_tool",
           arguments: toToolArguments(toolCall.args ?? {}),
         })),
+        usage: extractGoogleUsage(response),
         metadata: extractGoogleMetadata(response),
         providerState: response.candidates?.[0]?.content
           ? { googleContent: serializeGoogleContent(response.candidates[0].content) ?? {} }
@@ -606,6 +677,7 @@ export async function chatComplete(
         provider: "minimax",
         model,
         toolCalls: parseOpenAIToolCalls(responseMessage),
+        usage: extractOpenAIUsage(response),
       };
     }
 

@@ -1,5 +1,5 @@
-import { buildContext, getOrCreateConversation, saveMessage } from "@/lib/agent/memory";
-import { formatMemoryFactsForPrompt, getActiveMemoryFacts } from "@/lib/agent/memory/service";
+import { buildContextForPrompt, getOrCreateConversation, saveMessage } from "@/lib/agent/memory";
+import { formatMemoryFactsForPrompt, getRelevantMemoryFacts } from "@/lib/agent/memory/service";
 import { chatComplete, getModelForProvider, type ChatRequestOptions, type LLMProvider } from "@/lib/agent/kernel";
 import { executeTool, getAllToolDefinitions } from "@/lib/agent/plugins";
 import { ensureMcpClientsInitialized } from "@/lib/mcp/client";
@@ -8,6 +8,10 @@ import { resolveAgentUserId } from "@/lib/agent/user-context";
 import { buildOntologyPromptBlock } from "@/lib/ontology/prompt";
 import {
   completeAgentRun,
+  countDelegationDepth,
+  getDelegationChain,
+  recordAgentRunPromptAssembly,
+  recordAgentRunRoundUsage,
   recordAgentRunToolCall,
   recordAgentRunToolResult,
   startAgentRun,
@@ -19,9 +23,6 @@ import {
   routeAgentProfile,
   type AgentProfile,
 } from "@/lib/agent/profiles";
-
-const MAX_TOOL_ROUNDS = 8;
-const MAX_TOOL_RESULT_CHARS = 8_000;
 
 export type AgentExecutionEvent =
   | {
@@ -62,14 +63,14 @@ export interface AgentExecutionResult {
   model: string;
 }
 
-function stringifyToolResult(result: ToolExecutionResult): string {
+function stringifyToolResult(result: ToolExecutionResult, maxChars: number): string {
   const rawResult = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-  if (rawResult.length <= MAX_TOOL_RESULT_CHARS) {
+  if (rawResult.length <= maxChars) {
     return rawResult;
   }
 
-  const overflow = rawResult.length - MAX_TOOL_RESULT_CHARS;
-  return `${rawResult.slice(0, MAX_TOOL_RESULT_CHARS)}\n\n[truncated ${overflow} chars to keep tool context bounded]`;
+  const overflow = rawResult.length - maxChars;
+  return `${rawResult.slice(0, maxChars)}\n\n[truncated ${overflow} chars to keep tool context bounded]`;
 }
 
 async function emit(
@@ -126,9 +127,9 @@ export async function executeAgentConversation(
     console.warn("[agent executor] MCP client init skipped:", error);
   });
   throwIfAborted(signal);
-  const [explicitMemoryFacts, contextBlock, ontologyPrompt] = await Promise.all([
-    getActiveMemoryFacts({ userId: resolvedUserId }),
-    buildContext(message, resolvedConversationId, resolvedUserId),
+  const [explicitMemoryFacts, contextResult, ontologyPrompt] = await Promise.all([
+    getRelevantMemoryFacts({ userId: resolvedUserId, query: message }),
+    buildContextForPrompt(message, resolvedConversationId, resolvedUserId),
     buildOntologyPromptBlock(resolvedUserId).catch((error) => {
       console.warn("[agent executor] ontology context skipped:", error);
       return { block: "", lines: [], omitted: true, reason: "read_failed" };
@@ -136,6 +137,7 @@ export async function executeAgentConversation(
   ]);
   const explicitMemoryBlock = formatMemoryFactsForPrompt(explicitMemoryFacts);
   const ontologyBlock = ontologyPrompt.omitted ? "" : ontologyPrompt.block;
+  const contextBlock = contextResult.text;
   const tools = getAllToolDefinitions(runtimeConfig, { agentProfile: profileDecision.profile });
   const run = startAgentRun({
     conversationId: resolvedConversationId,
@@ -148,6 +150,13 @@ export async function executeAgentConversation(
     ...(delegationReason ? { delegationReason } : {}),
     ...(delegatedByProfile ? { delegatedByProfile } : {}),
   });
+  const delegationDepth = parentRunId ? countDelegationDepth(parentRunId) + 1 : 0;
+  const delegationChain = parentRunId
+    ? [...getDelegationChain(parentRunId), profileDecision.profile]
+    : [profileDecision.profile];
+  console.info(
+    `[agent] profile=${profileDecision.profile} depth=${delegationDepth} run=${run.runId} parent=${parentRunId ?? "none"} route=${profileDecision.reason} chain=${delegationChain.join(" -> ")}`,
+  );
 
   const systemPrompt =
     "You are BizBot, a local desktop social media agent. Use tools when they improve correctness, prefer deterministic tool outputs over guessing, and keep responses operational."
@@ -158,6 +167,22 @@ export async function executeAgentConversation(
     + (explicitMemoryBlock ? `\n\n${explicitMemoryBlock}` : "")
     + (ontologyBlock ? `\n\n${ontologyBlock}` : "")
     + (contextBlock ? `\n\nContext:\n${contextBlock}` : "");
+
+  recordAgentRunPromptAssembly(run.runId, {
+    promptAssembly: {
+      explicitMemoryChars: explicitMemoryBlock.length,
+      ontologyChars: ontologyBlock.length,
+      conversationSummaryChars: contextResult.blocks.conversationSummary.length,
+      recentConversationChars: contextResult.blocks.recentConversation.length,
+      semanticRecallChars: contextResult.blocks.semanticRecall.length,
+      graphChars: contextResult.blocks.graph.length,
+      knowledgeDocsChars: contextResult.blocks.knowledgeDocs.length,
+      contextChars: contextBlock.length,
+      systemPromptChars: systemPrompt.length,
+      userMessageChars: message.length,
+    },
+    retrieval: contextResult.retrieval,
+  });
 
   const messages: ChatMessage[] = [
     {
@@ -190,7 +215,7 @@ export async function executeAgentConversation(
   let round = 0;
 
   try {
-    while (round < MAX_TOOL_ROUNDS) {
+    while (round < runtimeConfig.toolMaxRounds) {
       throwIfAborted(signal);
       round += 1;
       await emit(onEvent, {
@@ -210,6 +235,18 @@ export async function executeAgentConversation(
 
       const response = await chatComplete(messages, resolvedProvider, tools, requestOptions);
       throwIfAborted(signal);
+
+      if (response.usage) {
+        recordAgentRunRoundUsage(run.runId, {
+          round,
+          provider: response.provider,
+          model: response.model,
+          promptTokens: response.usage.promptTokens ?? 0,
+          completionTokens: response.usage.completionTokens ?? 0,
+          totalTokens: response.usage.totalTokens ?? 0,
+          cachedPromptTokens: response.usage.cachedPromptTokens ?? 0,
+        });
+      }
 
       if (response.metadata?.googleSearchQueries) {
         await emit(onEvent, {
@@ -272,7 +309,7 @@ export async function executeAgentConversation(
             }
             throwIfAborted(signal);
 
-            const resultText = stringifyToolResult(result);
+            const resultText = stringifyToolResult(result, runtimeConfig.toolResultMaxChars);
             recordAgentRunToolResult(run.runId, {
               round,
               toolCallId: toolCall.id,
@@ -342,14 +379,14 @@ export async function executeAgentConversation(
     throwIfAborted(signal);
     await saveMessage(resolvedConversationId, "ASSISTANT", fallback, {
       userId: resolvedUserId,
-      toolRoundCount: MAX_TOOL_ROUNDS,
+      toolRoundCount: runtimeConfig.toolMaxRounds,
       agentRunId: run.runId,
       agentProfile: profileDecision.profile,
     });
     completeAgentRun(run.runId, {
       status: "max_tool_rounds",
       reply: fallback,
-      roundsCompleted: MAX_TOOL_ROUNDS,
+      roundsCompleted: runtimeConfig.toolMaxRounds,
     });
     await emit(onEvent, { type: "assistant_message", content: fallback });
     await emit(onEvent, { type: "done", conversationId: resolvedConversationId, reply: fallback });

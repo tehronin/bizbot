@@ -25,6 +25,44 @@ export interface AgentRunToolEvent {
   isError?: boolean;
 }
 
+export interface AgentRunRetrievalDecision {
+  included: boolean;
+  reason: string;
+  resultCount: number;
+  chars: number;
+}
+
+export interface AgentRunPromptAssembly {
+  explicitMemoryChars: number;
+  ontologyChars: number;
+  conversationSummaryChars: number;
+  recentConversationChars: number;
+  semanticRecallChars: number;
+  graphChars: number;
+  knowledgeDocsChars: number;
+  contextChars: number;
+  systemPromptChars: number;
+  userMessageChars: number;
+}
+
+export interface AgentRunRoundUsage {
+  round: number;
+  provider: LLMProvider;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedPromptTokens: number;
+}
+
+export interface AgentRunUsageTotals {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedPromptTokens: number;
+  rounds: AgentRunRoundUsage[];
+}
+
 export interface AgentRunRecord {
   runId: string;
   conversationId: string;
@@ -52,6 +90,15 @@ export interface AgentRunRecord {
   roundsCompleted: number;
   toolCallCount: number;
   toolEvents: AgentRunToolEvent[];
+  promptAssembly?: AgentRunPromptAssembly;
+  retrieval?: {
+    conversationSummary: AgentRunRetrievalDecision;
+    recentConversation: AgentRunRetrievalDecision;
+    semanticRecall: AgentRunRetrievalDecision;
+    graph: AgentRunRetrievalDecision;
+    knowledgeDocs: AgentRunRetrievalDecision;
+  };
+  usage: AgentRunUsageTotals;
   reply?: string;
   error?: string;
 }
@@ -99,6 +146,14 @@ function readRun(runId: string): AgentRunRecord {
   return JSON.parse(fs.readFileSync(filePath, "utf8")) as AgentRunRecord;
 }
 
+function readRunOrNull(runId: string): AgentRunRecord | null {
+  try {
+    return readRun(runId);
+  } catch {
+    return null;
+  }
+}
+
 function mutateRun(runId: string, mutate: (record: AgentRunRecord) => AgentRunRecord): AgentRunRecord {
   const next = mutate(readRun(runId));
   writeRun(next);
@@ -134,6 +189,13 @@ export function startAgentRun(input: StartAgentRunInput): AgentRunRecord {
     roundsCompleted: 0,
     toolCallCount: 0,
     toolEvents: [],
+    usage: {
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cachedPromptTokens: 0,
+      rounds: [],
+    },
   };
 
   writeRun(record);
@@ -201,6 +263,58 @@ export function recordAgentRunToolResult(
   }));
 }
 
+export function recordAgentRunPromptAssembly(
+  runId: string,
+  params: {
+    promptAssembly: AgentRunPromptAssembly;
+    retrieval: AgentRunRecord["retrieval"];
+  },
+): AgentRunRecord {
+  return mutateRun(runId, (record) => ({
+    ...record,
+    updatedAt: new Date().toISOString(),
+    promptAssembly: params.promptAssembly,
+    retrieval: params.retrieval,
+  }));
+}
+
+export function recordAgentRunRoundUsage(
+  runId: string,
+  params: AgentRunRoundUsage,
+): AgentRunRecord {
+  return mutateRun(runId, (record) => {
+    const existingRoundIndex = record.usage.rounds.findIndex((round) => round.round === params.round);
+    const rounds = [...record.usage.rounds];
+
+    if (existingRoundIndex >= 0) {
+      rounds[existingRoundIndex] = params;
+    } else {
+      rounds.push(params);
+    }
+
+    const totals = rounds.reduce((accumulator, round) => ({
+      promptTokens: accumulator.promptTokens + round.promptTokens,
+      completionTokens: accumulator.completionTokens + round.completionTokens,
+      totalTokens: accumulator.totalTokens + round.totalTokens,
+      cachedPromptTokens: accumulator.cachedPromptTokens + round.cachedPromptTokens,
+    }), {
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cachedPromptTokens: 0,
+    });
+
+    return {
+      ...record,
+      updatedAt: new Date().toISOString(),
+      usage: {
+        ...totals,
+        rounds,
+      },
+    };
+  });
+}
+
 export function completeAgentRun(
   runId: string,
   params: { status: Exclude<AgentRunStatus, "running">; reply?: string; error?: string; roundsCompleted: number },
@@ -219,6 +333,34 @@ export function completeAgentRun(
 
 export function getAgentRun(runId: string): AgentRunRecord {
   return readRun(runId);
+}
+
+export function countDelegationDepth(runId: string): number {
+  let depth = 0;
+  let current = readRunOrNull(runId);
+  const seen = new Set<string>();
+
+  while (current?.parentRunId && !seen.has(current.runId)) {
+    seen.add(current.runId);
+    depth += 1;
+    current = readRunOrNull(current.parentRunId);
+  }
+
+  return depth;
+}
+
+export function getDelegationChain(runId: string): AgentProfile[] {
+  const chain: AgentProfile[] = [];
+  let current = readRunOrNull(runId);
+  const seen = new Set<string>();
+
+  while (current && !seen.has(current.runId)) {
+    seen.add(current.runId);
+    chain.unshift(current.profile);
+    current = current.parentRunId ? readRunOrNull(current.parentRunId) : null;
+  }
+
+  return chain;
 }
 
 export function listRecentAgentRuns(limit = 20): AgentRunRecord[] {
