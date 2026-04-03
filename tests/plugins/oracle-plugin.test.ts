@@ -114,4 +114,86 @@ describe("oracle plugin", () => {
       summary: expect.stringContaining("Will BTC hit 150k?"),
     }));
   });
+
+  it("drives an interactive market selection flow through Sidecar and returns a verdict panel", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/markets?")) {
+        return {
+          ok: true,
+          json: async () => ([
+            {
+              id: "market-1",
+              question: "Will BTC hit 150k?",
+              active: true,
+              closed: false,
+              outcomes: ["Yes", "No"],
+              outcomePrices: [0.41, 0.59],
+            },
+          ]),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          id: "market-1",
+          question: "Will BTC hit 150k?",
+          active: true,
+          closed: false,
+          endDate: "2026-12-31",
+          outcomes: ["Yes", "No"],
+          outcomePrices: [0.41, 0.59],
+        }),
+      } as Response;
+    }));
+
+    mockedGetActiveMemoryFacts.mockResolvedValue([{ value: "balanced" }] as never);
+
+    const result = await executeTool("oracle_search_markets", {
+      query: "btc",
+      interactive: true,
+    }, {
+      access: { agentProfile: "research_operator", userId: "user-1" },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: true,
+      action: "open",
+      panel: expect.objectContaining({
+        content: expect.objectContaining({
+          type: "selection",
+          interaction: { routeKey: "oracle.market.select" },
+        }),
+      }),
+    }));
+
+    const sidecarResult = result as { panel: SidecarPanel } & typeof result;
+    syncActiveSidecarPanel({
+      action: "open",
+      panel: sidecarResult.panel,
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    const interactionResult = await routeSidecarInteraction({
+      panelId: sidecarResult.panel.panelId,
+      actionId: "oracle_market_apply",
+      selectedItemIds: ["market-1"],
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    expect(interactionResult).toEqual(expect.objectContaining({
+      ok: true,
+      action: "update",
+      panel: expect.objectContaining({
+        panelId: sidecarResult.panel.panelId,
+        content: expect.objectContaining({
+          type: "markdown",
+          markdown: expect.stringContaining("Will BTC hit 150k?"),
+        }),
+      }),
+    }));
+  });
 });
