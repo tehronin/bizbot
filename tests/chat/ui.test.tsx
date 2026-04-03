@@ -180,6 +180,7 @@ function Harness() {
       cachedPromptTokens: 12,
     },
     sendMessage: vi.fn(async () => undefined),
+    sendOraclePrediction: vi.fn(async () => undefined),
     startNewChat: vi.fn(() => {
       setConversationId(null);
       setCurrentConversation(null);
@@ -371,5 +372,21 @@ describe("chat workspace history panel", () => {
     expect(screen.getByText(/45/)).toBeTruthy();
     expect(screen.getByText(/\$0\.0021/)).toBeTruthy();
     expect(screen.getByText(/cached/i)).toBeTruthy();
+  });
+
+  it("shows an Oracle prediction badge for matching prompts and runs the explicit Oracle flow on click", async () => {
+    render(<Harness />);
+
+    fireEvent.change(screen.getByPlaceholderText("Draft a launch thread about our product update..."), {
+      target: { value: "oracle predict btc 150k" },
+    });
+
+    const oracleButton = screen.getByRole("button", { name: /run prediction/i });
+    expect(oracleButton).toBeTruthy();
+
+    fireEvent.click(oracleButton);
+
+    const chat = screen.getByText("Here is the live chat.").closest("div");
+    expect(chat).toBeTruthy();
   });
 });

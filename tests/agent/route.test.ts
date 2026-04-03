@@ -64,4 +64,27 @@ describe("agent route sidecar stream", () => {
     expect(text).toContain('"title":"Launch brief"');
     expect(text).toContain('"name":"sidecar_open"');
   });
+
+  it("forwards explicit oracle prediction requests into the executor", async () => {
+    executorMocks.executeAgentConversation.mockResolvedValue({
+      reply: "oracle reply",
+      runId: "run-2",
+      conversationId: "conversation-2",
+      profile: "research_operator",
+      provider: "ollama",
+      model: "model-2",
+    });
+
+    const response = await POST(new Request("http://localhost:3000/api/agent", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "oracle predict btc", oraclePrediction: true }),
+    }) as never);
+
+    expect(response.status).toBe(200);
+    expect(executorMocks.executeAgentConversation).toHaveBeenCalledWith(expect.objectContaining({
+      message: "oracle predict btc",
+      oraclePrediction: true,
+    }));
+  });
 });

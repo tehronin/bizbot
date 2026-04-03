@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
       userId?: unknown;
       provider?: unknown;
       stream?: unknown;
+      oraclePrediction?: unknown;
       forcedProfile?: AgentProfile;
       parentRunId?: string;
       delegationReason?: string;
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
     const userId = typeof body.userId === "string" ? body.userId : undefined;
     const provider = typeof body.provider === "string" ? body.provider : undefined;
     const stream = body.stream === true;
+    const oraclePrediction = body.oraclePrediction === true;
 
     if (stream) {
       const encoder = new TextEncoder();
@@ -98,6 +100,7 @@ export async function POST(req: NextRequest) {
                 conversationId,
                 userId,
                 provider: provider as LLMProvider | undefined,
+                oraclePrediction,
                 signal: executionAbortController.signal,
                 onEvent: async (event: AgentExecutionEvent) => {
                   if (executionAbortController.signal.aborted) {
@@ -141,6 +144,7 @@ export async function POST(req: NextRequest) {
       conversationId,
       userId,
       provider: provider as LLMProvider | undefined,
+      oraclePrediction,
     });
 
     return Response.json({

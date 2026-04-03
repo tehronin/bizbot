@@ -101,6 +101,7 @@ export interface UseChatResult {
   activeRun: ActiveRunState;
   modelPricing: Record<string, UsageLedgerModelPricing>;
   sendMessage: (input: string) => Promise<void>;
+  sendOraclePrediction: (input: string) => Promise<void>;
   startNewChat: () => void;
   loadConversation: (nextConversationId: string) => Promise<void>;
   archiveConversation: (nextConversationId: string) => Promise<void>;
@@ -623,7 +624,7 @@ export function useChat(): UseChatResult {
     }
   };
 
-  async function sendMessage(input: string): Promise<void> {
+  async function streamAgentRequest(input: string, options?: { oraclePrediction?: boolean }): Promise<void> {
     const trimmed = input.trim();
     if (!trimmed) return;
 
@@ -633,7 +634,12 @@ export function useChat(): UseChatResult {
       fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, conversationId: conversationId ?? undefined, stream: true }),
+        body: JSON.stringify({
+          message: trimmed,
+          conversationId: conversationId ?? undefined,
+          stream: true,
+          ...(options?.oraclePrediction ? { oraclePrediction: true } : {}),
+        }),
       })
         .then(async (res) => {
           let nextConversationId = conversationId;
@@ -721,6 +727,14 @@ export function useChat(): UseChatResult {
     });
   }
 
+  async function sendMessage(input: string): Promise<void> {
+    await streamAgentRequest(input);
+  }
+
+  async function sendOraclePrediction(input: string): Promise<void> {
+    await streamAgentRequest(input, { oraclePrediction: true });
+  }
+
   return {
     messages,
     conversationId,
@@ -738,6 +752,7 @@ export function useChat(): UseChatResult {
     activeRun: toPublicActiveRun(activeRun),
     modelPricing,
     sendMessage,
+    sendOraclePrediction,
     startNewChat,
     loadConversation,
     archiveConversation,

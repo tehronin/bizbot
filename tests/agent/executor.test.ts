@@ -302,6 +302,47 @@ describe("agent executor explicit memory", () => {
     });
   });
 
+  it("runs a deterministic Oracle verdict flow when explicitly requested", async () => {
+    pluginMocks.executeTool
+      .mockResolvedValueOnce({
+        query: "btc 150k",
+        markets: [{ id: "market-1", question: "Will BTC hit 150k?" }],
+        summary: "1. Will BTC hit 150k?",
+      })
+      .mockResolvedValueOnce({
+        market: { question: "Will BTC hit 150k?" },
+        verdict: {
+          headline: "BTC leans short of 150k",
+          summary: "Oracle sees the market pricing the upside but not a clean break.",
+          confidence: "medium",
+        },
+        summary: "BTC leans short of 150k",
+      });
+
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+    const result = await executeAgentConversation({
+      message: "oracle predict btc 150k",
+      oraclePrediction: true,
+      onEvent: async (event) => {
+        events.push(event as { type: string; [key: string]: unknown });
+      },
+    });
+
+    expect(kernelMocks.chatComplete).not.toHaveBeenCalled();
+    expect(pluginMocks.executeTool).toHaveBeenNthCalledWith(1, "oracle_search_markets", {
+      query: "btc 150k",
+      limit: 5,
+      interactive: false,
+    }, expect.any(Object));
+    expect(pluginMocks.executeTool).toHaveBeenNthCalledWith(2, "oracle_get_market_verdict", {
+      marketId: "market-1",
+    }, expect.any(Object));
+    expect(result.profile).toBe("research_operator");
+    expect(result.reply).toContain("BTC leans short of 150k");
+    expect(events.some((event) => event.type === "tool_call" && event.name === "oracle_search_markets")).toBe(true);
+    expect(events.some((event) => event.type === "assistant_message" && String(event.content).includes("Confidence: medium"))).toBe(true);
+  });
+
   it("records Google usage metadata including cached prompt tokens", async () => {
     kernelMocks.chatComplete.mockResolvedValue({
       content: "reply",

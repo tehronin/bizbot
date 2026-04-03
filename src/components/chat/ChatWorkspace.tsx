@@ -6,6 +6,7 @@ import { PaginationControls } from "@/components/layout/PaginationControls";
 import { useChat, type ChatEntry, type UseChatResult } from "@/hooks/useChat";
 import { MEMORY_FACT_CATEGORIES, type MemoryFactCategory } from "@/lib/agent/memory/facts";
 import { getResolvedUsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
+import { getOraclePredictionIntent } from "@/lib/oracle/intent";
 
 type PanelMode = "chat" | "history";
 
@@ -209,6 +210,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
 
   const currentConversation = chat.currentConversation;
   const hasHistoryFilters = Boolean(chat.historyFilters.search || chat.historyFilters.from || chat.historyFilters.to);
+  const oracleIntent = getOraclePredictionIntent(input);
   const activeRunCostEstimate = useMemo(() => {
     const pricing = getResolvedUsageLedgerModelPricing(
       chat.activeRun.model ?? "",
@@ -811,13 +813,30 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
             setInput("");
           }}
         >
-          <input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Draft a launch thread about our product update..."
-            className="flex-1 bg-transparent outline-none text-sm"
-            disabled={panelMode === "history"}
-          />
+          <div className="flex-1 space-y-2">
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Draft a launch thread about our product update..."
+              className="w-full bg-transparent outline-none text-sm"
+              disabled={panelMode === "history"}
+            />
+            {panelMode === "chat" && oracleIntent.matched ? (
+              <button
+                type="button"
+                disabled={chat.isPending || !input.trim()}
+                onClick={() => {
+                  void chat.sendOraclePrediction(input);
+                  setInput("");
+                }}
+                className="inline-flex items-center gap-2 px-3 py-1 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+                style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(214,146,58,0.08)" }}
+              >
+                <span>Oracle</span>
+                <span>Run prediction</span>
+              </button>
+            ) : null}
+          </div>
           <button
             type="submit"
             disabled={panelMode === "history" || chat.isPending || !input.trim()}

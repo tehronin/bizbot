@@ -16,13 +16,14 @@ import {
   recordAgentRunToolResult,
   startAgentRun,
 } from "@/lib/agent/run-journal";
-import type { ChatMessage, ToolExecutionResult } from "@/lib/agent/tools";
+import type { ChatMessage, JsonObject, ToolExecutionResult } from "@/lib/agent/tools";
 import {
   buildAgentProfilePrompt,
   getAgentProfileDescriptor,
   routeAgentProfile,
   type AgentProfile,
 } from "@/lib/agent/profiles";
+import { getOraclePredictionIntent } from "@/lib/oracle/intent";
 import { syncActiveSidecarPanel } from "@/lib/sidecar/state";
 import { buildSidecarStreamEvent, isSidecarToolResult } from "@/lib/sidecar/validation";
 import type { SidecarStreamEvent } from "@/lib/sidecar/types";
@@ -61,6 +62,7 @@ export interface AgentExecutionParams {
   conversationId?: string;
   userId?: string;
   provider?: LLMProvider;
+  oraclePrediction?: boolean;
   forcedProfile?: AgentProfile;
   parentRunId?: string;
   delegationReason?: string;
@@ -105,6 +107,62 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   }
 }
 
+async function finalizeAssistantReply({
+  reply,
+  round,
+  resolvedConversationId,
+  resolvedUserId,
+  runId,
+  profile,
+  provider,
+  model,
+  onEvent,
+  metadata,
+}: {
+  reply: string;
+  round: number;
+  resolvedConversationId: string;
+  resolvedUserId: string;
+  runId: string;
+  profile: AgentProfile;
+  provider: LLMProvider;
+  model: string;
+  onEvent?: AgentExecutionParams["onEvent"];
+  metadata?: Record<string, unknown>;
+}): Promise<AgentExecutionResult> {
+  await saveMessage(resolvedConversationId, "ASSISTANT", reply, {
+    userId: resolvedUserId,
+    toolRoundCount: round,
+    agentRunId: runId,
+    agentProfile: profile,
+    llmProvider: provider,
+    llmModel: model,
+    ...(metadata ?? {}),
+  });
+
+  completeAgentRun(runId, {
+    status: "completed",
+    reply,
+    roundsCompleted: round,
+  });
+
+  await emit(onEvent, { type: "assistant_message", content: reply });
+  await emit(onEvent, {
+    type: "done",
+    conversationId: resolvedConversationId,
+    reply,
+  });
+
+  return {
+    reply,
+    runId,
+    conversationId: resolvedConversationId,
+    profile,
+    provider,
+    model,
+  };
+}
+
 export async function executeAgentConversation(
   params: AgentExecutionParams,
 ): Promise<AgentExecutionResult> {
@@ -113,6 +171,7 @@ export async function executeAgentConversation(
     conversationId,
     userId,
     provider,
+    oraclePrediction,
     forcedProfile,
     parentRunId,
     delegationReason,
@@ -125,7 +184,13 @@ export async function executeAgentConversation(
   const runtimeConfig = getAgentRuntimeConfig();
   const resolvedConversationId = await getOrCreateConversation(conversationId, resolvedUserId);
   const routedProfileDecision = routeAgentProfile(message);
-  const profileDecision = forcedProfile
+  const oracleIntent = oraclePrediction ? getOraclePredictionIntent(message) : { matched: false, query: "" };
+  const profileDecision = oraclePrediction
+    ? {
+        profile: "research_operator" as const,
+        reason: "Oracle prediction was explicitly triggered from chat.",
+      }
+    : forcedProfile
     ? {
         profile: forcedProfile,
         reason: delegatedByProfile
@@ -230,6 +295,171 @@ export async function executeAgentConversation(
   let round = 0;
 
   try {
+    if (oraclePrediction) {
+      if (!oracleIntent.matched || !oracleIntent.query.trim()) {
+        return finalizeAssistantReply({
+          reply: "Oracle prediction needs a prompt containing both 'oracle' and 'predict' or 'prediction', plus a market topic to search.",
+          round,
+          resolvedConversationId,
+          resolvedUserId,
+          runId: run.runId,
+          profile: profileDecision.profile,
+          provider: resolvedProvider,
+          model: resolvedModel,
+          onEvent,
+          metadata: { oraclePrediction: true, oracleQuery: oracleIntent.query },
+        });
+      }
+
+      const executeOracleTool = async (toolName: string, args: JsonObject): Promise<ToolExecutionResult> => {
+        round += 1;
+        const toolCallId = `oracle-${round}-${toolName}`;
+        await emit(onEvent, {
+          type: "tool_call",
+          round,
+          toolCallId,
+          name: toolName,
+          args,
+        });
+        recordAgentRunToolCall(run.runId, {
+          round,
+          toolCallId,
+          name: toolName,
+          args,
+        });
+
+        const result = await executeTool(toolName, args, {
+          config: runtimeConfig,
+          access: {
+            agentProfile: profileDecision.profile,
+            conversationId: resolvedConversationId,
+            runId: run.runId,
+            userId: resolvedUserId,
+            provider: resolvedProvider,
+            signal,
+          },
+        });
+
+        if (isSidecarToolResult(result)) {
+          syncActiveSidecarPanel({
+            action: result.action,
+            panel: result.panel,
+            conversationId: resolvedConversationId,
+            runId: run.runId,
+            userId: resolvedUserId,
+            toolName: toolName,
+          });
+          await emit(onEvent, buildSidecarStreamEvent({
+            action: result.action,
+            panel: result.panel,
+            runId: run.runId,
+            conversationId: resolvedConversationId,
+            round,
+            toolCallId,
+            name: toolName,
+          }));
+        }
+
+        const resultText = stringifyToolResult(result, runtimeConfig.toolResultMaxChars);
+        recordAgentRunToolResult(run.runId, {
+          round,
+          toolCallId,
+          name: toolName,
+          result: resultText,
+          isError: false,
+        });
+        await emit(onEvent, {
+          type: "tool_result",
+          round,
+          toolCallId,
+          name: toolName,
+          result: resultText,
+        });
+
+        return result;
+      };
+
+      await emit(onEvent, {
+        type: "status",
+        message: `Oracle is searching Polymarket for \"${oracleIntent.query}\".`,
+        round: round + 1,
+      });
+
+      const searchResult = await executeOracleTool("oracle_search_markets", {
+        query: oracleIntent.query,
+        limit: 5,
+        interactive: false,
+      }) as { query: string; markets: Array<{ id: string; question: string }>; summary: string };
+
+      if (!Array.isArray(searchResult.markets) || searchResult.markets.length === 0) {
+        return finalizeAssistantReply({
+          reply: `Oracle found no active Polymarket matches for \"${oracleIntent.query}\".`,
+          round,
+          resolvedConversationId,
+          resolvedUserId,
+          runId: run.runId,
+          profile: profileDecision.profile,
+          provider: resolvedProvider,
+          model: resolvedModel,
+          onEvent,
+          metadata: { oraclePrediction: true, oracleQuery: oracleIntent.query },
+        });
+      }
+
+      if (searchResult.markets.length === 1) {
+        await emit(onEvent, {
+          type: "status",
+          message: "Oracle found one matching market and is generating a verdict.",
+          round: round + 1,
+        });
+
+        const verdictResult = await executeOracleTool("oracle_get_market_verdict", {
+          marketId: searchResult.markets[0].id,
+        }) as {
+          market: { question: string };
+          verdict: { headline: string; summary: string; confidence: string };
+        };
+
+        return finalizeAssistantReply({
+          reply: `${verdictResult.verdict.headline}\n\n${verdictResult.verdict.summary}\n\nConfidence: ${verdictResult.verdict.confidence}\nMarket: ${verdictResult.market.question}`,
+          round,
+          resolvedConversationId,
+          resolvedUserId,
+          runId: run.runId,
+          profile: profileDecision.profile,
+          provider: resolvedProvider,
+          model: resolvedModel,
+          onEvent,
+          metadata: { oraclePrediction: true, oracleQuery: oracleIntent.query },
+        });
+      }
+
+      await emit(onEvent, {
+        type: "status",
+        message: `Oracle found ${searchResult.markets.length} candidate markets. Choose one in Sidecar to open a verdict.`,
+        round: round + 1,
+      });
+
+      await executeOracleTool("oracle_search_markets", {
+        query: oracleIntent.query,
+        limit: 5,
+        interactive: true,
+      });
+
+      return finalizeAssistantReply({
+        reply: `Oracle found ${searchResult.markets.length} candidate markets for \"${oracleIntent.query}\". Choose one in Sidecar to open a verdict.`,
+        round,
+        resolvedConversationId,
+        resolvedUserId,
+        runId: run.runId,
+        profile: profileDecision.profile,
+        provider: resolvedProvider,
+        model: resolvedModel,
+        onEvent,
+        metadata: { oraclePrediction: true, oracleQuery: oracleIntent.query },
+      });
+    }
+
     while (round < runtimeConfig.toolMaxRounds) {
       throwIfAborted(signal);
       round += 1;
@@ -396,30 +626,18 @@ export async function executeAgentConversation(
         llmModel: response.model,
         ...(response.metadata ? { llmMetadata: response.metadata } : {}),
       };
-      await saveMessage(resolvedConversationId, "ASSISTANT", assistantContent, {
-        ...assistantMetadata,
-      });
-      completeAgentRun(run.runId, {
-        status: "completed",
+      return finalizeAssistantReply({
         reply: assistantContent,
-        roundsCompleted: round,
-      });
-
-      await emit(onEvent, { type: "assistant_message", content: assistantContent });
-      await emit(onEvent, {
-        type: "done",
-        conversationId: resolvedConversationId,
-        reply: assistantContent,
-      });
-
-      return {
-        reply: assistantContent,
+        round,
+        resolvedConversationId,
+        resolvedUserId,
         runId: run.runId,
-        conversationId: resolvedConversationId,
         profile: profileDecision.profile,
         provider: response.provider,
         model: response.model,
-      };
+        onEvent,
+        metadata: assistantMetadata,
+      });
     }
 
     const fallback = "I reached the maximum number of tool-use steps. Please try a simpler request.";
