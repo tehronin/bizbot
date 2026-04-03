@@ -7,7 +7,6 @@ const nextConfig: NextConfig = {
     "*": [
       "workspace/**/*",
       "**/workspace/**/*",
-      ".next/**/*",
     ],
   },
   // Disable x-powered-by header for security
