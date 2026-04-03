@@ -8,6 +8,8 @@ It is designed more like an agent OS than a single-purpose app. BizBot combines 
 
 ![BizBot Chat Preview](docs/readme-chat-preview.png)
 
+See `CHANGELOG.md` for short rollout notes tied to shipped changes.
+
 ## Current Product State
 
 BizBot is no longer just a social posting bot. The app now includes:
@@ -464,11 +466,13 @@ Fallback behavior is intentionally simple:
 Current repo/runtime assumptions:
 
 - `npm run dev` starts the Next.js app and worker supervisor
-- `npm run build` passes on the current app state
+- `npm run build` passes on the current app state and prepares a runnable standalone bundle under `.next/standalone`
+- `npm run start:web` runs the packaged standalone Next.js server used for production-like local smoke passes
 - `npm run lint` validates the application code surface
 - `npx tsc --noEmit` validates the current type surface directly
 - `npm run plugin:new -- <plugin-name>` scaffolds the starting point for new plugin-based features
 - `npm exec vitest run tests/sidecar tests/agent/executor.test.ts tests/agent/route.test.ts tests/plugins/sidecar-core.test.ts` validates Sidecar behavior, event emission, and profile exposure
+- `npm exec vitest run tests/settings/standalone-packaging.test.ts` validates standalone asset packaging and the production start entrypoint
 - `npx vitest run tests/builder tests/plugins tests/mcp` validates Builder Mode, plugin registry behavior, and MCP exposure together
 - `npm run test:app` isolates the general Vitest suite from MCP transport coverage
 - `npm run test:mcp` runs MCP transport, contract, and plugin fixture coverage
@@ -476,6 +480,7 @@ Current repo/runtime assumptions:
 - PostgreSQL, Redis, and Memgraph are expected locally via Docker Compose
 - Tauri packaging is wired for desktop delivery
 - Meta webhook receiver is available at `/api/webhooks/meta`
+- Oracle and Sidecar have now been smoke-tested against the standalone production server path, not only the dev server
 
 ## Tech Stack
 
@@ -694,6 +699,17 @@ npm run tauri:prepare-resources
 npm run tauri:build
 ```
 
+### 5. Optional Production-Like Local Run
+
+```bash
+npm run build
+set BIZBOT_PLUGIN_ORACLE_ENABLED=true
+set PORT=3100
+npm run start:web
+```
+
+Open `http://localhost:3100`.
+
 ## Environment Variables
 
 Copy `.env.example` and fill in only the providers you actually intend to use.
@@ -773,7 +789,8 @@ The intended production split is Google for embeddings and MiniMax M2.7 for the 
 | `npm run test:app`                | Run non-MCP Vitest coverage                               |
 | `npm run test:mcp`                | Run MCP transport, contract, and plugin integration tests |
 | `npm run lint:docs`               | Lint README and contributor markdown                      |
-| `npm run build`                   | Production build                                          |
+| `npm run build`                   | Production build plus standalone asset preparation        |
+| `npm run start:web`               | Start the standalone packaged Next.js server              |
 | `npm run start`                   | Start full stack in production mode                       |
 | `npm run tauri:prepare-resources` | Bundle server and worker for Tauri                        |
 | `npm run tauri:dev`               | Run Tauri in dev mode                                     |
