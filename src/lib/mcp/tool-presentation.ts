@@ -17,6 +17,7 @@ export function getToolTitle(name: string): string {
   if (name.startsWith("approval_")) return `Approvals: ${name.replace("approval_", "").replaceAll("_", " ")}`;
   if (name.startsWith("browser_")) return `Browser: ${name.replace("browser_", "").replaceAll("_", " ")}`;
   if (name.startsWith("competitor_")) return `Competitors: ${name.replace("competitor_", "").replaceAll("_", " ")}`;
+  if (name.startsWith("oracle_")) return `Oracle: ${name.replace("oracle_", "").replaceAll("_", " ")}`;
   if (name.startsWith("developer_")) return `Developer: ${name.replace("developer_", "").replaceAll("_", " ")}`;
   if (name.startsWith("builder_")) return `Builder: ${name.replace("builder_", "").replaceAll("_", " ")}`;
   if (name.startsWith("sidecar_")) return `Sidecar: ${name.replace("sidecar_", "").replaceAll("_", " ")}`;
@@ -76,6 +77,9 @@ export function getToolAnnotations(name: string): ToolAnnotations {
     "sidecar_open",
     "sidecar_update",
     "sidecar_close",
+    "oracle_open_personality_selector",
+    "oracle_search_markets",
+    "oracle_get_market_verdict",
     "browser_navigate",
     "browser_extract_text",
     "browser_extract_links",
@@ -158,6 +162,9 @@ export function getToolAnnotations(name: string): ToolAnnotations {
     "sidecar_open",
     "sidecar_update",
     "sidecar_close",
+    "oracle_open_personality_selector",
+    "oracle_search_markets",
+    "oracle_get_market_verdict",
     "browser_extract_text",
     "browser_extract_links",
     "competitor_watch_list",
@@ -204,6 +211,8 @@ export function getToolDescription(name: string, description: string): string {
     hints.push("Use for plugin authoring, runtime inspection, validation, or debugging.");
   } else if (name.startsWith("sidecar_")) {
     hints.push("Use to control the BizBot-owned transient Sidecar panel.");
+  } else if (name.startsWith("oracle_")) {
+    hints.push("Use for read-only Polymarket search, verdicts, and optional Sidecar-enhanced Oracle flows.");
   }
 
   if (getToolAnnotations(name).readOnlyHint) {

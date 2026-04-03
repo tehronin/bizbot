@@ -15,6 +15,7 @@ import { filePlugin } from "./FilePlugin";
 import { graphPlugin } from "./GraphPlugin";
 import { localBusinessPlugin } from "./LocalBusinessPlugin";
 import { memoryPlugin } from "./MemoryPlugin";
+import { oraclePlugin } from "./OraclePlugin";
 import { schedulePlugin } from "./SchedulePlugin";
 import { BUILTIN_PLUGIN_TOGGLES, getBuiltinPluginToggle, isBuiltinPluginEnabled } from "./settings";
 import { socialPlugin } from "./SocialPlugin";
@@ -36,6 +37,7 @@ const builtinPluginModules = {
   approval: approvalPlugin,
   browser: browserPlugin,
   competitor: competitorPlugin,
+  oracle: oraclePlugin,
   "conversation-bridge": conversationBridgePlugin,
 } as const;
 

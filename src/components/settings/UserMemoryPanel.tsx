@@ -44,6 +44,7 @@ const QUICK_START_PRESETS: Array<{
   { label: "review reply workflow", category: "workflow", key: "review_reply_workflow", valueMode: "json", value: JSON.stringify({ tone: "calm", length: "short" }, null, 2) },
   { label: "operator constraints", category: "constraint", key: "operator_constraints", valueMode: "json", value: JSON.stringify({ neverStore: ["tokens", "payment_details"], replyApproval: true }, null, 2) },
   { label: "default lane", category: "operator_setting", key: "default_operator_lane", valueMode: "text", value: "general_operator" },
+  { label: "oracle personality", category: "operator_setting", key: "oracle_bot_personality", valueMode: "text", value: "balanced" },
 ];
 
 function formatValue(value: unknown): string {

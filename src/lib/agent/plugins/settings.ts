@@ -131,6 +131,14 @@ export const BUILTIN_PLUGIN_TOGGLES: BuiltinPluginToggleDefinition[] = [
     defaultEnabled: true,
   },
   {
+    id: "oracle",
+    displayName: "Oracle",
+    description: "Read-only Polymarket market search, verdicts, and Sidecar-powered selection flows.",
+    tags: ["oracle", "markets", "research"],
+    envKey: "BIZBOT_PLUGIN_ORACLE_ENABLED",
+    defaultEnabled: false,
+  },
+  {
     id: "conversation-bridge",
     displayName: "Conversation Bridge",
     description: "Cross-system conversation inspection that bridges chat threads into ontology context, Builder project matches, and approval-queue review.",

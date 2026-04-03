@@ -165,7 +165,7 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     mission: "Coordinate across BizBot's business systems with bounded autonomy and route to specialists when needed.",
     delegationTargets: ["sales_operator", "content_operator", "reputation_operator", "analyst_operator", "research_operator", "platform_operator", "builder_operator"],
     toolPolicy: {
-      allowedPrefixes: ["agent_", "social_", "content_", "crm_", "memory_", "file_", "graph_", "schedule_", "approval_", "browser_", "competitor_", "sidecar_"],
+      allowedPrefixes: ["agent_", "social_", "content_", "crm_", "memory_", "file_", "graph_", "schedule_", "approval_", "browser_", "competitor_", "sidecar_", "oracle_"],
     },
     prompt: {
       systemInstruction: "Business lane: general operator. Coordinate sales, content, reputation, analytics, and research work. Prefer calling the fewest tools needed and keep handoffs explicit.",
@@ -225,7 +225,7 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     mission: "Explain performance, pipeline movement, and operating risk with quantified evidence.",
     delegationTargets: ["sales_operator", "content_operator", "research_operator", "platform_operator"],
     toolPolicy: {
-      allowedPrefixes: ["agent_", "crm_", "social_", "memory_", "graph_", "browser_", "competitor_", "developer_", "commerce_", "local_business_", "sidecar_"],
+      allowedPrefixes: ["agent_", "crm_", "social_", "memory_", "graph_", "browser_", "competitor_", "developer_", "commerce_", "local_business_", "sidecar_", "oracle_"],
     },
     prompt: {
       systemInstruction: "Business lane: analyst operator. Quantify claims, inspect systems and pipeline state directly, and prefer structured tool outputs over narrative guesses.",
@@ -240,7 +240,7 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     mission: "Gather grounded external context to improve sales, content, and strategy decisions.",
     delegationTargets: ["sales_operator", "content_operator", "analyst_operator"],
     toolPolicy: {
-      allowedPrefixes: ["agent_", "browser_", "competitor_", "memory_", "file_", "graph_", "crm_", "social_", "local_business_", "commerce_", "sidecar_"],
+      allowedPrefixes: ["agent_", "browser_", "competitor_", "memory_", "file_", "graph_", "crm_", "social_", "local_business_", "commerce_", "sidecar_", "oracle_"],
     },
     prompt: {
       systemInstruction: "Business lane: research operator. Prefer grounded browsing, extraction, and competitor evidence. Be explicit about what is observed versus inferred.",
@@ -255,7 +255,7 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     mission: "Inspect and stabilize the BizBot runtime, tool surfaces, workers, and MCP control loop.",
     delegationTargets: ["analyst_operator", "general_operator", "builder_operator"],
     toolPolicy: {
-      allowedPrefixes: ["agent_", "developer_", "file_", "memory_", "graph_", "browser_", "competitor_", "crm_", "commerce_", "local_business_", "sidecar_"],
+      allowedPrefixes: ["agent_", "developer_", "file_", "memory_", "graph_", "browser_", "competitor_", "crm_", "commerce_", "local_business_", "sidecar_", "oracle_"],
       allowedTools: ["approval_get_pending", "schedule_list"],
     },
     prompt: {
@@ -293,7 +293,7 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     mission: "Expose a bounded operator-grade BizBot control surface over MCP without inheriting the full internal platform lane.",
     delegationTargets: [],
     toolPolicy: {
-      allowedPrefixes: ["builder_", "developer_", "file_", "memory_", "graph_", "crm_", "commerce_", "local_business_", "sidecar_"],
+      allowedPrefixes: ["builder_", "developer_", "file_", "memory_", "graph_", "crm_", "commerce_", "local_business_", "sidecar_", "oracle_"],
       allowedTools: ["approval_get_pending", "schedule_list"],
       deniedTools: ["agent_delegate_run"],
     },

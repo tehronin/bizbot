@@ -11,8 +11,16 @@ import type {
   ChatConversationUsageSummary,
 } from "@/lib/chat/types";
 import type { UsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
-import { BIZBOT_SIDECAR_EVENT } from "@/lib/sidecar/types";
-import type { SidecarPanel, SidecarAction } from "@/lib/sidecar/types";
+import {
+  BIZBOT_SIDECAR_EVENT,
+  BIZBOT_SIDECAR_INTERACTION_EVENT,
+} from "@/lib/sidecar/types";
+import type {
+  SidecarAction,
+  SidecarInteractionEventDetail,
+  SidecarInteractionResult,
+  SidecarPanel,
+} from "@/lib/sidecar/types";
 
 export interface ChatEntry {
   id: string;
@@ -397,6 +405,48 @@ export function useChat(): UseChatResult {
   }
 
   useEffect(() => {
+    const handleSidecarInteraction = (event: Event) => {
+      const detail = (event as CustomEvent<SidecarInteractionEventDetail>).detail;
+      if (!detail || !conversationId) {
+        return;
+      }
+
+      void fetch("/api/sidecar/interactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          panelId: detail.panelId,
+          actionId: detail.actionId,
+          selectedItemIds: detail.selectedItemIds,
+          conversationId,
+        }),
+      })
+        .then(async (response) => {
+          const payload = await readJson<SidecarInteractionResult & { error?: string }>(response);
+          if (!response.ok) {
+            throw new Error(payload.error ?? "Sidecar interaction failed.");
+          }
+
+          window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_EVENT, {
+            detail: {
+              action: payload.action,
+              panel: payload.panel,
+              conversationId,
+            },
+          }));
+        })
+        .catch((error: Error) => {
+          console.error("[sidecar interaction]", error);
+        });
+    };
+
+    window.addEventListener(BIZBOT_SIDECAR_INTERACTION_EVENT, handleSidecarInteraction as EventListener);
+    return () => {
+      window.removeEventListener(BIZBOT_SIDECAR_INTERACTION_EVENT, handleSidecarInteraction as EventListener);
+    };
+  }, [conversationId]);
+
+  useEffect(() => {
     void (async () => {
       try {
         await loadBootstrap({
@@ -650,6 +700,7 @@ export function useChat(): UseChatResult {
                   detail: {
                     action: event.action,
                     panel: event.panel ?? null,
+                    conversationId: event.conversationId,
                   },
                 }));
               }

@@ -1,8 +1,18 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
-import type { SidecarContent, SidecarPanel, SidecarStreamEventDetail } from "@/lib/sidecar/types";
-import { BIZBOT_SIDECAR_EVENT } from "@/lib/sidecar/types";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  SidecarContent,
+  SidecarInteractionEventDetail,
+  SidecarPanel,
+  SidecarSelectionActionDefinition,
+  SidecarSelectionContent,
+  SidecarStreamEventDetail,
+} from "@/lib/sidecar/types";
+import {
+  BIZBOT_SIDECAR_EVENT,
+  BIZBOT_SIDECAR_INTERACTION_EVENT,
+} from "@/lib/sidecar/types";
 
 const DEFAULT_WIDTH = 420;
 const MIN_WIDTH = 320;
@@ -10,6 +20,10 @@ const MAX_WIDTH = 720;
 
 function clampWidth(value: number): number {
   return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, value));
+}
+
+function dispatchSidecarInteraction(detail: SidecarInteractionEventDetail): void {
+  window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_INTERACTION_EVENT, { detail }));
 }
 
 function SidecarMarkdownRenderer({ markdown }: { markdown: string }) {
@@ -120,11 +134,119 @@ function SidecarContentView({ content }: { content: SidecarContent }) {
     case "image":
       return (
         <figure className="space-y-3">
+          {/* Sidecar intentionally renders validated transient image payloads directly. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={content.url} alt={content.alt} className="max-w-full border" style={{ borderColor: "var(--border-sub)" }} />
           <figcaption className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{content.alt}</figcaption>
         </figure>
       );
+    case "selection":
+      return null;
   }
+}
+
+function SidecarSelectionView({ panelId, content }: { panelId: string; content: SidecarSelectionContent }) {
+  const selectedIds = new Set(content.selectedItemIds ?? []);
+  const toggleAction = content.actions.find((action) => action.kind === "toggle");
+  const footerActions = content.actions.filter((action) => action.kind !== "toggle");
+
+  function getNextSelectedIds(itemId: string): string[] {
+    if (content.selectionMode === "single") {
+      return selectedIds.has(itemId) ? [] : [itemId];
+    }
+
+    const next = new Set(selectedIds);
+    if (next.has(itemId)) {
+      next.delete(itemId);
+    } else {
+      next.add(itemId);
+    }
+    return [...next];
+  }
+
+  function onItemClick(itemId: string): void {
+    if (!toggleAction) {
+      return;
+    }
+
+    dispatchSidecarInteraction({
+      panelId,
+      actionId: toggleAction.id,
+      selectedItemIds: getNextSelectedIds(itemId),
+    });
+  }
+
+  function onFooterAction(action: SidecarSelectionActionDefinition): void {
+    dispatchSidecarInteraction({
+      panelId,
+      actionId: action.id,
+      selectedItemIds: [...selectedIds],
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{content.title}</div>
+        {content.description ? <p className="text-sm leading-6" style={{ color: "var(--text-dim)" }}>{content.description}</p> : null}
+      </div>
+
+      <div className="space-y-3">
+        {content.items.map((item) => {
+          const selected = selectedIds.has(item.id);
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onItemClick(item.id)}
+              className="w-full border p-4 text-left transition-colors"
+              style={{
+                borderColor: selected ? "var(--accent)" : "var(--border)",
+                background: selected ? "var(--accent-glow)" : "var(--bg-raised)",
+                color: "var(--text-primary)",
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-2 min-w-0 flex-1">
+                  <div className="text-xs uppercase tracking-[0.18em]" style={{ color: selected ? "var(--accent)" : "var(--text-muted)" }}>{item.id}</div>
+                  <div className="text-sm font-medium break-words">{item.title}</div>
+                  {item.description ? <div className="text-sm leading-6" style={{ color: "var(--text-dim)" }}>{item.description}</div> : null}
+                </div>
+                <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: selected ? "var(--accent)" : "var(--text-dim)" }}>
+                  {selected ? "selected" : content.selectionMode === "multiple" ? "add" : "choose"}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {footerActions.length > 0 ? (
+        <div className="flex flex-wrap gap-2 pt-2">
+          {footerActions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              onClick={() => onFooterAction(action)}
+              disabled={action.kind === "apply" && selectedIds.size === 0}
+              className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50"
+              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SidecarPanelContentView({ panel }: { panel: SidecarPanel }) {
+  if (panel.content.type === "selection") {
+    return <SidecarSelectionView panelId={panel.panelId} content={panel.content} />;
+  }
+
+  return <SidecarContentView content={panel.content} />;
 }
 
 export default function SidecarHost() {
@@ -198,7 +320,7 @@ export default function SidecarHost() {
           </div>
         </div>
         <div className="h-[calc(100vh-92px)] overflow-auto p-5">
-          <SidecarContentView content={panel.content} />
+          <SidecarPanelContentView panel={panel} />
         </div>
       </aside>
     </div>

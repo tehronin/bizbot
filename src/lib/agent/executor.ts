@@ -23,6 +23,7 @@ import {
   routeAgentProfile,
   type AgentProfile,
 } from "@/lib/agent/profiles";
+import { syncActiveSidecarPanel } from "@/lib/sidecar/state";
 import { buildSidecarStreamEvent, isSidecarToolResult } from "@/lib/sidecar/validation";
 import type { SidecarStreamEvent } from "@/lib/sidecar/types";
 
@@ -336,6 +337,14 @@ export async function executeAgentConversation(
             throwIfAborted(signal);
 
             if (!isError && isSidecarToolResult(result)) {
+              syncActiveSidecarPanel({
+                action: result.action,
+                panel: result.panel,
+                conversationId: resolvedConversationId,
+                runId: run.runId,
+                userId: resolvedUserId,
+                toolName: toolCall.name,
+              });
               await emit(onEvent, buildSidecarStreamEvent({
                 action: result.action,
                 panel: result.panel,

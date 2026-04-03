@@ -26,6 +26,7 @@ describe("agent route sidecar stream", () => {
         type: "sidecar",
         action: "open",
         panel: {
+          panelId: "launch-brief",
           title: "Launch brief",
           content: { type: "markdown", markdown: "# Launch" },
         },

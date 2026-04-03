@@ -373,6 +373,7 @@ describe("agent executor explicit memory", () => {
       ok: true,
       action: "open",
       panel: {
+        panelId: "launch-brief",
         title: "Launch brief",
         content: { type: "markdown", markdown: "# Launch" },
       },
@@ -400,6 +401,7 @@ describe("agent executor explicit memory", () => {
       toolCallId: "tool-1",
       name: "sidecar_open",
       panel: {
+        panelId: "launch-brief",
         title: "Launch brief",
         content: { type: "markdown", markdown: "# Launch" },
       },

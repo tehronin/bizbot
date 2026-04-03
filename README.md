@@ -24,6 +24,7 @@ BizBot is no longer just a social posting bot. The app now includes:
 - Local Business workspace for Google Business Profile reviews, posts, and hours
 - Approvals queue and publishing workflows
 - Dedicated plugin catalog for builtin toggles and external MCP integration management
+- Off-by-default Oracle builtin plugin for read-only Polymarket market search, verdicts, and Sidecar-enhanced market flows
 - Analytics, runtime Operations telemetry, and a settings-linked usage ledger for daily token accounting and cost estimates
 - MCP server and MCP client plumbing for tool exposure and imports
 - A high-trust MCP plugin design loop for inspection, validation, preview, and contract-impact testing
@@ -59,6 +60,7 @@ The legacy `/google-business` route still exists as a compatibility redirect to 
 - Exposes a plugin catalog for enabling builtin plugins and managing external MCP integrations
 - Tracks daily token usage, request counts, and model-based cost estimates in Settings, plus live per-conversation usage and cost estimates in Chat
 - Opens validated markdown, code, JSON, and image content in a BizBot-owned Sidecar surface through core `sidecar_*` tools
+- Supports a read-only Oracle workflow over Polymarket with plain chat output and optional Sidecar-driven selection flows when the builtin Oracle plugin is enabled
 - Runs as an MCP server for VS Code and other MCP clients
 - Imports external MCP servers through configured client connections
 - Creates and manages external builder projects without letting scaffolding work mutate the BizBot repo itself
@@ -258,10 +260,14 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 
 - Sidecar is a core BizBot surface, not a toggleable plugin
 - Sidecar is read-only and transient by design
-- Sidecar currently supports exactly four renderer types: `markdown`, `code`, `json`, and `image`
+- Sidecar currently supports five renderer types: `markdown`, `code`, `json`, `image`, and the generic `selection` card surface
 - Sidecar content is validated at the tool boundary before the UI sees it
 - Markdown rejects raw HTML, image payloads are restricted to safe sources, and unknown content types are rejected
 - One panel is active at a time; `sidecar_open` replaces, `sidecar_update` updates, and `sidecar_close` clears
+- Interactive Sidecar flows round-trip through a structured BizBot-owned interaction route instead of synthetic chat messages
+- Active panels are tracked in a transient server-side registry scoped by conversation, not persisted as durable state
+
+See `docs/sidecar.md` for the Sidecar v2 content model, panel registry contract, interaction routing model, and reuse guidance for future plugins.
 
 ### Inbox
 
@@ -410,6 +416,7 @@ Current event shape:
   "type": "sidecar",
   "action": "open",
   "panel": {
+    "panelId": "panel-...",
     "title": "Build summary",
     "content": {
       "type": "json",
@@ -425,6 +432,8 @@ Current event shape:
 ```
 
 The legacy `tool_result` event remains string-based for transcript compatibility and does not carry Sidecar-only fields.
+
+Interactive selections do not create synthetic user chat turns. The dashboard dispatches a bounded browser event, the app posts a structured payload to `/api/sidecar/interactions`, and BizBot routes the request against the active transient panel registry.
 
 ### MCP Client
 

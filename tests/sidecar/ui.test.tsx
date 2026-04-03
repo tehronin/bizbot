@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import SidecarHost from "@/components/layout/SidecarHost";
-import { BIZBOT_SIDECAR_EVENT } from "@/lib/sidecar/types";
+import { BIZBOT_SIDECAR_EVENT, BIZBOT_SIDECAR_INTERACTION_EVENT } from "@/lib/sidecar/types";
 
 afterEach(() => {
   cleanup();
@@ -20,6 +20,7 @@ describe("sidecar host", () => {
     dispatchSidecar({
       action: "open",
       panel: {
+        panelId: "launch-brief",
         title: "Launch brief",
         content: { type: "markdown", markdown: "# Launch\n\n- One panel only" },
       },
@@ -33,6 +34,7 @@ describe("sidecar host", () => {
     dispatchSidecar({
       action: "update",
       panel: {
+        panelId: "build-log",
         title: "Build log",
         content: { type: "code", language: "ts", code: "export const ready = true;" },
       },
@@ -46,6 +48,7 @@ describe("sidecar host", () => {
     dispatchSidecar({
       action: "update",
       panel: {
+        panelId: "payload",
         title: "Payload",
         content: { type: "json", value: { ready: true, count: 2 } },
       },
@@ -68,6 +71,7 @@ describe("sidecar host", () => {
     dispatchSidecar({
       action: "open",
       panel: {
+        panelId: "preview-image",
         title: "Preview image",
         content: {
           type: "image",
@@ -81,5 +85,53 @@ describe("sidecar host", () => {
       expect(screen.getByText("Preview image")).toBeTruthy();
       expect(screen.getByAltText("Safe preview")).toBeTruthy();
     });
+  });
+
+  it("emits structured interaction events for selection cards", async () => {
+    const listener = vi.fn();
+    window.addEventListener(BIZBOT_SIDECAR_INTERACTION_EVENT, listener as EventListener);
+    render(<SidecarHost />);
+
+    dispatchSidecar({
+      action: "open",
+      panel: {
+        panelId: "oracle-choice",
+        title: "Oracle personality",
+        content: {
+          type: "selection",
+          title: "Choose personality",
+          selectionMode: "single",
+          items: [
+            { id: "balanced", title: "Balanced" },
+            { id: "bullish", title: "Bullish" },
+          ],
+          actions: [
+            { id: "oracle_toggle", label: "Choose", kind: "toggle" },
+            { id: "oracle_apply", label: "Apply", kind: "apply" },
+          ],
+          interaction: { routeKey: "oracle.personality.select" },
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Choose personality")).toBeTruthy();
+      expect(screen.getByText("Balanced")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Balanced").closest("button") as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(listener).toHaveBeenCalled();
+    });
+
+    const event = listener.mock.calls[0][0] as CustomEvent;
+    expect(event.detail).toEqual({
+      panelId: "oracle-choice",
+      actionId: "oracle_toggle",
+      selectedItemIds: ["balanced"],
+    });
+
+    window.removeEventListener(BIZBOT_SIDECAR_INTERACTION_EVENT, listener as EventListener);
   });
 });

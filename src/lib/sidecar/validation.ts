@@ -2,13 +2,28 @@ import { isJsonValue, type JsonValue } from "@/lib/agent/tools";
 import type {
   SidecarAction,
   SidecarContent,
+  SidecarInteractionRequest,
   SidecarPanel,
+  SidecarSelectionActionDefinition,
+  SidecarSelectionContent,
+  SidecarSelectionItem,
   SidecarStreamEvent,
   SidecarToolResult,
 } from "@/lib/sidecar/types";
 import { SIDECAR_ALLOWED_IMAGE_HOSTS } from "@/lib/sidecar/types";
 
 const MAX_IMAGE_DATA_URL_CHARS = 200_000;
+
+function normalizeText(value: string, field: string, maxLength: number): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error(`${field} is required.`);
+  }
+  if (normalized.length > maxLength) {
+    throw new Error(`${field} must be ${maxLength} characters or fewer.`);
+  }
+  return normalized;
+}
 
 function normalizeTitle(value: string): string {
   const title = value.trim();
@@ -69,6 +84,103 @@ function validateImageUrl(value: string): string {
   return parsed.toString();
 }
 
+function validateSelectionItem(input: SidecarSelectionItem, seenIds: Set<string>): SidecarSelectionItem {
+  const id = normalizeText(input.id, "Sidecar selection item id", 80);
+  if (!/^[a-z0-9:_-]{1,80}$/i.test(id)) {
+    throw new Error("Sidecar selection item id must be alphanumeric and 80 characters or fewer.");
+  }
+  if (seenIds.has(id)) {
+    throw new Error(`Duplicate Sidecar selection item id '${id}'.`);
+  }
+  seenIds.add(id);
+
+  const title = normalizeText(input.title, "Sidecar selection item title", 120);
+  const description = input.description?.trim();
+  if (description !== undefined && description.length > 280) {
+    throw new Error("Sidecar selection item description must be 280 characters or fewer.");
+  }
+
+  return {
+    id,
+    title,
+    ...(description ? { description } : {}),
+  };
+}
+
+function validateSelectionAction(input: SidecarSelectionActionDefinition, seenIds: Set<string>): SidecarSelectionActionDefinition {
+  const id = normalizeText(input.id, "Sidecar selection action id", 80);
+  if (!/^[a-z0-9:_-]{1,80}$/i.test(id)) {
+    throw new Error("Sidecar selection action id must be alphanumeric and 80 characters or fewer.");
+  }
+  if (seenIds.has(id)) {
+    throw new Error(`Duplicate Sidecar selection action id '${id}'.`);
+  }
+  seenIds.add(id);
+
+  return {
+    id,
+    label: normalizeText(input.label, "Sidecar selection action label", 80),
+    kind: input.kind,
+  };
+}
+
+function validateSelectionContent(input: SidecarSelectionContent): SidecarSelectionContent {
+  const title = normalizeText(input.title, "Sidecar selection title", 120);
+  const description = input.description?.trim();
+  if (description !== undefined && description.length > 280) {
+    throw new Error("Sidecar selection description must be 280 characters or fewer.");
+  }
+
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    throw new Error("Sidecar selection content requires at least one item.");
+  }
+  if (input.items.length > 24) {
+    throw new Error("Sidecar selection content supports at most 24 items.");
+  }
+
+  if (!Array.isArray(input.actions) || input.actions.length === 0) {
+    throw new Error("Sidecar selection content requires at least one action.");
+  }
+  if (input.actions.length > 6) {
+    throw new Error("Sidecar selection content supports at most 6 actions.");
+  }
+
+  const routeKey = normalizeText(input.interaction.routeKey, "Sidecar interaction route key", 120);
+  if (!/^[a-z0-9._:-]{1,120}$/i.test(routeKey)) {
+    throw new Error("Sidecar interaction route key must be alphanumeric and 120 characters or fewer.");
+  }
+
+  const itemIds = new Set<string>();
+  const items = input.items.map((item) => validateSelectionItem(item, itemIds));
+  const selectedItemIds = Array.isArray(input.selectedItemIds)
+    ? input.selectedItemIds.map((itemId) => normalizeText(itemId, "Sidecar selected item id", 80))
+    : [];
+
+  for (const itemId of selectedItemIds) {
+    if (!itemIds.has(itemId)) {
+      throw new Error(`Unknown Sidecar selected item id '${itemId}'.`);
+    }
+  }
+
+  if (input.selectionMode === "single" && selectedItemIds.length > 1) {
+    throw new Error("Single-select Sidecar content accepts only one selected item.");
+  }
+
+  const actionIds = new Set<string>();
+  const actions = input.actions.map((action) => validateSelectionAction(action, actionIds));
+
+  return {
+    type: "selection",
+    title,
+    selectionMode: input.selectionMode,
+    items,
+    actions,
+    interaction: { routeKey },
+    ...(description ? { description } : {}),
+    ...(selectedItemIds.length > 0 ? { selectedItemIds } : {}),
+  };
+}
+
 export function validateSidecarContent(input: SidecarContent): SidecarContent {
   switch (input.type) {
     case "markdown": {
@@ -121,6 +233,9 @@ export function validateSidecarContent(input: SidecarContent): SidecarContent {
         alt,
       };
     }
+    case "selection": {
+      return validateSelectionContent(input);
+    }
   }
 }
 
@@ -133,10 +248,24 @@ function safelyParseJson(value: string): JsonValue | object | undefined {
 }
 
 export function validateSidecarPanel(input: SidecarPanel): SidecarPanel {
+  const panelId = normalizeText(input.panelId, "Sidecar panel id", 80);
+  if (!/^[a-z0-9:_-]{1,80}$/i.test(panelId)) {
+    throw new Error("Sidecar panel id must be alphanumeric and 80 characters or fewer.");
+  }
+
   return {
+    panelId,
     title: normalizeTitle(input.title),
     content: validateSidecarContent(input.content),
   };
+}
+
+export function createValidatedSidecarPanel(input: Omit<SidecarPanel, "panelId"> & { panelId?: string }): SidecarPanel {
+  return validateSidecarPanel({
+    panelId: input.panelId?.trim() || crypto.randomUUID(),
+    title: input.title,
+    content: input.content,
+  });
 }
 
 export function isSidecarToolResult(value: unknown): value is SidecarToolResult {
@@ -179,10 +308,27 @@ export function buildSidecarStreamEvent(input: {
     type: "sidecar",
     action: input.action,
     panel: input.panel ? validateSidecarPanel(input.panel) : null,
-    runId: input.runId,
     conversationId: input.conversationId,
+    runId: input.runId,
     round: input.round,
     toolCallId: input.toolCallId,
     name: input.name,
+  };
+}
+
+export function validateSidecarInteractionRequest(input: SidecarInteractionRequest): SidecarInteractionRequest {
+  const panelId = normalizeText(input.panelId, "Sidecar interaction panel id", 80);
+  const actionId = normalizeText(input.actionId, "Sidecar interaction action id", 80);
+  const conversationId = normalizeText(input.conversationId, "Sidecar interaction conversation id", 120);
+  const selectedItemIds = Array.isArray(input.selectedItemIds)
+    ? input.selectedItemIds.map((itemId) => normalizeText(itemId, "Sidecar interaction selected item id", 80))
+    : [];
+
+  return {
+    panelId,
+    actionId,
+    conversationId,
+    selectedItemIds,
+    ...(input.userId ? { userId: input.userId.trim() } : {}),
   };
 }

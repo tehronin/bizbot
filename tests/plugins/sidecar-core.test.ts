@@ -36,7 +36,8 @@ describe("sidecar core tools", () => {
     })).resolves.toEqual({
       ok: true,
       action: "open",
-      panel: {
+      panel: expect.objectContaining({
+        panelId: expect.any(String),
         title: "Summary",
         content: {
           type: "json",
@@ -45,7 +46,7 @@ describe("sidecar core tools", () => {
             status: "ready",
           },
         },
-      },
+      }),
     });
 
     await expect(executeTool("sidecar_update", {
@@ -60,14 +61,15 @@ describe("sidecar core tools", () => {
     })).resolves.toEqual({
       ok: true,
       action: "update",
-      panel: {
+      panel: expect.objectContaining({
+        panelId: expect.any(String),
         title: "Preview",
         content: {
           type: "image",
           url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6L4xwAAAAASUVORK5CYII=",
           alt: "Tiny preview",
         },
-      },
+      }),
     });
 
     await expect(executeTool("sidecar_close", {}, {
@@ -109,7 +111,7 @@ describe("sidecar core tools", () => {
       },
     } as never, {
       access: { agentProfile: "content_operator" },
-    })).rejects.toThrow("Tool argument content.type must be one of: markdown, code, json, image.");
+    })).rejects.toThrow("Tool argument content.type must be one of: markdown, code, json, image, selection.");
 
     await expect(executeTool("sidecar_open", {
       title: "Malformed json string",

@@ -4,9 +4,11 @@ import { validateSidecarContent, validateSidecarPanel } from "@/lib/sidecar/vali
 describe("sidecar validation", () => {
   it("accepts the four supported content types", () => {
     expect(validateSidecarPanel({
+      panelId: "release-notes",
       title: "Release notes",
       content: { type: "markdown", markdown: "# Launch\n\n- Ship Sidecar" },
     })).toEqual({
+      panelId: "release-notes",
       title: "Release notes",
       content: { type: "markdown", markdown: "# Launch\n\n- Ship Sidecar" },
     });
@@ -31,6 +33,38 @@ describe("sidecar validation", () => {
       url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6L4xwAAAAASUVORK5CYII=",
       alt: "One pixel",
     });
+
+    expect(validateSidecarContent({
+      type: "selection",
+      title: "Choose one",
+      description: "Generic card selection.",
+      selectionMode: "multiple",
+      items: [
+        { id: "alpha", title: "Alpha" },
+        { id: "beta", title: "Beta", description: "Second item" },
+      ],
+      selectedItemIds: ["beta"],
+      actions: [
+        { id: "toggle", label: "Toggle", kind: "toggle" },
+        { id: "apply", label: "Apply", kind: "apply" },
+      ],
+      interaction: { routeKey: "sidecar.selection.apply" },
+    })).toEqual({
+      type: "selection",
+      title: "Choose one",
+      description: "Generic card selection.",
+      selectionMode: "multiple",
+      items: [
+        { id: "alpha", title: "Alpha" },
+        { id: "beta", title: "Beta", description: "Second item" },
+      ],
+      selectedItemIds: ["beta"],
+      actions: [
+        { id: "toggle", label: "Toggle", kind: "toggle" },
+        { id: "apply", label: "Apply", kind: "apply" },
+      ],
+      interaction: { routeKey: "sidecar.selection.apply" },
+    });
   });
 
   it("rejects raw HTML in markdown", () => {
@@ -54,5 +88,22 @@ describe("sidecar validation", () => {
       code: "print('hi')",
       language: "python<script>",
     })).toThrow("Sidecar code language must be alphanumeric and 32 characters or fewer.");
+  });
+
+  it("rejects malformed selection payloads", () => {
+    expect(() => validateSidecarContent({
+      type: "selection",
+      title: "Choose one",
+      selectionMode: "single",
+      items: [
+        { id: "alpha", title: "Alpha" },
+        { id: "beta", title: "Beta" },
+      ],
+      selectedItemIds: ["alpha", "beta"],
+      actions: [
+        { id: "toggle", label: "Toggle", kind: "toggle" },
+      ],
+      interaction: { routeKey: "sidecar.selection.apply" },
+    })).toThrow("Single-select Sidecar content accepts only one selected item.");
   });
 });

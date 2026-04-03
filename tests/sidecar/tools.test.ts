@@ -31,10 +31,11 @@ describe("sidecar tools", () => {
     }, {})).resolves.toEqual({
       ok: true,
       action: "open",
-      panel: {
+      panel: expect.objectContaining({
+        panelId: expect.any(String),
         title: "Build output",
         content: { type: "json", value: { ok: true } },
-      },
+      }),
     });
 
     await expect(sidecarTools[2].execute({}, {})).resolves.toEqual({
