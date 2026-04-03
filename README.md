@@ -13,6 +13,7 @@ It is designed more like an agent OS than a single-purpose app. BizBot combines 
 BizBot is no longer just a social posting bot. The app now includes:
 
 - Agent chat with typed specialist routing and tool traces
+- A core transient Sidecar panel for rich read-only output outside the main chat
 - Chat history controls for recent, archived, restore, and delete flows
 - Prompt-aware chat context assembly with rolling conversation summaries, retrieval gating, and token-usage journaling
 - Three knowledge lanes: semantic recall, explicit relational user memory, and a core ontology layer for canonical typed entities and relations
@@ -57,6 +58,7 @@ The legacy `/google-business` route still exists as a compatibility redirect to 
 - Exposes a runtime operations surface for jobs, failures, and control-plane state
 - Exposes a plugin catalog for enabling builtin plugins and managing external MCP integrations
 - Tracks daily token usage, request counts, and model-based cost estimates in Settings, plus live per-conversation usage and cost estimates in Chat
+- Opens validated markdown, code, JSON, and image content in a BizBot-owned Sidecar surface through core `sidecar_*` tools
 - Runs as an MCP server for VS Code and other MCP clients
 - Imports external MCP servers through configured client connections
 - Creates and manages external builder projects without letting scaffolding work mutate the BizBot repo itself
@@ -219,6 +221,7 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 - Prompt assembly telemetry for explicit memory, conversation summaries, recent turns, semantic recall, graph context, and docs context
 - Per-round provider token usage accounting when the upstream model returns usage metadata
 - Live tool trace streaming in Chat
+- Dedicated Sidecar SSE events for validated rich-output panels without polluting the legacy tool transcript
 - MCP resources for runtime and debugging visibility
 
 ## Major Surfaces
@@ -226,6 +229,7 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 ### Chat
 
 - Streams run metadata, routing decisions, tool calls, and final outputs
+- Streams dedicated Sidecar panel events for rich read-only output rendered outside the main transcript
 - Persists the current active conversation in the database and restores it across reloads
 - Supports manual New Chat without deleting prior conversations
 - Supports archive, restore, and explicit confirmed delete controls from the history panel for both active and archived conversations
@@ -235,6 +239,7 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 - Lets operators promote a user or assistant message into explicit user memory
 - Uses rolling conversation summaries so ongoing threads do not depend entirely on raw recent-turn inclusion
 - Shows live per-conversation request, token, cached-token, and cost estimates in the active chat header
+- Supports one global dashboard-level Sidecar panel for markdown, code, JSON, and image payloads emitted by BizBot tools
 - Can expose runtime state through MCP-aware flows
 
 #### Chat Lifecycle
@@ -247,6 +252,16 @@ Each profile has its own mission, delegation targets, and tool policy. Public ch
 - Recent and archived conversations can be opened for read-only inspection inside the history panel without mutating state
 - Restore is explicit and separate from open; delete is explicit, confirmed, and available from history for active or archived conversations
 - Multi-tab synchronization is not real-time in this version; another tab will recover on the next refresh or reload cycle
+- Sidecar state is intentionally transient: it clears on close and on full app refresh
+
+### Sidecar
+
+- Sidecar is a core BizBot surface, not a toggleable plugin
+- Sidecar is read-only and transient by design
+- Sidecar currently supports exactly four renderer types: `markdown`, `code`, `json`, and `image`
+- Sidecar content is validated at the tool boundary before the UI sees it
+- Markdown rejects raw HTML, image payloads are restricted to safe sources, and unknown content types are rejected
+- One panel is active at a time; `sidecar_open` replaces, `sidecar_update` updates, and `sidecar_close` clears
 
 ### Inbox
 
@@ -378,10 +393,38 @@ The MCP surface now doubles as a plugin authoring lab for power users:
 - Local stdio entry point is `npm run mcp:stdio`
 - HTTP endpoint is `/api/mcp`
 - Exposes tools, resources, and prompts
+- Exposes core `sidecar_open`, `sidecar_update`, and `sidecar_close` tools as part of the BizBot MCP surface
 - Includes runtime-oriented resources for inspection and debugging
 - Exposes plugin discovery resources so developers can inspect exported plugin metadata and tool ownership
 - Exposes Builder Mode tools for bounded project scaffolding and build-lane automation
 - Conformance coverage now exercises tools, resources, prompts, auth handling, and negative-path transport behavior
+
+#### Sidecar Event Contract
+
+In-app chat execution can emit a dedicated `sidecar` SSE event which the dashboard bridges into the browser-level `bizbot:sidecar` CustomEvent.
+
+Current event shape:
+
+```json
+{
+  "type": "sidecar",
+  "action": "open",
+  "panel": {
+    "title": "Build summary",
+    "content": {
+      "type": "json",
+      "value": { "ok": true }
+    }
+  },
+  "runId": "run-...",
+  "conversationId": "conversation-...",
+  "round": 1,
+  "toolCallId": "tool-...",
+  "name": "sidecar_open"
+}
+```
+
+The legacy `tool_result` event remains string-based for transcript compatibility and does not carry Sidecar-only fields.
 
 ### MCP Client
 
@@ -416,6 +459,7 @@ Current repo/runtime assumptions:
 - `npm run lint` validates the application code surface
 - `npx tsc --noEmit` validates the current type surface directly
 - `npm run plugin:new -- <plugin-name>` scaffolds the starting point for new plugin-based features
+- `npm exec vitest run tests/sidecar tests/agent/executor.test.ts tests/agent/route.test.ts tests/plugins/sidecar-core.test.ts` validates Sidecar behavior, event emission, and profile exposure
 - `npx vitest run tests/builder tests/plugins tests/mcp` validates Builder Mode, plugin registry behavior, and MCP exposure together
 - `npm run test:app` isolates the general Vitest suite from MCP transport coverage
 - `npm run test:mcp` runs MCP transport, contract, and plugin fixture coverage
@@ -590,6 +634,7 @@ bizbot/
       commerce/               local-first commerce data layer
       crm/                    CRM providers, contact store, activities
       mcp/                    MCP server and client support
+      sidecar/                Sidecar types, validation, and core tools
       social/                 social platform adapters
       google-business/        Local Business service backing
       competitors/            competitor watch logic

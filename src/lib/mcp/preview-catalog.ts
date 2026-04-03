@@ -431,7 +431,7 @@ async function buildCrmPipelineSummary() {
 }
 
 export const NAMING_RULES = {
-  prefixes: ["crm_", "memory_", "builder_", "developer_", "local_business_", "commerce_", "social_", "approval_", "browser_", "graph_", "schedule_"],
+  prefixes: ["crm_", "memory_", "builder_", "developer_", "local_business_", "commerce_", "social_", "approval_", "browser_", "graph_", "schedule_", "sidecar_"],
   rules: [
     "Use lowercase snake_case.",
     "Start every builtin tool with a stable namespace prefix.",

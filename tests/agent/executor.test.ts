@@ -161,6 +161,15 @@ describe("agent executor explicit memory", () => {
     });
     ontologyMocks.buildOntologyPromptBlock.mockResolvedValue({ block: "", lines: [], omitted: true, reason: "empty" });
     runJournalMocks.startAgentRun.mockReturnValue({ runId: "run-1" });
+    runJournalMocks.recordAgentRunRoundUsage.mockImplementation((_runId, params) => ({
+      usage: {
+        promptTokens: params.promptTokens,
+        completionTokens: params.completionTokens,
+        totalTokens: params.totalTokens,
+        cachedPromptTokens: params.cachedPromptTokens,
+        rounds: Array.from({ length: params.round }, (_, index) => ({ round: index + 1 })),
+      },
+    }));
     runJournalMocks.countDelegationDepth.mockReturnValue(0);
     runJournalMocks.getDelegationChain.mockReturnValue(["content_operator"]);
   });
@@ -324,5 +333,85 @@ describe("agent executor explicit memory", () => {
       totalTokens: 354,
       cachedPromptTokens: 128,
     });
+  });
+
+  it("emits a structured sidecar event alongside the regular tool result", async () => {
+    pluginMocks.getAllToolDefinitions.mockReturnValue([
+      {
+        name: "sidecar_open",
+        description: "Open the sidecar.",
+        parameters: { type: "object", properties: {} },
+      },
+    ]);
+    kernelMocks.chatComplete
+      .mockResolvedValueOnce({
+        content: "",
+        toolCalls: [
+          {
+            id: "tool-1",
+            name: "sidecar_open",
+            arguments: {
+              title: "Launch brief",
+              content: { type: "markdown", markdown: "# Launch" },
+            },
+          },
+        ],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      })
+      .mockResolvedValueOnce({
+        content: "reply",
+        toolCalls: [],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      });
+    pluginMocks.executeTool.mockResolvedValue({
+      ok: true,
+      action: "open",
+      panel: {
+        title: "Launch brief",
+        content: { type: "markdown", markdown: "# Launch" },
+      },
+    });
+
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+
+    await executeAgentConversation({
+      message: "Open sidecar",
+      forcedProfile: "content_operator",
+      onEvent: (event) => {
+        events.push(event as { type: string; [key: string]: unknown });
+      },
+    });
+
+    const sidecarEvent = events.find((event) => event.type === "sidecar");
+    const toolResultEvent = events.find((event) => event.type === "tool_result");
+
+    expect(sidecarEvent).toEqual(expect.objectContaining({
+      type: "sidecar",
+      action: "open",
+      runId: "run-1",
+      conversationId: "conversation-1",
+      round: 1,
+      toolCallId: "tool-1",
+      name: "sidecar_open",
+      panel: {
+        title: "Launch brief",
+        content: { type: "markdown", markdown: "# Launch" },
+      },
+    }));
+    expect(toolResultEvent).toEqual(expect.objectContaining({
+      type: "tool_result",
+      round: 1,
+      toolCallId: "tool-1",
+      name: "sidecar_open",
+      result: expect.any(String),
+    }));
+    expect(toolResultEvent).not.toHaveProperty("action");
+    expect(toolResultEvent).not.toHaveProperty("panel");
   });
 });

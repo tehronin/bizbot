@@ -117,6 +117,9 @@ describe("MCP contract snapshots", () => {
         "memory_remember",
         "memory_set_fact",
         "schedule_list",
+        "sidecar_close",
+        "sidecar_open",
+        "sidecar_update",
       ]
     `);
   });

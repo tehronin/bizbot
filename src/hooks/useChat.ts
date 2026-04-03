@@ -11,6 +11,8 @@ import type {
   ChatConversationUsageSummary,
 } from "@/lib/chat/types";
 import type { UsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
+import { BIZBOT_SIDECAR_EVENT } from "@/lib/sidecar/types";
+import type { SidecarPanel, SidecarAction } from "@/lib/sidecar/types";
 
 export interface ChatEntry {
   id: string;
@@ -35,7 +37,7 @@ interface AgentResponse {
 }
 
 interface AgentStreamEvent {
-  type: "meta" | "usage" | "status" | "tool_call" | "tool_result" | "assistant_message" | "done" | "error";
+  type: "meta" | "usage" | "status" | "tool_call" | "tool_result" | "sidecar" | "assistant_message" | "done" | "error";
   conversationId?: string;
   runId?: string;
   profile?: string;
@@ -55,6 +57,8 @@ interface AgentStreamEvent {
   name?: string;
   args?: object;
   result?: string;
+  action?: SidecarAction;
+  panel?: SidecarPanel | null;
 }
 
 export interface ActiveRunState {
@@ -640,6 +644,13 @@ export function useChat(): UseChatResult {
                   completionTokens: current.runBaseCompletionTokens + (event.completionTokens ?? 0),
                   totalTokens: current.runBaseTotalTokens + (event.totalTokens ?? 0),
                   cachedPromptTokens: current.runBaseCachedPromptTokens + (event.cachedPromptTokens ?? 0),
+                }));
+              } else if (event.type === "sidecar" && event.action) {
+                window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_EVENT, {
+                  detail: {
+                    action: event.action,
+                    panel: event.panel ?? null,
+                  },
                 }));
               }
               setMessages((current) => appendStreamEntries(current, event));

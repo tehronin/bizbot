@@ -131,6 +131,7 @@ export function createBizBotMcpServer(): McpServer {
         "Tools prefixed with memory_ store and recall long-term knowledge.",
         "Tools prefixed with builder_ operate only inside a dedicated external builder workspace and require explicit command allowlisting.",
         "Tools prefixed with browser_ navigate the web via Playwright.",
+        "Tools prefixed with sidecar_ control BizBot's transient read-only Sidecar panel.",
       ].join(" "),
     },
   );

@@ -18,6 +18,7 @@ import { memoryPlugin } from "./MemoryPlugin";
 import { schedulePlugin } from "./SchedulePlugin";
 import { BUILTIN_PLUGIN_TOGGLES, getBuiltinPluginToggle, isBuiltinPluginEnabled } from "./settings";
 import { socialPlugin } from "./SocialPlugin";
+import { sidecarTools } from "@/lib/sidecar/tools";
 
 const builtinPluginModules = {
   social: socialPlugin,
@@ -51,6 +52,13 @@ const builtinPlugins: BizBotPlugin[] = BUILTIN_PLUGIN_TOGGLES.map((plugin) => {
     tags: plugin.tags,
   }, pluginModule);
 });
+
+const coreToolSets = [
+  {
+    ownerId: "core-sidecar",
+    tools: sidecarTools,
+  },
+] as const;
 
 export interface BizBotPluginRegistry {
   plugins: BizBotPlugin[];
@@ -100,6 +108,17 @@ export function createPluginRegistry(
       }
       toolNames.add(tool.name);
       toolToPluginId.set(tool.name, plugin.metadata.id);
+      tools.push(tool);
+    }
+  }
+
+  for (const toolSet of coreToolSets) {
+    for (const tool of toolSet.tools) {
+      if (toolNames.has(tool.name)) {
+        throw new Error(`Duplicate tool name: ${tool.name}`);
+      }
+      toolNames.add(tool.name);
+      toolToPluginId.set(tool.name, toolSet.ownerId);
       tools.push(tool);
     }
   }

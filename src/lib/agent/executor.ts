@@ -23,6 +23,8 @@ import {
   routeAgentProfile,
   type AgentProfile,
 } from "@/lib/agent/profiles";
+import { buildSidecarStreamEvent, isSidecarToolResult } from "@/lib/sidecar/validation";
+import type { SidecarStreamEvent } from "@/lib/sidecar/types";
 
 export type AgentExecutionEvent =
   | {
@@ -48,6 +50,7 @@ export type AgentExecutionEvent =
   | { type: "status"; message: string; round?: number }
   | { type: "tool_call"; round: number; toolCallId: string; name: string; args: object }
   | { type: "tool_result"; round: number; toolCallId: string; name: string; result: string }
+  | SidecarStreamEvent
   | { type: "assistant_message"; content: string }
   | { type: "done"; conversationId: string; reply: string }
   | { type: "error"; error: string };
@@ -331,6 +334,18 @@ export async function executeAgentConversation(
               result = { error: String(error) };
             }
             throwIfAborted(signal);
+
+            if (!isError && isSidecarToolResult(result)) {
+              await emit(onEvent, buildSidecarStreamEvent({
+                action: result.action,
+                panel: result.panel,
+                runId: run.runId,
+                conversationId: resolvedConversationId,
+                round,
+                toolCallId: toolCall.id,
+                name: toolCall.name,
+              }));
+            }
 
             const resultText = stringifyToolResult(result, runtimeConfig.toolResultMaxChars);
             recordAgentRunToolResult(run.runId, {
