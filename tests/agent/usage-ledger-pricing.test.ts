@@ -8,8 +8,8 @@ import {
 describe("usage ledger model pricing", () => {
   it("returns model-specific defaults and provider fallbacks", () => {
     expect(getDefaultUsageLedgerModelPricing("gemini-3-flash-preview", "google")).toEqual({
-      promptUsdPerMillion: 0.35,
-      completionUsdPerMillion: 1.05,
+      promptUsdPerMillion: 0.5,
+      completionUsdPerMillion: 3,
     });
     expect(getDefaultUsageLedgerModelPricing("unknown-model", "ollama")).toEqual({
       promptUsdPerMillion: 0,

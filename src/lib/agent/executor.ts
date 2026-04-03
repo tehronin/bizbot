@@ -411,7 +411,7 @@ export async function executeAgentConversation(
 
       await emit(onEvent, {
         type: "status",
-        message: `Oracle is resolving a market target for "${oracleIntent.query}" and collecting odds evidence from Polymarket.`,
+        message: `Oracle is resolving a market target for "${oracleIntent.query}" and collecting odds evidence from enabled market sources.`,
         round: round + 1,
       });
 

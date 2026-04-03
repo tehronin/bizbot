@@ -116,6 +116,7 @@ function MessageGroups({
         group.kind === "message" ? (
           <div
             key={group.entry.id}
+            data-testid={`chat-message-${group.entry.role}`}
             className="border px-4 py-3 whitespace-pre-wrap"
             style={{
               borderColor: group.entry.role === "user" ? "var(--accent-dim)" : "var(--border)",
@@ -817,6 +818,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
         >
           <div className="flex-1 space-y-2">
             <input
+              data-testid="chat-input"
               value={input}
               onChange={(event) => {
                 setInput(event.target.value);
@@ -830,6 +832,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
             />
             {panelMode === "chat" && oracleModeQuery ? (
               <div
+                data-testid="oracle-mode-chip"
                 className="inline-flex items-center gap-2 px-3 py-1 text-[11px] uppercase tracking-[0.18em] border"
                 style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(214,146,58,0.08)" }}
               >
@@ -841,6 +844,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
             ) : null}
             {panelMode === "chat" && oracleIntent.matched ? (
               <button
+                data-testid="oracle-trigger-button"
                 type="button"
                 disabled={chat.isPending || !input.trim()}
                 onClick={() => {

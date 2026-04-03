@@ -104,7 +104,9 @@ BizBot is set up so feature work can move through a plugin-shaped path instead o
 - `tests/plugins/*` gives you fixture-oriented coverage for registry rules, provider-style tools, and builtin runtime seams.
 - `tests/builder/*` covers builder config, project lifecycle, and route behavior so scaffolding and CLI orchestration stay predictable.
 - `tests/mcp/*` verifies the public MCP surface so plugin changes do not silently break tools, prompts, resources, or transport behavior.
+- `tests/e2e/*` holds coarse Playwright browser flows that exercise real user paths with stable test hooks instead of brittle layout coupling.
 - `npm run test:mcp` isolates MCP and plugin coverage from the rest of the app.
+- `npm run test:e2e` runs the Playwright browser suite, including the explicit Oracle chat flow against a managed local dev server.
 - `npm run lint:docs` keeps README and contributor docs aligned with the actual developer workflow.
 
 ### Building Features As Plugins
@@ -476,6 +478,7 @@ Current repo/runtime assumptions:
 - `npx vitest run tests/builder tests/plugins tests/mcp` validates Builder Mode, plugin registry behavior, and MCP exposure together
 - `npm run test:app` isolates the general Vitest suite from MCP transport coverage
 - `npm run test:mcp` runs MCP transport, contract, and plugin fixture coverage
+- `npm run test:e2e` runs the Playwright browser flows against a managed local web server with Oracle enabled
 - `npm run lint:docs` enforces README/contributor/plugin markdown quality
 - PostgreSQL, Redis, and Memgraph are expected locally via Docker Compose
 - Tauri packaging is wired for desktop delivery
@@ -788,6 +791,7 @@ The intended production split is Google for embeddings and MiniMax M2.7 for the 
 | `npm run plugin:new -- <name>`    | Scaffold a plugin file and matching starter test          |
 | `npm run test:app`                | Run non-MCP Vitest coverage                               |
 | `npm run test:mcp`                | Run MCP transport, contract, and plugin integration tests |
+| `npm run test:e2e`                | Run Playwright browser end-to-end coverage                |
 | `npm run lint:docs`               | Lint README and contributor markdown                      |
 | `npm run build`                   | Production build plus standalone asset preparation        |
 | `npm run start:web`               | Start the standalone packaged Next.js server              |
