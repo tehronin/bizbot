@@ -195,6 +195,7 @@ function MessageGroups({
 export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWorkspaceContentProps) {
   const [input, setInput] = useState("");
   const [panelMode, setPanelMode] = useState<PanelMode>("chat");
+  const [oracleModeQuery, setOracleModeQuery] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [memoryDraft, setMemoryDraft] = useState<{
     messageId: string;
@@ -809,6 +810,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}
           onSubmit={(event) => {
             event.preventDefault();
+            setOracleModeQuery(null);
             void chat.sendMessage(input);
             setInput("");
           }}
@@ -816,16 +818,33 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           <div className="flex-1 space-y-2">
             <input
               value={input}
-              onChange={(event) => setInput(event.target.value)}
+              onChange={(event) => {
+                setInput(event.target.value);
+                if (oracleModeQuery) {
+                  setOracleModeQuery(null);
+                }
+              }}
               placeholder="Draft a launch thread about our product update..."
               className="w-full bg-transparent outline-none text-sm"
               disabled={panelMode === "history"}
             />
+            {panelMode === "chat" && oracleModeQuery ? (
+              <div
+                className="inline-flex items-center gap-2 px-3 py-1 text-[11px] uppercase tracking-[0.18em] border"
+                style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(214,146,58,0.08)" }}
+              >
+                <span>Oracle mode</span>
+                <span style={{ color: "var(--text-dim)", textTransform: "none", letterSpacing: "0.04em" }}>
+                  {oracleModeQuery}
+                </span>
+              </div>
+            ) : null}
             {panelMode === "chat" && oracleIntent.matched ? (
               <button
                 type="button"
                 disabled={chat.isPending || !input.trim()}
                 onClick={() => {
+                  setOracleModeQuery(oracleIntent.query || input.trim());
                   void chat.sendOraclePrediction(input);
                   setInput("");
                 }}

@@ -35,6 +35,7 @@ describe("oracle MCP exposure", () => {
     const enabledResult = await callMcp("tools/list", {}, "oracle-tools-enabled");
     const enabledTools = enabledResult.result.tools.map((tool: { name: string }) => tool.name);
     expect(enabledTools).toContain("oracle_open_personality_selector");
+    expect(enabledTools).toContain("oracle_analyze_prediction");
     expect(enabledTools).toContain("oracle_search_markets");
     expect(enabledTools).toContain("oracle_get_market_verdict");
   });

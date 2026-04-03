@@ -303,21 +303,32 @@ describe("agent executor explicit memory", () => {
   });
 
   it("runs a deterministic Oracle verdict flow when explicitly requested", async () => {
-    pluginMocks.executeTool
-      .mockResolvedValueOnce({
-        query: "btc 150k",
-        markets: [{ id: "market-1", question: "Will BTC hit 150k?" }],
-        summary: "1. Will BTC hit 150k?",
-      })
-      .mockResolvedValueOnce({
-        market: { question: "Will BTC hit 150k?" },
-        verdict: {
-          headline: "BTC leans short of 150k",
-          summary: "Oracle sees the market pricing the upside but not a clean break.",
-          confidence: "medium",
-        },
-        summary: "BTC leans short of 150k",
-      });
+    pluginMocks.executeTool.mockResolvedValueOnce({
+      target: { canonicalQuestion: "Will BTC trade over 150k by 2026-12-31?" },
+      personality: "balanced",
+      personalityLabel: "Balanced",
+      evidenceMode: "adjacent_inference",
+      impliedProbability: 0.34,
+      confidence: "medium",
+      sentiment: "bearish",
+      exactMatch: null,
+      adjacentMatches: [{ question: "Will Bitcoin hit 150k by Dec 31 2026?" }],
+      summaryPacket: "Oracle personality: Balanced\nCanonical target: Will BTC trade over 150k by 2026-12-31?\nEvidence mode: adjacent_inference\nImplied probability: 34.0%",
+      fallbackReply: "Oracle is inferring from adjacent Polymarket markets for this target.",
+    });
+    kernelMocks.chatComplete.mockResolvedValueOnce({
+      content: "Oracle sees BTC over 150k this year as a low-probability upside case based on adjacent Polymarket odds. Implied probability is about 34%, with medium confidence.",
+      toolCalls: [],
+      provider: "ollama",
+      model: "model-1",
+      metadata: undefined,
+      usage: {
+        promptTokens: 90,
+        completionTokens: 28,
+        totalTokens: 118,
+        cachedPromptTokens: 0,
+      },
+    });
 
     const events: Array<{ type: string; [key: string]: unknown }> = [];
     const result = await executeAgentConversation({
@@ -328,19 +339,57 @@ describe("agent executor explicit memory", () => {
       },
     });
 
-    expect(kernelMocks.chatComplete).not.toHaveBeenCalled();
-    expect(pluginMocks.executeTool).toHaveBeenNthCalledWith(1, "oracle_search_markets", {
-      query: "btc 150k",
-      limit: 5,
-      interactive: false,
+    expect(pluginMocks.executeTool).toHaveBeenNthCalledWith(1, "oracle_analyze_prediction", {
+      prompt: "oracle predict btc 150k",
+      limit: 12,
     }, expect.any(Object));
-    expect(pluginMocks.executeTool).toHaveBeenNthCalledWith(2, "oracle_get_market_verdict", {
-      marketId: "market-1",
-    }, expect.any(Object));
+    expect(kernelMocks.chatComplete).toHaveBeenCalledTimes(1);
     expect(result.profile).toBe("research_operator");
-    expect(result.reply).toContain("BTC leans short of 150k");
-    expect(events.some((event) => event.type === "tool_call" && event.name === "oracle_search_markets")).toBe(true);
-    expect(events.some((event) => event.type === "assistant_message" && String(event.content).includes("Confidence: medium"))).toBe(true);
+    expect(result.reply).toContain("low-probability upside case");
+    expect(events.some((event) => event.type === "tool_call" && event.name === "oracle_analyze_prediction")).toBe(true);
+    expect(events.some((event) => event.type === "usage" && event.totalTokens === 118)).toBe(true);
+  });
+
+  it("still produces a themed Oracle prediction when no active market match exists", async () => {
+    pluginMocks.executeTool.mockResolvedValueOnce({
+      target: { canonicalQuestion: "Will BTC trade over 150k by 2026-12-31?" },
+      personality: "balanced",
+      personalityLabel: "Balanced",
+      evidenceMode: "no_useful_match",
+      impliedProbability: 0.18,
+      confidence: "low",
+      sentiment: "bearish",
+      exactMatch: null,
+      adjacentMatches: [],
+      summaryPacket: "Oracle personality: Balanced\nCanonical target: Will BTC trade over 150k by 2026-12-31?\nEvidence mode: no_useful_match\nImplied probability: 18.0%\nMarket sentiment: bearish",
+      fallbackReply: "Oracle sees no active Polymarket support for Will BTC trade over 150k by 2026-12-31?. Balanced mode treats that absence as a weak negative signal against the target. Implied probability: 18.0%. Confidence: low.",
+    });
+    kernelMocks.chatComplete.mockResolvedValueOnce({
+      content: "Oracle sees BTC over 150k this year as unlikely on current market support. There is no active Polymarket backing for that target, which Oracle treats as a weak negative signal. Implied probability is about 18%, with low confidence.",
+      toolCalls: [],
+      provider: "ollama",
+      model: "model-1",
+      metadata: undefined,
+      usage: {
+        promptTokens: 82,
+        completionTokens: 31,
+        totalTokens: 113,
+        cachedPromptTokens: 0,
+      },
+    });
+
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+    const result = await executeAgentConversation({
+      message: "oracle predict btc over 150k this year",
+      oraclePrediction: true,
+      onEvent: async (event) => {
+        events.push(event as { type: string; [key: string]: unknown });
+      },
+    });
+
+    expect(kernelMocks.chatComplete).toHaveBeenCalledTimes(1);
+    expect(result.reply).toContain("weak negative signal");
+    expect(events.some((event) => event.type === "status" && String(event.message).includes("low-confidence negative prediction"))).toBe(true);
   });
 
   it("records Google usage metadata including cached prompt tokens", async () => {

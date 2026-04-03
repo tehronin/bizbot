@@ -7,6 +7,7 @@ vi.mock("@/lib/agent/memory/service", () => ({
 
 import { getActiveMemoryFacts, setMemoryFact } from "@/lib/agent/memory/service";
 import { executeTool, getAllToolDefinitions } from "@/lib/agent/plugins";
+import { resetKalshiServiceCache } from "@/lib/kalshi/service";
 import { routeSidecarInteraction } from "@/lib/sidecar/router";
 import { resetActiveSidecarPanelsForTests, syncActiveSidecarPanel } from "@/lib/sidecar/state";
 import type { SidecarPanel } from "@/lib/sidecar/types";
@@ -17,6 +18,7 @@ const mockedSetMemoryFact = vi.mocked(setMemoryFact);
 describe("oracle plugin", () => {
   beforeEach(() => {
     process.env.BIZBOT_PLUGIN_ORACLE_ENABLED = "true";
+    resetKalshiServiceCache();
     resetActiveSidecarPanelsForTests();
     mockedGetActiveMemoryFacts.mockReset();
     mockedSetMemoryFact.mockReset();
@@ -33,7 +35,174 @@ describe("oracle plugin", () => {
     const enabledTools = getAllToolDefinitions(undefined, { agentProfile: "mcp_operator" }).map((tool) => tool.name);
     expect(enabledTools).toContain("oracle_search_markets");
     expect(enabledTools).toContain("oracle_get_market_verdict");
+    expect(enabledTools).toContain("oracle_analyze_prediction");
     expect(enabledTools).toContain("oracle_open_personality_selector");
+  });
+
+  it("builds an evidence-backed Oracle prediction analysis packet", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/series")) {
+        return {
+          ok: true,
+          json: async () => ({ series: [] }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ([
+          {
+            id: "market-1",
+            question: "Will Bitcoin hit 150k by Dec 31 2026?",
+            active: true,
+            closed: false,
+            endDate: "2026-12-31",
+            liquidity: 500000,
+            outcomes: ["Yes", "No"],
+            outcomePrices: [0.41, 0.59],
+          },
+        ]),
+      } as Response;
+    }));
+
+    const result = await executeTool("oracle_analyze_prediction", {
+      prompt: "oracle predict btc over 150k this year",
+    }, {
+      access: { agentProfile: "research_operator", userId: "user-1" },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      evidenceMode: "exact_market",
+      impliedProbability: 0.41,
+      sourceBlend: expect.objectContaining({
+        agreement: "single_source",
+        spread: 0,
+        sources: [expect.objectContaining({ source: "polymarket", probability: 0.41 })],
+      }),
+      summaryPacket: expect.stringContaining("Canonical target: Will BTC trade over 150k by"),
+    }));
+  });
+
+  it("exposes structured source blend details when multiple sources contribute", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/series")) {
+        return {
+          ok: true,
+          json: async () => ({
+            series: [
+              { ticker: "KXBTCD", title: "Bitcoin price Above/below", category: "Crypto", tags: ["BTC"] },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.includes("series_ticker=KXBTCD")) {
+        return {
+          ok: true,
+          json: async () => ({
+            markets: [
+              {
+                ticker: "KXBTC-26DEC31-T150000",
+                title: "Bitcoin price by Dec 31, 2026?",
+                subtitle: "$150,000 or above",
+                yes_bid_dollars: "0.44",
+                yes_ask_dollars: "0.48",
+                liquidity_dollars: "220000.00",
+                volume_fp: "700000.00",
+                close_time: "2026-12-31T23:59:59Z",
+                status: "active",
+              },
+            ],
+          }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ([
+          {
+            id: "market-1",
+            question: "Will Bitcoin hit 150k by Dec 31 2026?",
+            active: true,
+            closed: false,
+            endDate: "2026-12-31",
+            liquidity: 500000,
+            outcomes: ["Yes", "No"],
+            outcomePrices: [0.41, 0.59],
+          },
+        ]),
+      } as Response;
+    }));
+
+    const result = await executeTool("oracle_analyze_prediction", {
+      prompt: "oracle predict btc over 150k this year",
+    }, {
+      access: { agentProfile: "research_operator", userId: "user-1" },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      sourceBlend: expect.objectContaining({
+        agreement: "aligned",
+        sources: [
+          expect.objectContaining({ source: "polymarket", probability: 0.41 }),
+          expect.objectContaining({ source: "kalshi", probability: 0.46 }),
+        ],
+      }),
+    }));
+  });
+
+  it("retries once with a rephrased query when all source searches come back empty", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/series")) {
+        return {
+          ok: true,
+          json: async () => ({ series: [] }),
+        } as Response;
+      }
+
+      const parsedUrl = new URL(url);
+      const query = parsedUrl.searchParams.get("search");
+      if (query === "btc 150k 2026") {
+        return {
+          ok: true,
+          json: async () => ([
+            {
+              id: "market-1",
+              question: "Will Bitcoin hit 150k by Dec 31 2026?",
+              active: true,
+              closed: false,
+              endDate: "2026-12-31",
+              liquidity: 500000,
+              outcomes: ["Yes", "No"],
+              outcomePrices: [0.36, 0.64],
+            },
+          ]),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ([]),
+      } as Response;
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await executeTool("oracle_analyze_prediction", {
+      prompt: "oracle predict btc over 150k this year",
+    }, {
+      access: { agentProfile: "research_operator", userId: "user-1" },
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      evidenceMode: "exact_market",
+      impliedProbability: 0.36,
+    }));
+    expect(fetchMock).toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("search=btc+150k+2026"))).toBe(true);
   });
 
   it("opens a generic Sidecar personality selector and persists a chosen personality", async () => {

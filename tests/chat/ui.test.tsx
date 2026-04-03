@@ -8,12 +8,16 @@ import type { ChatConversationDetail, ChatConversationHistoryFilters, ChatConver
 import type { UseChatResult } from "@/hooks/useChat";
 
 const PAGE_SIZE = 6;
+const sendMessageSpy = vi.fn(async () => undefined);
+const sendOraclePredictionSpy = vi.fn(async () => undefined);
 
 vi.mock("@/components/chat/AgenticSetupDrawer", () => ({
   AgenticSetupDrawer: () => null,
 }));
 
 afterEach(() => {
+  sendMessageSpy.mockClear();
+  sendOraclePredictionSpy.mockClear();
   cleanup();
 });
 
@@ -179,8 +183,8 @@ function Harness() {
       totalTokens: 165,
       cachedPromptTokens: 12,
     },
-    sendMessage: vi.fn(async () => undefined),
-    sendOraclePrediction: vi.fn(async () => undefined),
+    sendMessage: sendMessageSpy,
+    sendOraclePrediction: sendOraclePredictionSpy,
     startNewChat: vi.fn(() => {
       setConversationId(null);
       setCurrentConversation(null);
@@ -385,6 +389,14 @@ describe("chat workspace history panel", () => {
     expect(oracleButton).toBeTruthy();
 
     fireEvent.click(oracleButton);
+
+    await waitFor(() => {
+      expect(sendOraclePredictionSpy).toHaveBeenCalledWith("oracle predict btc 150k");
+    });
+
+    expect(screen.getByText("Oracle mode")).toBeTruthy();
+    expect(screen.getByText("btc 150k")).toBeTruthy();
+    expect((screen.getByPlaceholderText("Draft a launch thread about our product update...") as HTMLInputElement).value).toBe("");
 
     const chat = screen.getByText("Here is the live chat.").closest("div");
     expect(chat).toBeTruthy();

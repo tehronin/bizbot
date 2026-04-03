@@ -311,6 +311,36 @@ export async function executeAgentConversation(
         });
       }
 
+      const recordAndEmitUsage = async (
+        response: Awaited<ReturnType<typeof chatComplete>>,
+      ): Promise<void> => {
+        if (!response.usage) {
+          return;
+        }
+
+        const updatedRun = recordAgentRunRoundUsage(run.runId, {
+          round,
+          provider: response.provider,
+          model: response.model,
+          promptTokens: response.usage.promptTokens ?? 0,
+          completionTokens: response.usage.completionTokens ?? 0,
+          totalTokens: response.usage.totalTokens ?? 0,
+          cachedPromptTokens: response.usage.cachedPromptTokens ?? 0,
+        });
+
+        await emit(onEvent, {
+          type: "usage",
+          runId: run.runId,
+          conversationId: resolvedConversationId,
+          round,
+          promptTokens: updatedRun.usage.promptTokens,
+          completionTokens: updatedRun.usage.completionTokens,
+          totalTokens: updatedRun.usage.totalTokens,
+          cachedPromptTokens: updatedRun.usage.cachedPromptTokens,
+          requestCount: updatedRun.usage.rounds.length,
+        });
+      };
+
       const executeOracleTool = async (toolName: string, args: JsonObject): Promise<ToolExecutionResult> => {
         round += 1;
         const toolCallId = `oracle-${round}-${toolName}`;
@@ -347,7 +377,7 @@ export async function executeAgentConversation(
             conversationId: resolvedConversationId,
             runId: run.runId,
             userId: resolvedUserId,
-            toolName: toolName,
+            toolName,
           });
           await emit(onEvent, buildSidecarStreamEvent({
             action: result.action,
@@ -381,82 +411,73 @@ export async function executeAgentConversation(
 
       await emit(onEvent, {
         type: "status",
-        message: `Oracle is searching Polymarket for \"${oracleIntent.query}\".`,
+        message: `Oracle is resolving a market target for "${oracleIntent.query}" and collecting odds evidence from Polymarket.`,
         round: round + 1,
       });
 
-      const searchResult = await executeOracleTool("oracle_search_markets", {
-        query: oracleIntent.query,
-        limit: 5,
-        interactive: false,
-      }) as { query: string; markets: Array<{ id: string; question: string }>; summary: string };
-
-      if (!Array.isArray(searchResult.markets) || searchResult.markets.length === 0) {
-        return finalizeAssistantReply({
-          reply: `Oracle found no active Polymarket matches for \"${oracleIntent.query}\".`,
-          round,
-          resolvedConversationId,
-          resolvedUserId,
-          runId: run.runId,
-          profile: profileDecision.profile,
-          provider: resolvedProvider,
-          model: resolvedModel,
-          onEvent,
-          metadata: { oraclePrediction: true, oracleQuery: oracleIntent.query },
-        });
-      }
-
-      if (searchResult.markets.length === 1) {
-        await emit(onEvent, {
-          type: "status",
-          message: "Oracle found one matching market and is generating a verdict.",
-          round: round + 1,
-        });
-
-        const verdictResult = await executeOracleTool("oracle_get_market_verdict", {
-          marketId: searchResult.markets[0].id,
-        }) as {
-          market: { question: string };
-          verdict: { headline: string; summary: string; confidence: string };
-        };
-
-        return finalizeAssistantReply({
-          reply: `${verdictResult.verdict.headline}\n\n${verdictResult.verdict.summary}\n\nConfidence: ${verdictResult.verdict.confidence}\nMarket: ${verdictResult.market.question}`,
-          round,
-          resolvedConversationId,
-          resolvedUserId,
-          runId: run.runId,
-          profile: profileDecision.profile,
-          provider: resolvedProvider,
-          model: resolvedModel,
-          onEvent,
-          metadata: { oraclePrediction: true, oracleQuery: oracleIntent.query },
-        });
-      }
+      const analysisResult = await executeOracleTool("oracle_analyze_prediction", {
+        prompt: message,
+        limit: 12,
+      }) as {
+        target: { canonicalQuestion: string };
+        personality: string;
+        personalityLabel: string;
+        evidenceMode: "exact_market" | "adjacent_inference" | "no_useful_match";
+        impliedProbability: number | null;
+        confidence: "low" | "medium" | "high";
+        sentiment: "bullish" | "bearish" | "mixed" | "unclear";
+        exactMatch: { question: string } | null;
+        adjacentMatches: Array<{ question: string }>;
+        summaryPacket: string;
+        fallbackReply: string;
+      };
 
       await emit(onEvent, {
         type: "status",
-        message: `Oracle found ${searchResult.markets.length} candidate markets. Choose one in Sidecar to open a verdict.`,
+        message: analysisResult.evidenceMode === "exact_market"
+          ? "Oracle found an exact market match and is drafting a prediction from its odds."
+          : analysisResult.evidenceMode === "no_useful_match"
+            ? "Oracle found no active matching market support and is drafting a low-confidence negative prediction from that absence."
+          : "Oracle is drafting a prediction from adjacent market odds and sentiment.",
         round: round + 1,
       });
 
-      await executeOracleTool("oracle_search_markets", {
-        query: oracleIntent.query,
-        limit: 5,
-        interactive: true,
+      round += 1;
+      const oracleResponse = await chatComplete([
+        {
+          role: "system",
+          content: "You are Oracle, a market-sentiment prediction narrator. Ground every sentence in the supplied evidence packet. Do not invent markets, odds, or external facts. Keep the reply concise, state whether the evidence is exact or adjacent, mention implied probability and confidence, and adopt the specified Oracle personality style.",
+        },
+        {
+          role: "user",
+          content: analysisResult.summaryPacket,
+        },
+      ], resolvedProvider, undefined, {
+        agentProfile: profileDecision.profile,
+        signal,
       });
+      throwIfAborted(signal);
+
+      await recordAndEmitUsage(oracleResponse);
+
+      const finalReply = oracleResponse.content.trim() || analysisResult.fallbackReply;
 
       return finalizeAssistantReply({
-        reply: `Oracle found ${searchResult.markets.length} candidate markets for \"${oracleIntent.query}\". Choose one in Sidecar to open a verdict.`,
+        reply: finalReply,
         round,
         resolvedConversationId,
         resolvedUserId,
         runId: run.runId,
         profile: profileDecision.profile,
-        provider: resolvedProvider,
-        model: resolvedModel,
+        provider: oracleResponse.provider,
+        model: oracleResponse.model,
         onEvent,
-        metadata: { oraclePrediction: true, oracleQuery: oracleIntent.query },
+        metadata: {
+          oraclePrediction: true,
+          oracleQuery: oracleIntent.query,
+          oracleEvidenceMode: analysisResult.evidenceMode,
+          oracleImpliedProbability: analysisResult.impliedProbability,
+        },
       });
     }
 

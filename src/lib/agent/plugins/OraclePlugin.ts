@@ -2,7 +2,11 @@ import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools
 import { resolveAgentUserId } from "@/lib/agent/user-context";
 import { isBuiltinPluginEnabled } from "@/lib/agent/plugins/settings";
 import { getPolymarketMarket, searchPolymarketMarkets } from "@/lib/polymarket/service";
+import { resolveOraclePredictionEvidence, type OracleEvidenceBundle, type OracleMarketCandidate } from "@/lib/oracle/evidence";
+import { parseOraclePredictionTarget } from "@/lib/oracle/intent";
 import {
+  buildOracleFallbackReply,
+  formatOracleEvidencePacket,
   buildOracleVerdict,
   getOraclePersonality,
   getStoredOraclePersonality,
@@ -29,6 +33,29 @@ interface OracleSearchMarketsArgs {
 interface OracleMarketVerdictArgs {
   marketId: string;
   personality?: string;
+}
+
+interface OracleAnalyzePredictionArgs {
+  prompt: string;
+  limit?: number;
+  personality?: string;
+}
+
+interface OracleAnalyzePredictionResult {
+  target: OracleEvidenceBundle["target"];
+  personality: OraclePersonalityId;
+  personalityLabel: string;
+  evidenceMode: OracleEvidenceBundle["evidenceMode"];
+  impliedProbability: number | null;
+  confidence: OracleEvidenceBundle["confidence"];
+  sentiment: OracleEvidenceBundle["overallSentiment"];
+  sourceBlend: OracleEvidenceBundle["sourceBlend"] & {
+    sources: OracleEvidenceBundle["sourceProbabilities"];
+  };
+  exactMatch: ReturnType<typeof summarizeCandidate> | null;
+  adjacentMatches: Array<ReturnType<typeof summarizeCandidate>>;
+  summaryPacket: string;
+  fallbackReply: string;
 }
 
 function ensureOracleEnabled(): void {
@@ -84,6 +111,18 @@ function formatMarketSummary(market: Awaited<ReturnType<typeof getPolymarketMark
     : "No priced outcomes available.";
 
   return `${market.question}\nOutcomes: ${outcomes}`;
+}
+
+function summarizeCandidate(candidate: OracleMarketCandidate) {
+  return {
+    source: candidate.market.source,
+    marketId: candidate.market.sourceMarketId,
+    question: candidate.market.title,
+    relevanceScore: candidate.relevanceScore,
+    targetAlignedProbability: candidate.targetAlignedProbability,
+    sentiment: candidate.sentimentLabel,
+    endDate: candidate.market.closeTime ?? null,
+  };
 }
 
 function buildMarketSelectionPanel(query: string, markets: Awaited<ReturnType<typeof searchPolymarketMarkets>>["markets"]): SidecarToolResult {
@@ -299,5 +338,50 @@ export const oraclePlugin = {
         };
       },
     } satisfies ToolDefinition<OracleMarketVerdictArgs, { market: Awaited<ReturnType<typeof getPolymarketMarket>>; verdict: ReturnType<typeof buildOracleVerdict>; summary: string }>)),
+    registerTool(defineTool({
+      name: "oracle_analyze_prediction",
+      description: "Resolve a user prediction target against Polymarket, score exact versus adjacent markets, and return an odds-and-sentiment evidence packet for Oracle narration.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string" },
+          limit: { type: "number", default: 12 },
+          personality: {
+            type: "string",
+            enum: listOraclePersonalities().map((personality) => personality.id),
+          },
+        },
+        required: ["prompt"],
+        additionalProperties: false,
+      },
+      execute: async ({ prompt, limit, personality }: OracleAnalyzePredictionArgs, context) => {
+        ensureOracleEnabled();
+        const userId = resolveAgentUserId(context.userId);
+        const target = parseOraclePredictionTarget(prompt);
+        if (!target) {
+          throw new Error("Oracle prediction analysis requires a non-empty prompt.");
+        }
+
+        const resolvedPersonality = await resolveOraclePersonality(userId, personality);
+        const evidence = await resolveOraclePredictionEvidence(target, { limit });
+        return {
+          target: evidence.target,
+          personality: resolvedPersonality,
+          personalityLabel: getOraclePersonality(resolvedPersonality).label,
+          evidenceMode: evidence.evidenceMode,
+          impliedProbability: evidence.inferredProbability,
+          confidence: evidence.confidence,
+          sentiment: evidence.overallSentiment,
+          sourceBlend: {
+            ...evidence.sourceBlend,
+            sources: evidence.sourceProbabilities,
+          },
+          exactMatch: evidence.exactMatch ? summarizeCandidate(evidence.exactMatch) : null,
+          adjacentMatches: evidence.adjacentMatches.map((candidate) => summarizeCandidate(candidate)),
+          summaryPacket: formatOracleEvidencePacket(evidence, resolvedPersonality),
+          fallbackReply: buildOracleFallbackReply(evidence, resolvedPersonality),
+        } satisfies OracleAnalyzePredictionResult;
+      },
+    } satisfies ToolDefinition<OracleAnalyzePredictionArgs, OracleAnalyzePredictionResult>)),
   ],
 };
