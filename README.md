@@ -481,6 +481,7 @@ Current repo/runtime assumptions:
 - `npm run test:e2e` runs the Playwright browser flows against a managed local web server with Oracle enabled
 - `npm run lint:docs` enforces README/contributor/plugin markdown quality
 - PostgreSQL, Redis, and Memgraph are expected locally via Docker Compose
+- After local services are up, run `npx prisma migrate deploy` so the tracked schema and manual pgvector follow-up migration are applied before starting the app
 - Tauri packaging is wired for desktop delivery
 - Meta webhook receiver is available at `/api/webhooks/meta`
 - Oracle and Sidecar have now been smoke-tested against the standalone production server path, not only the dev server
