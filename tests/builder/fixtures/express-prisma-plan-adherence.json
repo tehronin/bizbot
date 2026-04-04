@@ -1,0 +1,65 @@
+{
+  "projectId": "cmnkk0q80004tlli46br4menf",
+  "taskSpecId": "cmnkk3d1x007tlli4vxbfg9f0",
+  "runId": "cmnkkqwo500bblli4a9baminn",
+  "agentRunId": "92b223ff-ca6b-4889-965e-6cdd40e40e63",
+  "capturedFrom": "workspace/.bizbot/agent-runs/92b223ff-ca6b-4889-965e-6cdd40e40e63.json",
+  "taskTitle": "Capture runtime and endpoint decisions",
+  "adherence": {
+    "status": "aligned",
+    "mode": "analysis_only",
+    "requiredDecisionKeys": [
+      "tech_stack_runtime",
+      "tech_stack_framework",
+      "service_surface_rest_api",
+      "response_format_json",
+      "orm_prisma",
+      "database_strategy_sqlite",
+      "persistence_relational"
+    ],
+    "forbiddenActions": [
+      "bootstrap the runtime",
+      "add dependencies",
+      "run generators",
+      "implement application files"
+    ]
+  },
+  "operatorInstruction": "Treat the [Plan Adherence] section in the prompt as a hard boundary.",
+  "earlyToolCalls": [
+    "builder_get_project",
+    "builder_write_project_instructions",
+    "builder_list_files",
+    "builder_list_files",
+    "builder_read_file",
+    "builder_read_file",
+    "builder_list_files",
+    "builder_read_file"
+  ],
+  "disallowedEarlyToolCalls": [
+    "builder_write_file",
+    "builder_run_command",
+    "builder_install_package",
+    "builder_run_generator",
+    "builder_create_file"
+  ],
+  "completion": {
+    "status": "COMPLETED",
+    "finishedAt": "2026-04-04T16:56:44.391Z",
+    "replySummary": "Captured the runtime and endpoint decisions for the Express Prisma Items API based on the existing implementation.",
+    "changedFiles": [
+      "projects/express-prisma-items-api/.builder/architecture.md",
+      "projects/express-prisma-items-api/.builder/current-plan.md",
+      "projects/express-prisma-items-api/.builder/milestones.md",
+      "projects/express-prisma-items-api/.builder/project-brief.md",
+      "projects/express-prisma-items-api/.builder/project-context.md",
+      "projects/express-prisma-items-api/.builder/state.json",
+      "projects/express-prisma-items-api/.builder/task-board.md",
+      "projects/express-prisma-items-api/AGENTS.md"
+    ]
+  },
+  "verification": {
+    "passed": false,
+    "summary": "build failed during verification",
+    "reason": "The existing external project workspace still has unresolved TypeScript/build issues unrelated to the regression target."
+  }
+}

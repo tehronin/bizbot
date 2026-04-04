@@ -156,6 +156,8 @@ describe("builder routes", () => {
       totalRuns: 3,
       totalTasksRun: 3,
       successRate: 0.67,
+      verificationPassRate: 0.5,
+      retryRate: 0.33,
       avgIterationsPerTask: 2,
       avgIterationsPerRun: 1.67,
       statusCounts: { SUCCEEDED: 2, FAILED: 1 },
@@ -288,6 +290,34 @@ describe("builder routes", () => {
         },
         updatedAt: "2025-01-01T00:00:00.000Z",
       },
+      metrics: {
+        efficiency: {
+          successRate: 0.67,
+          verificationPassRate: 0.5,
+          retryRate: 0.33,
+          avgIterationsPerRun: 1.67,
+          avgIterationsPerTask: 2,
+          tasksInRetry: 1,
+        },
+        promotion: {
+          completedMilestones: 0,
+          totalMilestones: 1,
+          milestoneCompletionRate: 0,
+          completedTaskSpecs: 0,
+          blockedTaskSpecs: 0,
+          totalTaskSpecs: 1,
+          taskSpecCompletionRate: 0,
+        },
+        architecture: {
+          activeDecisionCount: 1,
+          staleDecisionCount: 1,
+          currentTaskDecisionCount: 1,
+          latestAddressedStaleCount: 1,
+          latestMissingStaleCount: 0,
+          latestNewDecisionCount: 1,
+          latestRetiredDecisionCount: 1,
+        },
+      },
       nextRecommendedStep: "Continue the current task.",
     });
     mocks.planBuilderProject.mockResolvedValue({
@@ -332,6 +362,34 @@ describe("builder routes", () => {
       currentTask: null,
       runs: [],
       latestReview: null,
+      metrics: {
+        efficiency: {
+          successRate: 0,
+          verificationPassRate: 0,
+          retryRate: 0,
+          avgIterationsPerRun: 0,
+          avgIterationsPerTask: 0,
+          tasksInRetry: 0,
+        },
+        promotion: {
+          completedMilestones: 0,
+          totalMilestones: 0,
+          milestoneCompletionRate: 0,
+          completedTaskSpecs: 0,
+          blockedTaskSpecs: 0,
+          totalTaskSpecs: 0,
+          taskSpecCompletionRate: 0,
+        },
+        architecture: {
+          activeDecisionCount: 0,
+          staleDecisionCount: 0,
+          currentTaskDecisionCount: 0,
+          latestAddressedStaleCount: 0,
+          latestMissingStaleCount: 0,
+          latestNewDecisionCount: 0,
+          latestRetiredDecisionCount: 0,
+        },
+      },
       nextRecommendedStep: "Advance the first task spec.",
     });
     mocks.listBuilderRuns.mockResolvedValue([
@@ -400,6 +458,7 @@ describe("builder routes", () => {
     expect(payload.currentTaskSpec.id).toBe("task-spec-1");
     expect(payload.currentTask.id).toBe("task-1");
     expect(payload.runs).toHaveLength(1);
+    expect(payload.metrics.architecture.activeDecisionCount).toBe(1);
   });
 
   it("plans a project through the dedicated planning route", async () => {
@@ -626,6 +685,7 @@ describe("builder routes", () => {
     expect(response.status).toBe(200);
     expect(mocks.getBuilderStats).toHaveBeenCalledWith("project-1");
     expect(payload.successRate).toBe(0.67);
+    expect(payload.verificationPassRate).toBe(0.5);
   });
 
   it("lists projects from the collection route", async () => {

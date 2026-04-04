@@ -2,6 +2,9 @@
 
 ## 2026-04-04
 
+- Added threshold-based Builder dashboard health highlighting so high retry rate, low verification pass rate, blocked task-spec promotion, and stale ADR pressure are visually emphasized instead of buried in raw metrics.
+- Broadened Builder generated-template validation to cover both `node-cli` and `plugin-package`, and wired the new verifier into CI.
+- Tightened Builder retry heuristics across native and CLI execution loops so repeated low-signal retries stop earlier and repair prompts include concise failure excerpts.
 - Hardened live Builder runtime orchestration so preflight status and in-flight stdout/stderr are persisted into active run records, making stalled native Builder runs debuggable before an iteration completes.
 - Fixed Builder launch-time failure handling and task handoff so orchestration no longer leaves phantom `RUNNING` rows and newly created tasks are passed correctly into the executor.
 - Corrected Google/Gemini forced tool-calling for the `builder_operator` lane by suppressing native Google extras when function calling is required.

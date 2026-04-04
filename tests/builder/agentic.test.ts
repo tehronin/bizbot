@@ -168,6 +168,35 @@ describe("builder agentic loop", () => {
     expect(result.loop.iterations[0]?.review.reason).toContain("did not detect workspace changes");
   });
 
+  it("blocks after repeated low-signal retries do not improve verification", async () => {
+    virtualFiles["projects/demo/package-lock.json"] = "{\n  \"lockfileVersion\": 3\n}\n";
+
+    mocks.runBuilderCliCommand
+      .mockImplementationOnce((_command: string, args: string[]) => {
+        expect(String(args.at(-1))).toContain("Fix the build.");
+        virtualFiles["projects/demo/package-lock.json"] = "{\n  \"lockfileVersion\": 3,\n  \"attempt\": 1\n}\n";
+        return Promise.resolve(commandResult({ stdout: "attempt 1" }));
+      })
+      .mockImplementationOnce((_command: string, args: string[]) => {
+        expect(String(args.at(-1))).toContain("Previous builder attempt 1 did not finish cleanly.");
+        virtualFiles["projects/demo/package-lock.json"] = "{\n  \"lockfileVersion\": 3,\n  \"attempt\": 2\n}\n";
+        return Promise.resolve(commandResult({ stdout: "attempt 2" }));
+      });
+    mocks.npmRunScript
+      .mockResolvedValueOnce(commandResult({ ok: false, exitCode: 1, stdout: "", stderr: "build failed" }))
+      .mockResolvedValueOnce(commandResult({ ok: false, exitCode: 1, stdout: "", stderr: "build failed" }));
+
+    const result = await executeBuilderAgenticTask(project, {
+      profile: "codex",
+      prompt: "Fix the build.",
+    });
+
+    expect(result.loop.finalVerdict).toBe("blocked");
+    expect(result.loop.iterations).toHaveLength(2);
+    expect(result.loop.iterations[0]?.review.verdict).toBe("retry");
+    expect(result.loop.iterations[1]?.review.reason).toContain("generated or bookkeeping changes");
+  });
+
   it("completes with verification skipped when no deterministic scripts exist", async () => {
     delete virtualFiles["projects/demo/package.json"];
     mocks.runBuilderCliCommand.mockImplementationOnce(() => {

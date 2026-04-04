@@ -151,6 +151,7 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - The preferred orchestration path is the native in-process Builder loop, which runs project-scoped work through the `builder_operator` lane and deterministic verification.
 - Verification installs project dependencies on first run when needed, then executes the smallest deterministic scripts available in `build`, `test`, `lint` order.
 - The Builder dashboard now exposes project-scoped stats, per-task history, resume-from-iteration flows, and quick log focus controls.
+- Builder health panels now apply threshold-based highlighting so high retry rate, low verification pass rate, blocked promotion flow, and stale ADR pressure stand out without reading every raw metric.
 - Desktop packaging includes Builder shortcuts for retry-last-failed-task, open-current-task-logs, and cancel-running-task.
 - Low-level Builder commands and optional CLI adapters still exist for bounded operations, but persistent task orchestration is now the default path.
 - Claude Code is modeled as a future adapter slot under the same Builder Mode shell, not as a separate builtin product plugin.
@@ -182,6 +183,7 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Launch-time orchestration failures now complete the Builder task/run as failed instead of leaving phantom `RUNNING` rows.
 - Generic product briefs no longer inherit Builder-internal planning bias; a plain Node.js + Express brief now produces generic milestones and generic Builder ADR keys.
 - Builder bootstrap and scaffold checks now ignore Builder-managed projection files like `.builder/` and `AGENTS.md`, so planned projects can continue into real code generation.
+- Generated-template validation now runs against both local package-style presets (`node-cli` and `plugin-package`) so scaffold regressions fail in CI before they leak into live Builder tasks.
 - Deterministic Builder verification now forces `NODE_ENV=test` for the `test` script so Jest-style suites do not inherit the host app server environment.
 - The live Builder validation path has now been proven on both a minimal hello-world artifact and a realistic Express REST API project that completed planning, continuation, test creation, and passing verification inside the external Builder workspace.
 

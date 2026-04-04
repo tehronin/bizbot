@@ -1,9 +1,15 @@
 import { createHash } from "crypto";
-import type { BuilderCliProfile, BuilderProject } from "@prisma/client";
+import type { BuilderCliProfile, BuilderProject, BuilderTaskSpecValidator } from "@prisma/client";
 import { npmRunScript } from "@/lib/builder/adapters/npm";
 import { pnpmRunScript } from "@/lib/builder/adapters/pnpm";
 import { getBuilderCliProfile } from "@/lib/builder/cli-profiles";
 import { getBuilderConfig } from "@/lib/builder/config";
+import {
+  buildBuilderLoopSummary,
+  buildRepairPrompt,
+  buildVerificationOutcomeSignature,
+  decideBuilderLoopReviewVerdict,
+} from "@/lib/builder/loop-review";
 import {
   listBuilderFilesRecursive,
   readBuilderFile,
@@ -93,11 +99,17 @@ export interface BuilderAgenticProgressEvent {
   latestResult?: Pick<BuilderCommandResult, "stdout" | "stderr" | "ok" | "exitCode" | "timedOut">;
 }
 
+export interface BuilderVerificationPolicy {
+  mode?: "analysis_only" | "scaffold" | "implementation" | "verification";
+  validators?: BuilderTaskSpecValidator[];
+}
+
 export interface BuilderAgenticTaskOptions {
   onProgress?: (event: BuilderAgenticProgressEvent) => Promise<void> | void;
   signal?: AbortSignal;
   onStdoutChunk?: (chunk: string) => Promise<void> | void;
   onStderrChunk?: (chunk: string) => Promise<void> | void;
+  verification?: BuilderVerificationPolicy;
 }
 
 interface BuilderWorkspaceSnapshot {
@@ -139,17 +151,6 @@ function truncateForMetadata(value: string): string {
   }
 
   return `${value.slice(0, MAX_METADATA_OUTPUT_CHARS)}\n[truncated ${value.length - MAX_METADATA_OUTPUT_CHARS} chars]`;
-}
-
-function summarizeCommandResult(result: BuilderCommandResult): string {
-  if (result.ok) {
-    return "command completed successfully";
-  }
-  if (result.timedOut) {
-    return "command timed out";
-  }
-
-  return `command failed with exit code ${result.exitCode ?? "unknown"}`;
 }
 
 function getProjectPackageJsonPath(project: BuilderProject): string {
@@ -303,95 +304,6 @@ function diffWorkspaceSnapshots(previous: BuilderWorkspaceSnapshot, next: Builde
     .slice(0, MAX_CHANGED_FILES);
 }
 
-function buildFailureSignature(
-  actResult: BuilderCommandResult,
-  verification: BuilderAgenticVerificationReport,
-  snapshot: BuilderWorkspaceSnapshot,
-): string {
-  return JSON.stringify({
-    actOk: actResult.ok,
-    exitCode: actResult.exitCode,
-    timedOut: actResult.timedOut,
-    verification: verification.steps.map((step) => ({
-      script: step.script,
-      ok: step.ok,
-      exitCode: step.exitCode,
-      timedOut: step.timedOut,
-    })),
-    fingerprint: snapshot.fingerprint,
-  });
-}
-
-function buildRepairPrompt(
-  basePrompt: string,
-  iteration: number,
-  actResult: BuilderCommandResult,
-  verification: BuilderAgenticVerificationReport,
-  changedFiles: string[],
-): string {
-  const verificationDetails = verification.steps.length > 0
-    ? verification.steps.map((step) => `${step.script}: ${step.ok ? "passed" : `failed (exit ${step.exitCode ?? "unknown"})`}`).join("; ")
-    : verification.summary;
-  const changedFilesText = changedFiles.length > 0 ? changedFiles.join(", ") : "none recorded";
-
-  return `${basePrompt}\n\nPrevious builder attempt ${iteration} did not finish cleanly. Review the current workspace, then make the smallest changes needed to satisfy the original request.\n\nAttempt result: ${summarizeCommandResult(actResult)}.\nVerification: ${verificationDetails}.\nChanged files detected: ${changedFilesText}.\n\nDo not restate the plan. Apply fixes and leave the project in a verifiable state.`;
-}
-
-function decideReviewVerdict(args: {
-  iteration: number;
-  actResult: BuilderCommandResult;
-  verification: BuilderAgenticVerificationReport;
-  changedFiles: string[];
-  previousFailureSignature: string | null;
-  currentFailureSignature: string;
-}): { verdict: "complete" | "retry" | "blocked" | "max_iterations" | "cancelled"; reason: string } {
-  const { iteration, actResult, verification, changedFiles, previousFailureSignature, currentFailureSignature } = args;
-
-  if (actResult.cancelled) {
-    return { verdict: "cancelled", reason: "Builder run was cancelled." };
-  }
-
-  if (verification.passed) {
-    return {
-      verdict: "complete",
-      reason: verification.skipped
-        ? "Builder command finished and no deterministic verification scripts were available."
-        : "Verification scripts passed.",
-    };
-  }
-
-  if (actResult.timedOut) {
-    return { verdict: "blocked", reason: "Builder command timed out before verification passed." };
-  }
-
-  if (changedFiles.length === 0) {
-    return { verdict: "blocked", reason: "Verification failed and the builder loop did not detect workspace changes." };
-  }
-
-  if (previousFailureSignature === currentFailureSignature) {
-    return { verdict: "blocked", reason: "Builder loop hit the same failure twice without improving verification output." };
-  }
-
-  if (iteration >= MAX_AGENTIC_ITERATIONS) {
-    return { verdict: "max_iterations", reason: "Builder loop reached the maximum retry count." };
-  }
-
-  return { verdict: "retry", reason: "Verification failed; retrying with the current workspace and failure details." };
-}
-
-function buildLoopSummary(loop: BuilderAgenticLoopMetadata): string {
-  if (loop.finalVerdict === "complete") {
-    return `Builder loop completed after ${loop.iterations.length} iteration${loop.iterations.length === 1 ? "" : "s"}. ${loop.verified ? "Verification passed." : "Verification was skipped."}`;
-  }
-
-  if (loop.finalVerdict === "cancelled") {
-    return `Builder loop cancelled after ${loop.iterations.length} iteration${loop.iterations.length === 1 ? "" : "s"}.`;
-  }
-
-  const lastIteration = loop.iterations[loop.iterations.length - 1];
-  return `Builder loop stopped after ${loop.iterations.length} iteration${loop.iterations.length === 1 ? "" : "s"}: ${lastIteration?.review.reason ?? "unknown outcome"}`;
-}
-
 function buildProgressLoop(args: {
   phase: BuilderAgenticLoopMetadata["phase"];
   currentIteration: number;
@@ -483,7 +395,7 @@ export async function executeBuilderAgenticTask(
   const basePrompt = sanitizePrompt(input.prompt);
   let currentPrompt = basePrompt;
   let previousSnapshot = snapshotWorkspace(project);
-  let previousFailureSignature: string | null = null;
+  let previousVerificationSignature: string | null = null;
   let lastExecution: BuilderAgenticTaskExecution | null = null;
   let lastResult: BuilderCommandResult | null = null;
   let lastVerification: BuilderAgenticVerificationReport | null = null;
@@ -537,14 +449,15 @@ export async function executeBuilderAgenticTask(
       onStdoutChunk: options.onStdoutChunk,
       onStderrChunk: options.onStderrChunk,
     });
-    const failureSignature = buildFailureSignature(result, verification, nextSnapshot);
-    const review = decideReviewVerdict({
+    const verificationSignature = buildVerificationOutcomeSignature(verification);
+    const review = decideBuilderLoopReviewVerdict({
       iteration,
+      maxIterations: MAX_AGENTIC_ITERATIONS,
       actResult: result,
       verification,
       changedFiles,
-      previousFailureSignature,
-      currentFailureSignature: failureSignature,
+      previousVerificationSignature,
+      currentVerificationSignature: verificationSignature,
     });
 
     iterations.push({
@@ -605,7 +518,7 @@ export async function executeBuilderAgenticTask(
         summary: "",
         iterations,
       };
-      loop.summary = buildLoopSummary(loop);
+      loop.summary = buildBuilderLoopSummary(loop);
 
       return {
         profile: execution.profile,
@@ -626,7 +539,7 @@ export async function executeBuilderAgenticTask(
         summary: "",
         iterations,
       };
-      loop.summary = buildLoopSummary(loop);
+      loop.summary = buildBuilderLoopSummary(loop);
 
       return {
         profile: execution.profile,
@@ -637,7 +550,7 @@ export async function executeBuilderAgenticTask(
       };
     }
 
-    previousFailureSignature = failureSignature;
+    previousVerificationSignature = verificationSignature;
     previousSnapshot = nextSnapshot;
 
     if (review.verdict !== "retry") {
@@ -661,7 +574,7 @@ export async function executeBuilderAgenticTask(
     summary: "",
     iterations,
   };
-  loop.summary = buildLoopSummary(loop);
+  loop.summary = buildBuilderLoopSummary(loop);
 
   return {
     profile: lastExecution.profile,

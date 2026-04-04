@@ -7,6 +7,12 @@ import { getBuilderConfig, resolveBuilderWorkspacePath } from "@/lib/builder/con
 import { npmInstall, npmRunScript } from "@/lib/builder/adapters/npm";
 import { pnpmInstall, pnpmRunScript } from "@/lib/builder/adapters/pnpm";
 import {
+  buildBuilderLoopSummary,
+  buildRepairPrompt,
+  buildVerificationOutcomeSignature,
+  decideBuilderLoopReviewVerdict,
+} from "@/lib/builder/loop-review";
+import {
   listBuilderFilesRecursive,
   readBuilderFile,
   type BuilderCommandResult,
@@ -24,7 +30,15 @@ const MAX_CHANGED_FILES = 20;
 const MAX_SNAPSHOT_ENTRIES = 200;
 const MAX_METADATA_OUTPUT_CHARS = 2_000;
 const MAX_CAPTURED_OUTPUT_CHARS = 24_000;
-const VERIFICATION_SCRIPT_ORDER = ["build", "test", "lint"] as const;
+const VERIFICATION_SCRIPT_ORDER = ["typecheck", "build", "test", "lint"] as const;
+const VALIDATOR_SCRIPT_MAP = {
+  TYPECHECK: ["typecheck"],
+  BUILD: ["build"],
+  TEST: ["test"],
+  LINT: ["lint"],
+} as const;
+
+type VerificationScriptName = typeof VERIFICATION_SCRIPT_ORDER[number];
 
 interface BuilderWorkspaceSnapshot {
   fingerprint: string;
@@ -119,7 +133,7 @@ function getProjectPackageJsonPath(project: BuilderProject): string {
   return `${project.relativePath.replace(/\/$/, "")}/package.json`;
 }
 
-function listVerificationScripts(project: BuilderProject): string[] {
+function listAvailableVerificationScripts(project: BuilderProject): VerificationScriptName[] {
   try {
     const raw = readBuilderFile(getProjectPackageJsonPath(project));
     const parsed = JSON.parse(raw) as { scripts?: Record<string, unknown> };
@@ -132,6 +146,69 @@ function listVerificationScripts(project: BuilderProject): string[] {
   } catch {
     return [];
   }
+}
+
+function normalizeVerificationValidators(validators?: readonly string[]): string[] {
+  return Array.from(new Set((validators ?? [])
+    .map((validator) => String(validator).trim().toUpperCase())
+    .filter(Boolean)));
+}
+
+function resolveVerificationPlan(project: BuilderProject, options: BuilderAgenticTaskOptions): {
+  scripts: VerificationScriptName[];
+  skipped: boolean;
+  summary?: string;
+} {
+  const availableScripts = listAvailableVerificationScripts(project);
+  const mode = options.verification?.mode;
+  const validators = normalizeVerificationValidators(options.verification?.validators);
+
+  if (mode === "analysis_only") {
+    return {
+      scripts: [],
+      skipped: true,
+      summary: "Verification skipped for analysis_only task; defer validation to manual review.",
+    };
+  }
+
+  if (validators.length === 0) {
+    return {
+      scripts: availableScripts,
+      skipped: false,
+    };
+  }
+
+  const deterministicValidators = validators.filter((validator) => validator !== "MANUAL_REVIEW");
+  if (deterministicValidators.length === 0) {
+    return {
+      scripts: [],
+      skipped: true,
+      summary: "Verification skipped because the task only requires manual_review.",
+    };
+  }
+
+  const requiredScripts = new Set<VerificationScriptName>();
+  for (const validator of deterministicValidators) {
+    for (const script of VALIDATOR_SCRIPT_MAP[validator as keyof typeof VALIDATOR_SCRIPT_MAP] ?? []) {
+      if (availableScripts.includes(script)) {
+        requiredScripts.add(script);
+      }
+    }
+  }
+
+  const scripts = VERIFICATION_SCRIPT_ORDER.filter((script) => requiredScripts.has(script));
+  if (scripts.length === 0) {
+    return {
+      scripts: [],
+      skipped: true,
+      summary: `Verification skipped because no matching scripts were found for validators: ${deterministicValidators.map((validator) => validator.toLowerCase()).join(", ")}.`,
+    };
+  }
+
+  return {
+    scripts,
+    skipped: false,
+  };
 }
 
 async function runVerificationScript(
@@ -161,7 +238,7 @@ async function runVerificationScript(
 
 async function runProjectVerification(
   project: BuilderProject,
-  options: Pick<BuilderAgenticTaskOptions, "signal" | "onStdoutChunk" | "onStderrChunk">,
+  options: BuilderAgenticTaskOptions,
 ): Promise<BuilderAgenticVerificationReport> {
   if (options.signal?.aborted) {
     return {
@@ -173,14 +250,25 @@ async function runProjectVerification(
     };
   }
 
-  const scripts = listVerificationScripts(project);
+  const plan = resolveVerificationPlan(project, options);
+  if (plan.skipped) {
+    return {
+      scripts: plan.scripts,
+      steps: [],
+      passed: true,
+      skipped: true,
+      summary: plan.summary ?? "Verification skipped.",
+    };
+  }
+
+  const scripts = plan.scripts;
   if (scripts.length === 0) {
     return {
       scripts: [],
       steps: [],
       passed: true,
       skipped: true,
-      summary: "No build/test/lint scripts found; verification skipped.",
+      summary: "No matching deterministic verification scripts found; verification skipped.",
     };
   }
 
@@ -237,114 +325,6 @@ async function runProjectVerification(
     skipped: false,
     summary: `Verification passed: ${scripts.join(", ")}.`,
   };
-}
-
-function buildFailureSignature(
-  actResult: BuilderCommandResult,
-  verification: BuilderAgenticVerificationReport,
-  snapshot: BuilderWorkspaceSnapshot,
-): string {
-  return JSON.stringify({
-    actOk: actResult.ok,
-    exitCode: actResult.exitCode,
-    timedOut: actResult.timedOut,
-    verification: verification.steps.map((step) => ({
-      script: step.script,
-      ok: step.ok,
-      exitCode: step.exitCode,
-      timedOut: step.timedOut,
-    })),
-    fingerprint: snapshot.fingerprint,
-  });
-}
-
-function summarizeCommandResult(result: BuilderCommandResult): string {
-  if (result.cancelled) {
-    return "agent execution was cancelled";
-  }
-  if (result.ok) {
-    return "agent execution completed successfully";
-  }
-  if (result.timedOut) {
-    return "agent execution timed out";
-  }
-
-  return "agent execution failed";
-}
-
-function buildRepairPrompt(
-  basePrompt: string,
-  iteration: number,
-  actResult: BuilderCommandResult,
-  verification: BuilderAgenticVerificationReport,
-  changedFiles: string[],
-): string {
-  const verificationDetails = verification.steps.length > 0
-    ? verification.steps.map((step) => `${step.script}: ${step.ok ? "passed" : `failed (exit ${step.exitCode ?? "unknown"})`}`).join("; ")
-    : verification.summary;
-  const changedFilesText = changedFiles.length > 0 ? changedFiles.join(", ") : "none recorded";
-
-  return `${basePrompt}\n\nPrevious builder attempt ${iteration} did not finish cleanly. Review the current workspace, then make the smallest changes needed to satisfy the original request.\n\nAttempt result: ${summarizeCommandResult(actResult)}.\nVerification: ${verificationDetails}.\nChanged files detected: ${changedFilesText}.\n\nDo not restate the plan. Apply fixes and leave the project in a verifiable state.`;
-}
-
-function decideReviewVerdict(args: {
-  iteration: number;
-  maxIterations: number;
-  actResult: BuilderCommandResult;
-  verification: BuilderAgenticVerificationReport;
-  changedFiles: string[];
-  previousFailureSignature: string | null;
-  currentFailureSignature: string;
-}): { verdict: "complete" | "retry" | "blocked" | "max_iterations" | "cancelled"; reason: string } {
-  const { iteration, maxIterations, actResult, verification, changedFiles, previousFailureSignature, currentFailureSignature } = args;
-
-  if (actResult.cancelled) {
-    return { verdict: "cancelled", reason: actResult.timedOut ? "Builder agent timed out." : "Builder run was cancelled." };
-  }
-
-  if (verification.passed) {
-    return {
-      verdict: "complete",
-      reason: verification.skipped
-        ? "Builder agent finished and no deterministic verification scripts were available."
-        : "Verification scripts passed.",
-    };
-  }
-
-  if (actResult.timedOut) {
-    return { verdict: "blocked", reason: "Builder agent timed out before verification passed." };
-  }
-
-  if (changedFiles.length === 0 && !actResult.ok) {
-    return { verdict: "blocked", reason: "Verification failed and the builder loop did not detect workspace changes." };
-  }
-
-  if (changedFiles.length === 0 && iteration >= maxIterations) {
-    return { verdict: "blocked", reason: "Verification failed and no workspace changes detected after final iteration." };
-  }
-
-  if (previousFailureSignature === currentFailureSignature) {
-    return { verdict: "blocked", reason: "Builder loop hit the same failure twice without improving verification output." };
-  }
-
-  if (iteration >= maxIterations) {
-    return { verdict: "max_iterations", reason: "Builder loop reached the maximum retry count." };
-  }
-
-  return { verdict: "retry", reason: "Verification failed; retrying with the current workspace and failure details." };
-}
-
-function buildLoopSummary(loop: BuilderAgenticLoopMetadata): string {
-  if (loop.finalVerdict === "complete") {
-    return `Builder loop completed after ${loop.iterations.length} iteration${loop.iterations.length === 1 ? "" : "s"}. ${loop.verified ? "Verification passed." : "Verification was skipped."}`;
-  }
-
-  if (loop.finalVerdict === "cancelled") {
-    return `Builder loop cancelled after ${loop.iterations.length} iteration${loop.iterations.length === 1 ? "" : "s"}.`;
-  }
-
-  const lastIteration = loop.iterations[loop.iterations.length - 1];
-  return `Builder loop stopped after ${loop.iterations.length} iteration${loop.iterations.length === 1 ? "" : "s"}: ${lastIteration?.review.reason ?? "unknown outcome"}`;
 }
 
 function buildProgressLoop(args: {
@@ -420,6 +400,7 @@ function buildNativeBuilderMessage(project: BuilderProject, prompt: string): str
     "Prefer the minimum tool sequence needed for the request. If the request names a specific file, inspect that file directly instead of broadly exploring the workspace.",
     "For file-edit tasks, prefer builder_read_file followed by builder_write_file. Once the requested content is present, stop using tools and return a concise implementation summary.",
     "If the requested change is already present, do not keep exploring. State that the workspace already satisfies the request and stop.",
+      "Treat the [Plan Adherence] section in the prompt as a hard boundary. Do not broaden the task beyond its listed mode, decision keys, and directives.",
   ].join("\n");
 }
 
@@ -467,11 +448,11 @@ export async function executeNativeBuilderTask(
 
   let currentPrompt = basePrompt;
   let previousSnapshot = snapshotWorkspace(project);
-  let previousFailureSignature: string | null = null;
+  let previousVerificationSignature: string | null = null;
   let lastResult: BuilderCommandResult | null = null;
   let lastVerification: BuilderAgenticVerificationReport | null = null;
   const iterations: BuilderAgenticIteration[] = [];
-  const selectedScripts = listVerificationScripts(project);
+  const selectedScripts = resolveVerificationPlan(project, options).scripts;
   let executeAgentConversation: ((typeof import("@/lib/agent/executor"))["executeAgentConversation"]) | null = null;
 
   for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
@@ -623,20 +604,16 @@ export async function executeNativeBuilderTask(
 
     const nextSnapshot = snapshotWorkspace(project);
     const changedFiles = diffWorkspaceSnapshots(previousSnapshot, nextSnapshot);
-    const verification = await runProjectVerification(project, {
-      signal: options.signal,
-      onStdoutChunk: options.onStdoutChunk,
-      onStderrChunk: options.onStderrChunk,
-    });
-    const failureSignature = buildFailureSignature(result, verification, nextSnapshot);
-    const review = decideReviewVerdict({
+    const verification = await runProjectVerification(project, options);
+    const verificationSignature = buildVerificationOutcomeSignature(verification);
+    const review = decideBuilderLoopReviewVerdict({
       iteration,
       maxIterations,
       actResult: result,
       verification,
       changedFiles,
-      previousFailureSignature,
-      currentFailureSignature: failureSignature,
+      previousVerificationSignature,
+      currentVerificationSignature: verificationSignature,
     });
 
     iterations.push({
@@ -697,7 +674,7 @@ export async function executeNativeBuilderTask(
         summary: "",
         iterations,
       };
-      loop.summary = buildLoopSummary(loop);
+      loop.summary = buildBuilderLoopSummary(loop);
       return { result, loop };
     }
 
@@ -711,7 +688,7 @@ export async function executeNativeBuilderTask(
         summary: "",
         iterations,
       };
-      loop.summary = buildLoopSummary(loop);
+      loop.summary = buildBuilderLoopSummary(loop);
       return { result, loop };
     }
 
@@ -725,13 +702,13 @@ export async function executeNativeBuilderTask(
         summary: "",
         iterations,
       };
-      loop.summary = buildLoopSummary(loop);
+      loop.summary = buildBuilderLoopSummary(loop);
       return { result, loop };
     }
 
     currentPrompt = buildRepairPrompt(basePrompt, iteration, result, verification, changedFiles);
     previousSnapshot = nextSnapshot;
-    previousFailureSignature = failureSignature;
+    previousVerificationSignature = verificationSignature;
   }
 
   const fallbackResult = lastResult ?? buildNativeResult({
@@ -759,7 +736,7 @@ export async function executeNativeBuilderTask(
     summary: "",
     iterations,
   };
-  loop.summary = buildLoopSummary(loop);
+  loop.summary = buildBuilderLoopSummary(loop);
 
   return {
     result: fallbackResult,

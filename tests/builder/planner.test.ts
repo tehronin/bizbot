@@ -62,6 +62,39 @@ describe("builder planner", () => {
     ]));
   });
 
+  it("keeps generic DB-backed briefs generic even when notes mention Builder regression context", () => {
+    const milestones = buildPlanFromBrief({
+      id: "brief-3",
+      projectId: "project-3",
+      title: "Express Prisma SQLite API",
+      summary: "Build a Node.js REST API with Express, Prisma, and SQLite. Endpoints: GET /health, GET /items, POST /items. Persist items in SQLite through Prisma. Return JSON.",
+      goals: ["Add endpoint tests."],
+      constraints: ["Use local SQLite only."],
+      deliverables: ["Working Express API with Prisma persistence."],
+      notes: "This is the next Builder regression after the in-memory Express API success.",
+      createdAt: new Date("2026-04-04T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-04T00:00:00.000Z"),
+    });
+
+    expect(milestones.map((milestone) => milestone.title)).toEqual([
+      "Confirm API contract",
+      "Scaffold the service runtime",
+      "Implement endpoint behavior",
+      "Verify and review the deliverable",
+    ]);
+    expect(milestones.flatMap((milestone) => milestone.tasks.flatMap((task) => task.architecturalDecisionKeys))).toEqual(expect.arrayContaining([
+      "tech_stack_runtime",
+      "tech_stack_framework",
+      "database_strategy_sqlite",
+      "persistence_relational",
+      "service_surface_rest_api",
+    ]));
+    expect(milestones.flatMap((milestone) => milestone.tasks.flatMap((task) => task.architecturalDecisionKeys))).not.toEqual(expect.arrayContaining([
+      "planning_authority_split",
+      "planning_schema",
+    ]));
+  });
+
   it("drops invalid architectural decision keys with the explicit snake_case regex", () => {
     expect(normalizeArchitecturalDecisionKeys([
       "valid_key",
@@ -142,6 +175,96 @@ describe("builder planner", () => {
     expect(critique.valid).toBe(false);
     expect(critique.issues).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "dependency_cycle" }),
+    ]));
+  });
+
+  it("tracks stale-key reconfirmation and warns when active architecture is left implicit", () => {
+    const critique = critiqueBuilderPlanCandidate({
+      milestones: [{
+        key: "milestone_a",
+        title: "Milestone A",
+        summary: "Summary",
+        status: "PENDING",
+        sortOrder: 1,
+        tasks: [{
+          key: "task_a",
+          title: "Task A",
+          summary: "Do A.",
+          status: "PENDING",
+          sortOrder: 1,
+          completionCriteria: ["Done A"],
+          validators: ["MANUAL_REVIEW"],
+          dependencyKeys: [],
+          architecturalDecisionKeys: ["legacy_projection_path"],
+          architecturalStaleKeys: [],
+        }],
+      }],
+      activeArchitecture: [{
+        key: "planning_authority_split",
+        canonicalKey: "builder:project-1:planning_authority_split",
+        displayName: "planning_authority_split",
+        description: "Database planning remains canonical.",
+        confidence: 0.9,
+        status: "active",
+        source: "builder_adr",
+        updatedAt: new Date("2026-04-04T00:00:00.000Z").toISOString(),
+      }],
+      staleArchitecture: [{
+        key: "legacy_projection_path",
+        canonicalKey: "builder:project-1:legacy_projection_path",
+        displayName: "legacy_projection_path",
+        description: "Old projection path needs reconfirmation.",
+        confidence: 0.8,
+        status: "deprecated",
+        source: "builder_adr",
+        updatedAt: new Date("2026-04-04T00:00:00.000Z").toISOString(),
+      }],
+    });
+
+    expect(critique.reconciliation.reconfirmedStaleKeys).toEqual(["legacy_projection_path"]);
+    expect(critique.reconciliation.unreferencedActiveKeys).toEqual(["planning_authority_split"]);
+    expect(critique.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "active_architecture_not_reconciled", severity: "warning" }),
+    ]));
+  });
+
+  it("rejects planner output that marks the same architecture key as both new and stale", () => {
+    const critique = critiqueBuilderPlanCandidate({
+      milestones: [{
+        key: "milestone_a",
+        title: "Milestone A",
+        summary: "Summary",
+        status: "PENDING",
+        sortOrder: 1,
+        tasks: [{
+          key: "task_a",
+          title: "Task A",
+          summary: "Do A.",
+          status: "PENDING",
+          sortOrder: 1,
+          completionCriteria: ["Done A"],
+          validators: ["MANUAL_REVIEW"],
+          dependencyKeys: [],
+          architecturalDecisionKeys: ["legacy_projection_path"],
+          architecturalStaleKeys: ["legacy_projection_path"],
+        }],
+      }],
+      staleArchitecture: [{
+        key: "legacy_projection_path",
+        canonicalKey: "builder:project-1:legacy_projection_path",
+        displayName: "legacy_projection_path",
+        description: "Old projection path needs reconfirmation.",
+        confidence: 0.8,
+        status: "deprecated",
+        source: "builder_adr",
+        updatedAt: new Date("2026-04-04T00:00:00.000Z").toISOString(),
+      }],
+    });
+
+    expect(critique.valid).toBe(false);
+    expect(critique.reconciliation.conflictingDecisionKeys).toEqual(["legacy_projection_path"]);
+    expect(critique.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "conflicting_architecture_reconciliation", severity: "error" }),
     ]));
   });
 });

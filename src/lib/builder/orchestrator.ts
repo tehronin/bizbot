@@ -1,6 +1,7 @@
 import type { BuilderProject, BuilderRun, BuilderTask, BuilderTaskStage, BuilderTaskStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { BuilderAgenticProgressEvent, BuilderAgenticTaskOptions } from "@/lib/builder/agentic";
+import { summarizeBuilderProjectMetrics, type BuilderHealthMetrics } from "@/lib/builder/analytics";
 import { loadBuilderProjectContext, selectRelevantInstructionFragments, syncBuilderProjectProjection } from "@/lib/builder/context";
 import { executeNativeBuilderTask } from "@/lib/builder/native-agent";
 import {
@@ -15,11 +16,11 @@ import {
   upsertBuilderProjectBrief,
   type UpsertBuilderProjectBriefInput,
 } from "@/lib/builder/planning";
-import { composeBuilderTaskPrompt } from "@/lib/builder/prompt";
+import { buildBuilderPlanAdherence, composeBuilderTaskPrompt } from "@/lib/builder/prompt";
 import { buildBuilderStructuredReview } from "@/lib/builder/review";
 import { completeBuilderRun, createBuilderRun, getBuilderProject, listBuilderRuns, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
 import { registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
-import { createBuilderTask, getBuilderTask, listBuilderTasks, resolveBuilderContinuationTask, resumeBuilderTask, updateBuilderTask, updateBuilderTaskExecutionState, updateBuilderTaskStage } from "@/lib/builder/tasks";
+import { createBuilderTask, getBuilderTask, listBuilderTasks, reconcileBuilderRunWithTask, resolveBuilderContinuationTask, resumeBuilderTask, updateBuilderTask, updateBuilderTaskExecutionState, updateBuilderTaskStage } from "@/lib/builder/tasks";
 import {
   defaultBuilderProjectContext,
   normalizeBuilderProjectContext,
@@ -57,6 +58,7 @@ export interface BuilderProjectOverview {
   currentTask: BuilderTask | null;
   runs: BuilderRun[];
   latestReview: BuilderStructuredReview | null;
+  metrics: BuilderHealthMetrics;
   nextRecommendedStep: string | null;
 }
 
@@ -146,6 +148,50 @@ function buildNextRecommendedStep(planning: BuilderPlanningSnapshot, context: Bu
     return `Advance ${planning.currentTaskSpec.title}.`;
   }
   return context.nextSteps[0] ?? null;
+}
+
+function assertBuilderPlanAdherence(adherence: ReturnType<typeof buildBuilderPlanAdherence>): void {
+  if (adherence.allowsExecution) {
+    return;
+  }
+
+  throw new Error(`Builder plan adherence check failed before execution: ${adherence.blockingIssues.join(" ")}`);
+}
+
+function findReplacementTaskSpec(
+  planning: BuilderPlanningSnapshot,
+  taskSpec: BuilderTaskSpecState,
+): BuilderTaskSpecState | null {
+  const taskSpecs = planning.milestones.flatMap((milestone) => milestone.taskSpecs);
+
+  return taskSpecs.find((candidate) => candidate.id === taskSpec.id)
+    ?? taskSpecs.find((candidate) => candidate.title === taskSpec.title && candidate.summary === taskSpec.summary)
+    ?? taskSpecs.find((candidate) => candidate.title === taskSpec.title)
+    ?? planning.currentTaskSpec
+    ?? null;
+}
+
+async function resolveTaskSpecForFinalization(
+  projectId: string,
+  taskSpec: BuilderTaskSpecState,
+): Promise<{ planning: BuilderPlanningSnapshot | null; taskSpec: BuilderTaskSpecState }> {
+  try {
+    return {
+      planning: null,
+      taskSpec: await getBuilderTaskSpec(taskSpec.id),
+    };
+  } catch {
+    const planning = await recomputeBuilderPlanningProgress(projectId);
+    const replacement = findReplacementTaskSpec(planning, taskSpec);
+    if (!replacement) {
+      throw new Error(`Builder task spec ${taskSpec.id} was replaced during execution and no matching replacement could be resolved.`);
+    }
+
+    return {
+      planning,
+      taskSpec: replacement,
+    };
+  }
 }
 
 function buildDerivedProjectContext(args: {
@@ -428,15 +474,23 @@ export async function orchestrateBuilderTask(
   });
 
   const implementingTask = await getBuilderTask(task.id);
+  const executionContext = buildDerivedProjectContext({
+    currentContext: loadBuilderProjectContext(project).context,
+    planning,
+    currentTask: implementingTask,
+    request,
+  });
+  const adherence = buildBuilderPlanAdherence({
+    task: implementingTask,
+    context: executionContext,
+    currentMilestone: planning.currentMilestone,
+    currentTaskSpec: taskSpec,
+  });
+  assertBuilderPlanAdherence(adherence);
   const prompt = composeBuilderTaskPrompt({
     project,
     task: implementingTask,
-    context: buildDerivedProjectContext({
-      currentContext: loadBuilderProjectContext(project).context,
-      planning,
-      currentTask: implementingTask,
-      request,
-    }),
+    context: executionContext,
     lifecycle: planning.lifecycle,
     brief: planning.brief,
     currentMilestone: planning.currentMilestone,
@@ -444,10 +498,15 @@ export async function orchestrateBuilderTask(
     request,
     stage: "IMPLEMENTING",
     fragments: selectRelevantInstructionFragments(project, request),
+    adherence,
   });
 
   const loopResult = await executeNativeBuilderTask(project, { prompt }, {
     ...options,
+    verification: {
+      mode: adherence.mode,
+      validators: taskSpec.validators,
+    },
     onProgress: async (event: BuilderAgenticProgressEvent) => {
       const progressStage = event.loop.phase === "verifying"
         ? "TESTING"
@@ -491,22 +550,28 @@ export async function orchestrateBuilderTask(
       ? {
           activeKeys: architectureContext.active.map((item) => item.key),
           staleKeys: architectureContext.stale.map((item) => item.key),
-          addressedStaleKeys: [],
-          missingStaleKeys: [],
+          reconfirmedStaleKeys: taskSpec.architecturalDecisionKeys.filter((key) => architectureContext.stale.some((item) => item.key === key)),
+          addressedStaleKeys: taskSpec.architecturalDecisionKeys.filter((key) => architectureContext.stale.some((item) => item.key === key)),
+          missingStaleKeys: architectureContext.stale.map((item) => item.key).filter((key) => !taskSpec.architecturalDecisionKeys.includes(key)),
+          unreferencedActiveKeys: architectureContext.active.map((item) => item.key).filter((key) => !taskSpec.architecturalDecisionKeys.includes(key)),
+          conflictingDecisionKeys: [],
           newDecisionKeys: taskSpec.architecturalDecisionKeys,
           retiredDecisionKeys: [],
         }
       : undefined,
   });
 
+  const finalizedTaskSpecResult = await resolveTaskSpecForFinalization(projectId, taskSpec);
+  const finalizedTaskSpec = finalizedTaskSpecResult.taskSpec;
+
   const completedTask = await updateBuilderTask(implementingTask.id, {
     status: taskStatus,
     stage: taskStage,
     summary: trimReviewSummary(review.summary, 500),
-    taskSpecId: taskSpec.id,
+    taskSpecId: finalizedTaskSpec.id,
     metadata: toInputJsonValue({
       ...normalizeBuilderTaskMetadata(implementingTask.metadata),
-      planSteps: buildExecutionPlanSteps(taskSpec, taskStatus),
+      planSteps: buildExecutionPlanSteps(finalizedTaskSpec, taskStatus),
       lastStageError: taskStatus === "SUCCEEDED" ? null : review.summary,
       lastAttemptedStage: taskStage,
       lastUserRequest: request,
@@ -521,7 +586,8 @@ export async function orchestrateBuilderTask(
     }),
   });
 
-  planning = await setBuilderTaskSpecStatus(projectId, taskSpec.id, taskStatus === "SUCCEEDED" ? "COMPLETE" : "BLOCKED");
+  planning = finalizedTaskSpecResult.planning ?? planning;
+  planning = await setBuilderTaskSpecStatus(projectId, finalizedTaskSpec.id, taskStatus === "SUCCEEDED" ? "COMPLETE" : "BLOCKED");
   const syncedState = await syncProjectState({
     project,
     planning,
@@ -537,7 +603,7 @@ export async function orchestrateBuilderTask(
     summary: trimReviewSummary(review.summary, 240),
     metadata: {
       taskId: task.id,
-      taskSpecId: taskSpec.id,
+      taskSpecId: finalizedTaskSpec.id,
       loop: loopResult.loop,
       review,
       stage: taskStage,
@@ -680,8 +746,21 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
       ?? null
     : tasks.find((task) => task.status === "RUNNING" || task.status === "PENDING") ?? tasks[0] ?? null;
   const runs = await listBuilderRuns(projectId, 25);
-  const latestReview = runs.find((run) => run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata) && "review" in (run.metadata as Record<string, unknown>))?.metadata as Record<string, unknown> | undefined;
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const reconciledRuns = runs.map((run) => {
+    const task = run.taskId ? tasksById.get(run.taskId) : undefined;
+    return task ? reconcileBuilderRunWithTask(run, task) : run;
+  });
+  const latestReview = reconciledRuns.find((run) => run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata) && "review" in (run.metadata as Record<string, unknown>))?.metadata as Record<string, unknown> | undefined;
   const { context } = loadBuilderProjectContext(project);
+  const structuredReview = latestReview?.review as BuilderStructuredReview ?? null;
+  const metrics = summarizeBuilderProjectMetrics({
+    runs: reconciledRuns,
+    tasks,
+    planning,
+    context,
+    latestReview: structuredReview,
+  });
 
   return {
     project,
@@ -692,8 +771,9 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
     currentTaskSpec: planning.currentTaskSpec,
     tasks,
     currentTask,
-    runs,
-    latestReview: latestReview?.review as BuilderStructuredReview ?? null,
+    runs: reconciledRuns,
+    latestReview: structuredReview,
+    metrics,
     nextRecommendedStep: buildNextRecommendedStep(planning, context),
   };
 }

@@ -124,8 +124,11 @@ export function renderBuilderReviewMarkdown(review: BuilderStructuredReview): st
       ? [
           `- Active keys: ${review.architecture.activeKeys.join(", ") || "none"}`,
           `- Stale keys: ${review.architecture.staleKeys.join(", ") || "none"}`,
+          `- Reconfirmed stale keys: ${review.architecture.reconfirmedStaleKeys.join(", ") || "none"}`,
           `- Addressed stale keys: ${review.architecture.addressedStaleKeys.join(", ") || "none"}`,
           `- Missing stale keys: ${review.architecture.missingStaleKeys.join(", ") || "none"}`,
+          `- Unreferenced active keys: ${review.architecture.unreferencedActiveKeys.join(", ") || "none"}`,
+          `- Conflicting decision keys: ${review.architecture.conflictingDecisionKeys.join(", ") || "none"}`,
           `- New decision keys: ${review.architecture.newDecisionKeys.join(", ") || "none"}`,
           `- Retired decision keys: ${review.architecture.retiredDecisionKeys.join(", ") || "none"}`,
         ]

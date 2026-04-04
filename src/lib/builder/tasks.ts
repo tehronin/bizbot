@@ -44,6 +44,29 @@ export interface BuilderTaskHistoryEntry {
   finishedAt: Date | null;
 }
 
+function isTerminalTaskStatus(status: BuilderTaskStatus): boolean {
+  return status === "SUCCEEDED" || status === "FAILED" || status === "CANCELLED";
+}
+
+export function reconcileBuilderRunWithTask<T extends {
+  id: string;
+  status: string;
+  summary: string | null;
+  finishedAt: Date | null;
+}>(run: T, task: BuilderTask): T {
+  const metadata = normalizeBuilderTaskMetadata(task.metadata);
+  if (run.status !== "RUNNING" || metadata.lastRunId !== run.id || !isTerminalTaskStatus(task.status)) {
+    return run;
+  }
+
+  return {
+    ...run,
+    status: task.status,
+    summary: task.summary ?? run.summary,
+    finishedAt: run.finishedAt ?? task.updatedAt,
+  };
+}
+
 function toInputJsonValue(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
@@ -292,13 +315,14 @@ export async function resolveBuilderContinuationTask(input: ResolveBuilderTaskIn
 }
 
 export async function getBuilderTaskHistory(taskId: string): Promise<BuilderTaskHistoryEntry[]> {
-  await getBuilderTask(taskId);
+  const task = await getBuilderTask(taskId);
   const runs = await db.builderRun.findMany({
     where: { taskId },
     orderBy: { startedAt: "asc" },
   });
 
-  return runs.flatMap((run) => {
+  return runs.flatMap((rawRun) => {
+    const run = reconcileBuilderRunWithTask(rawRun, task);
     const metadata = run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata)
       ? run.metadata as Record<string, unknown>
       : null;

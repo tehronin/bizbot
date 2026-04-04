@@ -165,9 +165,40 @@ interface BuilderStats {
   totalRuns: number;
   totalTasksRun: number;
   successRate: number;
+  verificationPassRate: number;
+  retryRate: number;
   avgIterationsPerTask: number;
   avgIterationsPerRun: number;
   statusCounts: Record<string, number>;
+}
+
+interface BuilderHealthMetrics {
+  efficiency: {
+    successRate: number;
+    verificationPassRate: number;
+    retryRate: number;
+    avgIterationsPerRun: number;
+    avgIterationsPerTask: number;
+    tasksInRetry: number;
+  };
+  promotion: {
+    completedMilestones: number;
+    totalMilestones: number;
+    milestoneCompletionRate: number;
+    completedTaskSpecs: number;
+    blockedTaskSpecs: number;
+    totalTaskSpecs: number;
+    taskSpecCompletionRate: number;
+  };
+  architecture: {
+    activeDecisionCount: number;
+    staleDecisionCount: number;
+    currentTaskDecisionCount: number;
+    latestAddressedStaleCount: number;
+    latestMissingStaleCount: number;
+    latestNewDecisionCount: number;
+    latestRetiredDecisionCount: number;
+  };
 }
 
 interface BuilderReview {
@@ -257,6 +288,7 @@ interface BuilderProjectDetailResponse {
   currentTask: BuilderTask | null;
   runs: BuilderRun[];
   latestReview: BuilderReview | null;
+  metrics: BuilderHealthMetrics;
   nextRecommendedStep: string | null;
   error?: string;
 }
@@ -304,6 +336,109 @@ function formatPercentage(value: number | null | undefined): string {
   }
 
   return `${Math.round(value * 100)}%`;
+}
+
+type BuilderHealthTone = "default" | "success" | "warning" | "danger";
+
+function getToneColor(tone: BuilderHealthTone): string {
+  switch (tone) {
+    case "success":
+      return "var(--success)";
+    case "warning":
+      return "var(--warning)";
+    case "danger":
+      return "var(--danger)";
+    default:
+      return "var(--border)";
+  }
+}
+
+function getToneSurface(tone: BuilderHealthTone): string {
+  switch (tone) {
+    case "success":
+      return "color-mix(in srgb, var(--success) 10%, var(--bg-surface))";
+    case "warning":
+      return "color-mix(in srgb, var(--warning) 12%, var(--bg-surface))";
+    case "danger":
+      return "color-mix(in srgb, var(--danger) 12%, var(--bg-surface))";
+    default:
+      return "var(--bg-surface)";
+  }
+}
+
+function getEfficiencyTone(metrics: BuilderHealthMetrics["efficiency"] | null | undefined): BuilderHealthTone {
+  if (!metrics) {
+    return "default";
+  }
+  if (metrics.retryRate >= 0.35 || metrics.verificationPassRate < 0.6 || metrics.tasksInRetry >= 3) {
+    return "danger";
+  }
+  if (metrics.retryRate >= 0.2 || metrics.verificationPassRate < 0.8 || metrics.tasksInRetry > 0) {
+    return "warning";
+  }
+  if (metrics.successRate >= 0.85 && metrics.verificationPassRate >= 0.9) {
+    return "success";
+  }
+  return "default";
+}
+
+function getPromotionTone(metrics: BuilderHealthMetrics["promotion"] | null | undefined): BuilderHealthTone {
+  if (!metrics) {
+    return "default";
+  }
+  if (metrics.blockedTaskSpecs > 0) {
+    return "danger";
+  }
+  if (metrics.totalTaskSpecs > 0 && metrics.taskSpecCompletionRate < 0.4) {
+    return "warning";
+  }
+  if (metrics.totalTaskSpecs > 0 && metrics.taskSpecCompletionRate >= 0.8) {
+    return "success";
+  }
+  return "default";
+}
+
+function getArchitectureTone(metrics: BuilderHealthMetrics["architecture"] | null | undefined): BuilderHealthTone {
+  if (!metrics) {
+    return "default";
+  }
+  if (metrics.latestMissingStaleCount > 0 || metrics.staleDecisionCount >= 3) {
+    return "danger";
+  }
+  if (metrics.staleDecisionCount > 0 || metrics.latestAddressedStaleCount > 0) {
+    return "warning";
+  }
+  if (metrics.activeDecisionCount > 0 && metrics.staleDecisionCount === 0) {
+    return "success";
+  }
+  return "default";
+}
+
+function buildHealthAlerts(metrics: BuilderHealthMetrics | null | undefined): Array<{ label: string; tone: BuilderHealthTone }> {
+  if (!metrics) {
+    return [];
+  }
+
+  const alerts: Array<{ label: string; tone: BuilderHealthTone }> = [];
+  if (metrics.efficiency.retryRate >= 0.35) {
+    alerts.push({ label: `High retry rate ${formatPercentage(metrics.efficiency.retryRate)}`, tone: "danger" });
+  } else if (metrics.efficiency.retryRate >= 0.2) {
+    alerts.push({ label: `Retry rate rising ${formatPercentage(metrics.efficiency.retryRate)}`, tone: "warning" });
+  }
+
+  if (metrics.efficiency.verificationPassRate < 0.6) {
+    alerts.push({ label: `Low verification pass ${formatPercentage(metrics.efficiency.verificationPassRate)}`, tone: "danger" });
+  } else if (metrics.efficiency.verificationPassRate < 0.8) {
+    alerts.push({ label: `Verification needs work ${formatPercentage(metrics.efficiency.verificationPassRate)}`, tone: "warning" });
+  }
+
+  if (metrics.architecture.latestMissingStaleCount > 0) {
+    alerts.push({ label: `${metrics.architecture.latestMissingStaleCount} stale ADRs unaddressed`, tone: "danger" });
+  } else if (metrics.architecture.staleDecisionCount > 0) {
+    alerts.push({ label: `${metrics.architecture.staleDecisionCount} stale ADRs in flight`, tone: "warning" });
+  }
+
+  return alerts;
 }
 
 function getRunLoopMetadata(metadata: Record<string, unknown> | null | undefined): BuilderRunLoopMetadata | null {
@@ -445,12 +580,12 @@ export default function BuilderPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedProjectId) {
+    if (selectedProjectId && projectDetail?.project.id !== selectedProjectId) {
       void loadProjectDetail(selectedProjectId).catch((nextError) => {
         setError(nextError instanceof Error ? nextError.message : "Failed to load builder project details.");
       });
     }
-  }, [selectedProjectId]);
+  }, [projectDetail?.project.id, selectedProjectId]);
 
   useEffect(() => {
     if (!selectedProjectId) {
@@ -754,6 +889,10 @@ export default function BuilderPage() {
   const selectedTask = projectDetail?.tasks.find((task) => task.id === selectedTaskId) ?? projectDetail?.currentTask ?? null;
   const projectsPagination = usePagination(projects, 15);
   const runsPagination = usePagination(projectDetail?.runs ?? [], 15);
+  const healthAlerts = useMemo(() => buildHealthAlerts(projectDetail?.metrics ?? null), [projectDetail?.metrics]);
+  const efficiencyTone = getEfficiencyTone(projectDetail?.metrics?.efficiency);
+  const promotionTone = getPromotionTone(projectDetail?.metrics?.promotion);
+  const architectureTone = getArchitectureTone(projectDetail?.metrics?.architecture);
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -799,7 +938,7 @@ export default function BuilderPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Project name</label>
-              <input value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <input data-testid="builder-create-project-name" value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
             </div>
             <div>
               <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Template</label>
@@ -817,7 +956,7 @@ export default function BuilderPage() {
               </select>
             </div>
             <div className="flex items-end">
-              <button disabled={saving || !status?.config.safe} onClick={() => void createProject()} className="w-full px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+              <button data-testid="builder-create-project-button" disabled={saving || !status?.config.safe} onClick={() => void createProject()} className="w-full px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
                 create project
               </button>
             </div>
@@ -892,7 +1031,7 @@ export default function BuilderPage() {
                 </div>
                 <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>lifecycle</div>
-                  <div className="text-sm">{selectedProject.lifecycle.toLowerCase()}</div>
+                  <div data-testid="builder-selected-project-lifecycle" className="text-sm">{selectedProject.lifecycle.toLowerCase()}</div>
                 </div>
                 <div className="border p-3 sm:col-span-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>objective</div>
@@ -906,21 +1045,21 @@ export default function BuilderPage() {
                 <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>brief</div>
-                    <button disabled={saving || !selectedProjectId} onClick={() => void planProject()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                    <button data-testid="builder-save-plan-button" disabled={saving || !selectedProjectId} onClick={() => void planProject()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
                       save + plan
                     </button>
                   </div>
                   <div>
                     <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Title</label>
-                    <input value={briefDraft.title} onChange={(event) => setBriefDraft((current) => ({ ...current, title: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    <input data-testid="builder-brief-title" value={briefDraft.title} onChange={(event) => setBriefDraft((current) => ({ ...current, title: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
                   </div>
                   <div>
                     <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Summary</label>
-                    <textarea value={briefDraft.summary} onChange={(event) => setBriefDraft((current) => ({ ...current, summary: event.target.value }))} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    <textarea data-testid="builder-brief-summary" value={briefDraft.summary} onChange={(event) => setBriefDraft((current) => ({ ...current, summary: event.target.value }))} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
                   </div>
                   <div>
                     <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Notes</label>
-                    <textarea value={briefDraft.notes} onChange={(event) => setBriefDraft((current) => ({ ...current, notes: event.target.value }))} rows={3} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    <textarea data-testid="builder-brief-notes" value={briefDraft.notes} onChange={(event) => setBriefDraft((current) => ({ ...current, notes: event.target.value }))} rows={3} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
                   </div>
                 </div>
                 <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
@@ -975,6 +1114,8 @@ export default function BuilderPage() {
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {[
                     { label: "success rate", value: formatPercentage(builderStats?.successRate) },
+                    { label: "verification pass", value: formatPercentage(builderStats?.verificationPassRate) },
+                    { label: "retry rate", value: formatPercentage(builderStats?.retryRate) },
                     { label: "avg iterations / task", value: String(builderStats?.avgIterationsPerTask ?? 0) },
                     { label: "avg iterations / run", value: String(builderStats?.avgIterationsPerRun ?? 0) },
                     { label: "total runs", value: String(builderStats?.totalRuns ?? 0) },
@@ -992,6 +1133,72 @@ export default function BuilderPage() {
                       : "none recorded"}
                   </div>
                 ) : null}
+              </div>
+
+              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder health</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>overview scoped</div>
+                </div>
+                {healthAlerts.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {healthAlerts.map((alert) => (
+                      <div
+                        key={alert.label}
+                        className="border px-2 py-1 text-[11px] uppercase tracking-[0.14em]"
+                        style={{
+                          borderColor: getToneColor(alert.tone),
+                          background: getToneSurface(alert.tone),
+                          color: getToneColor(alert.tone),
+                        }}
+                      >
+                        {alert.label}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    No Builder health thresholds are currently tripped.
+                  </div>
+                )}
+                <div className="grid gap-3 lg:grid-cols-3">
+                  <div className="border p-3 space-y-2" style={{ borderColor: getToneColor(efficiencyTone), background: getToneSurface(efficiencyTone) }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>efficiency</div>
+                      <div className="text-[11px] uppercase tracking-[0.14em]" style={{ color: getToneColor(efficiencyTone) }}>{efficiencyTone}</div>
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Success {formatPercentage(projectDetail?.metrics.efficiency.successRate)}; verification {formatPercentage(projectDetail?.metrics.efficiency.verificationPassRate)}; retry {formatPercentage(projectDetail?.metrics.efficiency.retryRate)}.
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Avg iterations / run {projectDetail?.metrics.efficiency.avgIterationsPerRun ?? 0}; avg iterations / task {projectDetail?.metrics.efficiency.avgIterationsPerTask ?? 0}; tasks in retry {projectDetail?.metrics.efficiency.tasksInRetry ?? 0}.
+                    </div>
+                  </div>
+                  <div className="border p-3 space-y-2" style={{ borderColor: getToneColor(promotionTone), background: getToneSurface(promotionTone) }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>promotion</div>
+                      <div className="text-[11px] uppercase tracking-[0.14em]" style={{ color: getToneColor(promotionTone) }}>{promotionTone}</div>
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Milestones {projectDetail?.metrics.promotion.completedMilestones ?? 0}/{projectDetail?.metrics.promotion.totalMilestones ?? 0} complete ({formatPercentage(projectDetail?.metrics.promotion.milestoneCompletionRate)}).
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Task specs {projectDetail?.metrics.promotion.completedTaskSpecs ?? 0}/{projectDetail?.metrics.promotion.totalTaskSpecs ?? 0} complete ({formatPercentage(projectDetail?.metrics.promotion.taskSpecCompletionRate)}); blocked {projectDetail?.metrics.promotion.blockedTaskSpecs ?? 0}.
+                    </div>
+                  </div>
+                  <div className="border p-3 space-y-2" style={{ borderColor: getToneColor(architectureTone), background: getToneSurface(architectureTone) }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>architecture</div>
+                      <div className="text-[11px] uppercase tracking-[0.14em]" style={{ color: getToneColor(architectureTone) }}>{architectureTone}</div>
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Active ADRs {projectDetail?.metrics.architecture.activeDecisionCount ?? 0}; stale ADRs {projectDetail?.metrics.architecture.staleDecisionCount ?? 0}; current task keys {projectDetail?.metrics.architecture.currentTaskDecisionCount ?? 0}.
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Latest review addressed {projectDetail?.metrics.architecture.latestAddressedStaleCount ?? 0} stale keys, missed {projectDetail?.metrics.architecture.latestMissingStaleCount ?? 0}, added {projectDetail?.metrics.architecture.latestNewDecisionCount ?? 0}, retired {projectDetail?.metrics.architecture.latestRetiredDecisionCount ?? 0}.
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>

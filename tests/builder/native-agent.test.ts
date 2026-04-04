@@ -186,9 +186,49 @@ describe("native builder agent", () => {
     });
 
     expect(result.loop.finalVerdict).toBe("blocked");
-    expect(result.loop.iterations.length).toBeGreaterThanOrEqual(2);
+    expect(result.loop.iterations).toHaveLength(1);
+    expect(result.loop.iterations[0]?.review.verdict).toBe("blocked");
+  });
+
+  it("blocks after repeated low-signal retries do not improve verification", async () => {
+    virtualFiles["projects/demo/package-lock.json"] = "{\n  \"lockfileVersion\": 3\n}\n";
+
+    mocks.executeAgentConversation
+      .mockImplementationOnce(async () => {
+        virtualFiles["projects/demo/package-lock.json"] = "{\n  \"lockfileVersion\": 3,\n  \"attempt\": 1\n}\n";
+        return {
+          reply: "Adjusted package metadata.",
+          runId: "run-1",
+          conversationId: "conv-1",
+          profile: "builder_operator",
+          provider: "google",
+          model: "gemini-3-flash-preview",
+        };
+      })
+      .mockImplementationOnce(async () => {
+        virtualFiles["projects/demo/package-lock.json"] = "{\n  \"lockfileVersion\": 3,\n  \"attempt\": 2\n}\n";
+        return {
+          reply: "Adjusted package metadata again.",
+          runId: "run-2",
+          conversationId: "conv-2",
+          profile: "builder_operator",
+          provider: "google",
+          model: "gemini-3-flash-preview",
+        };
+      });
+
+    mocks.npmRunScript
+      .mockResolvedValueOnce(commandResult({ ok: false, exitCode: 1, stdout: "", stderr: "build failed" }))
+      .mockResolvedValueOnce(commandResult({ ok: false, exitCode: 1, stdout: "", stderr: "build failed" }));
+
+    const result = await executeNativeBuilderTask(project, {
+      prompt: "Fix the build.",
+    });
+
+    expect(result.loop.finalVerdict).toBe("blocked");
+    expect(result.loop.iterations).toHaveLength(2);
     expect(result.loop.iterations[0]?.review.verdict).toBe("retry");
-    expect(result.loop.iterations[result.loop.iterations.length - 1]?.review.verdict).toBe("blocked");
+    expect(result.loop.iterations[1]?.review.reason).toContain("generated or bookkeeping changes");
   });
 
   it("streams preflight executor output through progress events before the builder operator finishes", async () => {
@@ -263,5 +303,30 @@ describe("native builder agent", () => {
         env: expect.objectContaining({ NODE_ENV: "test" }),
       }),
     );
+  });
+
+  it("skips deterministic verification for analysis-only manual-review tasks", async () => {
+    mocks.executeAgentConversation.mockImplementation(async () => ({
+      reply: "Captured the API contract.",
+      runId: "run-1",
+      conversationId: "conv-1",
+      profile: "builder_operator",
+      provider: "google",
+      model: "gemini-3-flash-preview",
+    }));
+
+    const result = await executeNativeBuilderTask(project, {
+      prompt: "Capture runtime and endpoint decisions.",
+    }, {
+      verification: {
+        mode: "analysis_only",
+        validators: ["MANUAL_REVIEW"],
+      },
+    });
+
+    expect(result.loop.finalVerdict).toBe("complete");
+    expect(result.loop.verificationSkipped).toBe(true);
+    expect(result.loop.selectedScripts).toEqual([]);
+    expect(mocks.npmRunScript).not.toHaveBeenCalled();
   });
 });

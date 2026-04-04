@@ -1,0 +1,36 @@
+{
+  "project": {
+    "template": "node-cli",
+    "packageManager": "NPM"
+  },
+  "task": {
+    "title": "Implement health and items endpoints",
+    "validators": ["BUILD", "TYPECHECK"]
+  },
+  "prompt": {
+    "contains": [
+      "Current milestone: Implement endpoint behavior",
+      "Validators: build, typecheck.",
+      "Node CLI template guidance:",
+      "Keep TypeScript builds emitting to dist",
+      "Current user request: Advance the next runnable Builder task for this project and satisfy its implementation requirements while preserving dist-based outputs, the new typecheck script, and cross-platform scripts."
+    ]
+  },
+  "completion": {
+    "status": "SUCCEEDED",
+    "summary": "Builder loop completed after 1 iteration. Verification passed.",
+    "changedFiles": [
+      "projects/node-cli-e2e-20260404-132415/src/index.ts"
+    ],
+    "validation": {
+      "passed": true,
+      "skipped": false,
+      "scripts": ["typecheck", "build"]
+    },
+    "sourceMarkers": [
+      "app.use(express.json());",
+      "app.get('/items', (req, res) => {",
+      "app.post('/items', (req, res) => {"
+    ]
+  }
+}

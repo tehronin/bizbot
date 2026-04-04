@@ -27,10 +27,24 @@ export interface BuilderArchitectureContextState {
 export interface BuilderArchitectureReconciliationState {
   activeKeys: string[];
   staleKeys: string[];
+  reconfirmedStaleKeys: string[];
   addressedStaleKeys: string[];
   missingStaleKeys: string[];
+  unreferencedActiveKeys: string[];
+  conflictingDecisionKeys: string[];
   newDecisionKeys: string[];
   retiredDecisionKeys: string[];
+}
+
+export interface BuilderPlanAdherenceState {
+  allowsExecution: boolean;
+  mode: "analysis_only" | "scaffold" | "implementation" | "verification";
+  summary: string;
+  blockingIssues: string[];
+  requiredDecisionKeys: string[];
+  staleDecisionKeys: string[];
+  reconfirmedStaleKeys: string[];
+  directives: string[];
 }
 
 export interface BuilderPlannerCritiqueIssue {

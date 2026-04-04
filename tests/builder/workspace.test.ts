@@ -33,6 +33,22 @@ describe("builder workspace scaffold guards", () => {
       "projects/demo/package.json",
       "projects/demo/src/index.ts",
     ]));
+
+    const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf-8")) as {
+      scripts: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    const tsconfig = JSON.parse(fs.readFileSync(path.join(projectRoot, "tsconfig.json"), "utf-8")) as {
+      compilerOptions: { rootDir: string };
+      include: string[];
+    };
+
+    expect(packageJson.scripts.build).toBe("tsc -p tsconfig.json");
+    expect(packageJson.scripts.typecheck).toBe("tsc --noEmit -p tsconfig.json");
+    expect(packageJson.scripts.start).toBe("node dist/index.js");
+    expect(packageJson.devDependencies["@types/node"]).toBe("^24.0.0");
+    expect(tsconfig.compilerOptions.rootDir).toBe("src");
+    expect(tsconfig.include).toEqual(["src/**/*"]);
   });
 
   it("still blocks scaffolding when real project files already exist", () => {
@@ -49,5 +65,27 @@ describe("builder workspace scaffold guards", () => {
       packageName: "demo",
       description: "Demo package",
     })).toThrow("Builder scaffold target is not empty");
+  });
+
+  it("emits dist-based start scripts for custom src entrypoints", () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const scaffold = scaffoldBuilderNodePackage({
+      projectDir: "projects/plugin-demo",
+      packageName: "plugin-demo",
+      description: "Plugin demo package",
+      entrypoint: "src/plugin.ts",
+    });
+
+    const projectRoot = path.join(workspaceRoot, "projects", "plugin-demo");
+    const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf-8")) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(scaffold.files).toEqual(expect.arrayContaining([
+      "projects/plugin-demo/src/plugin.ts",
+    ]));
+    expect(packageJson.scripts.start).toBe("node dist/plugin.js");
   });
 });

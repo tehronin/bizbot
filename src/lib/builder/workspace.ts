@@ -338,7 +338,9 @@ export function scaffoldBuilderNodePackage(args: {
   entrypoint?: string;
 }): { root: string; files: string[] } {
   const projectRoot = safeBuilderPath(args.projectDir);
-  const entrypoint = args.entrypoint ?? "src/index.ts";
+  const entrypoint = (args.entrypoint ?? "src/index.ts").replace(/\\/g, "/");
+  const usesSrcRoot = entrypoint.startsWith("src/");
+  const emittedEntrypoint = (usesSrcRoot ? entrypoint.slice(4) : entrypoint).replace(/\.ts$/, ".js");
   const blockingEntries = listBuilderScaffoldBlockingEntries(args.projectDir);
 
   if (blockingEntries.length > 0) {
@@ -357,10 +359,12 @@ export function scaffoldBuilderNodePackage(args: {
         type: "module",
         scripts: {
           build: "tsc -p tsconfig.json",
+          typecheck: "tsc --noEmit -p tsconfig.json",
           dev: `tsx ${entrypoint}`,
-          start: `node ${entrypoint.replace(/\.ts$/, ".js")}`,
+          start: `node dist/${emittedEntrypoint}`,
         },
         devDependencies: {
+          "@types/node": "^24.0.0",
           tsx: "^4.21.0",
           typescript: "^5.9.0",
         },
@@ -374,17 +378,17 @@ export function scaffoldBuilderNodePackage(args: {
           module: "NodeNext",
           moduleResolution: "NodeNext",
           outDir: "dist",
-          rootDir: ".",
+          rootDir: usesSrcRoot ? "src" : ".",
           strict: true,
           esModuleInterop: true,
           skipLibCheck: true,
         },
-        include: [entrypoint],
+        include: usesSrcRoot ? ["src/**/*"] : [entrypoint],
       }, null, 2)}\n`,
     },
     {
       path: ".gitignore",
-      content: "node_modules\ndist\n",
+      content: "node_modules\ndist\n.env\n",
     },
     {
       path: "README.md",

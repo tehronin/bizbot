@@ -1,5 +1,5 @@
 import type { BuilderProject, BuilderProjectBrief, BuilderProjectLifecycle } from "@prisma/client";
-import type { BuilderArchitectureDecisionState, BuilderMilestoneState, BuilderTaskSpecState } from "@/lib/builder/types";
+import type { BuilderArchitectureDecisionState, BuilderMilestoneState, BuilderPlanAdherenceState, BuilderTaskSpecState } from "@/lib/builder/types";
 import { normalizeBuilderTaskMetadata, type BuilderInstructionFragment, type BuilderProjectContextState } from "@/lib/builder/types";
 
 function joinList(title: string, values: string[], empty = "none"): string {
@@ -15,6 +15,142 @@ function renderArchitectureSection(title: string, decisions: BuilderArchitecture
   ].join("\n");
 }
 
+function renderTemplateExecutionGuidance(project: Pick<BuilderProject, "template" | "packageManager">): string | null {
+  if (project.template !== "node-cli") {
+    return null;
+  }
+
+  return [
+    "Node CLI template guidance:",
+    "- Keep TypeScript builds emitting to dist and keep start scripts pointing at built files under dist.",
+    `- Keep package manager assumptions aligned to ${project.packageManager} and use cross-platform package scripts; avoid shell-specific env assignment such as NAME=value command.`,
+    "- If the task adds Prisma with a direct PrismaClient, prefer the stable direct-client setup and keep runtime SQLite paths aligned with Prisma migration paths.",
+  ].join("\n");
+}
+
+function inferBuilderTaskExecutionMode(args: {
+  taskTitle: string;
+  taskSummary: string;
+  completionCriteria: string[];
+  validators: string[];
+}): BuilderPlanAdherenceState["mode"] {
+  const source = [args.taskTitle, args.taskSummary, ...args.completionCriteria, ...args.validators].join(" ").toLowerCase();
+
+  if ((/capture|confirm|decisions?|scope|authority|contract|brief/.test(source)) && args.validators.every((validator) => validator === "MANUAL_REVIEW")) {
+    return "analysis_only";
+  }
+  if (/scaffold|setup|set up|shell|bootstrap|initialize|init|wire/.test(source)) {
+    return "scaffold";
+  }
+  if (/verify|verification|review|test|validation/.test(source)) {
+    return "verification";
+  }
+  return "implementation";
+}
+
+export function buildBuilderPlanAdherence(args: {
+  task: { title: string; acceptanceCriteria: unknown; metadata: unknown };
+  context: BuilderProjectContextState;
+  currentMilestone: BuilderMilestoneState | null;
+  currentTaskSpec: BuilderTaskSpecState | null;
+}): BuilderPlanAdherenceState {
+  const metadata = normalizeBuilderTaskMetadata(args.task.metadata);
+  const planSteps = metadata.planSteps.length > 0 ? metadata.planSteps : args.context.currentPlan;
+  const acceptanceCriteria = Array.isArray(args.task.acceptanceCriteria)
+    ? args.task.acceptanceCriteria.filter((item): item is string => typeof item === "string")
+    : [];
+  const completionCriteria = args.currentTaskSpec?.completionCriteria ?? acceptanceCriteria;
+  const validators = args.currentTaskSpec?.validators ?? [];
+  const mode = inferBuilderTaskExecutionMode({
+    taskTitle: args.currentTaskSpec?.title ?? args.task.title,
+    taskSummary: args.currentTaskSpec?.summary ?? "",
+    completionCriteria,
+    validators: validators.map((validator) => String(validator)),
+  });
+  const blockingIssues: string[] = [];
+
+  if (!args.currentMilestone) {
+    blockingIssues.push("No active milestone is selected for execution.");
+  }
+  if (!args.currentTaskSpec) {
+    blockingIssues.push("No active task spec is selected for execution.");
+  }
+  if (args.currentTaskSpec && args.task.title.trim() !== args.currentTaskSpec.title.trim()) {
+    blockingIssues.push(`Execution task title \"${args.task.title.trim()}\" does not match current task spec \"${args.currentTaskSpec.title.trim()}\".`);
+  }
+  if (args.currentTaskSpec && planSteps.length > 0) {
+    const activeStep = planSteps.find((step) => step.status === "in_progress");
+    if (activeStep && !activeStep.label.toLowerCase().includes(args.currentTaskSpec.title.toLowerCase())) {
+      blockingIssues.push(`Active plan step \"${activeStep.label}\" is not aligned with the current task spec \"${args.currentTaskSpec.title}\".`);
+    }
+  }
+
+  const staleDecisionKeys = args.context.architecture?.stale.map((decision) => decision.key) ?? [];
+  const requiredDecisionKeys = args.currentTaskSpec?.architecturalDecisionKeys ?? [];
+  const reconfirmedStaleKeys = staleDecisionKeys.filter((key) => requiredDecisionKeys.includes(key));
+  const directives = [
+    "Implement only the current task spec and stop once its completion criteria are satisfied.",
+    args.currentMilestone
+      ? `Do not start work from later milestones than \"${args.currentMilestone.title}\".`
+      : "Do not start work from later milestones.",
+    validators.length > 0
+      ? `Leave ${validators.map((validator) => String(validator).toLowerCase()).join(", ")} to the outer deterministic verifier unless the task explicitly asks you to edit validation artifacts.`
+      : "Leave build/test/lint execution to the outer deterministic verifier unless the task explicitly asks you to edit validation artifacts.",
+  ];
+
+  if (mode === "analysis_only") {
+    directives.push("Stay in inspection and project-context updates only.");
+    directives.push("Do not bootstrap the runtime, add dependencies, run generators, or implement application files in this task.");
+  } else if (mode === "scaffold") {
+    directives.push("Limit changes to runtime shell, package wiring, and scaffolding required by this task.");
+    directives.push("Do not implement downstream feature behavior or full verification suites in this task.");
+  } else if (mode === "verification") {
+    directives.push("Prefer targeted test and verification artifacts over broad runtime rewrites.");
+    directives.push("Only make implementation changes that are necessary to satisfy the declared verification gap.");
+  } else {
+    directives.push("Prefer direct edits to the files implied by the current task spec before exploring unrelated workspace areas.");
+  }
+
+  if (requiredDecisionKeys.length > 0) {
+    directives.push(`Only introduce or revise architecture needed for: ${requiredDecisionKeys.join(", ")}.`);
+  }
+  if (reconfirmedStaleKeys.length > 0) {
+    directives.push(`This task is responsible for reconfirming stale decisions: ${reconfirmedStaleKeys.join(", ")}.`);
+  }
+
+  return {
+    allowsExecution: blockingIssues.length === 0,
+    mode,
+    summary: blockingIssues.length === 0
+      ? `Plan adherence aligned for ${args.currentTaskSpec?.title ?? args.task.title}.`
+      : `Plan adherence check failed: ${blockingIssues.join(" ")}`,
+    blockingIssues,
+    requiredDecisionKeys,
+    staleDecisionKeys,
+    reconfirmedStaleKeys,
+    directives,
+  };
+}
+
+function renderPlanAdherenceSection(adherence: BuilderPlanAdherenceState | null | undefined): string {
+  if (!adherence) {
+    return "Plan adherence: no preflight adherence state was provided.";
+  }
+
+  return [
+    "[Plan Adherence]",
+    `Status: ${adherence.allowsExecution ? "aligned" : "blocked"}`,
+    `Mode: ${adherence.mode}`,
+    `Summary: ${adherence.summary}`,
+    `Required decision keys: ${adherence.requiredDecisionKeys.length > 0 ? adherence.requiredDecisionKeys.join(", ") : "none"}`,
+    `Project stale decision keys: ${adherence.staleDecisionKeys.length > 0 ? adherence.staleDecisionKeys.join(", ") : "none"}`,
+    `Reconfirmed stale keys for this task: ${adherence.reconfirmedStaleKeys.length > 0 ? adherence.reconfirmedStaleKeys.join(", ") : "none"}`,
+    adherence.blockingIssues.length > 0 ? `Blocking issues: ${adherence.blockingIssues.join("; ")}` : "Blocking issues: none",
+    ...adherence.directives.map((directive) => `- ${directive}`),
+    "[/Plan Adherence]",
+  ].join("\n");
+}
+
 export function composeBuilderTaskPrompt(args: {
   project: BuilderProject;
   task: { title: string; acceptanceCriteria: unknown; metadata: unknown };
@@ -26,6 +162,7 @@ export function composeBuilderTaskPrompt(args: {
   request: string;
   stage: string;
   fragments: BuilderInstructionFragment[];
+  adherence?: BuilderPlanAdherenceState | null;
 }): string {
   const metadata = normalizeBuilderTaskMetadata(args.task.metadata);
   const acceptanceCriteria = Array.isArray(args.task.acceptanceCriteria)
@@ -58,6 +195,7 @@ export function composeBuilderTaskPrompt(args: {
     joinList("Known failures", args.context.knownFailures),
     joinList("Next steps", args.context.nextSteps),
     args.context.objective ? `Project objective: ${args.context.objective}` : "Project objective: not yet recorded.",
+    renderPlanAdherenceSection(args.adherence),
     planSteps.length > 0
       ? `Active plan: ${planSteps.map((step) => `[${step.status}] ${step.label}`).join("; ")}`
       : "Active plan: inspect the workspace, implement the request, validate the result, and summarize what changed.",
@@ -68,9 +206,10 @@ export function composeBuilderTaskPrompt(args: {
           ...args.fragments.map((fragment) => `From ${fragment.source} / ${fragment.heading}: ${fragment.content}`),
         ].join("\n")
       : "Relevant instruction fragments: none selected.",
+    renderTemplateExecutionGuidance(args.project),
     `Current user request: ${args.request.trim()}`,
     "Do not restate the whole project history. Make the smallest safe set of changes needed for the current task, validate when possible, and leave the workspace in a reviewable state.",
-  ].join("\n\n");
+  ].filter((section): section is string => Boolean(section)).join("\n\n");
 }
 
 export function composeBuilderPlannerPrompt(args: {
@@ -94,6 +233,6 @@ export function composeBuilderPlannerPrompt(args: {
     `[Active Architecture]\n${renderArchitectureSection("", args.activeArchitecture, "No active architecture decisions recorded.").replace(/^\n/, "")}\n[/Active Architecture]`,
     `[Stale Architecture - Needs Reconfirmation]\n${renderArchitectureSection("", args.staleArchitecture, "No stale architecture decisions require reconciliation.").replace(/^\n/, "")}\n[/Stale Architecture - Needs Reconfirmation]`,
     `[Context Notes]\n${args.context.objective ? `Objective: ${args.context.objective}` : "Objective: none recorded"}\n${args.context.instructionNotes ? `Instruction notes: ${args.context.instructionNotes}` : "Instruction notes: none recorded"}\n[/Context Notes]`,
-    `[Planner Output Contract]\nReturn structured planner output that can be normalized into milestones and tasks.\nEach task must include: key, title, summary, completionCriteria, validators, dependencyKeys, architectural_new_decisions, architectural_stale_keys.\nEvery stale architecture key must be explicitly addressed either by reconfirming it as a new decision or listing it under architectural_stale_keys.\nKeep milestones brief, keep dependencies acyclic, and make template-aware choices.\n[/Planner Output Contract]`,
+    `[Planner Output Contract]\nReturn structured planner output that can be normalized into milestones and tasks.\nEach task must include: key, title, summary, completionCriteria, validators, dependencyKeys, architectural_new_decisions, architectural_stale_keys.\nEvery stale architecture key must be explicitly addressed either by reconfirming it as a new decision or listing it under architectural_stale_keys.\nActive architecture should be carried forward when it still governs the plan, and only retired through architectural_stale_keys when the plan is explicitly superseding it.\nKeep milestones brief, keep dependencies acyclic, and make template-aware choices.\n[/Planner Output Contract]`,
   ].join("\n\n");
 }

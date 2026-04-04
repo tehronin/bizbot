@@ -147,27 +147,29 @@ export function normalizePlannerOutput(milestones: BuilderPlannerMilestoneDraft[
 }
 
 function buildCategoryFlags(brief: BuilderProjectBrief) {
-  const source = [
+  const implementationSource = [
     brief.title,
     brief.summary,
     ...brief.goals,
     ...brief.constraints,
     ...brief.deliverables,
-    brief.notes ?? "",
   ].join(" ").toLowerCase();
+  const noteSource = (brief.notes ?? "").toLowerCase();
 
   return {
-    isBuilderMeta: /\bbuilder\b|\bplanner\b|\bplanning\b|\badr\b|\bprojection\b|\bmilestone\b|\btask spec\b|\bexecution loop\b/.test(source),
-    hasData: /schema|prisma|database|migration|model|table/.test(source),
-    hasServices: /service|api|route|orchestrator|scheduler|backend|plugin/.test(source),
-    hasUi: /dashboard|page|ui|frontend|react|view/.test(source),
-    hasTests: /test|docs|documentation|verify|verification|typecheck|lint/.test(source),
-    isApi: /\brest\b|\bapi\b|\bendpoint\b|\bjson\b|\bexpress\b/.test(source),
-    usesNode: /\bnode(?:\.js)?\b|\bexpress\b/.test(source),
-    usesExpress: /\bexpress\b/.test(source),
-    usesInMemoryStorage: /in[- ]memory|memory storage/.test(source),
-    forbidsDatabase: /no database|without database|avoid database|in-memory storage/.test(source),
-    returnsJson: /returns? json|json response|json api/.test(source),
+    isBuilderMeta: /\bbuilder\b|\bplanner\b|\bplanning\b|\badr\b|\bprojection\b|\bmilestone\b|\btask spec\b|\bexecution loop\b/.test(implementationSource),
+    hasData: /schema|prisma|database|migration|model|table/.test(implementationSource),
+    hasServices: /service|api|route|orchestrator|scheduler|backend|plugin/.test(implementationSource),
+    hasUi: /dashboard|page|ui|frontend|react|view/.test(implementationSource),
+    hasTests: /test|docs|documentation|verify|verification|typecheck|lint/.test(`${implementationSource} ${noteSource}`),
+    isApi: /\brest\b|\bapi\b|\bendpoint\b|\bjson\b|\bexpress\b/.test(implementationSource),
+    usesNode: /\bnode(?:\.js)?\b|\bexpress\b/.test(implementationSource),
+    usesExpress: /\bexpress\b/.test(implementationSource),
+    usesPrisma: /\bprisma\b/.test(implementationSource),
+    usesSqlite: /\bsqlite\b/.test(implementationSource),
+    usesInMemoryStorage: /in[- ]memory|memory storage/.test(implementationSource),
+    forbidsDatabase: /no database|without database|avoid database|in-memory storage/.test(implementationSource),
+    returnsJson: /returns? json|json response|json api/.test(implementationSource),
   };
 }
 
@@ -355,6 +357,9 @@ function buildGenericPlannerDraft(
     ...(flags.usesExpress ? ["tech_stack_framework"] : []),
     ...(flags.isApi ? ["service_surface_rest_api"] : []),
     ...(flags.returnsJson ? ["response_format_json"] : []),
+    ...(flags.usesPrisma ? ["orm_prisma"] : []),
+    ...(flags.usesSqlite ? ["database_strategy_sqlite"] : []),
+    ...(flags.hasData && !flags.usesInMemoryStorage && !flags.forbidsDatabase ? ["persistence_relational"] : []),
     ...(flags.usesInMemoryStorage || flags.forbidsDatabase ? ["persistence_in_memory", "database_strategy_none"] : []),
   ]);
 
@@ -370,6 +375,7 @@ function buildGenericPlannerDraft(
       summary: brief.summary,
       completionCriteria: unique([
         ...(flags.isApi ? ["Identify the required endpoints, payloads, and JSON response contract."] : ["Identify the requested deliverables and runtime boundary."]),
+        ...(flags.hasData && !flags.usesInMemoryStorage && !flags.forbidsDatabase ? ["Record the database, schema, and migration boundary needed for persistence."] : []),
         ...(flags.usesInMemoryStorage || flags.forbidsDatabase ? ["Record that persistence stays in memory without a database dependency."] : []),
         ...(brief.deliverables.length > 0 ? [brief.deliverables[0] ?? ""] : []),
       ].filter(Boolean)),
@@ -393,12 +399,15 @@ function buildGenericPlannerDraft(
       completionCriteria: unique([
         "Package scripts support deterministic verification.",
         ...(flags.usesExpress ? ["The runtime boots an Express app that can serve HTTP requests."] : ["The runtime boots cleanly for the requested project type."]),
+        ...(flags.hasData && !flags.usesInMemoryStorage && !flags.forbidsDatabase ? ["Database client and schema tooling are wired for local development."] : []),
       ]),
       validators: ["build", "typecheck"],
       dependencyKeys: ["capture_requirements"],
       architectural_new_decisions: unique([
         ...(flags.usesNode ? ["tech_stack_runtime"] : []),
         ...(flags.usesExpress ? ["tech_stack_framework", "transport_http"] : []),
+        ...(flags.usesPrisma ? ["orm_prisma"] : []),
+        ...(flags.usesSqlite ? ["database_strategy_sqlite"] : []),
       ]),
     }],
   });
@@ -407,24 +416,26 @@ function buildGenericPlannerDraft(
     key: "feature_implementation",
     title: flags.isApi ? "Implement endpoint behavior" : "Implement requested behavior",
     summary: flags.isApi
-      ? "Build the requested routes, in-memory state, and response handling."
+      ? "Build the requested routes, persistence layer, and response handling."
       : "Build the requested core behavior and supporting state handling.",
     tasks: [{
       key: "implement_core_behavior",
       title: flags.isApi ? "Implement health and items endpoints" : "Implement the primary feature set",
       summary: flags.isApi
-        ? "Add GET /health, GET /items, and POST /items with in-memory storage and JSON responses."
+        ? `Add GET /health, GET /items, and POST /items with ${flags.hasData && !flags.usesInMemoryStorage && !flags.forbidsDatabase ? "database-backed persistence" : "in-memory storage"} and JSON responses.`
         : "Implement the primary feature set described in the brief.",
       completionCriteria: unique([
         ...(flags.isApi ? [
           "GET /health returns a 200 JSON response.",
-          "GET /items returns the current in-memory collection as JSON.",
-          "POST /items validates input and stores a new in-memory item.",
+          `GET /items returns the current ${flags.hasData && !flags.usesInMemoryStorage && !flags.forbidsDatabase ? "persisted" : "in-memory"} collection as JSON.`,
+          `POST /items validates input and stores a new ${flags.hasData && !flags.usesInMemoryStorage && !flags.forbidsDatabase ? "persisted" : "in-memory"} item.`,
         ] : ["The requested feature set is implemented and usable."]),
       ]),
       validators: ["build", "typecheck"],
       dependencyKeys: ["scaffold_runtime"],
       architectural_new_decisions: unique([
+        ...(flags.hasData && !flags.usesInMemoryStorage && !flags.forbidsDatabase ? ["persistence_relational"] : []),
+        ...(flags.usesSqlite ? ["database_strategy_sqlite"] : []),
         ...(flags.usesInMemoryStorage || flags.forbidsDatabase ? ["persistence_in_memory", "database_strategy_none"] : []),
         ...(flags.returnsJson || flags.isApi ? ["response_format_json"] : []),
       ]),
@@ -591,6 +602,25 @@ function buildPlannerCritiqueIssues(args: {
 
   const architecturalUsage = collectArchitecturalKeyUsage(args.milestones);
   const staleKeys = args.staleArchitecture.map((decision) => decision.key);
+  const activeKeys = args.activeArchitecture.map((decision) => decision.key);
+  const conflictingDecisionKeys = architecturalUsage.newDecisionKeys.filter((key) => architecturalUsage.staleDecisionKeys.includes(key));
+  if (conflictingDecisionKeys.length > 0) {
+    issues.push({
+      severity: "error",
+      code: "conflicting_architecture_reconciliation",
+      message: `Planner output marked architecture keys as both new and stale: ${conflictingDecisionKeys.join(", ")}.`,
+    });
+  }
+
+  const unknownStaleKeys = architecturalUsage.staleDecisionKeys.filter((key) => !staleKeys.includes(key));
+  if (unknownStaleKeys.length > 0) {
+    issues.push({
+      severity: "error",
+      code: "unknown_stale_architecture_key",
+      message: `Planner output attempted to retire non-stale architecture keys: ${unknownStaleKeys.join(", ")}.`,
+    });
+  }
+
   const missingStaleKeys = staleKeys.filter((key) => !architecturalUsage.newDecisionKeys.includes(key) && !architecturalUsage.staleDecisionKeys.includes(key));
   if (missingStaleKeys.length > 0) {
     issues.push({
@@ -600,13 +630,21 @@ function buildPlannerCritiqueIssues(args: {
     });
   }
 
-  const activeKeys = args.activeArchitecture.map((decision) => decision.key);
   if (activeKeys.length > 0 && architecturalUsage.newDecisionKeys.length === 0) {
     issues.push({
       severity: "warning",
       code: "active_architecture_unreferenced",
       message: "Planner output introduced no architectural decisions while active Builder architecture exists.",
     });
+  } else {
+    const unreferencedActiveKeys = activeKeys.filter((key) => !architecturalUsage.newDecisionKeys.includes(key) && !architecturalUsage.staleDecisionKeys.includes(key));
+    if (unreferencedActiveKeys.length > 0) {
+      issues.push({
+        severity: "warning",
+        code: "active_architecture_not_reconciled",
+        message: `Planner output left active architecture keys implicit instead of reconciling them explicitly: ${unreferencedActiveKeys.join(", ")}.`,
+      });
+    }
   }
 
   return issues;
@@ -625,21 +663,28 @@ export function critiqueBuilderPlanCandidate(args: {
     staleArchitecture,
   });
   const { newDecisionKeys, staleDecisionKeys } = collectArchitecturalKeyUsage(args.milestones);
+  const activeKeys = activeArchitecture.map((decision) => decision.key);
   const staleKeys = staleArchitecture.map((decision) => decision.key);
+  const reconfirmedStaleKeys = staleKeys.filter((key) => newDecisionKeys.includes(key));
   const addressedStaleKeys = staleKeys.filter((key) => newDecisionKeys.includes(key) || staleDecisionKeys.includes(key));
   const missingStaleKeys = staleKeys.filter((key) => !addressedStaleKeys.includes(key));
+  const unreferencedActiveKeys = activeKeys.filter((key) => !newDecisionKeys.includes(key) && !staleDecisionKeys.includes(key));
+  const conflictingDecisionKeys = newDecisionKeys.filter((key) => staleDecisionKeys.includes(key));
 
   return {
     valid: issues.every((issue) => issue.severity !== "error"),
     issues,
     normalizedMilestones: args.milestones,
     reconciliation: {
-      activeKeys: activeArchitecture.map((decision) => decision.key),
+      activeKeys,
       staleKeys,
+      reconfirmedStaleKeys,
       addressedStaleKeys,
       missingStaleKeys,
+      unreferencedActiveKeys,
+      conflictingDecisionKeys,
       newDecisionKeys,
-      retiredDecisionKeys: staleDecisionKeys,
+      retiredDecisionKeys: staleDecisionKeys.filter((key) => staleKeys.includes(key)),
     },
   };
 }
