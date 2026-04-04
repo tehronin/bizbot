@@ -271,6 +271,30 @@ describe("agent executor explicit memory", () => {
     infoSpy.mockRestore();
   });
 
+  it("emits preflight status checkpoints before model execution starts", async () => {
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+
+    await executeAgentConversation({
+      message: "Draft a reply",
+      forcedProfile: "content_operator",
+      onEvent: async (event) => {
+        events.push(event as { type: string; [key: string]: unknown });
+      },
+    });
+
+    const statusMessages = events
+      .filter((event) => event.type === "status")
+      .map((event) => String(event.message));
+
+    expect(statusMessages).toContain("Preparing agent conversation state.");
+    expect(statusMessages).toContain("Initializing MCP clients.");
+    expect(statusMessages).toContain("Loading explicit memory facts.");
+    expect(statusMessages).toContain("Building prompt context.");
+    expect(statusMessages).toContain("Loading ontology context.");
+    expect(statusMessages).toContain("Creating agent run journal with 0 available tools.");
+    expect(statusMessages).toContain("Agent run run-1 created.");
+  });
+
   it("records token usage for each model round when usage metadata is available", async () => {
     kernelMocks.chatComplete.mockResolvedValue({
       content: "reply",

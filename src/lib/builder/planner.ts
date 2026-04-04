@@ -157,10 +157,17 @@ function buildCategoryFlags(brief: BuilderProjectBrief) {
   ].join(" ").toLowerCase();
 
   return {
+    isBuilderMeta: /\bbuilder\b|\bplanner\b|\bplanning\b|\badr\b|\bprojection\b|\bmilestone\b|\btask spec\b|\bexecution loop\b/.test(source),
     hasData: /schema|prisma|database|migration|model|table/.test(source),
     hasServices: /service|api|route|orchestrator|scheduler|backend|plugin/.test(source),
     hasUi: /dashboard|page|ui|frontend|react|view/.test(source),
-    hasTests: /test|docs|documentation|verify|verification|typecheck|lint|build/.test(source),
+    hasTests: /test|docs|documentation|verify|verification|typecheck|lint/.test(source),
+    isApi: /\brest\b|\bapi\b|\bendpoint\b|\bjson\b|\bexpress\b/.test(source),
+    usesNode: /\bnode(?:\.js)?\b|\bexpress\b/.test(source),
+    usesExpress: /\bexpress\b/.test(source),
+    usesInMemoryStorage: /in[- ]memory|memory storage/.test(source),
+    forbidsDatabase: /no database|without database|avoid database|in-memory storage/.test(source),
+    returnsJson: /returns? json|json response|json api/.test(source),
   };
 }
 
@@ -208,7 +215,7 @@ function withStaleArchitectureTasks(
   }, ...restMilestones];
 }
 
-function buildDeterministicPlannerDraft(
+function buildBuilderMetaPlannerDraft(
   brief: BuilderProjectBrief,
   architecture: BuilderArchitectureContextState = defaultBuilderArchitectureContext(),
 ): BuilderPlannerMilestoneDraft[] {
@@ -336,6 +343,138 @@ function buildDeterministicPlannerDraft(
   });
 
   return withStaleArchitectureTasks(rawMilestones.slice(0, 7), architecture.stale.map((decision) => decision.key));
+}
+
+function buildGenericPlannerDraft(
+  brief: BuilderProjectBrief,
+  architecture: BuilderArchitectureContextState = defaultBuilderArchitectureContext(),
+): BuilderPlannerMilestoneDraft[] {
+  const flags = buildCategoryFlags(brief);
+  const runtimeDecisionKeys = unique([
+    ...(flags.usesNode ? ["tech_stack_runtime"] : []),
+    ...(flags.usesExpress ? ["tech_stack_framework"] : []),
+    ...(flags.isApi ? ["service_surface_rest_api"] : []),
+    ...(flags.returnsJson ? ["response_format_json"] : []),
+    ...(flags.usesInMemoryStorage || flags.forbidsDatabase ? ["persistence_in_memory", "database_strategy_none"] : []),
+  ]);
+
+  const rawMilestones: BuilderPlannerMilestoneDraft[] = [{
+    key: "requirements_alignment",
+    title: flags.isApi ? "Confirm API contract" : "Confirm implementation contract",
+    summary: flags.isApi
+      ? "Translate the brief into concrete runtime, endpoint, storage, and validation requirements."
+      : "Translate the brief into concrete runtime, scope, and validation requirements.",
+    tasks: [{
+      key: "capture_requirements",
+      title: flags.isApi ? "Capture runtime and endpoint decisions" : "Capture runtime and scope decisions",
+      summary: brief.summary,
+      completionCriteria: unique([
+        ...(flags.isApi ? ["Identify the required endpoints, payloads, and JSON response contract."] : ["Identify the requested deliverables and runtime boundary."]),
+        ...(flags.usesInMemoryStorage || flags.forbidsDatabase ? ["Record that persistence stays in memory without a database dependency."] : []),
+        ...(brief.deliverables.length > 0 ? [brief.deliverables[0] ?? ""] : []),
+      ].filter(Boolean)),
+      validators: ["manual_review"],
+      architectural_new_decisions: runtimeDecisionKeys,
+    }],
+  }];
+
+  rawMilestones.push({
+    key: "project_scaffold",
+    title: flags.isApi ? "Scaffold the service runtime" : "Scaffold the project runtime",
+    summary: flags.isApi
+      ? "Create the minimal package structure, scripts, and entrypoint needed for the requested service."
+      : "Create the minimal package structure, scripts, and entrypoint needed for the requested project.",
+    tasks: [{
+      key: "scaffold_runtime",
+      title: flags.usesExpress ? "Set up the Express server shell" : "Set up the runtime shell",
+      summary: flags.usesExpress
+        ? "Add the server entrypoint, dependency wiring, and package scripts for an Express-based API."
+        : "Add the project entrypoint, dependency wiring, and package scripts needed by the brief.",
+      completionCriteria: unique([
+        "Package scripts support deterministic verification.",
+        ...(flags.usesExpress ? ["The runtime boots an Express app that can serve HTTP requests."] : ["The runtime boots cleanly for the requested project type."]),
+      ]),
+      validators: ["build", "typecheck"],
+      dependencyKeys: ["capture_requirements"],
+      architectural_new_decisions: unique([
+        ...(flags.usesNode ? ["tech_stack_runtime"] : []),
+        ...(flags.usesExpress ? ["tech_stack_framework", "transport_http"] : []),
+      ]),
+    }],
+  });
+
+  rawMilestones.push({
+    key: "feature_implementation",
+    title: flags.isApi ? "Implement endpoint behavior" : "Implement requested behavior",
+    summary: flags.isApi
+      ? "Build the requested routes, in-memory state, and response handling."
+      : "Build the requested core behavior and supporting state handling.",
+    tasks: [{
+      key: "implement_core_behavior",
+      title: flags.isApi ? "Implement health and items endpoints" : "Implement the primary feature set",
+      summary: flags.isApi
+        ? "Add GET /health, GET /items, and POST /items with in-memory storage and JSON responses."
+        : "Implement the primary feature set described in the brief.",
+      completionCriteria: unique([
+        ...(flags.isApi ? [
+          "GET /health returns a 200 JSON response.",
+          "GET /items returns the current in-memory collection as JSON.",
+          "POST /items validates input and stores a new in-memory item.",
+        ] : ["The requested feature set is implemented and usable."]),
+      ]),
+      validators: ["build", "typecheck"],
+      dependencyKeys: ["scaffold_runtime"],
+      architectural_new_decisions: unique([
+        ...(flags.usesInMemoryStorage || flags.forbidsDatabase ? ["persistence_in_memory", "database_strategy_none"] : []),
+        ...(flags.returnsJson || flags.isApi ? ["response_format_json"] : []),
+      ]),
+    }, {
+      key: "add_input_validation",
+      title: flags.isApi ? "Add request validation and JSON error handling" : "Add validation and error handling",
+      summary: flags.isApi
+        ? "Validate POST payloads and return bounded JSON errors for invalid requests."
+        : "Add validation and bounded error handling for the implemented feature set.",
+      completionCriteria: unique([
+        ...(flags.isApi ? ["Invalid POST /items requests return structured JSON errors."] : ["Invalid inputs are rejected with clear, bounded errors."]),
+        "Validation rules are explicit in the implementation.",
+      ]),
+      validators: ["test", "typecheck"],
+      dependencyKeys: ["implement_core_behavior"],
+      architectural_new_decisions: flags.isApi ? ["input_validation_boundary"] : [],
+    }],
+  });
+
+  rawMilestones.push({
+    key: "verification_and_review",
+    title: "Verify and review the deliverable",
+    summary: "Add focused verification, run the relevant scripts, and leave the project in a reviewable state.",
+    tasks: [{
+      key: "verify_behavior",
+      title: flags.isApi ? "Add endpoint tests and verification scripts" : "Add focused verification coverage",
+      summary: flags.isApi
+        ? "Add tests for the health and items endpoints and ensure verification scripts exercise the API behavior."
+        : "Add the smallest useful verification coverage and scripts for the implemented behavior.",
+      completionCriteria: unique([
+        ...(flags.isApi ? ["The verification suite checks the health endpoint and item lifecycle behavior."] : ["The verification suite checks the implemented behavior."]),
+        "The project finishes in a reviewable state with passing validation.",
+      ]),
+      validators: flags.hasTests || flags.isApi ? ["test", "build", "typecheck"] : ["build", "typecheck"],
+      dependencyKeys: ["add_input_validation"],
+      architectural_new_decisions: flags.isApi ? ["verification_http_contract"] : ["verification_strategy_local"],
+    }],
+  });
+
+  return withStaleArchitectureTasks(rawMilestones.slice(0, 7), architecture.stale.map((decision) => decision.key));
+}
+
+function buildDeterministicPlannerDraft(
+  brief: BuilderProjectBrief,
+  architecture: BuilderArchitectureContextState = defaultBuilderArchitectureContext(),
+): BuilderPlannerMilestoneDraft[] {
+  const flags = buildCategoryFlags(brief);
+  return flags.isBuilderMeta
+    ? buildBuilderMetaPlannerDraft(brief, architecture)
+    : buildGenericPlannerDraft(brief, architecture);
 }
 
 function toBriefState(brief: BuilderProjectBrief): BuilderProjectBriefState {

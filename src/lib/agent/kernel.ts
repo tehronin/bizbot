@@ -75,6 +75,39 @@ export interface ChatRequestOptions {
   signal?: AbortSignal;
 }
 
+function readNumericValue(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function readNumericPath(source: unknown, path: string[]): number | undefined {
+  let current = source;
+
+  for (const segment of path) {
+    if (!current || typeof current !== "object" || !(segment in current)) {
+      return undefined;
+    }
+
+    current = (current as Record<string, unknown>)[segment];
+  }
+
+  return readNumericValue(current);
+}
+
+function pickNumericPath(source: unknown, paths: string[][]): number | undefined {
+  for (const path of paths) {
+    const value = readNumericPath(source, path);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
 function abortPromise(signal: AbortSignal | undefined): Promise<never> {
   if (!signal) {
     return new Promise<never>(() => {});
@@ -268,6 +301,43 @@ function toGoogleFunctionDeclarations(
     description: tool.description,
     parametersJsonSchema: toGoogleToolSchema(tool.parameters),
   }));
+}
+
+export function buildGoogleToolingConfig(args: {
+  functionDeclarations?: FunctionDeclaration[];
+  options?: ChatRequestOptions;
+}): {
+  tools: Array<{ functionDeclarations: FunctionDeclaration[] } | { googleSearch: {} } | { codeExecution: {} }>;
+  toolConfig?: {
+    functionCallingConfig: {
+      mode: FunctionCallingConfigMode;
+    };
+    includeServerSideToolInvocations: boolean;
+  };
+} {
+  const functionDeclarations = args.functionDeclarations?.length ? args.functionDeclarations : undefined;
+  const nativeExtrasAllowed = !args.options?.forceFunctionCall;
+
+  return {
+    tools: [
+      ...(functionDeclarations ? [{ functionDeclarations }] : []),
+      ...(nativeExtrasAllowed && args.options?.enableGoogleSearch ? [{ googleSearch: {} }] : []),
+      ...(nativeExtrasAllowed && args.options?.enableGoogleCodeExecution ? [{ codeExecution: {} }] : []),
+    ],
+    ...(functionDeclarations
+      ? {
+          toolConfig: {
+            functionCallingConfig: {
+              mode: args.options?.forceFunctionCall
+                ? FunctionCallingConfigMode.ANY
+                : FunctionCallingConfigMode.AUTO,
+            },
+            includeServerSideToolInvocations:
+              args.options?.includeServerSideToolInvocations ?? true,
+          },
+        }
+      : {}),
+  };
 }
 
 function toGoogleToolPropertySchema(schema: ToolPropertySchema): ToolPropertySchema {
@@ -481,15 +551,55 @@ function parseAnthropicResponse(response: Anthropic.Messages.Message): {
   return { content: contentParts.join("\n").trim(), toolCalls };
 }
 
-function extractOpenAIUsage(response: OpenAI.Chat.Completions.ChatCompletion): LLMUsage | undefined {
-  if (!response.usage) {
+export function extractOpenAICompatibleUsage(response: unknown): LLMUsage | undefined {
+  const promptTokens = pickNumericPath(response, [
+    ["usage", "prompt_tokens"],
+    ["usage", "promptTokens"],
+    ["prompt_tokens"],
+    ["promptTokens"],
+    ["prompt_eval_count"],
+    ["promptEvalCount"],
+  ]);
+  const completionTokens = pickNumericPath(response, [
+    ["usage", "completion_tokens"],
+    ["usage", "completionTokens"],
+    ["completion_tokens"],
+    ["completionTokens"],
+    ["eval_count"],
+    ["evalCount"],
+  ]);
+  const totalTokens = pickNumericPath(response, [
+    ["usage", "total_tokens"],
+    ["usage", "totalTokens"],
+    ["total_tokens"],
+    ["totalTokens"],
+  ]);
+  const cachedPromptTokens = pickNumericPath(response, [
+    ["usage", "prompt_tokens_details", "cached_tokens"],
+    ["usage", "promptTokensDetails", "cachedTokens"],
+    ["usage", "cached_prompt_tokens"],
+    ["usage", "cachedPromptTokens"],
+    ["cached_prompt_tokens"],
+    ["cachedPromptTokens"],
+  ]);
+
+  if (
+    promptTokens === undefined
+    && completionTokens === undefined
+    && totalTokens === undefined
+    && cachedPromptTokens === undefined
+  ) {
     return undefined;
   }
 
+  const resolvedPromptTokens = promptTokens ?? 0;
+  const resolvedCompletionTokens = completionTokens ?? 0;
+
   return {
-    promptTokens: response.usage.prompt_tokens,
-    completionTokens: response.usage.completion_tokens,
-    totalTokens: response.usage.total_tokens,
+    promptTokens,
+    completionTokens,
+    totalTokens: totalTokens ?? (resolvedPromptTokens + resolvedCompletionTokens),
+    cachedPromptTokens,
   };
 }
 
@@ -612,7 +722,7 @@ export async function chatComplete(
         provider: "openai",
         model,
         toolCalls: parseOpenAIToolCalls(responseMessage),
-        usage: extractOpenAIUsage(response),
+        usage: extractOpenAICompatibleUsage(response),
       };
     }
 
@@ -673,7 +783,7 @@ export async function chatComplete(
         provider: "ollama",
         model,
         toolCalls: parseOpenAIToolCalls(responseMessage),
-        usage: extractOpenAIUsage(response),
+        usage: extractOpenAICompatibleUsage(response),
       };
     }
 
@@ -683,6 +793,10 @@ export async function chatComplete(
       });
       const model = getModelForProvider("google");
       const functionDeclarations = toGoogleFunctionDeclarations(tools);
+      const googleTooling = buildGoogleToolingConfig({
+        functionDeclarations,
+        options,
+      });
       const response = await Promise.race([
         client.models.generateContent({
           model,
@@ -691,26 +805,8 @@ export async function chatComplete(
             systemInstruction: messages.find((message) => message.role === "system")?.content,
             temperature: generation.temperature,
             maxOutputTokens: generation.maxTokens,
-            tools: [
-              ...(functionDeclarations?.length
-                ? [{ functionDeclarations }]
-                : []),
-              ...(options?.enableGoogleSearch ? [{ googleSearch: {} }] : []),
-              ...(options?.enableGoogleCodeExecution ? [{ codeExecution: {} }] : []),
-            ],
-            ...(functionDeclarations?.length
-              ? {
-                  toolConfig: {
-                    functionCallingConfig: {
-                      mode: options?.forceFunctionCall
-                        ? FunctionCallingConfigMode.ANY
-                        : FunctionCallingConfigMode.AUTO,
-                    },
-                    includeServerSideToolInvocations:
-                      options?.includeServerSideToolInvocations ?? true,
-                  },
-                }
-              : {}),
+            tools: googleTooling.tools,
+            ...(googleTooling.toolConfig ? { toolConfig: googleTooling.toolConfig } : {}),
           },
         }),
         abortPromise(options?.signal),
@@ -756,7 +852,7 @@ export async function chatComplete(
         provider: "minimax",
         model,
         toolCalls: parseOpenAIToolCalls(responseMessage),
-        usage: extractOpenAIUsage(response),
+        usage: extractOpenAICompatibleUsage(response),
       };
     }
 

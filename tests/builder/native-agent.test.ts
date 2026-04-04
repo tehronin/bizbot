@@ -190,4 +190,78 @@ describe("native builder agent", () => {
     expect(result.loop.iterations[0]?.review.verdict).toBe("retry");
     expect(result.loop.iterations[result.loop.iterations.length - 1]?.review.verdict).toBe("blocked");
   });
+
+  it("streams preflight executor output through progress events before the builder operator finishes", async () => {
+    const onProgress = vi.fn();
+
+    mocks.executeAgentConversation.mockImplementation(async ({ onEvent }: { onEvent?: (event: unknown) => Promise<void> }) => {
+      await onEvent?.({ type: "status", message: "Preparing agent conversation state." });
+      await onEvent?.({ type: "status", message: "Initializing MCP clients." });
+      return {
+        reply: "Built the page.",
+        runId: "run-1",
+        conversationId: "conv-1",
+        profile: "builder_operator",
+        provider: "google",
+        model: "gemini-3-flash-preview",
+      };
+    });
+    mocks.npmRunScript
+      .mockResolvedValueOnce(commandResult({ ok: true, stdout: "build ok" }))
+      .mockResolvedValueOnce(commandResult({ ok: true, stdout: "test ok" }));
+
+    await executeNativeBuilderTask(project, {
+      prompt: "Build a hello world page.",
+    }, {
+      onProgress,
+    });
+
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({
+      latestResult: expect.objectContaining({
+        stdout: expect.stringContaining("[status] Preparing agent conversation state."),
+      }),
+    }));
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({
+      latestResult: expect.objectContaining({
+        stdout: expect.stringContaining("[status] Initializing MCP clients."),
+      }),
+    }));
+  });
+
+  it("forces NODE_ENV=test when running the test verification script", async () => {
+    mocks.executeAgentConversation.mockImplementation(async () => ({
+      reply: "Added tests.",
+      runId: "run-1",
+      conversationId: "conv-1",
+      profile: "builder_operator",
+      provider: "google",
+      model: "gemini-3-flash-preview",
+    }));
+    mocks.npmRunScript
+      .mockResolvedValueOnce(commandResult({ ok: true, stdout: "build ok" }))
+      .mockResolvedValueOnce(commandResult({ ok: true, stdout: "test ok" }));
+
+    await executeNativeBuilderTask(project, {
+      prompt: "Add endpoint tests.",
+    });
+
+    expect(mocks.npmRunScript).toHaveBeenNthCalledWith(
+      1,
+      "projects/demo",
+      "build",
+      [],
+      expect.not.objectContaining({
+        env: expect.objectContaining({ NODE_ENV: "test" }),
+      }),
+    );
+    expect(mocks.npmRunScript).toHaveBeenNthCalledWith(
+      2,
+      "projects/demo",
+      "test",
+      [],
+      expect.objectContaining({
+        env: expect.objectContaining({ NODE_ENV: "test" }),
+      }),
+    );
+  });
 });

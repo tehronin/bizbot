@@ -2,7 +2,7 @@ import { getBuilderConfig } from "@/lib/builder/config";
 import { recordBuilderProjectCommand } from "@/lib/builder/commands";
 import { completeBuilderRun, createBuilderRun, getBuilderProject, updateBuilderProject } from "@/lib/builder/projects";
 import { bootstrapBuilderProject, syncBuilderTemplatePresets } from "@/lib/builder/templates";
-import { listBuilderFiles } from "@/lib/builder/workspace";
+import { listBuilderScaffoldBlockingEntries } from "@/lib/builder/workspace";
 
 export interface BuilderBootstrapOptions {
   initializeGit?: boolean;
@@ -14,7 +14,7 @@ export async function runBuilderProjectBootstrap(projectId: string, options?: Bu
   const defaults = getBuilderConfig();
   const project = await getBuilderProject(projectId);
 
-  if (listBuilderFiles(project.relativePath).length > 0) {
+  if (listBuilderScaffoldBlockingEntries(project.relativePath).length > 0) {
     throw new Error("Builder project bootstrap requires an empty project directory.");
   }
 

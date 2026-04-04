@@ -186,4 +186,35 @@ describe("builder agentic loop", () => {
     expect(result.loop.verificationSkipped).toBe(true);
     expect(result.loop.iterations[0]?.verification.skipped).toBe(true);
   });
+
+  it("forces NODE_ENV=test when running the test verification script", async () => {
+    mocks.runBuilderCliCommand.mockResolvedValue(commandResult({ stdout: "attempt 1" }));
+    mocks.npmRunScript
+      .mockResolvedValueOnce(commandResult({ ok: true, stdout: "build ok" }))
+      .mockResolvedValueOnce(commandResult({ ok: true, stdout: "test ok" }));
+
+    await executeBuilderAgenticTask(project, {
+      profile: "codex",
+      prompt: "Add endpoint tests.",
+    });
+
+    expect(mocks.npmRunScript).toHaveBeenNthCalledWith(
+      1,
+      "projects/demo",
+      "build",
+      [],
+      expect.not.objectContaining({
+        env: expect.objectContaining({ NODE_ENV: "test" }),
+      }),
+    );
+    expect(mocks.npmRunScript).toHaveBeenNthCalledWith(
+      2,
+      "projects/demo",
+      "test",
+      [],
+      expect.objectContaining({
+        env: expect.objectContaining({ NODE_ENV: "test" }),
+      }),
+    );
+  });
 });

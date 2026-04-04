@@ -2,6 +2,13 @@
 
 ## 2026-04-04
 
+- Hardened live Builder runtime orchestration so preflight status and in-flight stdout/stderr are persisted into active run records, making stalled native Builder runs debuggable before an iteration completes.
+- Fixed Builder launch-time failure handling and task handoff so orchestration no longer leaves phantom `RUNNING` rows and newly created tasks are passed correctly into the executor.
+- Corrected Google/Gemini forced tool-calling for the `builder_operator` lane by suppressing native Google extras when function calling is required.
+- Removed Builder-internal planning bias from generic project briefs, added deterministic generic REST API milestones and ADR keys, and verified that Builder continuation advances task specs without a new freeform prompt.
+- Updated Builder scaffold/bootstrap guards to ignore Builder-managed projection files like `.builder/` and `AGENTS.md`, which unblocked planned projects from bootstrapping inside the external Builder workspace.
+- Increased the `builder_operator` tool-round budget for inspection-heavy Builder tasks and fixed deterministic verification to force `NODE_ENV=test` for project test scripts.
+- Validated the full live Builder path on two external projects: a hello-world artifact and a Node.js + Express in-memory REST API with generated Jest/Supertest coverage and passing `typecheck`, `build`, and `test` scripts.
 - Hardened Builder Mode v3.1 planning without changing the execution loop: planning stays on the existing orchestrator entrypoint, adds a dedicated planner prompt surface, and validates planner output before persistence.
 - Added Builder planner critique and ADR reconciliation metadata so stale architecture keys must be addressed before replacing a project plan.
 - Implemented Living ADR as a Builder-owned derived ontology view using the `builder:{projectId}:` canonical-key convention and `builder_adr` source instead of adding new schema.

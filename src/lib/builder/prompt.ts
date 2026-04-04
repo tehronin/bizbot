@@ -85,7 +85,7 @@ export function composeBuilderPlannerPrompt(args: {
 }): string {
   return [
     "Builder planner mission: produce a concise, dependency-safe project plan for the selected external Builder workspace.",
-    "Planning boundary: keep the existing Builder route and plugin entry points, do not change the execution loop, and prefer project-scoped derived views over schema additions.",
+    "Planning boundary: plan the requested external project itself. Do not assume the brief is about Builder Mode internals unless the brief explicitly targets Builder planning, routes, plugins, projections, or execution-loop work.",
     `[Brief]\nProject: ${args.project.name}\nTemplate: ${args.project.template}\nPackage manager: ${args.project.packageManager}\nTitle: ${args.brief.title}\nSummary: ${args.brief.summary}\n[/Brief]`,
     `[Constraints]\n${args.constraints.length > 0 ? args.constraints.map((constraint) => `- ${constraint}`).join("\n") : "- none recorded"}\n[/Constraints]`,
     `[Non-Goals]\n${args.nonGoals.length > 0 ? args.nonGoals.map((item) => `- ${item}`).join("\n") : "- none recorded"}\n[/Non-Goals]`,

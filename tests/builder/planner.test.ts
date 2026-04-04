@@ -22,6 +22,46 @@ describe("builder planner", () => {
     expect(milestones.every((milestone) => milestone.tasks.length > 0)).toBe(true);
   });
 
+  it("builds generic implementation milestones for a plain Express REST API brief", () => {
+    const milestones = buildPlanFromBrief({
+      id: "brief-2",
+      projectId: "project-2",
+      title: "Express Items API",
+      summary: "Build a Node.js REST API with Express. Three endpoints — GET /health, GET /items, POST /items. In-memory storage. No database. Returns JSON.",
+      goals: ["Add validation.", "Add tests."],
+      constraints: ["No database."],
+      deliverables: ["Working JSON API with health and items endpoints."],
+      notes: null,
+      createdAt: new Date("2026-04-04T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-04T00:00:00.000Z"),
+    });
+
+    expect(milestones.map((milestone) => milestone.title)).toEqual([
+      "Confirm API contract",
+      "Scaffold the service runtime",
+      "Implement endpoint behavior",
+      "Verify and review the deliverable",
+    ]);
+    expect(milestones.flatMap((milestone) => milestone.tasks.map((task) => task.title))).toEqual(expect.arrayContaining([
+      "Capture runtime and endpoint decisions",
+      "Set up the Express server shell",
+      "Implement health and items endpoints",
+      "Add request validation and JSON error handling",
+      "Add endpoint tests and verification scripts",
+    ]));
+    expect(milestones.flatMap((milestone) => milestone.tasks.flatMap((task) => task.architecturalDecisionKeys))).toEqual(expect.arrayContaining([
+      "tech_stack_runtime",
+      "tech_stack_framework",
+      "persistence_in_memory",
+      "database_strategy_none",
+      "response_format_json",
+    ]));
+    expect(milestones.flatMap((milestone) => milestone.tasks.flatMap((task) => task.architecturalDecisionKeys))).not.toEqual(expect.arrayContaining([
+      "planning_authority_split",
+      "builder_plan_projection",
+    ]));
+  });
+
   it("drops invalid architectural decision keys with the explicit snake_case regex", () => {
     expect(normalizeArchitecturalDecisionKeys([
       "valid_key",

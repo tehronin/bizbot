@@ -174,11 +174,26 @@ function listVerificationScripts(project: BuilderProject): string[] {
 async function runVerificationScript(
   project: BuilderProject,
   script: string,
-  options: Pick<BuilderAgenticTaskOptions, "signal" | "onStdoutChunk" | "onStderrChunk">,
+  options: Pick<BuilderAgenticTaskOptions, "signal" | "onStdoutChunk" | "onStderrChunk"> & { env?: NodeJS.ProcessEnv },
 ): Promise<BuilderCommandResult> {
+  const commandOptions: {
+    signal?: AbortSignal;
+    onStdoutChunk?: (chunk: string) => void | Promise<void>;
+    onStderrChunk?: (chunk: string) => void | Promise<void>;
+    env?: NodeJS.ProcessEnv;
+  } = script === "test"
+    ? {
+      ...options,
+      env: {
+        ...options.env,
+        NODE_ENV: "test",
+      } as NodeJS.ProcessEnv,
+    }
+    : options;
+
   return project.packageManager === "PNPM"
-    ? pnpmRunScript(project.relativePath, script, [], options)
-    : npmRunScript(project.relativePath, script, [], options);
+    ? pnpmRunScript(project.relativePath, script, [], commandOptions)
+    : npmRunScript(project.relativePath, script, [], commandOptions);
 }
 
 async function runProjectVerification(

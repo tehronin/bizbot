@@ -230,8 +230,12 @@ async function updateRunProgress(runId: string, partial: {
   taskId: string;
   progressLoop?: unknown;
   taskSpecId?: string | null;
+  stdout?: string;
+  stderr?: string;
 }): Promise<void> {
   await updateBuilderRun(runId, {
+    ...(partial.stdout !== undefined ? { stdout: partial.stdout } : {}),
+    ...(partial.stderr !== undefined ? { stderr: partial.stderr } : {}),
     summary: partial.summary,
     metadata: {
       stage: partial.stage,
@@ -467,6 +471,8 @@ export async function orchestrateBuilderTask(
         stage: event.loop.phase ?? "IMPLEMENTING",
         summary: event.loop.summary,
         progressLoop: event.loop,
+        ...(event.latestResult?.stdout !== undefined ? { stdout: event.latestResult.stdout } : {}),
+        ...(event.latestResult?.stderr !== undefined ? { stderr: event.latestResult.stderr } : {}),
       });
       await options.onProgress?.(event);
     },
@@ -609,9 +615,48 @@ export async function launchBuilderTask(projectId: string, input: BuilderOrchest
   const controller = new AbortController();
   registerBuilderRunController(run.id, controller);
 
-  void orchestrateBuilderTask(project.id, input, {
+  void orchestrateBuilderTask(project.id, {
+    ...input,
+    taskId: task.id,
+  }, {
     runId: run.id,
     signal: controller.signal,
+  }).catch(async (error) => {
+    const errorText = String(error);
+    const cancelled = controller.signal.aborted;
+    const status: BuilderTaskStatus = cancelled ? "CANCELLED" : "FAILED";
+
+    await updateBuilderTaskStage(task.id, {
+      stage: "IMPLEMENTING",
+      status,
+      error: errorText,
+      lastUserRequest: request,
+      requestedProfile: input.profile ?? null,
+      requestedModel: input.model ?? null,
+    }).catch(() => undefined);
+    await updateBuilderTaskExecutionState(task.id, {
+      summary: trimReviewSummary(errorText, 500),
+      status,
+      stage: "IMPLEMENTING",
+      error: errorText,
+      loopPhase: cancelled ? "cancelled" : "failed",
+      latestLoopSummary: errorText,
+      resumeFromIteration: input.fromIteration ?? null,
+      lastRunId: run.id,
+    }).catch(() => undefined);
+    await completeBuilderRun(run.id, {
+      status: cancelled ? "CANCELLED" : "FAILED",
+      stderr: errorText,
+      summary: trimReviewSummary(errorText, 240),
+      metadata: {
+        taskId: task.id,
+        taskSpecId: taskSpec.id,
+        stage: "FAILED",
+        request,
+        requestedProfile: input.profile ?? null,
+        requestedModel: input.model ?? null,
+      },
+    }).catch(() => undefined);
   }).finally(() => {
     unregisterBuilderRunController(run.id);
   });

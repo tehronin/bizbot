@@ -176,6 +176,15 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Builder review metadata can now carry architecture reconciliation outcomes alongside validation, files changed, risks, and next steps.
 - Execution behavior in the native Builder loop remains unchanged; the hardening surrounds planning, review, and projection state only.
 
+### Builder Runtime Validation
+
+- Native Builder runs now persist preflight executor checkpoints and in-flight stdout/stderr into the run record while work is still active, which makes stuck runs inspectable before an iteration ends.
+- Launch-time orchestration failures now complete the Builder task/run as failed instead of leaving phantom `RUNNING` rows.
+- Generic product briefs no longer inherit Builder-internal planning bias; a plain Node.js + Express brief now produces generic milestones and generic Builder ADR keys.
+- Builder bootstrap and scaffold checks now ignore Builder-managed projection files like `.builder/` and `AGENTS.md`, so planned projects can continue into real code generation.
+- Deterministic Builder verification now forces `NODE_ENV=test` for the `test` script so Jest-style suites do not inherit the host app server environment.
+- The live Builder validation path has now been proven on both a minimal hello-world artifact and a realistic Express REST API project that completed planning, continuation, test creation, and passing verification inside the external Builder workspace.
+
 ### Living ADR
 
 - Living ADR now exists as a Builder-owned derived view over existing ontology rows instead of adding schema.

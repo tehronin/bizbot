@@ -101,6 +101,14 @@ async function emit(
   await onEvent(event);
 }
 
+async function emitStatus(
+  onEvent: AgentExecutionParams["onEvent"],
+  message: string,
+  round?: number,
+): Promise<void> {
+  await emit(onEvent, { type: "status", message, ...(round !== undefined ? { round } : {}) });
+}
+
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
     throw signal.reason instanceof Error ? signal.reason : new Error("Request aborted");
@@ -180,9 +188,11 @@ export async function executeAgentConversation(
   } = params;
   const { signal } = params;
   throwIfAborted(signal);
+  await emitStatus(onEvent, "Preparing agent conversation state.");
   const resolvedUserId = resolveAgentUserId(userId);
   const runtimeConfig = getAgentRuntimeConfig();
   const resolvedConversationId = await getOrCreateConversation(conversationId, resolvedUserId);
+  await emitStatus(onEvent, `Using conversation ${resolvedConversationId}.`);
   const routedProfileDecision = routeAgentProfile(message);
   const oracleIntent = oraclePrediction ? getOraclePredictionIntent(message) : { matched: false, query: "" };
   const profileDecision = oraclePrediction
@@ -202,23 +212,30 @@ export async function executeAgentConversation(
   const profileDescriptor = getAgentProfileDescriptor(profileDecision.profile);
   const resolvedProvider = provider ?? (process.env.ACTIVE_LLM_PROVIDER as LLMProvider | undefined) ?? "ollama";
   const resolvedModel = getModelForProvider(resolvedProvider);
+  await emitStatus(onEvent, `Resolved profile ${profileDecision.profile} via ${resolvedProvider}/${resolvedModel}.`);
   throwIfAborted(signal);
+  await emitStatus(onEvent, "Initializing MCP clients.");
   await ensureMcpClientsInitialized().catch((error) => {
     console.warn("[agent executor] MCP client init skipped:", error);
   });
   throwIfAborted(signal);
-  const [explicitMemoryFacts, contextResult, ontologyPrompt] = await Promise.all([
-    getRelevantMemoryFacts({ userId: resolvedUserId, query: message }),
-    buildContextForPrompt(message, resolvedConversationId, resolvedUserId),
-    buildOntologyPromptBlock(resolvedUserId).catch((error) => {
-      console.warn("[agent executor] ontology context skipped:", error);
-      return { block: "", lines: [], omitted: true, reason: "read_failed" };
-    }),
-  ]);
+  await emitStatus(onEvent, "Loading explicit memory facts.");
+  const explicitMemoryFacts = await getRelevantMemoryFacts({ userId: resolvedUserId, query: message });
+  await emitStatus(onEvent, "Building prompt context.");
+  const contextResult = await buildContextForPrompt(message, resolvedConversationId, resolvedUserId);
+  await emitStatus(onEvent, "Loading ontology context.");
+  const ontologyPrompt = await buildOntologyPromptBlock(resolvedUserId).catch((error) => {
+    console.warn("[agent executor] ontology context skipped:", error);
+    return { block: "", lines: [], omitted: true, reason: "read_failed" };
+  });
   const explicitMemoryBlock = formatMemoryFactsForPrompt(explicitMemoryFacts);
   const ontologyBlock = ontologyPrompt.omitted ? "" : ontologyPrompt.block;
   const contextBlock = contextResult.text;
   const tools = getAllToolDefinitions(runtimeConfig, { agentProfile: profileDecision.profile });
+  const maxToolRounds = profileDecision.profile === "builder_operator"
+    ? Math.max(runtimeConfig.toolMaxRounds, 16)
+    : runtimeConfig.toolMaxRounds;
+  await emitStatus(onEvent, `Creating agent run journal with ${tools.length} available tools.`);
   const run = startAgentRun({
     conversationId: resolvedConversationId,
     profile: profileDecision.profile,
@@ -230,6 +247,7 @@ export async function executeAgentConversation(
     ...(delegationReason ? { delegationReason } : {}),
     ...(delegatedByProfile ? { delegatedByProfile } : {}),
   });
+  await emitStatus(onEvent, `Agent run ${run.runId} created.`);
   const delegationDepth = parentRunId ? countDelegationDepth(parentRunId) + 1 : 0;
   const delegationChain = parentRunId
     ? [...getDelegationChain(parentRunId), profileDecision.profile]
@@ -481,7 +499,7 @@ export async function executeAgentConversation(
       });
     }
 
-    while (round < runtimeConfig.toolMaxRounds) {
+    while (round < maxToolRounds) {
       throwIfAborted(signal);
       round += 1;
       await emit(onEvent, {
@@ -665,14 +683,14 @@ export async function executeAgentConversation(
     throwIfAborted(signal);
     await saveMessage(resolvedConversationId, "ASSISTANT", fallback, {
       userId: resolvedUserId,
-      toolRoundCount: runtimeConfig.toolMaxRounds,
+      toolRoundCount: maxToolRounds,
       agentRunId: run.runId,
       agentProfile: profileDecision.profile,
     });
     completeAgentRun(run.runId, {
       status: "max_tool_rounds",
       reply: fallback,
-      roundsCompleted: runtimeConfig.toolMaxRounds,
+      roundsCompleted: maxToolRounds,
     });
     await emit(onEvent, { type: "assistant_message", content: fallback });
     await emit(onEvent, { type: "done", conversationId: resolvedConversationId, reply: fallback });

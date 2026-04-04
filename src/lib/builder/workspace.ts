@@ -14,6 +14,7 @@ import {
 const DEFAULT_COMMAND_TIMEOUT_SECONDS = 60;
 const MAX_COMMAND_TIMEOUT_SECONDS = 600;
 const MAX_CAPTURED_OUTPUT_CHARS = 24_000;
+const BUILDER_MANAGED_PROJECT_ROOT_ENTRIES = new Set([".builder", "AGENTS.md"]);
 
 export interface BuilderFileInfo {
   name: string;
@@ -42,6 +43,7 @@ export interface BuilderCommandOptions {
   cwd?: string;
   timeoutSeconds?: number;
   signal?: AbortSignal;
+  env?: NodeJS.ProcessEnv;
   onStdoutChunk?: (chunk: string) => void | Promise<void>;
   onStderrChunk?: (chunk: string) => void | Promise<void>;
 }
@@ -138,6 +140,17 @@ export function writeBuilderFile(relativePath: string, content: string): void {
 export function createBuilderDirectory(relativePath: string): void {
   const absolutePath = safeBuilderPath(relativePath);
   fs.mkdirSync(absolutePath, { recursive: true });
+}
+
+export function listBuilderScaffoldBlockingEntries(relativePath: string): string[] {
+  const absolutePath = safeBuilderPath(relativePath);
+  if (!fs.existsSync(absolutePath)) {
+    return [];
+  }
+
+  return fs.readdirSync(absolutePath, { withFileTypes: true })
+    .map((entry) => entry.name)
+    .filter((name) => !BUILDER_MANAGED_PROJECT_ROOT_ENTRIES.has(name));
 }
 
 function appendBoundedOutput(current: string, chunk: string): string {
@@ -239,7 +252,10 @@ export async function runBuilderCliCommand(
       args,
       {
       cwd,
-      env: process.env,
+      env: {
+        ...process.env,
+        ...(options.env ?? {}),
+      },
       shell: useShell,
       stdio: ["ignore", "pipe", "pipe"],
       },
@@ -323,8 +339,9 @@ export function scaffoldBuilderNodePackage(args: {
 }): { root: string; files: string[] } {
   const projectRoot = safeBuilderPath(args.projectDir);
   const entrypoint = args.entrypoint ?? "src/index.ts";
+  const blockingEntries = listBuilderScaffoldBlockingEntries(args.projectDir);
 
-  if (fs.existsSync(projectRoot) && fs.readdirSync(projectRoot).length > 0) {
+  if (blockingEntries.length > 0) {
     throw new Error(`Builder scaffold target is not empty: ${args.projectDir}`);
   }
 

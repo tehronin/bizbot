@@ -137,11 +137,26 @@ function listVerificationScripts(project: BuilderProject): string[] {
 async function runVerificationScript(
   project: BuilderProject,
   script: string,
-  options: Pick<BuilderAgenticTaskOptions, "signal" | "onStdoutChunk" | "onStderrChunk">,
+  options: Pick<BuilderAgenticTaskOptions, "signal" | "onStdoutChunk" | "onStderrChunk"> & { env?: NodeJS.ProcessEnv },
 ): Promise<BuilderCommandResult> {
+  const commandOptions: {
+    signal?: AbortSignal;
+    onStdoutChunk?: (chunk: string) => void | Promise<void>;
+    onStderrChunk?: (chunk: string) => void | Promise<void>;
+    env?: NodeJS.ProcessEnv;
+  } = script === "test"
+    ? {
+      ...options,
+      env: {
+        ...options.env,
+        NODE_ENV: "test",
+      } as NodeJS.ProcessEnv,
+    }
+    : options;
+
   return project.packageManager === "PNPM"
-    ? pnpmRunScript(project.relativePath, script, [], options)
-    : npmRunScript(project.relativePath, script, [], options);
+    ? pnpmRunScript(project.relativePath, script, [], commandOptions)
+    : npmRunScript(project.relativePath, script, [], commandOptions);
 }
 
 async function runProjectVerification(
@@ -363,6 +378,35 @@ async function emitProgress(
   await onProgress(event);
 }
 
+async function emitLiveExecutionProgress(args: {
+  onProgress: BuilderAgenticTaskOptions["onProgress"];
+  maxIterations: number;
+  iteration: number;
+  iterations: BuilderAgenticIteration[];
+  selectedScripts: string[];
+  stdout: string;
+  stderr: string;
+  summary?: string;
+}): Promise<void> {
+  await emitProgress(args.onProgress, {
+    loop: buildProgressLoop({
+      maxIterations: args.maxIterations,
+      phase: "acting",
+      currentIteration: args.iteration,
+      iterations: args.iterations,
+      selectedScripts: args.selectedScripts,
+      summary: args.summary ?? `Native builder attempt ${args.iteration} is running.`,
+    }),
+    latestResult: {
+      stdout: args.stdout,
+      stderr: args.stderr,
+      ok: false,
+      exitCode: null,
+      timedOut: false,
+    },
+  });
+}
+
 function buildNativeBuilderMessage(project: BuilderProject, prompt: string): string {
   return [
     prompt,
@@ -414,7 +458,6 @@ export async function executeNativeBuilderTask(
   input: NativeBuilderTaskInput,
   options: BuilderAgenticTaskOptions = {},
 ): Promise<NativeBuilderTaskResult> {
-  const { executeAgentConversation } = await import("@/lib/agent/executor");
   const config = getBuilderConfig();
   const maxIterations = config.agenticMaxIterations;
   const basePrompt = sanitizePrompt(input.prompt);
@@ -429,6 +472,7 @@ export async function executeNativeBuilderTask(
   let lastVerification: BuilderAgenticVerificationReport | null = null;
   const iterations: BuilderAgenticIteration[] = [];
   const selectedScripts = listVerificationScripts(project);
+  let executeAgentConversation: ((typeof import("@/lib/agent/executor"))["executeAgentConversation"]) | null = null;
 
   for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
     await emitProgress(options.onProgress, {
@@ -468,13 +512,38 @@ export async function executeNativeBuilderTask(
     const appendStdout = async (line: string) => {
       stdout = appendBoundedOutput(stdout, line);
       await streamStdout(line, options);
+      await emitLiveExecutionProgress({
+        onProgress: options.onProgress,
+        maxIterations,
+        iteration,
+        iterations,
+        selectedScripts,
+        stdout,
+        stderr,
+      });
     };
     const appendStderr = async (line: string) => {
       stderr = appendBoundedOutput(stderr, line);
       await streamStderr(line, options);
+      await emitLiveExecutionProgress({
+        onProgress: options.onProgress,
+        maxIterations,
+        iteration,
+        iterations,
+        selectedScripts,
+        stdout,
+        stderr,
+      });
     };
 
     try {
+      await appendStdout(`[status] Starting native builder attempt ${iteration} of ${maxIterations}.\n`);
+      if (!executeAgentConversation) {
+        await appendStdout("[status] Loading shared agent executor.\n");
+        ({ executeAgentConversation } = await import("@/lib/agent/executor"));
+      }
+      await appendStdout("[status] Dispatching builder operator conversation.\n");
+
       const agentResult = await executeAgentConversation({
         message: buildNativeBuilderMessage(project, currentPrompt),
         forcedProfile: "builder_operator",
