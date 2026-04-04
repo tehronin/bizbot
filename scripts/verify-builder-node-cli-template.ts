@@ -32,6 +32,7 @@ const scaffold = scaffoldBuilderNodePackage({
 const projectRoot = path.join(workspaceRoot, "projects", "node-cli-ci");
 const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8")) as {
   scripts?: Record<string, string>;
+  devDependencies?: Record<string, string>;
 };
 
 if (packageJson.scripts?.typecheck !== "tsc --noEmit -p tsconfig.json") {
