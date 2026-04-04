@@ -167,6 +167,7 @@ export interface EnsureOntologyEntityInput {
   status?: OntologyStatus;
   source: OntologySource;
   confidence?: number;
+  preserveCanonicalKey?: boolean;
 }
 
 export interface EnsureOntologyRelationInput {
@@ -186,7 +187,9 @@ export async function ensureOntologyEntity(input: EnsureOntologyEntityInput): Pr
     await ensureUserExists(input.userId);
   }
 
-  const canonicalKey = normalizeOntologyToken(input.canonicalKey);
+  const canonicalKey = input.preserveCanonicalKey
+    ? input.canonicalKey.trim()
+    : normalizeOntologyToken(input.canonicalKey);
   const existing = await db.ontologyEntity.findFirst({
     where: {
       ...buildScopedWhere(input.scope, input.userId),
@@ -224,6 +227,31 @@ export async function ensureOntologyEntity(input: EnsureOntologyEntityInput): Pr
       });
 
   return toEntityRecord(entity);
+}
+
+export async function listOntologyEntities(input: {
+  userId?: string | null;
+  scope?: OntologyScope;
+  type?: string;
+  source?: OntologySource;
+  status?: OntologyStatus;
+  canonicalKeyPrefix?: string;
+  minConfidence?: number;
+} = {}): Promise<OntologyEntityRecord[]> {
+  const entities = await db.ontologyEntity.findMany({
+    where: {
+      ...(input.userId !== undefined ? { userId: input.userId } : {}),
+      ...(input.scope ? { scope: input.scope } : {}),
+      ...(input.type ? { type: input.type } : {}),
+      ...(input.source ? { source: input.source } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.canonicalKeyPrefix ? { canonicalKey: { startsWith: input.canonicalKeyPrefix } } : {}),
+      ...(typeof input.minConfidence === "number" ? { confidence: { gte: input.minConfidence } } : {}),
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+  });
+
+  return entities.map((entity) => toEntityRecord(entity));
 }
 
 export async function ensureOntologyRelation(input: EnsureOntologyRelationInput): Promise<OntologyRelationRecord> {

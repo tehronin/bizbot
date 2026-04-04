@@ -44,6 +44,7 @@ describe("MCP contract snapshots", () => {
         "builder_list_projects",
         "builder_list_runs",
         "builder_list_tasks",
+        "builder_plan_project",
         "builder_plan_task",
         "builder_read_file",
         "builder_run_agentic_task",

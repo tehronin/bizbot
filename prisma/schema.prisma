@@ -566,6 +566,37 @@ enum BuilderTaskStage {
   DONE
 }
 
+enum BuilderProjectLifecycle {
+  DRAFT
+  PLANNED
+  ACTIVE
+  BLOCKED
+  COMPLETE
+}
+
+enum BuilderMilestoneStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+  COMPLETE
+}
+
+enum BuilderTaskSpecStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+  COMPLETE
+}
+
+enum BuilderTaskSpecValidator {
+  BUILD
+  TEST
+  LINT
+  TYPECHECK
+  NONE
+  MANUAL_REVIEW
+}
+
 model BuilderProject {
   id             String                @id @default(cuid())
   name           String
@@ -574,16 +605,86 @@ model BuilderProject {
   template       String
   packageManager BuilderPackageManager @default(NPM)
   gitInitialized Boolean               @default(false)
+  lifecycle      BuilderProjectLifecycle @default(DRAFT)
   lastRunStatus  BuilderRunStatus      @default(IDLE)
   context        Json?
   latestSessionSummary String?
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
+  brief          BuilderProjectBrief?
+  milestones     BuilderMilestone[]
   runs           BuilderRun[]
   tasks          BuilderTask[]
+  taskSpecs      BuilderTaskSpec[]
 
   @@index([template, createdAt])
+}
+
+model BuilderProjectBrief {
+  id           String         @id @default(cuid())
+  project      BuilderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    String         @unique
+  title        String
+  summary      String
+  goals        String[]       @default([])
+  constraints  String[]       @default([])
+  deliverables String[]       @default([])
+  notes        String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model BuilderMilestone {
+  id          String                @id @default(cuid())
+  project     BuilderProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+  title       String
+  summary     String
+  status      BuilderMilestoneStatus @default(PENDING)
+  sortOrder   Int
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  taskSpecs   BuilderTaskSpec[]
+
+  @@unique([projectId, sortOrder])
+  @@index([projectId, status, sortOrder])
+}
+
+model BuilderTaskSpec {
+  id                        String                   @id @default(cuid())
+  project                   BuilderProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId                 String
+  milestone                 BuilderMilestone         @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  milestoneId               String
+  title                     String
+  summary                   String
+  status                    BuilderTaskSpecStatus    @default(PENDING)
+  sortOrder                 Int
+  completionCriteria        String[]                 @default([])
+  validators                BuilderTaskSpecValidator[] @default([])
+  architecturalDecisionKeys String[]                 @default([])
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
+
+  executionTasks            BuilderTask[]
+  dependencies              BuilderTaskSpecDependency[] @relation("BuilderTaskSpecDependencies")
+  dependents                BuilderTaskSpecDependency[] @relation("BuilderTaskSpecDependents")
+
+  @@unique([milestoneId, sortOrder])
+  @@index([projectId, status, sortOrder])
+  @@index([milestoneId, status, sortOrder])
+}
+
+model BuilderTaskSpecDependency {
+  taskSpec            BuilderTaskSpec @relation("BuilderTaskSpecDependencies", fields: [taskSpecId], references: [id], onDelete: Cascade)
+  taskSpecId          String
+  dependsOnTaskSpec   BuilderTaskSpec @relation("BuilderTaskSpecDependents", fields: [dependsOnTaskSpecId], references: [id], onDelete: Cascade)
+  dependsOnTaskSpecId String
+
+  @@id([taskSpecId, dependsOnTaskSpecId])
+  @@index([dependsOnTaskSpecId])
 }
 
 model BuilderTemplatePreset {
@@ -625,6 +726,8 @@ model BuilderTask {
   id                 String            @id @default(cuid())
   project            BuilderProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId          String
+  taskSpec           BuilderTaskSpec?  @relation(fields: [taskSpecId], references: [id], onDelete: SetNull)
+  taskSpecId         String?
   title              String
   description        String
   status             BuilderTaskStatus @default(PENDING)
@@ -642,6 +745,7 @@ model BuilderTask {
 
   @@index([projectId, status, updatedAt])
   @@index([projectId, stage, updatedAt])
+  @@index([taskSpecId, status, updatedAt])
 }
 
 model BuilderCliProfile {

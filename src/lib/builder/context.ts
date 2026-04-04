@@ -3,8 +3,10 @@ import type { BuilderProject, BuilderTask } from "@prisma/client";
 import { renderBuilderReviewMarkdown } from "@/lib/builder/review";
 import { readBuilderFile, writeBuilderFile } from "@/lib/builder/workspace";
 import {
+  type BuilderMilestoneState,
   defaultBuilderProjectContext,
   normalizeBuilderProjectContext,
+  type BuilderPlanningSnapshot,
   normalizeBuilderTaskMetadata,
   type BuilderInstructionFragment,
   type BuilderPlanStep,
@@ -125,8 +127,24 @@ function renderProjectContextMarkdown(context: BuilderProjectContextState): stri
 }
 
 function renderArchitectureMarkdown(context: BuilderProjectContextState): string {
+  const activeArchitecture = context.architecture?.active ?? [];
+  const staleArchitecture = context.architecture?.stale ?? [];
   return [
     `# Architecture`,
+    "",
+    `## Active Architecture`,
+    "",
+    ...(activeArchitecture.length > 0
+      ? activeArchitecture.map((item) => `- ${item.key}: ${item.description ?? item.displayName}`)
+      : ["- No active Builder architecture decisions recorded."]),
+    "",
+    `## Stale Architecture - Needs Reconfirmation`,
+    "",
+    ...(staleArchitecture.length > 0
+      ? staleArchitecture.map((item) => `- ${item.key}: ${item.description ?? item.displayName}`)
+      : ["- No stale Builder architecture decisions recorded."]),
+    "",
+    `## Notes`,
     "",
     ...(context.architectureNotes.length > 0 ? context.architectureNotes.map((item) => `- ${item}`) : ["- No architecture notes recorded yet."]),
     "",
@@ -142,6 +160,94 @@ function renderPlanMarkdown(task: BuilderTask | null, planSteps: BuilderPlanStep
       ? planSteps.map((step, index) => `${index + 1}. [${step.status === "completed" ? "x" : step.status === "in_progress" ? "~" : " "}] ${step.label}${step.notes ? ` — ${step.notes}` : ""}`)
       : ["1. [ ] No active plan yet"]),
     "",
+  ].join("\n");
+}
+
+function renderProjectBriefMarkdown(planning: BuilderPlanningSnapshot | undefined): string {
+  const brief = planning?.brief;
+  return [
+    "# Project Brief",
+    "",
+    brief
+      ? `Title: ${brief.title}`
+      : "Title: not recorded yet.",
+    brief
+      ? `Lifecycle: ${planning?.lifecycle ?? "DRAFT"}`
+      : "Lifecycle: DRAFT",
+    "",
+    "## Summary",
+    "",
+    brief?.summary ?? "No canonical project brief has been recorded yet.",
+    "",
+    "## Goals",
+    "",
+    ...(brief && brief.goals.length > 0 ? brief.goals.map((goal) => `- ${goal}`) : ["- none recorded"]),
+    "",
+    "## Constraints",
+    "",
+    ...(brief && brief.constraints.length > 0 ? brief.constraints.map((constraint) => `- ${constraint}`) : ["- none recorded"]),
+    "",
+    "## Deliverables",
+    "",
+    ...(brief && brief.deliverables.length > 0 ? brief.deliverables.map((deliverable) => `- ${deliverable}`) : ["- none recorded"]),
+    "",
+    "## Notes",
+    "",
+    brief?.notes ?? "No brief notes recorded yet.",
+    "",
+  ].join("\n");
+}
+
+function renderMilestoneTaskLine(taskSpec: BuilderMilestoneState["taskSpecs"][number]): string {
+  const validators = taskSpec.validators.length > 0 ? taskSpec.validators.join(", ").toLowerCase() : "manual_review";
+  const dependencies = taskSpec.dependencyIds.length > 0 ? ` deps: ${taskSpec.dependencyIds.join(", ")}` : "";
+  return `- [${taskSpec.status.toLowerCase()}] ${taskSpec.sortOrder}. ${taskSpec.title} (${validators})${dependencies}`;
+}
+
+function renderMilestonesMarkdown(planning: BuilderPlanningSnapshot | undefined): string {
+  const milestones = planning?.milestones ?? [];
+  return [
+    "# Milestones",
+    "",
+    ...(milestones.length > 0
+      ? milestones.flatMap((milestone) => [
+          `## ${milestone.sortOrder}. ${milestone.title}`,
+          "",
+          milestone.summary,
+          "",
+          `Status: ${milestone.status.toLowerCase()}`,
+          "",
+          ...(milestone.taskSpecs.length > 0 ? milestone.taskSpecs.map(renderMilestoneTaskLine) : ["- no task specs recorded"]),
+          "",
+        ])
+      : ["No canonical Builder milestones have been planned yet.", ""]),
+  ].join("\n");
+}
+
+function renderTaskBoardMarkdown(planning: BuilderPlanningSnapshot | undefined): string {
+  const milestones = planning?.milestones ?? [];
+  return [
+    "# Task Board",
+    "",
+    ...(milestones.length > 0
+      ? milestones.flatMap((milestone) => {
+          const tasks = milestone.taskSpecs.length > 0 ? milestone.taskSpecs : [];
+          return [
+            `## ${milestone.title}`,
+            "",
+            ...(tasks.length > 0
+              ? tasks.flatMap((taskSpec) => [
+                  `- ${taskSpec.title}`,
+                  `  status: ${taskSpec.status.toLowerCase()}`,
+                  `  completion: ${taskSpec.completionCriteria.length > 0 ? taskSpec.completionCriteria.join("; ") : "none recorded"}`,
+                  `  validators: ${taskSpec.validators.length > 0 ? taskSpec.validators.join(", ").toLowerCase() : "manual_review"}`,
+                  `  architectural decisions: ${taskSpec.architecturalDecisionKeys.length > 0 ? taskSpec.architecturalDecisionKeys.join(", ") : "none"}`,
+                ])
+              : ["- no task specs recorded"]),
+            "",
+          ];
+        })
+      : ["No task-board entries have been planned yet.", ""]),
   ].join("\n");
 }
 
@@ -165,6 +271,7 @@ function renderSessionSummaryMarkdown(context: BuilderProjectContextState): stri
 export function syncBuilderProjectProjection(args: {
   project: BuilderProject;
   context: BuilderProjectContextState;
+  planning?: BuilderPlanningSnapshot;
   currentTask?: BuilderTask | null;
   latestReview?: BuilderStructuredReview | null;
 }): void {
@@ -175,7 +282,10 @@ export function syncBuilderProjectProjection(args: {
 
   writeBuilderFile(path.posix.join(args.project.relativePath, "AGENTS.md"), renderProjectAgentsFile(args.project, context));
   writeBuilderFile(path.posix.join(baseDir, "project-context.md"), renderProjectContextMarkdown(context));
+  writeBuilderFile(path.posix.join(baseDir, "project-brief.md"), renderProjectBriefMarkdown(args.planning));
   writeBuilderFile(path.posix.join(baseDir, "architecture.md"), renderArchitectureMarkdown(context));
+  writeBuilderFile(path.posix.join(baseDir, "milestones.md"), renderMilestonesMarkdown(args.planning));
+  writeBuilderFile(path.posix.join(baseDir, "task-board.md"), renderTaskBoardMarkdown(args.planning));
   writeBuilderFile(path.posix.join(baseDir, "current-plan.md"), renderPlanMarkdown(args.currentTask ?? null, planSteps));
   writeBuilderFile(path.posix.join(baseDir, "session-summary.md"), renderSessionSummaryMarkdown(context));
   writeBuilderFile(path.posix.join(baseDir, "state.json"), `${JSON.stringify(context, null, 2)}\n`);
@@ -232,7 +342,10 @@ export function selectRelevantInstructionFragments(project: BuilderProject, requ
   const candidates = [
     { source: "AGENTS.md", path: path.posix.join(project.relativePath, "AGENTS.md") },
     { source: ".builder/project-context.md", path: path.posix.join(builderDir(project), "project-context.md") },
+    { source: ".builder/project-brief.md", path: path.posix.join(builderDir(project), "project-brief.md") },
     { source: ".builder/architecture.md", path: path.posix.join(builderDir(project), "architecture.md") },
+    { source: ".builder/milestones.md", path: path.posix.join(builderDir(project), "milestones.md") },
+    { source: ".builder/task-board.md", path: path.posix.join(builderDir(project), "task-board.md") },
     { source: ".builder/current-plan.md", path: path.posix.join(builderDir(project), "current-plan.md") },
   ].flatMap((entry) => {
     const content = readOptionalBuilderFile(entry.path);

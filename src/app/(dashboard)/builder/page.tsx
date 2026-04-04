@@ -62,10 +62,43 @@ interface BuilderProject {
   template: string;
   packageManager: "NPM" | "PNPM";
   gitInitialized: boolean;
+  lifecycle: "DRAFT" | "PLANNED" | "ACTIVE" | "BLOCKED" | "COMPLETE";
   lastRunStatus: "IDLE" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
   latestSessionSummary?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface BuilderProjectBrief {
+  id: string;
+  title: string;
+  summary: string;
+  goals: string[];
+  constraints: string[];
+  deliverables: string[];
+  notes?: string | null;
+}
+
+interface BuilderTaskSpec {
+  id: string;
+  milestoneId: string;
+  title: string;
+  summary: string;
+  status: "PENDING" | "ACTIVE" | "BLOCKED" | "COMPLETE";
+  sortOrder: number;
+  completionCriteria: string[];
+  validators: Array<"BUILD" | "TEST" | "LINT" | "TYPECHECK" | "NONE" | "MANUAL_REVIEW">;
+  architecturalDecisionKeys: string[];
+  dependencyIds: string[];
+}
+
+interface BuilderMilestone {
+  id: string;
+  title: string;
+  summary: string;
+  status: "PENDING" | "ACTIVE" | "BLOCKED" | "COMPLETE";
+  sortOrder: number;
+  taskSpecs: BuilderTaskSpec[];
 }
 
 interface BuilderPlanStep {
@@ -216,12 +249,22 @@ interface BuilderProjectsResponse {
 interface BuilderProjectDetailResponse {
   project: BuilderProject;
   context: BuilderProjectContext;
+  brief: BuilderProjectBrief | null;
+  milestones: BuilderMilestone[];
+  currentMilestone: BuilderMilestone | null;
+  currentTaskSpec: BuilderTaskSpec | null;
   tasks: BuilderTask[];
   currentTask: BuilderTask | null;
   runs: BuilderRun[];
   latestReview: BuilderReview | null;
   nextRecommendedStep: string | null;
   error?: string;
+}
+
+interface BuilderBriefDraft {
+  title: string;
+  summary: string;
+  notes: string;
 }
 
 type BuilderShortcutAction = "retry-last-failed-task" | "open-current-task-logs" | "cancel-running-task";
@@ -282,6 +325,12 @@ const EMPTY_CREATE_PROJECT = {
   packageManager: "NPM" as "NPM" | "PNPM",
 };
 
+const EMPTY_BRIEF_DRAFT: BuilderBriefDraft = {
+  title: "",
+  summary: "",
+  notes: "",
+};
+
 export default function BuilderPage() {
   const [status, setStatus] = useState<BuilderStatusResponse | null>(null);
   const [projects, setProjects] = useState<BuilderProject[]>([]);
@@ -298,6 +347,7 @@ export default function BuilderPage() {
   const [agenticProfile, setAgenticProfile] = useState("");
   const [agenticModel, setAgenticModel] = useState("");
   const [bootstrapOptions, setBootstrapOptions] = useState({ initializeGit: true, installDependencies: false });
+  const [briefDraft, setBriefDraft] = useState<BuilderBriefDraft>(EMPTY_BRIEF_DRAFT);
   const [saving, setSaving] = useState(false);
   const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
   const [highlightedRunId, setHighlightedRunId] = useState<string | null>(null);
@@ -340,6 +390,11 @@ export default function BuilderPage() {
       throw new Error(payload.error ?? "Failed to load builder project details.");
     }
     setProjectDetail(payload);
+    setBriefDraft({
+      title: payload.brief?.title ?? "",
+      summary: payload.brief?.summary ?? "",
+      notes: payload.brief?.notes ?? "",
+    });
     setSelectedTaskId((current) => {
       if (current && payload.tasks.some((task) => task.id === current)) {
         return current;
@@ -505,12 +560,52 @@ export default function BuilderPage() {
       }
       setResultNotice(payload.status === "RUNNING"
         ? `Started run ${payload.runId}. Polling live progress.`
-        : payload.runId
-          ? `Started run ${payload.runId}.`
-          : "Builder action completed.");
+        : payload.status === "PLANNED"
+          ? "Generated the canonical Builder plan. Review the staged view, then advance the current task."
+          : payload.runId
+            ? `Started run ${payload.runId}.`
+            : "Builder action completed.");
       await refresh(selectedProjectId);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Builder action failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function planProject(): Promise<void> {
+    if (!selectedProjectId) {
+      setError("Select a project first.");
+      return;
+    }
+    if (!briefDraft.title.trim() || !briefDraft.summary.trim()) {
+      setError("Brief title and summary are required to plan a project.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setResultNotice(null);
+    try {
+      const response = await fetch(`/api/builder/projects/${selectedProjectId}/plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: briefDraft.title,
+          summary: briefDraft.summary,
+          notes: briefDraft.notes || undefined,
+          regenerate: true,
+        }),
+      });
+      const payload = (await response.json()) as BuilderProjectDetailResponse;
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to plan Builder project.");
+      }
+      setProjectDetail(payload);
+      setResultNotice("Updated the project brief and regenerated the canonical Builder plan.");
+      await refresh(selectedProjectId);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to plan Builder project.");
     } finally {
       setSaving(false);
     }
@@ -767,10 +862,10 @@ export default function BuilderPage() {
               >
                 <div className="flex items-center justify-between gap-4">
                   <span>{project.name}</span>
-                  <span style={{ color: project.lastRunStatus === "FAILED" ? "var(--danger)" : project.lastRunStatus === "SUCCEEDED" ? "var(--success)" : "var(--text-dim)" }}>{project.lastRunStatus.toLowerCase()}</span>
+                  <span style={{ color: project.lifecycle === "BLOCKED" ? "var(--danger)" : project.lifecycle === "COMPLETE" ? "var(--success)" : project.lifecycle === "ACTIVE" ? "var(--accent)" : "var(--text-dim)" }}>{project.lifecycle.toLowerCase()}</span>
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.relativePath}</div>
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.template} · {project.packageManager}</div>
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.template} · {project.packageManager} · last run {project.lastRunStatus.toLowerCase()}</div>
               </button>
             ))}
             <PaginationControls {...projectsPagination} />
@@ -795,6 +890,10 @@ export default function BuilderPage() {
                   <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>git</div>
                   <div className="text-sm">{selectedProject.gitInitialized ? "initialized" : "not initialized"}</div>
                 </div>
+                <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>lifecycle</div>
+                  <div className="text-sm">{selectedProject.lifecycle.toLowerCase()}</div>
+                </div>
                 <div className="border p-3 sm:col-span-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>objective</div>
                   <div className="text-sm" style={{ color: projectDetail?.context.objective ? "var(--text-primary)" : "var(--text-dim)" }}>
@@ -803,19 +902,64 @@ export default function BuilderPage() {
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 lg:grid-cols-3">
                 <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>current task</div>
-                  {selectedTask ? (
-                    <>
-                      <div className="text-sm">{selectedTask.title}</div>
-                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>{selectedTask.stage.toLowerCase()} · {selectedTask.status.toLowerCase()}</div>
-                      {selectedTask.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{selectedTask.summary}</div> : null}
-                      {selectedTask.metadata?.latestLoopSummary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{selectedTask.metadata.latestLoopSummary}</div> : null}
-                    </>
-                  ) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No Builder task is active yet.</div>}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>brief</div>
+                    <button disabled={saving || !selectedProjectId} onClick={() => void planProject()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                      save + plan
+                    </button>
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Title</label>
+                    <input value={briefDraft.title} onChange={(event) => setBriefDraft((current) => ({ ...current, title: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Summary</label>
+                    <textarea value={briefDraft.summary} onChange={(event) => setBriefDraft((current) => ({ ...current, summary: event.target.value }))} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Notes</label>
+                    <textarea value={briefDraft.notes} onChange={(event) => setBriefDraft((current) => ({ ...current, notes: event.target.value }))} rows={3} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  </div>
                 </div>
                 <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>plan</div>
+                  {projectDetail?.milestones.length ? projectDetail.milestones.map((milestone) => (
+                    <div key={milestone.id} className="border p-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span>{milestone.sortOrder}. {milestone.title}</span>
+                        <span style={{ color: milestone.status === "BLOCKED" ? "var(--danger)" : milestone.status === "COMPLETE" ? "var(--success)" : milestone.status === "ACTIVE" ? "var(--accent)" : "var(--text-dim)" }}>{milestone.status.toLowerCase()}</span>
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{milestone.summary}</div>
+                      {milestone.taskSpecs.map((taskSpec) => (
+                        <div key={taskSpec.id} className="text-xs leading-6" style={{ color: taskSpec.id === projectDetail.currentTaskSpec?.id ? "var(--accent)" : "var(--text-dim)" }}>
+                          {taskSpec.sortOrder}. [{taskSpec.status.toLowerCase()}] {taskSpec.title}
+                        </div>
+                      ))}
+                    </div>
+                  )) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No canonical Builder plan has been generated yet.</div>}
+                </div>
+                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>current task</div>
+                  {projectDetail?.currentTaskSpec ? (
+                    <>
+                      <div className="text-sm">{projectDetail.currentTaskSpec.title}</div>
+                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+                        {projectDetail.currentMilestone?.title ?? "no milestone"} · {projectDetail.currentTaskSpec.status.toLowerCase()}
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail.currentTaskSpec.summary}</div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        Validators: {projectDetail.currentTaskSpec.validators.join(", ").toLowerCase() || "manual_review"}
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        Completion: {projectDetail.currentTaskSpec.completionCriteria.join("; ") || "none recorded"}
+                      </div>
+                      {selectedTask ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Execution task: {selectedTask.stage.toLowerCase()} · {selectedTask.status.toLowerCase()}</div> : null}
+                      {selectedTask?.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{selectedTask.summary}</div> : null}
+                      {selectedTask?.metadata?.latestLoopSummary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{selectedTask.metadata.latestLoopSummary}</div> : null}
+                    </>
+                  ) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No Builder task spec is active yet.</div>}
                   <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>next recommended step</div>
                   <div className="text-sm" style={{ color: projectDetail?.nextRecommendedStep ? "var(--text-primary)" : "var(--text-dim)" }}>
                     {projectDetail?.nextRecommendedStep ?? "No next step has been synthesized yet."}

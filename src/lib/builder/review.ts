@@ -1,6 +1,6 @@
 import type { BuilderTask, BuilderTaskStage, BuilderTaskStatus } from "@prisma/client";
 import type { BuilderAgenticLoopMetadata } from "@/lib/builder/agentic";
-import type { BuilderStructuredCheckSummary, BuilderStructuredReview, BuilderStructuredValidationSummary } from "@/lib/builder/types";
+import type { BuilderArchitectureReconciliationState, BuilderStructuredCheckSummary, BuilderStructuredReview, BuilderStructuredValidationSummary } from "@/lib/builder/types";
 
 function summarizeScript(loop: BuilderAgenticLoopMetadata, scriptName: "build" | "test" | "lint"): BuilderStructuredCheckSummary {
   for (const iteration of loop.iterations) {
@@ -48,6 +48,7 @@ export function buildBuilderStructuredReview(args: {
   status: BuilderTaskStatus | string;
   stage: BuilderTaskStage | string;
   loop: BuilderAgenticLoopMetadata;
+  architecture?: BuilderArchitectureReconciliationState;
 }): BuilderStructuredReview {
   const filesChanged = collectFilesChanged(args.loop);
   const commandsExecuted = collectCommands(args.loop);
@@ -75,6 +76,7 @@ export function buildBuilderStructuredReview(args: {
     build,
     risks,
     nextSteps,
+    architecture: args.architecture,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -115,6 +117,19 @@ export function renderBuilderReviewMarkdown(review: BuilderStructuredReview): st
     `## Next Steps`,
     "",
     ...(review.nextSteps.length > 0 ? review.nextSteps.map((step) => `- ${step}`) : ["- none"]),
+    "",
+    `## Architecture Reconciliation`,
+    "",
+    ...(review.architecture
+      ? [
+          `- Active keys: ${review.architecture.activeKeys.join(", ") || "none"}`,
+          `- Stale keys: ${review.architecture.staleKeys.join(", ") || "none"}`,
+          `- Addressed stale keys: ${review.architecture.addressedStaleKeys.join(", ") || "none"}`,
+          `- Missing stale keys: ${review.architecture.missingStaleKeys.join(", ") || "none"}`,
+          `- New decision keys: ${review.architecture.newDecisionKeys.join(", ") || "none"}`,
+          `- Retired decision keys: ${review.architecture.retiredDecisionKeys.join(", ") || "none"}`,
+        ]
+      : ["- none"]),
     "",
   ];
 

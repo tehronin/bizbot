@@ -30,6 +30,7 @@ describe("builder plugin", () => {
     const plugin = getBuiltinPlugins().find((entry) => entry.metadata.id === "builder");
 
     expect(plugin?.metadata.displayName).toBe("Builder");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_plan_project");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_run_command");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_run_agentic_task");
   });

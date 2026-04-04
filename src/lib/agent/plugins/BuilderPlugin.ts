@@ -4,7 +4,7 @@ import type { BuilderPackageManager } from "@prisma/client";
 import { runBuilderProjectBootstrap } from "@/lib/builder/bootstrap";
 import { recordBuilderProjectCommand } from "@/lib/builder/commands";
 import { loadBuilderProjectContext, syncBuilderProjectProjection } from "@/lib/builder/context";
-import { getBuilderProjectOverview, launchBuilderTask } from "@/lib/builder/orchestrator";
+import { getBuilderProjectOverview, launchBuilderTask, planBuilderProject } from "@/lib/builder/orchestrator";
 import { createBuilderProject, deleteBuilderProject, getBuilderProject, getBuilderRun, listBuilderProjects, listBuilderRuns, updateBuilderProject } from "@/lib/builder/projects";
 import { listBuilderTasks } from "@/lib/builder/tasks";
 import {
@@ -111,6 +111,17 @@ interface BuilderContinueTaskArgs {
   model?: string;
 }
 
+interface BuilderPlanProjectArgs {
+  projectId: string;
+  title?: string;
+  summary?: string;
+  goals?: string[];
+  constraints?: string[];
+  deliverables?: string[];
+  notes?: string;
+  regenerate?: boolean;
+}
+
 interface BuilderWriteProjectInstructionsArgs {
   projectId: string;
   objective?: string;
@@ -167,6 +178,34 @@ export const builderPlugin = {
         ...(await getBuilderProjectOverview(projectId)),
       }),
     } satisfies ToolDefinition<BuilderProjectArgs, Awaited<ReturnType<typeof getBuilderProjectOverview>>>)),
+    registerTool(defineTool({
+      name: "builder_plan_project",
+      description: "Persist or update a canonical Builder project brief, generate the relational project plan, and sync the staged project overview.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          title: { type: "string" },
+          summary: { type: "string" },
+          goals: { type: "array", items: { type: "string" } },
+          constraints: { type: "array", items: { type: "string" } },
+          deliverables: { type: "array", items: { type: "string" } },
+          notes: { type: "string" },
+          regenerate: { type: "boolean" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId, title, summary, goals, constraints, deliverables, notes, regenerate }: BuilderPlanProjectArgs) =>
+        planBuilderProject(projectId, {
+          title: title ?? "",
+          summary: summary ?? "",
+          goals,
+          constraints,
+          deliverables,
+          notes,
+          regenerate,
+        }),
+    } satisfies ToolDefinition<BuilderPlanProjectArgs, Awaited<ReturnType<typeof planBuilderProject>>>)),
     registerTool(defineTool({
       name: "builder_list_tasks",
       description: "List persisted Builder tasks for a Builder Mode project so work can continue across turns.",

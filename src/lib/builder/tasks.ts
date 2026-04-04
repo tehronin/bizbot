@@ -4,6 +4,7 @@ import { defaultBuilderTaskMetadata, normalizeBuilderTaskMetadata, type BuilderP
 
 export interface BuilderTaskCreateInput {
   projectId: string;
+  taskSpecId?: string;
   title: string;
   description: string;
   acceptanceCriteria?: Prisma.InputJsonValue;
@@ -99,6 +100,7 @@ export async function createBuilderTask(input: BuilderTaskCreateInput): Promise<
   return db.builderTask.create({
     data: {
       projectId: input.projectId,
+      taskSpecId: input.taskSpecId,
       title,
       description,
       acceptanceCriteria: input.acceptanceCriteria as never,
@@ -109,6 +111,7 @@ export async function createBuilderTask(input: BuilderTaskCreateInput): Promise<
 }
 
 export async function updateBuilderTask(taskId: string, input: {
+  taskSpecId?: string | null;
   title?: string;
   description?: string;
   status?: BuilderTaskStatus;
@@ -120,6 +123,7 @@ export async function updateBuilderTask(taskId: string, input: {
   return db.builderTask.update({
     where: { id: taskId },
     data: {
+      ...(input.taskSpecId !== undefined ? { taskSpecId: input.taskSpecId } : {}),
       ...(input.title !== undefined ? { title: input.title.trim() } : {}),
       ...(input.description !== undefined ? { description: input.description.trim() } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),

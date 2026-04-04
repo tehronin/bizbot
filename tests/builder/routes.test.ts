@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getBuilderStats: vi.fn(),
   getBuilderProjectOverview: vi.fn(),
   launchBuilderTask: vi.fn(),
+  planBuilderProject: vi.fn(),
   createBuilderProject: vi.fn(),
   listBuilderProjects: vi.fn(),
   getBuilderProject: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock("@/lib/builder/bootstrap", () => ({
 vi.mock("@/lib/builder/orchestrator", () => ({
   getBuilderProjectOverview: mocks.getBuilderProjectOverview,
   launchBuilderTask: mocks.launchBuilderTask,
+  planBuilderProject: mocks.planBuilderProject,
 }));
 
 vi.mock("@/lib/builder/analytics", () => ({
@@ -81,6 +83,7 @@ import { GET as getProjects, POST as postProjects } from "@/app/api/builder/proj
 import { DELETE as deleteProject, GET as getProject, PATCH as patchProject } from "@/app/api/builder/projects/[id]/route";
 import { POST as postBootstrap } from "@/app/api/builder/projects/[id]/bootstrap/route";
 import { POST as postCommand } from "@/app/api/builder/projects/[id]/commands/route";
+import { POST as postPlan } from "@/app/api/builder/projects/[id]/plan/route";
 import { GET as getTasks, POST as postTask } from "@/app/api/builder/projects/[id]/tasks/route";
 import { POST as postCancelRun } from "@/app/api/builder/runs/[runId]/cancel/route";
 import { GET as getTaskHistory } from "@/app/api/builder/tasks/[taskId]/history/route";
@@ -114,7 +117,7 @@ describe("builder routes", () => {
     ]);
     mocks.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
     mocks.listBuilderProjects.mockResolvedValue([
-      { id: "project-1", name: "Demo", slug: "demo", relativePath: "projects/demo", template: "node-cli", packageManager: "NPM", gitInitialized: false, lastRunStatus: "IDLE" },
+      { id: "project-1", name: "Demo", slug: "demo", relativePath: "projects/demo", template: "node-cli", packageManager: "NPM", gitInitialized: false, lifecycle: "ACTIVE", lastRunStatus: "IDLE" },
     ]);
     mocks.getBuilderProject.mockResolvedValue({
       id: "project-1",
@@ -124,6 +127,7 @@ describe("builder routes", () => {
       template: "node-cli",
       packageManager: "NPM",
       gitInitialized: false,
+      lifecycle: "ACTIVE",
       lastRunStatus: "IDLE",
     });
     mocks.getBuilderTask.mockResolvedValue({
@@ -165,12 +169,35 @@ describe("builder routes", () => {
         template: "node-cli",
         packageManager: "NPM",
         gitInitialized: false,
+        lifecycle: "ACTIVE",
         lastRunStatus: "IDLE",
         latestSessionSummary: "Validated the initial scaffold.",
       },
       context: {
         objective: "Build the external demo project.",
         architectureNotes: ["Keep Builder files under .builder."],
+        architecture: {
+          active: [{
+            key: "planning_schema",
+            canonicalKey: "builder:project-1:planning_schema",
+            displayName: "planning_schema",
+            description: "Planning state remains database-backed.",
+            confidence: 0.9,
+            status: "active",
+            source: "builder_adr",
+            updatedAt: "2025-01-01T00:00:00.000Z",
+          }],
+          stale: [{
+            key: "legacy_projection_path",
+            canonicalKey: "builder:project-1:legacy_projection_path",
+            displayName: "legacy_projection_path",
+            description: "Old projection path needs reconfirmation.",
+            confidence: 0.8,
+            status: "deprecated",
+            source: "builder_adr",
+            updatedAt: "2025-01-01T00:00:00.000Z",
+          }],
+        },
         codingConventions: ["Use TypeScript."],
         constraints: ["Stay inside the external builder workspace."],
         importantCommands: ["npm run build"],
@@ -182,9 +209,58 @@ describe("builder routes", () => {
         updatedAt: "2025-01-01T00:00:00.000Z",
       },
       tasks: [
-        { id: "task-1", title: "Implement health check", description: "Add a health check route.", status: "RUNNING", stage: "IMPLEMENTING", summary: null },
+        { id: "task-1", taskSpecId: "task-spec-1", title: "Implement health check", description: "Add a health check route.", status: "RUNNING", stage: "IMPLEMENTING", summary: null },
       ],
-      currentTask: { id: "task-1", title: "Implement health check", description: "Add a health check route.", status: "RUNNING", stage: "IMPLEMENTING", summary: null },
+      brief: {
+        id: "brief-1",
+        projectId: "project-1",
+        title: "Builder v3.1",
+        summary: "Move Builder to canonical project planning.",
+        goals: ["Keep planning relational."],
+        constraints: ["Preserve execution history."],
+        deliverables: ["Planner", "Scheduler", "Dashboard"],
+        notes: "Seeded from route test.",
+      },
+      milestones: [{
+        id: "milestone-1",
+        title: "Planning foundation",
+        summary: "Add brief, milestone, and task-spec models.",
+        status: "ACTIVE",
+        sortOrder: 1,
+        taskSpecs: [{
+          id: "task-spec-1",
+          milestoneId: "milestone-1",
+          title: "Implement health check",
+          summary: "Add a health check route.",
+          status: "ACTIVE",
+          sortOrder: 1,
+          completionCriteria: ["Add the route", "Run tests"],
+          validators: ["TEST"],
+          architecturalDecisionKeys: ["planning_schema"],
+          dependencyIds: [],
+        }],
+      }],
+      currentMilestone: {
+        id: "milestone-1",
+        title: "Planning foundation",
+        summary: "Add brief, milestone, and task-spec models.",
+        status: "ACTIVE",
+        sortOrder: 1,
+        taskSpecs: [],
+      },
+      currentTaskSpec: {
+        id: "task-spec-1",
+        milestoneId: "milestone-1",
+        title: "Implement health check",
+        summary: "Add a health check route.",
+        status: "ACTIVE",
+        sortOrder: 1,
+        completionCriteria: ["Add the route", "Run tests"],
+        validators: ["TEST"],
+        architecturalDecisionKeys: ["planning_schema"],
+        dependencyIds: [],
+      },
+      currentTask: { id: "task-1", taskSpecId: "task-spec-1", title: "Implement health check", description: "Add a health check route.", status: "RUNNING", stage: "IMPLEMENTING", summary: null },
       runs: [
         { id: "run-1", projectId: "project-1", kind: "ORCHESTRATION", title: "Builder task: Implement health check", status: "RUNNING" },
       ],
@@ -202,9 +278,61 @@ describe("builder routes", () => {
         build: { passed: null, exitCode: null, summary: null },
         risks: ["Tests are still failing."],
         nextSteps: ["Fix the failing test."],
+        architecture: {
+          activeKeys: ["planning_schema"],
+          staleKeys: ["legacy_projection_path"],
+          addressedStaleKeys: ["legacy_projection_path"],
+          missingStaleKeys: [],
+          newDecisionKeys: ["planning_schema"],
+          retiredDecisionKeys: ["legacy_projection_path"],
+        },
         updatedAt: "2025-01-01T00:00:00.000Z",
       },
       nextRecommendedStep: "Continue the current task.",
+    });
+    mocks.planBuilderProject.mockResolvedValue({
+      project: {
+        id: "project-1",
+        name: "Demo",
+        slug: "demo",
+        relativePath: "projects/demo",
+        template: "node-cli",
+        packageManager: "NPM",
+        gitInitialized: false,
+        lifecycle: "PLANNED",
+        lastRunStatus: "IDLE",
+      },
+      context: {
+        objective: "Move Builder to canonical project planning.",
+        architectureNotes: [],
+        codingConventions: [],
+        constraints: [],
+        importantCommands: [],
+        currentPlan: [],
+        latestSessionSummary: null,
+        knownFailures: [],
+        nextSteps: ["Advance the first task spec."],
+        instructionNotes: null,
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      },
+      brief: {
+        id: "brief-1",
+        projectId: "project-1",
+        title: "Builder v3.1",
+        summary: "Move Builder to canonical project planning.",
+        goals: [],
+        constraints: [],
+        deliverables: [],
+        notes: null,
+      },
+      milestones: [],
+      currentMilestone: null,
+      currentTaskSpec: null,
+      tasks: [],
+      currentTask: null,
+      runs: [],
+      latestReview: null,
+      nextRecommendedStep: "Advance the first task spec.",
     });
     mocks.listBuilderRuns.mockResolvedValue([
       { id: "run-1", projectId: "project-1", kind: "AGENTIC", title: "Run Codex CLI task", status: "SUCCEEDED" },
@@ -233,6 +361,7 @@ describe("builder routes", () => {
       relativePath: "projects/acme",
       template: "vite-app",
       packageManager: "PNPM",
+      lifecycle: "DRAFT",
     });
   });
 
@@ -268,8 +397,40 @@ describe("builder routes", () => {
 
     expect(response.status).toBe(200);
     expect(payload.project.id).toBe("project-1");
+    expect(payload.currentTaskSpec.id).toBe("task-spec-1");
     expect(payload.currentTask.id).toBe("task-1");
     expect(payload.runs).toHaveLength(1);
+  });
+
+  it("plans a project through the dedicated planning route", async () => {
+    const response = await postPlan(new NextRequest("http://localhost/api/builder/projects/project-1/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Builder v3.1",
+        summary: "Move Builder to canonical project planning.",
+        goals: ["Keep planning relational."],
+        constraints: ["No new models."],
+        deliverables: ["Planner", "ADR reconciliation"],
+        notes: "Plan first.",
+        regenerate: true,
+      }),
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.planBuilderProject).toHaveBeenCalledWith("project-1", {
+      title: "Builder v3.1",
+      summary: "Move Builder to canonical project planning.",
+      goals: ["Keep planning relational."],
+      constraints: ["No new models."],
+      deliverables: ["Planner", "ADR reconciliation"],
+      notes: "Plan first.",
+      regenerate: true,
+    });
+    expect(payload.project.id).toBe("project-1");
   });
 
   it("updates and deletes a project item", async () => {

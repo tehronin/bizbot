@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { BuilderPackageManager, BuilderProject, BuilderRun, BuilderRunKind, BuilderRunStatus, Prisma } from "@prisma/client";
+import type { BuilderPackageManager, BuilderProject, BuilderProjectLifecycle, BuilderRun, BuilderRunKind, BuilderRunStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { assertBuilderWorkspaceSafe, resolveBuilderWorkspacePath } from "@/lib/builder/config";
 
@@ -17,6 +17,7 @@ export interface UpdateBuilderProjectInput {
   template?: string;
   packageManager?: BuilderPackageManager;
   gitInitialized?: boolean;
+  lifecycle?: BuilderProjectLifecycle;
   context?: Prisma.InputJsonValue;
   latestSessionSummary?: string | null;
 }
@@ -139,6 +140,7 @@ export async function updateBuilderProject(projectId: string, input: UpdateBuild
       ...(input.template !== undefined ? { template: input.template } : {}),
       ...(input.packageManager !== undefined ? { packageManager: input.packageManager } : {}),
       ...(input.gitInitialized !== undefined ? { gitInitialized: input.gitInitialized } : {}),
+      ...(input.lifecycle !== undefined ? { lifecycle: input.lifecycle } : {}),
       ...(input.context !== undefined ? { context: input.context as never } : {}),
       ...(input.latestSessionSummary !== undefined ? { latestSessionSummary: input.latestSessionSummary } : {}),
     },

@@ -69,6 +69,7 @@ describe("builder agentic loop", () => {
     template: "vite-app",
     packageManager: "NPM",
     gitInitialized: true,
+    lifecycle: "DRAFT",
     lastRunStatus: "IDLE",
     context: null,
     latestSessionSummary: null,

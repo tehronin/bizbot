@@ -33,6 +33,7 @@ describe("builder context", () => {
       template: "node-cli",
       packageManager: "NPM",
       gitInitialized: false,
+      lifecycle: "DRAFT",
       lastRunStatus: "IDLE",
       context: { objective: "database objective", constraints: ["stay bounded"] },
     } as never);
@@ -50,10 +51,33 @@ describe("builder context", () => {
         relativePath: "projects/demo",
         template: "node-cli",
         packageManager: "NPM",
+        lifecycle: "PLANNED",
       } as never,
       context: {
         objective: "Ship the demo app.",
         architectureNotes: ["Keep reports in .builder/reports."],
+        architecture: {
+          active: [{
+            key: "planning_schema",
+            canonicalKey: "builder:project-1:planning_schema",
+            displayName: "planning_schema",
+            description: "The project plan remains DB authoritative.",
+            confidence: 0.9,
+            status: "active",
+            source: "builder_adr",
+            updatedAt: "2025-01-01T00:00:00.000Z",
+          }],
+          stale: [{
+            key: "legacy_projection_path",
+            canonicalKey: "builder:project-1:legacy_projection_path",
+            displayName: "legacy_projection_path",
+            description: "Old projection path needs reconfirmation.",
+            confidence: 0.8,
+            status: "deprecated",
+            source: "builder_adr",
+            updatedAt: "2025-01-01T00:00:00.000Z",
+          }],
+        },
         codingConventions: ["Use strict TypeScript."],
         constraints: ["Stay inside the external workspace."],
         importantCommands: ["npm run build"],
@@ -64,10 +88,51 @@ describe("builder context", () => {
         instructionNotes: "Avoid large prompt dumps.",
         updatedAt: "2025-01-01T00:00:00.000Z",
       },
+      planning: {
+        lifecycle: "PLANNED",
+        brief: {
+          id: "brief-1",
+          projectId: "project-1",
+          title: "Ship the demo app",
+          summary: "Build the staged Builder planning flow.",
+          goals: ["Keep state canonical in the database."],
+          constraints: ["Stay inside the external workspace."],
+          deliverables: ["Planner", "Scheduler"],
+          notes: "Derived from product brief.",
+          createdAt: new Date("2025-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2025-01-01T00:00:00.000Z"),
+        },
+        milestones: [{
+          id: "milestone-1",
+          title: "Plan foundation",
+          summary: "Persist the brief and milestone state.",
+          status: "ACTIVE",
+          sortOrder: 1,
+          taskSpecs: [{
+            id: "task-spec-1",
+            milestoneId: "milestone-1",
+            title: "Add planning tables",
+            summary: "Extend the schema.",
+            status: "ACTIVE",
+            sortOrder: 1,
+            completionCriteria: ["Schema compiles."],
+            validators: ["TYPECHECK"],
+            architecturalDecisionKeys: ["planning_schema"],
+            dependencyIds: [],
+          }],
+        }],
+        currentMilestone: null,
+        currentTaskSpec: null,
+      },
     });
 
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/AGENTS.md", expect.stringContaining("Ship the demo app."));
+    expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/project-brief.md", expect.stringContaining("Build the staged Builder planning flow."));
+    expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/milestones.md", expect.stringContaining("Plan foundation"));
+    expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/task-board.md", expect.stringContaining("Add planning tables"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/project-context.md", expect.stringContaining("Use strict TypeScript."));
+    expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/architecture.md", expect.stringContaining("planning_schema"));
+    expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/architecture.md", expect.stringContaining("legacy_projection_path"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/state.json", expect.stringContaining("Ship the demo app."));
   });
 
@@ -78,6 +143,9 @@ describe("builder context", () => {
       }
       if (filePath.endsWith("project-context.md")) {
         return "# Project Context\n\n## Commands\nUse npm run build.\n\n## Notes\nPrefer App Router components.";
+      }
+      if (filePath.endsWith("project-brief.md")) {
+        return "# Project Brief\n\n## Summary\nBuild a dashboard with staged planning.";
       }
       throw new Error("missing");
     });

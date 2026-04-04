@@ -1,4 +1,63 @@
-import type { BuilderTaskStage, BuilderTaskStatus } from "@prisma/client";
+import type {
+  BuilderMilestoneStatus,
+  BuilderProjectBrief,
+  BuilderProjectLifecycle,
+  BuilderTaskSpecStatus,
+  BuilderTaskSpecValidator,
+  BuilderTaskStage,
+  BuilderTaskStatus,
+} from "@prisma/client";
+
+export interface BuilderArchitectureDecisionState {
+  key: string;
+  canonicalKey: string;
+  displayName: string;
+  description: string | null;
+  confidence: number;
+  status: string;
+  source: string;
+  updatedAt: string;
+}
+
+export interface BuilderArchitectureContextState {
+  active: BuilderArchitectureDecisionState[];
+  stale: BuilderArchitectureDecisionState[];
+}
+
+export interface BuilderArchitectureReconciliationState {
+  activeKeys: string[];
+  staleKeys: string[];
+  addressedStaleKeys: string[];
+  missingStaleKeys: string[];
+  newDecisionKeys: string[];
+  retiredDecisionKeys: string[];
+}
+
+export interface BuilderPlannerCritiqueIssue {
+  severity: "error" | "warning";
+  code: string;
+  message: string;
+}
+
+export interface BuilderPlannerCritiqueState {
+  valid: boolean;
+  issues: BuilderPlannerCritiqueIssue[];
+  normalizedMilestones: BuilderNormalizedMilestoneDraft[];
+  reconciliation: BuilderArchitectureReconciliationState;
+}
+
+export interface BuilderPlannerInputState {
+  projectId: string;
+  projectName: string;
+  template: string;
+  packageManager: string;
+  brief: BuilderProjectBriefState;
+  constraints: string[];
+  nonGoals: string[];
+  acceptanceCriteria: string[];
+  activeArchitecture: BuilderArchitectureDecisionState[];
+  staleArchitecture: BuilderArchitectureDecisionState[];
+}
 
 export interface BuilderPlanStep {
   id: string;
@@ -13,9 +72,89 @@ export interface BuilderInstructionFragment {
   content: string;
 }
 
+export interface BuilderProjectBriefState {
+  title: string;
+  summary: string;
+  goals: string[];
+  constraints: string[];
+  deliverables: string[];
+  notes: string | null;
+}
+
+export interface BuilderTaskSpecState {
+  id: string;
+  milestoneId: string;
+  title: string;
+  summary: string;
+  status: BuilderTaskSpecStatus;
+  sortOrder: number;
+  completionCriteria: string[];
+  validators: BuilderTaskSpecValidator[];
+  architecturalDecisionKeys: string[];
+  dependencyIds: string[];
+}
+
+export interface BuilderMilestoneState {
+  id: string;
+  title: string;
+  summary: string;
+  status: BuilderMilestoneStatus;
+  sortOrder: number;
+  taskSpecs: BuilderTaskSpecState[];
+}
+
+export interface BuilderPlanningSnapshot {
+  lifecycle: BuilderProjectLifecycle;
+  brief: BuilderProjectBrief | null;
+  milestones: BuilderMilestoneState[];
+  currentMilestone: BuilderMilestoneState | null;
+  currentTaskSpec: BuilderTaskSpecState | null;
+}
+
+export interface BuilderPlannerTaskDraft {
+  key: string;
+  title: string;
+  summary: string;
+  completionCriteria: string[];
+  validators: string[];
+  dependencyKeys?: string[];
+  architectural_new_decisions?: string[];
+  architectural_stale_keys?: string[];
+}
+
+export interface BuilderPlannerMilestoneDraft {
+  key: string;
+  title: string;
+  summary: string;
+  tasks: BuilderPlannerTaskDraft[];
+}
+
+export interface BuilderNormalizedTaskSpecDraft {
+  key: string;
+  title: string;
+  summary: string;
+  status: BuilderTaskSpecStatus;
+  sortOrder: number;
+  completionCriteria: string[];
+  validators: BuilderTaskSpecValidator[];
+  dependencyKeys: string[];
+  architecturalDecisionKeys: string[];
+  architecturalStaleKeys: string[];
+}
+
+export interface BuilderNormalizedMilestoneDraft {
+  key: string;
+  title: string;
+  summary: string;
+  status: BuilderMilestoneStatus;
+  sortOrder: number;
+  tasks: BuilderNormalizedTaskSpecDraft[];
+}
+
 export interface BuilderProjectContextState {
   objective: string | null;
   architectureNotes: string[];
+  architecture?: BuilderArchitectureContextState;
   codingConventions: string[];
   constraints: string[];
   importantCommands: string[];
@@ -71,13 +210,22 @@ export interface BuilderStructuredReview {
   build: BuilderStructuredCheckSummary;
   risks: string[];
   nextSteps: string[];
+  architecture?: BuilderArchitectureReconciliationState;
   updatedAt: string;
+}
+
+export function defaultBuilderArchitectureContext(): BuilderArchitectureContextState {
+  return {
+    active: [],
+    stale: [],
+  };
 }
 
 export function defaultBuilderProjectContext(): BuilderProjectContextState {
   return {
     objective: null,
     architectureNotes: [],
+    architecture: defaultBuilderArchitectureContext(),
     codingConventions: [],
     constraints: [],
     importantCommands: [],
@@ -152,10 +300,49 @@ export function normalizeBuilderProjectContext(value: unknown): BuilderProjectCo
   const readStringArray = (input: unknown): string[] => Array.isArray(input)
     ? input.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : [])
     : [];
+  const readArchitecture = (input: unknown): BuilderArchitectureContextState => {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      return defaultBuilderArchitectureContext();
+    }
+
+    const candidateArchitecture = input as Record<string, unknown>;
+    const readDecisionList = (entry: unknown): BuilderArchitectureDecisionState[] => Array.isArray(entry)
+      ? entry.flatMap((item) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) {
+            return [];
+          }
+
+          const decision = item as Record<string, unknown>;
+          const key = typeof decision.key === "string" ? decision.key.trim() : "";
+          const canonicalKey = typeof decision.canonicalKey === "string" ? decision.canonicalKey.trim() : "";
+          const displayName = typeof decision.displayName === "string" ? decision.displayName.trim() : "";
+          if (!key || !canonicalKey || !displayName) {
+            return [];
+          }
+
+          return [{
+            key,
+            canonicalKey,
+            displayName,
+            description: typeof decision.description === "string" && decision.description.trim() ? decision.description.trim() : null,
+            confidence: typeof decision.confidence === "number" && Number.isFinite(decision.confidence) ? decision.confidence : 0,
+            status: typeof decision.status === "string" && decision.status.trim() ? decision.status.trim() : "active",
+            source: typeof decision.source === "string" && decision.source.trim() ? decision.source.trim() : "builder_adr",
+            updatedAt: typeof decision.updatedAt === "string" && decision.updatedAt.trim() ? decision.updatedAt.trim() : new Date(0).toISOString(),
+          }];
+        })
+      : [];
+
+    return {
+      active: readDecisionList(candidateArchitecture.active),
+      stale: readDecisionList(candidateArchitecture.stale),
+    };
+  };
 
   return {
     objective: typeof candidate.objective === "string" && candidate.objective.trim() ? candidate.objective.trim() : null,
     architectureNotes: readStringArray(candidate.architectureNotes),
+    architecture: readArchitecture(candidate.architecture),
     codingConventions: readStringArray(candidate.codingConventions),
     constraints: readStringArray(candidate.constraints),
     importantCommands: readStringArray(candidate.importantCommands),
@@ -203,4 +390,31 @@ export function trimReviewSummary(value: string, maxChars = 240): string {
   }
 
   return `${value.slice(0, maxChars - 1).trimEnd()}…`;
+}
+
+export function normalizeBuilderProjectBriefState(value: unknown): BuilderProjectBriefState | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const readString = (input: unknown): string => typeof input === "string" ? input.trim() : "";
+  const readStringArray = (input: unknown): string[] => Array.isArray(input)
+    ? input.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : [])
+    : [];
+  const title = readString(candidate.title);
+  const summary = readString(candidate.summary);
+
+  if (!title || !summary) {
+    return null;
+  }
+
+  return {
+    title,
+    summary,
+    goals: readStringArray(candidate.goals),
+    constraints: readStringArray(candidate.constraints),
+    deliverables: readStringArray(candidate.deliverables),
+    notes: readString(candidate.notes) || null,
+  };
 }

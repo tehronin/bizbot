@@ -168,6 +168,24 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Builder inspection is now exposed through stable MCP resources under `bizbot://builder/*`.
 - See `docs/builder-mode.md` for the v2 model and authority rules.
 
+### Builder Mode v3.1 Hardening
+
+- Planning stays anchored on the existing Builder planning entrypoint instead of forking a new route or execution path.
+- The planner now runs as a structured pipeline: assemble planner input, generate a candidate plan, normalize it, critique it, then persist only validated output.
+- Planner prompting is now separate from task-execution prompting and explicitly includes brief, constraints, non-goals, acceptance criteria, template guidance, active architecture, and stale architecture blocks.
+- Builder review metadata can now carry architecture reconciliation outcomes alongside validation, files changed, risks, and next steps.
+- Execution behavior in the native Builder loop remains unchanged; the hardening surrounds planning, review, and projection state only.
+
+### Living ADR
+
+- Living ADR now exists as a Builder-owned derived view over existing ontology rows instead of adding schema.
+- Builder ADR state is project-scoped by canonical key convention using the `builder:{projectId}:` prefix.
+- Planner context injects only Builder ADR rows with confidence `>= 0.7`.
+- Active ADR rows populate the planner's active architecture block.
+- Deprecated or inactive ADR rows populate the stale architecture block that must be reconciled before plan persistence.
+- Successful plan writes promote `architectural_new_decisions` back into ontology using the `builder_adr` source so later planning runs reload them as active architecture.
+- Projection files now expose active and stale architecture state in `.builder/architecture.md` alongside the canonical brief, milestones, and task-board projections.
+
 ### Recommended Builder Workflow
 
 - Treat Builder as project-first, not chat-first: create the Builder project before asking chat to scaffold or modify code in that external workspace.

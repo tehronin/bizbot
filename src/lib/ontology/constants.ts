@@ -2,8 +2,8 @@ export const ONTOLOGY_SCOPES = ["user", "runtime", "global"] as const;
 export const ONTOLOGY_SCOPE_PRECEDENCE = ["user", "runtime", "global"] as const;
 export const ONTOLOGY_STATUSES = ["active", "inactive", "deprecated"] as const;
 export const ONTOLOGY_ALIAS_KINDS = ["canonical", "display_name", "memory_key", "value"] as const;
-export const ONTOLOGY_SOURCES = ["user_memory", "system", "bootstrap", "manual"] as const;
-export const ONTOLOGY_EVIDENCE_SOURCE_KINDS = ["user_memory_fact", "system", "bootstrap", "manual"] as const;
+export const ONTOLOGY_SOURCES = ["user_memory", "system", "bootstrap", "manual", "builder_adr"] as const;
+export const ONTOLOGY_EVIDENCE_SOURCE_KINDS = ["user_memory_fact", "system", "bootstrap", "manual", "builder_adr"] as const;
 export const ONTOLOGY_PROMOTION_ALLOWLIST = ["identity", "preference", "workflow", "constraint", "operator_setting", "goal"] as const;
 
 export const ONTOLOGY_ENTITY_TYPES = [

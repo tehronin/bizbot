@@ -6,6 +6,8 @@ const serviceMocks = vi.hoisted(() => ({
   ensureOntologyRelation: vi.fn(),
   ensureOntologyAlias: vi.fn(),
   createOntologyEvidence: vi.fn(),
+  listOntologyEntities: vi.fn(),
+  setOntologyEntityStatus: vi.fn(),
 }));
 
 vi.mock("@/lib/ontology/service", () => ({
@@ -14,9 +16,11 @@ vi.mock("@/lib/ontology/service", () => ({
   ensureOntologyRelation: serviceMocks.ensureOntologyRelation,
   ensureOntologyAlias: serviceMocks.ensureOntologyAlias,
   createOntologyEvidence: serviceMocks.createOntologyEvidence,
+  listOntologyEntities: serviceMocks.listOntologyEntities,
+  setOntologyEntityStatus: serviceMocks.setOntologyEntityStatus,
 }));
 
-import { promoteUserMemoryFactToOntology } from "@/lib/ontology/promotion";
+import { buildBuilderAdrCanonicalKey, promoteBuilderArchitecturalDecisionsToOntology, promoteUserMemoryFactToOntology } from "@/lib/ontology/promotion";
 
 describe("ontology promotion", () => {
   beforeEach(() => {
@@ -26,6 +30,8 @@ describe("ontology promotion", () => {
     serviceMocks.ensureOntologyRelation.mockResolvedValue({ id: "relation-1" });
     serviceMocks.ensureOntologyAlias.mockResolvedValue({ id: "alias-1" });
     serviceMocks.createOntologyEvidence.mockResolvedValueOnce({ id: "evidence-entity" }).mockResolvedValueOnce({ id: "evidence-relation" });
+    serviceMocks.listOntologyEntities.mockResolvedValue([]);
+    serviceMocks.setOntologyEntityStatus.mockResolvedValue({});
   });
 
   it("promotes allowlisted stable facts and records provenance", async () => {
@@ -130,5 +136,27 @@ describe("ontology promotion", () => {
       status: "skipped",
       reason: "unsupported_shape",
     }));
+  });
+
+  it("promotes Builder architectural decisions with the builder-scoped canonical prefix and source", async () => {
+    serviceMocks.ensureOntologyEntity.mockResolvedValue({ id: "entity-builder" });
+    serviceMocks.ensureOntologyAlias.mockResolvedValue({ id: "alias-builder" });
+    serviceMocks.createOntologyEvidence.mockResolvedValue({ id: "evidence-builder" });
+
+    const result = await promoteBuilderArchitecturalDecisionsToOntology({
+      projectId: "project-1",
+      sourceRef: "builder:project-1:plan_sync",
+      decisionKeys: ["planning_schema"],
+      staleKeys: ["legacy_projection_path"],
+    });
+
+    expect(buildBuilderAdrCanonicalKey("project-1", "planning_schema")).toBe("builder:project-1:planning_schema");
+    expect(serviceMocks.ensureOntologyEntity).toHaveBeenCalledWith(expect.objectContaining({
+      canonicalKey: "builder:project-1:planning_schema",
+      source: "builder_adr",
+      preserveCanonicalKey: true,
+    }));
+    expect(result.promotedKeys).toEqual(["planning_schema"]);
+    expect(result.retiredKeys).toEqual(["legacy_projection_path"]);
   });
 });
