@@ -101,6 +101,7 @@ describe("builder template bootstraps", () => {
     await bootstrapBuilderProject(project);
 
     expect(vi.mocked(runNpxPackage)).toHaveBeenCalledWith("projects/next-app-test", [
+      "--yes",
       "create-next-app@latest",
       ".",
       "--ts",
@@ -108,7 +109,6 @@ describe("builder template bootstraps", () => {
       "--app",
       "--src-dir",
       "--use-npm",
-      "--yes",
     ]);
     expect(BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["next-app"]).toEqual(expect.objectContaining({
       runtimeEntrypoint: "src/app/page.tsx",
@@ -124,6 +124,7 @@ describe("builder template bootstraps", () => {
     await bootstrapBuilderProject(project);
 
     expect(vi.mocked(runNpxPackage)).toHaveBeenCalledWith("projects/vite-app-test", [
+      "--yes",
       "create-vite@latest",
       ".",
       "--template",

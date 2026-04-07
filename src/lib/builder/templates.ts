@@ -199,7 +199,7 @@ async function bootstrapPluginPackage(project: BuilderProject): Promise<BuilderB
 }
 
 async function bootstrapViteApp(project: BuilderProject): Promise<BuilderBootstrapResult> {
-  await runNpxPackage(project.relativePath, ["create-vite@latest", ".", "--template", "react-ts"]);
+  await runNpxPackage(project.relativePath, ["--yes", "create-vite@latest", ".", "--template", "react-ts"]);
   return {
     template: project.template,
     root: project.relativePath,
@@ -209,6 +209,7 @@ async function bootstrapViteApp(project: BuilderProject): Promise<BuilderBootstr
 
 async function bootstrapNextApp(project: BuilderProject): Promise<BuilderBootstrapResult> {
   await runNpxPackage(project.relativePath, [
+    "--yes",
     "create-next-app@latest",
     ".",
     "--ts",
@@ -216,7 +217,6 @@ async function bootstrapNextApp(project: BuilderProject): Promise<BuilderBootstr
     "--app",
     "--src-dir",
     packageManagerFlag(project.packageManager),
-    "--yes",
   ]);
 
   return {
