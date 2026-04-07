@@ -5,11 +5,14 @@ import {
 } from "@/lib/agent/heartbeat-queue";
 import { listRecentAgentRuns } from "@/lib/agent/run-journal";
 import { getMcpClientStatus } from "@/lib/mcp/client";
+import { getMcpQueueStatus, listMcpJobs } from "@/lib/mcp/job-status";
 
 export async function GET() {
-  const [worker, jobs, failedInboxCount, failedPostCount, pendingApprovalCount] = await Promise.all([
+  const [worker, jobs, mcpWorker, mcpJobs, failedInboxCount, failedPostCount, pendingApprovalCount] = await Promise.all([
     getAgentWorkerStatus(),
     listAgentHeartbeatJobs(["waiting", "active", "delayed", "completed", "failed"], 12),
+    getMcpQueueStatus(),
+    listMcpJobs(["waiting", "active", "delayed", "completed", "failed"], 12),
     db.inboxMessage.count({ where: { status: "FAILED" } }),
     db.post.count({ where: { status: "FAILED" } }),
     db.postApproval.count({ where: { status: "PENDING" } }),
@@ -35,6 +38,8 @@ export async function GET() {
     generatedAt: new Date().toISOString(),
     worker,
     jobs,
+    mcpWorker,
+    mcpJobs,
     runs: listRecentAgentRuns(15),
     mcp: {
       connectedClients: getMcpClientStatus(),

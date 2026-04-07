@@ -13,6 +13,7 @@ function parseCreateProjectRequest(value: object | null): {
   relativePath?: string;
   template?: string;
   packageManager?: BuilderPackageManager;
+  stackPresetKey?: string;
 } {
   if (!value || Array.isArray(value)) {
     throw new Error("Invalid builder project payload.");
@@ -29,6 +30,7 @@ function parseCreateProjectRequest(value: object | null): {
     relativePath: typeof candidate.relativePath === "string" ? candidate.relativePath : undefined,
     template: typeof candidate.template === "string" ? candidate.template : undefined,
     packageManager: parsePackageManager(candidate.packageManager),
+    stackPresetKey: typeof candidate.stackPresetKey === "string" ? candidate.stackPresetKey : undefined,
   };
 }
 

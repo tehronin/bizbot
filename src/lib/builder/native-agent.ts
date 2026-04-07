@@ -22,6 +22,7 @@ import type {
   BuilderAgenticLoopMetadata,
   BuilderAgenticProgressEvent,
   BuilderAgenticTaskOptions,
+  BuilderAgenticUsageSummary,
   BuilderAgenticVerificationReport,
   BuilderAgenticVerificationStep,
 } from "@/lib/builder/agentic";
@@ -47,6 +48,15 @@ interface BuilderWorkspaceSnapshot {
 
 interface NativeBuilderTaskInput {
   prompt: string;
+  builderMcpContext?: {
+    projectId: string;
+    builderRunId: string;
+    taskId?: string | null;
+    taskSpecId?: string | null;
+    validatorContext?: string[];
+    activeAdrDecisionKeys?: string[];
+    ontologyHints?: string[];
+  };
 }
 
 interface NativeBuilderTaskResult {
@@ -334,6 +344,7 @@ function buildProgressLoop(args: {
   iterations: BuilderAgenticIteration[];
   summary: string;
   selectedScripts: string[];
+  usage?: BuilderAgenticUsageSummary;
 }): BuilderAgenticLoopMetadata {
   return {
     maxIterations: args.maxIterations,
@@ -342,6 +353,7 @@ function buildProgressLoop(args: {
     selectedScripts: args.selectedScripts,
     summary: args.summary,
     iterations: args.iterations,
+    ...(args.usage ? { usage: args.usage } : {}),
     currentIteration: args.currentIteration,
     phase: args.phase,
   };
@@ -366,6 +378,7 @@ async function emitLiveExecutionProgress(args: {
   selectedScripts: string[];
   stdout: string;
   stderr: string;
+  usage?: BuilderAgenticUsageSummary;
   summary?: string;
 }): Promise<void> {
   await emitProgress(args.onProgress, {
@@ -375,6 +388,7 @@ async function emitLiveExecutionProgress(args: {
       currentIteration: args.iteration,
       iterations: args.iterations,
       selectedScripts: args.selectedScripts,
+      usage: args.usage,
       summary: args.summary ?? `Native builder attempt ${args.iteration} is running.`,
     }),
     latestResult: {
@@ -385,6 +399,26 @@ async function emitLiveExecutionProgress(args: {
       timedOut: false,
     },
   });
+}
+
+function emptyUsageSummary(): BuilderAgenticUsageSummary {
+  return {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    cachedPromptTokens: 0,
+    requestCount: 0,
+  };
+}
+
+function addUsageSummary(left: BuilderAgenticUsageSummary, right: BuilderAgenticUsageSummary): BuilderAgenticUsageSummary {
+  return {
+    promptTokens: left.promptTokens + right.promptTokens,
+    completionTokens: left.completionTokens + right.completionTokens,
+    totalTokens: left.totalTokens + right.totalTokens,
+    cachedPromptTokens: left.cachedPromptTokens + right.cachedPromptTokens,
+    requestCount: left.requestCount + right.requestCount,
+  };
 }
 
 function buildNativeBuilderMessage(project: BuilderProject, prompt: string): string {
@@ -453,6 +487,7 @@ export async function executeNativeBuilderTask(
   let lastVerification: BuilderAgenticVerificationReport | null = null;
   const iterations: BuilderAgenticIteration[] = [];
   const selectedScripts = resolveVerificationPlan(project, options).scripts;
+  let aggregateUsage = emptyUsageSummary();
   let executeAgentConversation: ((typeof import("@/lib/agent/executor"))["executeAgentConversation"]) | null = null;
 
   for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
@@ -463,6 +498,7 @@ export async function executeNativeBuilderTask(
         currentIteration: iteration,
         iterations,
         selectedScripts,
+        usage: aggregateUsage,
         summary: `Running native builder attempt ${iteration} of ${maxIterations}.`,
       }),
     });
@@ -489,6 +525,7 @@ export async function executeNativeBuilderTask(
     let model = "unknown";
     let cancelled = false;
     let ok = false;
+    let iterationUsage = emptyUsageSummary();
 
     const appendStdout = async (line: string) => {
       stdout = appendBoundedOutput(stdout, line);
@@ -501,6 +538,7 @@ export async function executeNativeBuilderTask(
         selectedScripts,
         stdout,
         stderr,
+        usage: addUsageSummary(aggregateUsage, iterationUsage),
       });
     };
     const appendStderr = async (line: string) => {
@@ -514,6 +552,7 @@ export async function executeNativeBuilderTask(
         selectedScripts,
         stdout,
         stderr,
+        usage: addUsageSummary(aggregateUsage, iterationUsage),
       });
     };
 
@@ -528,6 +567,7 @@ export async function executeNativeBuilderTask(
       const agentResult = await executeAgentConversation({
         message: buildNativeBuilderMessage(project, currentPrompt),
         forcedProfile: "builder_operator",
+        builderMcpContext: input.builderMcpContext,
         signal: executionSignal.signal,
         onEvent: async (event: AgentExecutionEvent) => {
           if (event.type === "meta") {
@@ -538,6 +578,17 @@ export async function executeNativeBuilderTask(
           }
           if (event.type === "status") {
             await appendStdout(`[status] ${event.message}\n`);
+            return;
+          }
+          if (event.type === "usage") {
+            iterationUsage = addUsageSummary(iterationUsage, {
+              promptTokens: event.promptTokens,
+              completionTokens: event.completionTokens,
+              totalTokens: event.totalTokens,
+              cachedPromptTokens: event.cachedPromptTokens,
+              requestCount: event.requestCount,
+            });
+            await appendStdout(`[usage] requests=${event.requestCount} total_tokens=${event.totalTokens}\n`);
             return;
           }
           if (event.type === "tool_call") {
@@ -591,6 +642,7 @@ export async function executeNativeBuilderTask(
         currentIteration: iteration,
         iterations,
         selectedScripts,
+        usage: addUsageSummary(aggregateUsage, iterationUsage),
         summary: `Native builder attempt ${iteration} finished; running verification.`,
       }),
       latestResult: {
@@ -615,6 +667,7 @@ export async function executeNativeBuilderTask(
       previousVerificationSignature,
       currentVerificationSignature: verificationSignature,
     });
+    aggregateUsage = addUsageSummary(aggregateUsage, iterationUsage);
 
     iterations.push({
       iteration,
@@ -632,6 +685,9 @@ export async function executeNativeBuilderTask(
       verification,
       review,
       changedFiles,
+      provider,
+      model,
+      usage: iterationUsage,
     });
 
     const reviewLoop = buildProgressLoop({
@@ -640,6 +696,7 @@ export async function executeNativeBuilderTask(
       currentIteration: iteration,
       iterations,
       selectedScripts: verification.scripts,
+      usage: aggregateUsage,
       summary: review.reason,
     });
     if (review.verdict === "complete") {
@@ -673,6 +730,7 @@ export async function executeNativeBuilderTask(
         selectedScripts: verification.scripts,
         summary: "",
         iterations,
+        usage: aggregateUsage,
       };
       loop.summary = buildBuilderLoopSummary(loop);
       return { result, loop };
@@ -687,6 +745,7 @@ export async function executeNativeBuilderTask(
         selectedScripts: verification.scripts,
         summary: "",
         iterations,
+        usage: aggregateUsage,
       };
       loop.summary = buildBuilderLoopSummary(loop);
       return { result, loop };
@@ -701,6 +760,7 @@ export async function executeNativeBuilderTask(
         selectedScripts: verification.scripts,
         summary: "",
         iterations,
+        usage: aggregateUsage,
       };
       loop.summary = buildBuilderLoopSummary(loop);
       return { result, loop };
@@ -735,6 +795,7 @@ export async function executeNativeBuilderTask(
     selectedScripts: fallbackVerification.scripts,
     summary: "",
     iterations,
+    usage: aggregateUsage,
   };
   loop.summary = buildBuilderLoopSummary(loop);
 

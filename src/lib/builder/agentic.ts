@@ -53,6 +53,14 @@ export interface BuilderAgenticVerificationReport {
   summary: string;
 }
 
+export interface BuilderAgenticUsageSummary {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedPromptTokens: number;
+  requestCount: number;
+}
+
 export interface BuilderAgenticIteration {
   iteration: number;
   prompt: string;
@@ -72,6 +80,9 @@ export interface BuilderAgenticIteration {
     reason: string;
   };
   changedFiles: string[];
+  provider?: string;
+  model?: string;
+  usage?: BuilderAgenticUsageSummary;
 }
 
 export interface BuilderAgenticLoopMetadata {
@@ -82,6 +93,7 @@ export interface BuilderAgenticLoopMetadata {
   selectedScripts: string[];
   summary: string;
   iterations: BuilderAgenticIteration[];
+  usage?: BuilderAgenticUsageSummary;
   currentIteration?: number;
   phase?: "acting" | "verifying" | "reviewing" | "complete";
 }

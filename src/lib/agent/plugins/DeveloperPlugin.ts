@@ -8,6 +8,8 @@ import {
   retryAgentHeartbeatJob,
   type AgentHeartbeatJobStatus,
 } from "@/lib/agent/heartbeat-queue";
+import { getMcpQueueStatus, listMcpJobs, retryMcpJob, type McpJobStatus } from "@/lib/mcp/job-status";
+import { searchBuilderMcpSnapshotHistory } from "@/lib/builder/mcp-snapshots";
 import {
   inspectConversationMessages,
   inspectMemories,
@@ -38,6 +40,16 @@ interface WorkerJobsArgs {
 }
 
 interface RetryWorkerJobArgs {
+  jobId: string;
+}
+
+interface McpJobsArgs {
+  statuses?: McpJobStatus[];
+  limit?: number;
+}
+
+interface RetryMcpJobArgs {
+  queueName: string;
   jobId: string;
 }
 
@@ -142,6 +154,12 @@ interface PromptPreviewResult {
   rendered: {
     messages: Array<{ role: "user"; text: string }>;
   };
+}
+
+interface McpSnapshotSearchArgs {
+  projectId: string;
+  query: string;
+  limit?: number;
 }
 
 interface ResourcePreviewResult {
@@ -297,6 +315,44 @@ export const developerPlugin = {
       execute: async ({ jobId }: RetryWorkerJobArgs) => retryAgentHeartbeatJob(jobId),
     } satisfies ToolDefinition<RetryWorkerJobArgs, Awaited<ReturnType<typeof retryAgentHeartbeatJob>>>)),
     registerTool(defineTool({
+      name: "developer_get_mcp_queue_status",
+      description: "Inspect MCP snapshot BullMQ queue counts and the shared MCP worker pulse state.",
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({
+        worker: await getMcpQueueStatus(),
+      }),
+    } satisfies ToolDefinition<Record<string, never>, { worker: Awaited<ReturnType<typeof getMcpQueueStatus>> }>)),
+    registerTool(defineTool({
+      name: "developer_list_mcp_jobs",
+      description: "List recent MCP snapshot BullMQ jobs across embeddings, ontology enrichment, and cleanup queues.",
+      parameters: {
+        type: "object",
+        properties: {
+          statuses: {
+            type: "array",
+            items: { type: "string", enum: ["waiting", "active", "delayed", "completed", "failed"] },
+          },
+          limit: { type: "number", default: 20 },
+        },
+      },
+      execute: async ({ statuses, limit }: McpJobsArgs) => ({
+        jobs: await listMcpJobs(statuses, limit ?? 20),
+      }),
+    } satisfies ToolDefinition<McpJobsArgs, { jobs: Awaited<ReturnType<typeof listMcpJobs>> }>)),
+    registerTool(defineTool({
+      name: "developer_retry_mcp_job",
+      description: "Retry a failed MCP snapshot BullMQ job by queue name and job id.",
+      parameters: {
+        type: "object",
+        properties: {
+          queueName: { type: "string" },
+          jobId: { type: "string" },
+        },
+        required: ["queueName", "jobId"],
+      },
+      execute: async ({ queueName, jobId }: RetryMcpJobArgs) => retryMcpJob(queueName, jobId),
+    } satisfies ToolDefinition<RetryMcpJobArgs, Awaited<ReturnType<typeof retryMcpJob>>>)),
+    registerTool(defineTool({
       name: "developer_enqueue_heartbeat",
       description: "Enqueue a heartbeat job manually for immediate worker execution.",
       parameters: {
@@ -366,6 +422,22 @@ export const developerPlugin = {
         runs: listRecentAgentRuns(limit ?? 20),
       }),
     } satisfies ToolDefinition<AgentRunsArgs, { runs: ReturnType<typeof listRecentAgentRuns> }>)),
+    registerTool(defineTool({
+      name: "developer_search_mcp_snapshot_history",
+      description: "Search Builder MCP snapshot history semantically within a single project.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          query: { type: "string" },
+          limit: { type: "number", default: 5 },
+        },
+        required: ["projectId", "query"],
+      },
+      execute: async ({ projectId, query, limit }: McpSnapshotSearchArgs) => ({
+        matches: await searchBuilderMcpSnapshotHistory({ projectId, query, limit: limit ?? 5 }),
+      }),
+    } satisfies ToolDefinition<McpSnapshotSearchArgs, { matches: Awaited<ReturnType<typeof searchBuilderMcpSnapshotHistory>> }>)),
     registerTool(defineTool({
       name: "developer_get_agent_run",
       description: "Read the full journal for a specific BizBot agent run, including tool call/result traces.",

@@ -1,4 +1,5 @@
 import type { BuilderProject, BuilderProjectBrief } from "@prisma/client";
+import { selectRelevantBuilderMcpContext } from "@/lib/builder/mcp-snapshots";
 import { defaultTaskSpecValidators } from "@/lib/builder/planning";
 import { composeBuilderPlannerPrompt } from "@/lib/builder/prompt";
 import {
@@ -7,6 +8,7 @@ import {
   normalizeBuilderProjectBriefState,
   normalizeBuilderProjectContext,
   type BuilderArchitectureContextState,
+  type BuilderMcpPlanningContextState,
   type BuilderNormalizedMilestoneDraft,
   type BuilderNormalizedTaskSpecDraft,
   type BuilderPlannerCritiqueIssue,
@@ -694,6 +696,7 @@ export function runBuilderPlannerPipeline(args: {
   brief: BuilderProjectBrief;
   context?: BuilderProjectContextState;
   architecture?: BuilderArchitectureContextState;
+  mcpPlanningContext?: BuilderMcpPlanningContextState | null;
 }): {
   input: BuilderPlannerInputState;
   prompt: string;
@@ -702,6 +705,15 @@ export function runBuilderPlannerPipeline(args: {
   critique: BuilderPlannerCritiqueState;
 } {
   const input = assembleBuilderPlannerInput(args);
+  const plannerMcpContext = selectRelevantBuilderMcpContext({
+    mode: "analysis_only",
+    validators: ["MANUAL_REVIEW"],
+    template: args.project.template,
+    architecturalDecisionKeys: [
+      ...input.activeArchitecture.map((decision) => decision.key),
+      ...input.staleArchitecture.map((decision) => decision.key),
+    ],
+  });
   const prompt = composeBuilderPlannerPrompt({
     project: args.project as BuilderProject,
     brief: args.brief,
@@ -711,6 +723,8 @@ export function runBuilderPlannerPipeline(args: {
     acceptanceCriteria: input.acceptanceCriteria,
     activeArchitecture: input.activeArchitecture,
     staleArchitecture: input.staleArchitecture,
+    mcpContext: plannerMcpContext,
+    mcpPlanningContext: args.mcpPlanningContext,
   });
   const candidateMilestones = buildDeterministicPlannerDraft(args.brief, args.architecture ?? defaultBuilderArchitectureContext());
   const normalizedMilestones = normalizePlannerOutput(candidateMilestones);

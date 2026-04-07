@@ -2,12 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   buildBuilderPlanAdherence: vi.fn(),
+  composeBuilderTaskPrompt: vi.fn(() => "task prompt"),
   buildBuilderStructuredReview: vi.fn(),
   completeBuilderRun: vi.fn(),
   createBuilderRun: vi.fn(),
   createBuilderTask: vi.fn(),
+  ensureBuilderRunMcpSnapshotPreflight: vi.fn(),
   executeNativeBuilderTask: vi.fn(),
   findExecutionTaskForTaskSpec: vi.fn(),
+  getLatestBuilderMcpSnapshotForRun: vi.fn(),
+  getBuilderMcpSnapshotOverview: vi.fn(),
   getBuilderProject: vi.fn(),
   getBuilderPlanningSnapshot: vi.fn(),
   getBuilderTask: vi.fn(),
@@ -16,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   recomputeBuilderPlanningProgress: vi.fn(),
   selectNextRunnableTaskSpec: vi.fn(),
   setBuilderTaskSpecStatus: vi.fn(),
+  queueBuilderMcpSnapshotCleanup: vi.fn(),
   updateBuilderProject: vi.fn(),
   updateBuilderTask: vi.fn(),
   updateBuilderTaskExecutionState: vi.fn(),
@@ -57,7 +62,25 @@ vi.mock("@/lib/builder/projects", () => ({
 
 vi.mock("@/lib/builder/prompt", () => ({
   buildBuilderPlanAdherence: mocks.buildBuilderPlanAdherence,
-  composeBuilderTaskPrompt: vi.fn(() => "task prompt"),
+  composeBuilderTaskPrompt: mocks.composeBuilderTaskPrompt,
+}));
+
+vi.mock("@/lib/builder/mcp-snapshots", () => ({
+  ensureBuilderRunMcpSnapshotPreflight: mocks.ensureBuilderRunMcpSnapshotPreflight,
+  getLatestBuilderMcpSnapshotForRun: mocks.getLatestBuilderMcpSnapshotForRun,
+  getBuilderMcpSnapshotOverview: mocks.getBuilderMcpSnapshotOverview,
+  queueBuilderMcpSnapshotCleanup: mocks.queueBuilderMcpSnapshotCleanup,
+  selectRelevantBuilderMcpContext: vi.fn(() => ({
+    currentHash: "hash-1",
+    tools: [{ name: "builder_get_project", title: "Get Builder Project", description: "Read the current Builder project.", ownerId: "builder", ownerKind: "builtin-plugin", annotations: null, parameters: null }],
+    prompts: [],
+    resources: [],
+    reasons: ["mode:analysis_only"],
+  })),
+}));
+
+vi.mock("@/lib/mcp/client", () => ({
+  ensureMcpClientsInitialized: vi.fn(async () => undefined),
 }));
 
 vi.mock("@/lib/builder/review", () => ({
@@ -256,6 +279,24 @@ describe("builder orchestrator finalization", () => {
       context: { architecture: { active: [], stale: [] } },
       projection: { stale: false, statePathExists: false },
     });
+    mocks.ensureBuilderRunMcpSnapshotPreflight.mockResolvedValue({
+      status: "captured",
+      snapshot: { id: "snapshot-1", snapshotSequence: 1 },
+      drift: { changed: false },
+    });
+    mocks.getLatestBuilderMcpSnapshotForRun.mockResolvedValue({
+      id: "snapshot-1",
+      snapshotSequence: 1,
+    });
+    mocks.queueBuilderMcpSnapshotCleanup.mockResolvedValue(undefined);
+    mocks.getBuilderMcpSnapshotOverview.mockResolvedValue({
+      activeRunId: "run-1",
+      currentSequence: 1,
+      currentHash: "hash-1",
+      state: "captured",
+      history: [],
+      drift: null,
+    });
     mocks.buildBuilderPlanAdherence.mockReturnValue({
       allowsExecution: true,
       mode: "analysis_only",
@@ -317,6 +358,15 @@ describe("builder orchestrator finalization", () => {
       request: "Advance the next runnable Builder task for this plugin-package project.",
     });
 
+    expect(mocks.ensureBuilderRunMcpSnapshotPreflight).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: "project-1",
+      runId: "run-1",
+      taskId: "task-1",
+      taskSpecId: "task-spec-original",
+    }));
+    expect(mocks.composeBuilderTaskPrompt).toHaveBeenCalledWith(expect.objectContaining({
+      mcpContext: expect.objectContaining({ currentHash: "hash-1" }),
+    }));
     expect(mocks.updateBuilderTask).toHaveBeenCalledWith("task-1", expect.objectContaining({
       status: "SUCCEEDED",
       taskSpecId: "task-spec-replacement",
@@ -327,5 +377,15 @@ describe("builder orchestrator finalization", () => {
         taskSpecId: "task-spec-replacement",
       }),
     }));
+  });
+
+  it("aborts before native execution when MCP contract drift is detected", async () => {
+    mocks.ensureBuilderRunMcpSnapshotPreflight.mockRejectedValueOnce(new Error("Builder MCP contract drift detected for run run-1; operator approval is required before task execution can continue."));
+
+    await expect(orchestrateBuilderTask("project-1", {
+      request: "Advance the next runnable Builder task for this plugin-package project.",
+    })).rejects.toThrow("operator approval is required before task execution can continue");
+
+    expect(mocks.executeNativeBuilderTask).not.toHaveBeenCalled();
   });
 });

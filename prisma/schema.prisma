@@ -615,6 +615,7 @@ model BuilderProject {
   brief          BuilderProjectBrief?
   milestones     BuilderMilestone[]
   runs           BuilderRun[]
+  mcpSnapshots   BuilderMcpSnapshot[]
   tasks          BuilderTask[]
   taskSpecs      BuilderTaskSpec[]
 
@@ -669,6 +670,7 @@ model BuilderTaskSpec {
   updatedAt                 DateTime                 @updatedAt
 
   executionTasks            BuilderTask[]
+  mcpSnapshots              BuilderMcpSnapshot[]
   dependencies              BuilderTaskSpecDependency[] @relation("BuilderTaskSpecDependencies")
   dependents                BuilderTaskSpecDependency[] @relation("BuilderTaskSpecDependents")
 
@@ -717,6 +719,8 @@ model BuilderRun {
   startedAt   DateTime         @default(now())
   finishedAt  DateTime?
 
+  mcpSnapshots BuilderMcpSnapshot[]
+
   @@index([projectId, startedAt])
   @@index([taskId, startedAt])
   @@index([status, startedAt])
@@ -742,10 +746,41 @@ model BuilderTask {
   updatedAt          DateTime          @updatedAt
 
   runs               BuilderRun[]
+  mcpSnapshots       BuilderMcpSnapshot[]
 
   @@index([projectId, status, updatedAt])
   @@index([projectId, stage, updatedAt])
   @@index([taskSpecId, status, updatedAt])
+}
+
+model BuilderMcpSnapshot {
+  id               String         @id @default(cuid())
+  project          BuilderProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId        String
+  run              BuilderRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId            String
+  task             BuilderTask?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  taskId           String?
+  taskSpec         BuilderTaskSpec? @relation(fields: [taskSpecId], references: [id], onDelete: SetNull)
+  taskSpecId       String?
+  snapshotSequence Int
+  versionHash      String
+  snapshotJson     Json
+  mappingsJson     Json?
+  metadata         Json?
+  appliedAt        DateTime       @default(now())
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // snapshotEmbedding vector(1536) — reserved for future raw SQL enrichment only.
+
+  @@unique([runId, snapshotSequence])
+  @@index([projectId, appliedAt])
+  @@index([runId, appliedAt])
+  @@index([runId, versionHash])
+  @@index([taskId, appliedAt])
+  @@index([taskSpecId, appliedAt])
+  @@map("mcp_snapshots")
 }
 
 model BuilderCliProfile {

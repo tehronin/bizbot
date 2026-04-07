@@ -63,6 +63,8 @@ Builder does not dump whole files into every agentic prompt. The orchestrator co
 
 This keeps prompts compact and avoids stale or duplicated context.
 
+Builder execution and planning prompts now also inject a bounded relevant MCP slice. The slice is selected deterministically from task mode, validator set, template, and active architectural decision keys. It carries the current contract hash plus only the relevant tools, prompts, and resources instead of dumping the full MCP catalog into every task.
+
 Planning now uses a dedicated planner prompt surface that is separate from execution prompting. The planner surface must include:
 
 - the persisted brief
@@ -97,12 +99,31 @@ Every orchestration should leave behind:
 
 The review captures validation status, changed files, commands executed, risks, and next steps.
 
+## MCP Snapshot Contract Layer
+
+- `BuilderProject` remains the parent scope for contract history.
+- `BuilderRun` is the execution anchor for persisted MCP snapshots.
+- `BuilderTaskSpec` and `BuilderTask` are the pre-flight linkage points recorded on each snapshot when known.
+- `mcp_snapshots` is the canonical persistence table for normalized contract state, version hashes, mapping history, sequence numbers, and rollover metadata.
+
+Builder captures a normalized MCP contract snapshot before task execution prompt composition. The snapshot seed is the currently exposed deterministic tool catalog plus builtin/imported prompt and resource catalogs and the visible MCP operator autonomy profile.
+
+Execution rules:
+
+- If the current hash matches the latest accepted baseline, Builder records or reuses the active run snapshot and proceeds.
+- If the current hash differs, Builder aborts before task execution and requires operator review.
+- If the operator approves drift, Builder records a new snapshot sequence for the active run and preserves rollover metadata.
+- If the operator rejects drift, Builder remains blocked and no later task execution is recorded against the stale assumption.
+
+Passive mapping capture happens at the unified tool execution gateway. The runtime appends tool provenance, Builder run/task linkage, validator context, and active ADR keys to the active snapshot instead of trusting model self-reporting.
+
 ## Inspection Surfaces
 
 - Dashboard: `/builder`
 - Project overview API: `/api/builder/projects/[id]`
 - Project planning API: `/api/builder/projects/[id]/plan`
 - Task API: `/api/builder/projects/[id]/tasks`
+- Builder commands API: `/api/builder/projects/[id]/commands`
 - MCP resources:
   - `bizbot://builder/projects`
   - `bizbot://builder/current-project`
@@ -110,6 +131,8 @@ The review captures validation status, changed files, commands executed, risks, 
   - `bizbot://builder/current-tasks`
   - `bizbot://builder/current-runs`
   - `bizbot://builder/current-review`
+
+The project overview and Builder MCP resources now surface the active MCP snapshot sequence, current contract hash, drift state, and rollover history so operators do not need raw database access to inspect contract state.
 
 ## Operational Notes
 

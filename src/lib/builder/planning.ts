@@ -9,6 +9,7 @@ import type {
   BuilderTaskSpecValidator,
 } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getBuilderMcpPlanningContext } from "@/lib/builder/mcp-snapshots";
 import { getBuilderProject, updateBuilderProject } from "@/lib/builder/projects";
 import { runBuilderPlannerPipeline } from "@/lib/builder/planner";
 import { listOntologyEntities } from "@/lib/ontology/service";
@@ -138,11 +139,19 @@ export async function generateBuilderProjectPlan(args: {
   critique: BuilderPlannerCritiqueState;
 }> {
   const architecture = await listBuilderProjectArchitecture(args.project.id);
+  const mcpPlanningContext = await getBuilderMcpPlanningContext({
+    projectId: args.project.id,
+    architectureDecisionKeys: [
+      ...architecture.active.map((decision) => decision.key),
+      ...architecture.stale.map((decision) => decision.key),
+    ],
+  });
   const pipeline = runBuilderPlannerPipeline({
     project: args.project,
     brief: args.brief,
     context: args.project.context as never,
     architecture,
+    mcpPlanningContext,
   });
   const persisted = await replaceBuilderProjectPlanWithValidation({
     projectId: args.project.id,

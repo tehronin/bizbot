@@ -110,6 +110,13 @@ interface BuilderPlanStep {
 
 interface BuilderProjectContext {
   objective: string | null;
+  plannedStack: {
+    presetKey: string | null;
+    label: string;
+    template: string;
+    packageManager: "NPM" | "PNPM";
+    tags: string[];
+  } | null;
   architectureNotes: string[];
   codingConventions: string[];
   constraints: string[];
@@ -201,6 +208,132 @@ interface BuilderHealthMetrics {
   };
 }
 
+interface BuilderBudgetProfile {
+  mode: "analysis_only" | "scaffold" | "implementation" | "verification";
+  maxIterations: number;
+  maxDurationMs: number;
+  maxTotalTokens: number;
+  maxEstimatedCostUsd: number;
+  maxRequestCount: number;
+  maxRetries: number;
+  rationale: string;
+  observedRuns: number;
+  observedAvgDurationMs: number;
+  observedAvgTotalTokens: number;
+  observedAvgCostUsd: number;
+  topBlockedReason: string | null;
+}
+
+interface BuilderTelemetrySummary {
+  completedRuns: number;
+  runningRuns: number;
+  avgDurationMs: number;
+  avgTimeToCompletionMs: number;
+  totalDurationMs: number;
+  blockedReasonCounts: Record<string, number>;
+  topBlockedReason: string | null;
+  modeCounts: Record<string, number>;
+  templateCounts: Record<string, number>;
+  tokenTotals: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    cachedPromptTokens: number;
+    requestCount: number;
+    estimatedCostUsd: number;
+  };
+}
+
+interface BuilderOperationalAlert {
+  code: string;
+  runId: string;
+  taskId: string | null;
+  severity: "warning" | "danger";
+  summary: string;
+  autoFixable: boolean;
+  triggeredAt: string;
+}
+
+interface BuilderReconciliationAuditEntry {
+  runId: string;
+  taskId: string | null;
+  action: string;
+  reason: string;
+  previousStatus: string;
+  nextStatus: string;
+  correctedAt: string;
+}
+
+interface BuilderOperationalStateSummary {
+  thresholds: {
+    staleRunningMs: number;
+    noProgressMs: number;
+    identicalFailureThreshold: number;
+  };
+  alerts: BuilderOperationalAlert[];
+  corrections: BuilderReconciliationAuditEntry[];
+  activeAlertCount: number;
+  reconciledRunCount: number;
+  unresolvedAlertCount: number;
+}
+
+interface BuilderMcpSnapshotHistoryEntry {
+  id: string;
+  snapshotSequence: number;
+  versionHash: string;
+  appliedAt: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+interface BuilderMcpSnapshotOverview {
+  activeRunId: string | null;
+  currentSnapshotId: string | null;
+  currentSequence: number | null;
+  currentHash: string | null;
+  state: "pending_capture" | "captured" | "aligned" | "drifted";
+  history: BuilderMcpSnapshotHistoryEntry[];
+  drift: {
+    changed: boolean;
+    previousHash: string | null;
+    currentHash: string;
+    profileChanged: boolean;
+    tools: { added: string[]; removed: string[]; changed: string[] };
+    prompts: { added: string[]; removed: string[]; changed: string[] };
+    resources: { added: string[]; removed: string[]; changed: string[] };
+  } | null;
+  semantic: {
+    queueState: "idle" | "queued" | "embedded" | "ontology_synced" | "failed";
+    embeddingFormatVersion: string | null;
+    embeddedAt: string | null;
+    ontologySyncVersion: string | null;
+    ontologySyncedAt: string | null;
+    cleanupProcessedAt: string | null;
+    mappingCount: number;
+    uniqueToolCount: number;
+    validatorCount: number;
+    activeAdrDecisionKeys: string[];
+    ontologyHints: string[];
+  };
+  semanticMatches: Array<{
+    snapshotId: string;
+    runId: string;
+    snapshotSequence: number;
+    versionHash: string;
+    similarity: number;
+    appliedAt: string;
+  }>;
+  planning: {
+    baselineSnapshotId: string | null;
+    baselineSnapshotSequence: number | null;
+    baselineHash: string | null;
+    currentHash: string;
+    driftDetected: boolean;
+    relatedArchitectureDecisionKeys: string[];
+    recommendations: string[];
+    summary: string;
+  } | null;
+}
+
 interface BuilderReview {
   taskId: string;
   projectId: string;
@@ -265,6 +398,14 @@ interface BuilderRunLoopMetadata {
 interface BuilderStatusResponse {
   config: BuilderConfig;
   templates: BuilderTemplatePreset[];
+  stackPresets: Array<{
+    key: string;
+    displayName: string;
+    description: string;
+    template: string;
+    packageManager: "NPM" | "PNPM";
+    tags: string[];
+  }>;
   cliProfiles: BuilderCliProfile[];
   projects: {
     total: number;
@@ -289,6 +430,10 @@ interface BuilderProjectDetailResponse {
   runs: BuilderRun[];
   latestReview: BuilderReview | null;
   metrics: BuilderHealthMetrics;
+  budgetProfiles: BuilderBudgetProfile[];
+  telemetry: BuilderTelemetrySummary;
+  reconciliation: BuilderOperationalStateSummary;
+  mcpSnapshot: BuilderMcpSnapshotOverview;
   nextRecommendedStep: string | null;
   error?: string;
 }
@@ -456,6 +601,7 @@ function getRunLoopMetadata(metadata: Record<string, unknown> | null | undefined
 
 const EMPTY_CREATE_PROJECT = {
   name: "",
+  stackPresetKey: "",
   template: "node-cli",
   packageManager: "NPM" as "NPM" | "PNPM",
 };
@@ -654,7 +800,10 @@ export default function BuilderPage() {
       const response = await fetch("/api/builder/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(createDraft),
+        body: JSON.stringify({
+          ...createDraft,
+          stackPresetKey: createDraft.stackPresetKey || undefined,
+        }),
       });
       const payload = (await response.json()) as { project?: BuilderProject; error?: string };
       if (!response.ok || !payload.project) {
@@ -662,6 +811,7 @@ export default function BuilderPage() {
       }
       setCreateDraft({
         name: "",
+        stackPresetKey: "",
         template: status?.config.defaultTemplate ?? EMPTY_CREATE_PROJECT.template,
         packageManager: status?.config.defaultPackageManager ?? EMPTY_CREATE_PROJECT.packageManager,
       });
@@ -941,8 +1091,31 @@ export default function BuilderPage() {
               <input data-testid="builder-create-project-name" value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
             </div>
             <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Planned stack</label>
+              <select value={createDraft.stackPresetKey} onChange={(event) => {
+                const nextKey = event.target.value;
+                const preset = (status?.stackPresets ?? []).find((candidate) => candidate.key === nextKey);
+                setCreateDraft((current) => ({
+                  ...current,
+                  stackPresetKey: nextKey,
+                  template: preset?.template ?? current.template,
+                  packageManager: preset?.packageManager ?? current.packageManager,
+                }));
+              }} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <option value="">No preset yet</option>
+                {(status?.stackPresets ?? []).map((preset) => (
+                  <option key={preset.key} value={preset.key}>{preset.displayName}</option>
+                ))}
+              </select>
+              <div className="mt-2 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                {createDraft.stackPresetKey
+                  ? ((status?.stackPresets ?? []).find((preset) => preset.key === createDraft.stackPresetKey)?.description ?? "")
+                  : "Choose a common stack preset or leave this empty and set template/package manager manually."}
+              </div>
+            </div>
+            <div>
               <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Template</label>
-              <select value={createDraft.template} onChange={(event) => setCreateDraft((current) => ({ ...current, template: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+              <select value={createDraft.template} onChange={(event) => setCreateDraft((current) => ({ ...current, stackPresetKey: "", template: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
                 {(status?.templates ?? []).map((template) => (
                   <option key={template.key} value={template.key}>{template.displayName}</option>
                 ))}
@@ -950,7 +1123,7 @@ export default function BuilderPage() {
             </div>
             <div>
               <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Package manager</label>
-              <select value={createDraft.packageManager} onChange={(event) => setCreateDraft((current) => ({ ...current, packageManager: event.target.value as "NPM" | "PNPM" }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+              <select value={createDraft.packageManager} onChange={(event) => setCreateDraft((current) => ({ ...current, stackPresetKey: "", packageManager: event.target.value as "NPM" | "PNPM" }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
                 <option value="NPM">NPM</option>
                 <option value="PNPM">PNPM</option>
               </select>
@@ -1005,6 +1178,9 @@ export default function BuilderPage() {
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.relativePath}</div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.template} · {project.packageManager} · last run {project.lastRunStatus.toLowerCase()}</div>
+                {projectDetail?.project.id === project.id && projectDetail.context.plannedStack ? (
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail.context.plannedStack.label} · {projectDetail.context.plannedStack.tags.join(", ")}</div>
+                ) : null}
               </button>
             ))}
             <PaginationControls {...projectsPagination} />
@@ -1024,6 +1200,7 @@ export default function BuilderPage() {
                 <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>path</div>
                   <div className="text-sm">{selectedProject.relativePath}</div>
+                  {projectDetail?.context.plannedStack ? <div className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>{projectDetail.context.plannedStack.label}</div> : null}
                 </div>
                 <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>git</div>
@@ -1201,6 +1378,187 @@ export default function BuilderPage() {
                 </div>
               </div>
 
+              <div className="grid gap-3 lg:grid-cols-3">
+                <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>budget profiles</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>mode defaults</div>
+                  </div>
+                  {(projectDetail?.budgetProfiles ?? []).map((profile) => (
+                    <div key={profile.mode} className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{profile.mode.replace("_", " ")}</div>
+                        <div className="text-[11px]" style={{ color: "var(--text-dim)" }}>{profile.observedRuns} observed</div>
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        Max {profile.maxIterations} iterations; {formatDurationMs(profile.maxDurationMs)}; {profile.maxTotalTokens.toLocaleString()} tokens; {formatUsd(profile.maxEstimatedCostUsd)}; {profile.maxRetries} retries.
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        Observed avg {formatDurationMs(profile.observedAvgDurationMs)} and {Math.round(profile.observedAvgTotalTokens).toLocaleString()} tokens at {formatUsd(profile.observedAvgCostUsd)}.
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{profile.rationale}</div>
+                      {profile.topBlockedReason ? <div className="text-xs leading-6" style={{ color: "var(--warning)" }}>Top blocker: {profile.topBlockedReason}</div> : null}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>telemetry</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>run behavior</div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {[
+                      { label: "avg completion", value: formatDurationMs(projectDetail?.telemetry?.avgTimeToCompletionMs) },
+                      { label: "total duration", value: formatDurationMs(projectDetail?.telemetry?.totalDurationMs) },
+                      { label: "requests", value: String(projectDetail?.telemetry?.tokenTotals.requestCount ?? 0) },
+                      { label: "estimated cost", value: formatUsd(projectDetail?.telemetry?.tokenTotals.estimatedCostUsd) },
+                    ].map((card) => (
+                      <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                        <div className="text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+                        <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    Tokens: prompt {(projectDetail?.telemetry?.tokenTotals.promptTokens ?? 0).toLocaleString()}, completion {(projectDetail?.telemetry?.tokenTotals.completionTokens ?? 0).toLocaleString()}, total {(projectDetail?.telemetry?.tokenTotals.totalTokens ?? 0).toLocaleString()}, cached {(projectDetail?.telemetry?.tokenTotals.cachedPromptTokens ?? 0).toLocaleString()}.
+                  </div>
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    Top blocked reason: {projectDetail?.telemetry?.topBlockedReason ?? "none"}
+                  </div>
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    Modes: {Object.entries(projectDetail?.telemetry?.modeCounts ?? {}).length > 0
+                      ? Object.entries(projectDetail?.telemetry?.modeCounts ?? {}).map(([mode, count]) => `${mode.replace("_", " ")}: ${count}`).join("; ")
+                      : "none recorded"}
+                  </div>
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    Templates: {Object.entries(projectDetail?.telemetry?.templateCounts ?? {}).length > 0
+                      ? Object.entries(projectDetail?.telemetry?.templateCounts ?? {}).map(([template, count]) => `${template}: ${count}`).join("; ")
+                      : "none recorded"}
+                  </div>
+                </div>
+
+                <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>reconciliation</div>
+                    <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "reconcile_operational_state" })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                      reconcile now
+                    </button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {[
+                      { label: "active alerts", value: String(projectDetail?.reconciliation?.activeAlertCount ?? 0) },
+                      { label: "auto fixes", value: String(projectDetail?.reconciliation?.reconciledRunCount ?? 0) },
+                      { label: "unresolved", value: String(projectDetail?.reconciliation?.unresolvedAlertCount ?? 0) },
+                      { label: "stale threshold", value: formatDurationMs(projectDetail?.reconciliation?.thresholds.staleRunningMs) },
+                    ].map((card) => (
+                      <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                        <div className="text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+                        <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    No-progress threshold {formatDurationMs(projectDetail?.reconciliation?.thresholds.noProgressMs)}; identical failure threshold {projectDetail?.reconciliation?.thresholds.identicalFailureThreshold ?? 0}.
+                  </div>
+                  {(projectDetail?.reconciliation?.alerts ?? []).slice(0, 3).map((alert) => (
+                    <div key={`${alert.code}-${alert.runId}`} className="border p-2 text-xs leading-6" style={{ borderColor: alert.severity === "danger" ? "var(--danger)" : "var(--warning)", background: alert.severity === "danger" ? "color-mix(in srgb, var(--danger) 10%, var(--bg-surface))" : "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))", color: "var(--text-dim)" }}>
+                      {alert.summary} {alert.autoFixable ? "Safe auto-fix available." : "Needs operator review."}
+                    </div>
+                  ))}
+                  {(projectDetail?.reconciliation?.corrections ?? []).slice(0, 2).map((entry) => (
+                    <div key={`${entry.runId}-${entry.correctedAt}`} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Corrected {entry.runId}: {entry.previousStatus.toLowerCase()} → {entry.nextStatus.toLowerCase()} because {entry.reason}.
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>mcp snapshot</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: projectDetail?.mcpSnapshot.state === "drifted" ? "var(--danger)" : "var(--text-dim)" }}>
+                    {projectDetail?.mcpSnapshot.state.replace("_", " ")}
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { label: "sequence", value: String(projectDetail?.mcpSnapshot.currentSequence ?? 0) },
+                    { label: "semantic", value: projectDetail?.mcpSnapshot.semantic.queueState.replace("_", " ") ?? "idle" },
+                    { label: "mappings", value: String(projectDetail?.mcpSnapshot.semantic.mappingCount ?? 0) },
+                    { label: "unique tools", value: String(projectDetail?.mcpSnapshot.semantic.uniqueToolCount ?? 0) },
+                  ].map((card) => (
+                    <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                      <div className="text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+                      <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs leading-6 break-all" style={{ color: "var(--text-dim)" }}>
+                  Current hash: {projectDetail?.mcpSnapshot.currentHash ?? "none"}
+                </div>
+                {projectDetail?.mcpSnapshot.drift ? (
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--danger)", background: "color-mix(in srgb, var(--danger) 10%, var(--bg-surface))" }}>
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--danger)" }}>contract drift detected</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Tools +{projectDetail.mcpSnapshot.drift.tools.added.length} / -{projectDetail.mcpSnapshot.drift.tools.removed.length} / ~{projectDetail.mcpSnapshot.drift.tools.changed.length}; prompts +{projectDetail.mcpSnapshot.drift.prompts.added.length} / -{projectDetail.mcpSnapshot.drift.prompts.removed.length} / ~{projectDetail.mcpSnapshot.drift.prompts.changed.length}; resources +{projectDetail.mcpSnapshot.drift.resources.added.length} / -{projectDetail.mcpSnapshot.drift.resources.removed.length} / ~{projectDetail.mcpSnapshot.drift.resources.changed.length}.
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <button disabled={saving || !projectDetail.mcpSnapshot.activeRunId} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "resolve_mcp_contract_drift", runId: projectDetail.mcpSnapshot.activeRunId, decision: "approve", reason: "Approved from Builder dashboard." })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>
+                        approve rollover
+                      </button>
+                      <button disabled={saving || !projectDetail.mcpSnapshot.activeRunId} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "resolve_mcp_contract_drift", runId: projectDetail.mcpSnapshot.activeRunId, decision: "reject", reason: "Rejected from Builder dashboard." })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                        reject drift
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>semantic enrichment</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Embedding format {projectDetail?.mcpSnapshot.semantic.embeddingFormatVersion ?? "none"}; embedded {projectDetail?.mcpSnapshot.semantic.embeddedAt ? new Date(projectDetail.mcpSnapshot.semantic.embeddedAt).toLocaleString() : "not yet"}; ontology sync {projectDetail?.mcpSnapshot.semantic.ontologySyncVersion ?? "none"}.
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Validators {projectDetail?.mcpSnapshot.semantic.validatorCount ?? 0}; ADR keys {projectDetail?.mcpSnapshot.semantic.activeAdrDecisionKeys.join(", ") || "none"}; ontology hints {projectDetail?.mcpSnapshot.semantic.ontologyHints.join(", ") || "none"}.
+                    </div>
+                    {projectDetail?.mcpSnapshot.semantic.cleanupProcessedAt ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Cleanup processed {new Date(projectDetail.mcpSnapshot.semantic.cleanupProcessedAt).toLocaleString()}.</div> : null}
+                  </div>
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>contract-aware planning</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      {projectDetail?.mcpSnapshot.planning?.summary ?? "No accepted MCP baseline exists yet for planner evolution analysis."}
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Related ADR keys: {projectDetail?.mcpSnapshot.planning?.relatedArchitectureDecisionKeys.join(", ") || "none"}
+                    </div>
+                    {(projectDetail?.mcpSnapshot.planning?.recommendations ?? []).slice(0, 3).map((recommendation) => (
+                      <div key={recommendation} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{recommendation}</div>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>recent history</div>
+                    {(projectDetail?.mcpSnapshot.history ?? []).slice(0, 3).map((entry) => (
+                      <div key={entry.id} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        seq {entry.snapshotSequence} · {entry.versionHash.slice(0, 12)} · {new Date(entry.appliedAt).toLocaleString()}
+                      </div>
+                    ))}
+                    {(projectDetail?.mcpSnapshot.history ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No accepted snapshot history recorded yet.</div> : null}
+                  </div>
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>semantic neighbors</div>
+                    {(projectDetail?.mcpSnapshot.semanticMatches ?? []).slice(0, 3).map((match) => (
+                      <div key={match.snapshotId} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        seq {match.snapshotSequence} · similarity {(match.similarity * 100).toFixed(1)}% · {new Date(match.appliedAt).toLocaleString()}
+                      </div>
+                    ))}
+                    {(projectDetail?.mcpSnapshot.semanticMatches ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No semantic neighbors available yet.</div> : null}
+                  </div>
+                </div>
+              </div>
+
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                 <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder task</div>
                 <div>
@@ -1222,6 +1580,9 @@ export default function BuilderPage() {
                   </button>
                   <button disabled={saving || !taskRequest.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/tasks`, { request: taskRequest, retryFailed: true })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
                     retry last failed
+                  </button>
+                  <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "reconcile_operational_state" })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                    reconcile state
                   </button>
                   <button disabled={saving || !selectedTask || selectedTask.status === "RUNNING" || selectedTask.status === "PENDING"} onClick={() => selectedTask ? void resumeTask(selectedTask.id) : undefined} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
                     resume selected task
@@ -1453,4 +1814,34 @@ export default function BuilderPage() {
       </section>
     </div>
   );
+}
+
+function formatDurationMs(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return "0m";
+  }
+  const totalSeconds = Math.round(value / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
+function formatUsd(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "$0.00";
+  }
+  if (value === 0) {
+    return "$0.00";
+  }
+  if (value < 0.01) {
+    return `$${value.toFixed(4)}`;
+  }
+  return `$${value.toFixed(2)}`;
 }

@@ -2,7 +2,7 @@
  * ContentPlugin — Draft, refine, and policy-check content before posting.
  */
 
-import { chatComplete } from "@/lib/agent/kernel";
+import { chatCompleteWithRunAccounting } from "@/lib/agent/accounted-chat";
 import { evaluateContent } from "@/lib/policies/engine";
 import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
 import type { PolicyResult } from "@/lib/policies/engine";
@@ -40,14 +40,14 @@ export const contentPlugin = {
         },
         required: ["topic", "platform"],
       },
-      execute: async ({ topic, platform, tone, maxLength }: DraftArgs) => {
+      execute: async ({ topic, platform, tone, maxLength }: DraftArgs, context) => {
         const limits: Record<ContentPlatform, number> = {
           twitter: 280,
           facebook: 63206,
           instagram: 2200,
         };
         const limit = maxLength ?? limits[platform] ?? 500;
-        const result = await chatComplete([
+        const result = await chatCompleteWithRunAccounting([
           {
             role: "system",
             content: `You are a social media content writer. Write engaging ${platform} posts. Stay within ${limit} characters.`,
@@ -56,7 +56,7 @@ export const contentPlugin = {
             role: "user",
             content: `Write a ${tone ?? "professional"} post about: ${topic}`,
           },
-        ]);
+        ], context);
         return { draft: result.content, characterCount: result.content.length };
       },
     } satisfies ToolDefinition<DraftArgs, { draft: string; characterCount: number }>)),
@@ -71,11 +71,11 @@ export const contentPlugin = {
         },
         required: ["content", "instruction"],
       },
-      execute: async ({ content, instruction }: RefineArgs) => {
-        const result = await chatComplete([
+      execute: async ({ content, instruction }: RefineArgs, context) => {
+        const result = await chatCompleteWithRunAccounting([
           { role: "system", content: "You are a content editor. Refine the given content based on the instruction. Return only the refined content." },
           { role: "user", content: `Content:\n${content}\n\nInstruction: ${instruction}` },
-        ]);
+        ], context);
         return { refined: result.content };
       },
     } satisfies ToolDefinition<RefineArgs, { refined: string }>)),

@@ -151,7 +151,7 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - The preferred orchestration path is the native in-process Builder loop, which runs project-scoped work through the `builder_operator` lane and deterministic verification.
 - Verification installs project dependencies on first run when needed, then executes the smallest deterministic scripts available in `build`, `test`, `lint` order.
 - The Builder dashboard now exposes project-scoped stats, per-task history, resume-from-iteration flows, and quick log focus controls.
-- Builder health panels now apply threshold-based highlighting so high retry rate, low verification pass rate, blocked promotion flow, and stale ADR pressure stand out without reading every raw metric.
+- Builder health panels now apply threshold-based highlighting so high retry rate, low verification pass rate, blocked promotion flow, stale ADR pressure, and stuck-run conditions stand out without reading every raw metric.
 - Desktop packaging includes Builder shortcuts for retry-last-failed-task, open-current-task-logs, and cancel-running-task.
 - Low-level Builder commands and optional CLI adapters still exist for bounded operations, but persistent task orchestration is now the default path.
 - Claude Code is modeled as a future adapter slot under the same Builder Mode shell, not as a separate builtin product plugin.
@@ -183,7 +183,12 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Launch-time orchestration failures now complete the Builder task/run as failed instead of leaving phantom `RUNNING` rows.
 - Generic product briefs no longer inherit Builder-internal planning bias; a plain Node.js + Express brief now produces generic milestones and generic Builder ADR keys.
 - Builder bootstrap and scaffold checks now ignore Builder-managed projection files like `.builder/` and `AGENTS.md`, so planned projects can continue into real code generation.
-- Generated-template validation now runs against both local package-style presets (`node-cli` and `plugin-package`) so scaffold regressions fail in CI before they leak into live Builder tasks.
+- Generated-template validation now runs against `node-cli`, `plugin-package`, and `next-app` with an explicit shared preset verification contract so scaffold regressions fail in CI before they leak into live Builder tasks.
+- Builder run telemetry now records template, task mode, duration, blocked reason, and token/cost usage so operators can inspect run behavior before tuning budgets.
+- Builder operational reconciliation now evaluates explicit stale-run thresholds, records audited automatic corrections, and exposes a manual reconciliation command for safe stale-state repair.
+- Builder now captures a deterministic MCP contract snapshot for each active run, hashes the normalized tool/prompt/resource surface, and blocks execution when the live contract drifts from the latest accepted Builder baseline.
+- Operators can approve drift through the Builder commands API, which rolls the run onto the next snapshot sequence and preserves rollover history for inspection instead of silently mutating assumptions under an active task.
+- Runtime tool provenance is now appended passively by the execution gateway into the active Builder MCP snapshot so contract history reflects what the runtime actually used, not what the model claimed it used.
 - Deterministic Builder verification now forces `NODE_ENV=test` for the `test` script so Jest-style suites do not inherit the host app server environment.
 - The live Builder validation path has now been proven on both a minimal hello-world artifact and a realistic Express REST API project that completed planning, continuation, test creation, and passing verification inside the external Builder workspace.
 
@@ -219,6 +224,7 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - MCP exposure keeps Builder Mode inspectable and scriptable without mixing it into the general platform lane.
 - Builder tool access is routed through the dedicated `builder_operator` lane and also surfaced to the bounded `mcp_operator` profile.
 - Builder resource inspection covers projects, current project, current plan, current tasks, current runs, and the latest review snapshot.
+- The Builder project overview and Builder MCP resources now also expose the current MCP snapshot sequence, current contract hash, drift state, and rollover history for the active run.
 - `bizbot://builder/projects`, `bizbot://builder/current-project`, `bizbot://builder/current-plan`, `bizbot://builder/current-tasks`, `bizbot://builder/current-runs`, and `bizbot://builder/current-review` expose the active Builder state for inspection.
 
 ### MCP Helps Plugin Authors Too
@@ -497,6 +503,7 @@ Fallback behavior is intentionally simple:
 Current repo/runtime assumptions:
 
 - `npm run dev` starts the Next.js app and worker supervisor
+- `npm run dev:vscode` starts the same stack with `next dev --webpack`, which is the preferred mode for testing inside the VS Code embedded browser when the default dev runtime does not hydrate reliably
 - `npm run build` passes on the current app state and prepares a runnable standalone bundle under `.next/standalone`
 - `npm run start:web` runs the packaged standalone Next.js server used for production-like local smoke passes
 - `npm run lint` validates the application code surface
@@ -725,6 +732,14 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+If you are testing the app inside the VS Code embedded browser and pages stay stuck in server-rendered placeholder state, use the webpack-backed dev mode instead:
+
+```bash
+npm run dev:vscode
+```
+
+Then open `http://localhost:3000` in the VS Code browser instead of `127.0.0.1`.
+
 ### 4. Optional Desktop Build
 
 ```bash
@@ -812,23 +827,23 @@ The intended production split is Google for embeddings and MiniMax M2.7 for the 
 
 ## NPM Scripts
 
-| Command                           | Description                                               |
-| --------------------------------- | --------------------------------------------------------- |
-| `npm run dev`                     | Start full stack in dev mode                              |
-| `npm run dev:web`                 | Start only the Next.js dev server                         |
-| `npm run worker`                  | Start only the worker                                     |
-| `npm run mcp:stdio`               | Start BizBot as a stdio MCP server                        |
-| `npm run plugin:new -- <name>`    | Scaffold a plugin file and matching starter test          |
-| `npm run test:app`                | Run non-MCP Vitest coverage                               |
-| `npm run test:mcp`                | Run MCP transport, contract, and plugin integration tests |
-| `npm run test:e2e`                | Run Playwright browser end-to-end coverage                |
-| `npm run lint:docs`               | Lint README and contributor markdown                      |
-| `npm run build`                   | Production build plus standalone asset preparation        |
-| `npm run start:web`               | Start the standalone packaged Next.js server              |
-| `npm run start`                   | Start full stack in production mode                       |
-| `npm run tauri:prepare-resources` | Bundle server and worker for Tauri                        |
-| `npm run tauri:dev`               | Run Tauri in dev mode                                     |
-| `npm run tauri:build`             | Build the desktop app                                     |
+- `npm run dev`: Start full stack in dev mode
+- `npm run dev:vscode`: Start full stack in webpack dev mode for VS Code browser testing
+- `npm run dev:web`: Start only the Next.js dev server
+- `npm run dev:web:webpack`: Start only the Next.js webpack dev server
+- `npm run worker`: Start only the worker. On Windows this automatically uses `PRISMA_CLIENT_ENGINE_TYPE=binary` unless you explicitly override it.
+- `npm run mcp:stdio`: Start BizBot as a stdio MCP server
+- `npm run plugin:new -- <name>`: Scaffold a plugin file and matching starter test
+- `npm run test:app`: Run non-MCP Vitest coverage
+- `npm run test:mcp`: Run MCP transport, contract, and plugin integration tests
+- `npm run test:e2e`: Run Playwright browser end-to-end coverage
+- `npm run lint:docs`: Lint README and contributor markdown
+- `npm run build`: Production build plus standalone asset preparation
+- `npm run start:web`: Start the standalone packaged Next.js server
+- `npm run start`: Start full stack in production mode
+- `npm run tauri:prepare-resources`: Bundle server and worker for Tauri
+- `npm run tauri:dev`: Run Tauri in dev mode
+- `npm run tauri:build`: Build the desktop app
 
 ## Known Gaps
 

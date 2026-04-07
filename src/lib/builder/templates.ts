@@ -18,6 +18,68 @@ export interface BuilderBootstrapResult {
   files: string[];
 }
 
+export interface BuilderTemplateVerificationContract {
+  requiredFiles: string[];
+  requiredScripts: string[];
+  runtimeEntrypoint: string;
+  requiredDependencies?: string[];
+  requiredDevDependencies?: string[];
+  deterministicChecks: Array<
+    | { runner: "npm"; args: string[] }
+    | { runner: "npx"; args: string[] }
+  >;
+}
+
+export const BUILDER_TEMPLATE_VERIFICATION_CONTRACTS: Record<string, BuilderTemplateVerificationContract> = {
+  "node-cli": {
+    requiredFiles: ["package.json", "src/index.ts", "tsconfig.json"],
+    requiredScripts: ["build", "start", "typecheck"],
+    runtimeEntrypoint: "src/index.ts",
+    requiredDevDependencies: ["@types/node", "typescript"],
+    deterministicChecks: [
+      { runner: "npm", args: ["install", "--no-fund", "--no-audit"] },
+      { runner: "npm", args: ["run", "typecheck"] },
+      { runner: "npm", args: ["run", "build"] },
+    ],
+  },
+  "plugin-package": {
+    requiredFiles: ["package.json", "src/plugin.ts", "tests/plugin.test.ts", "tsconfig.json"],
+    requiredScripts: ["build", "start", "typecheck", "test"],
+    runtimeEntrypoint: "src/plugin.ts",
+    requiredDevDependencies: ["@types/node", "typescript", "vitest"],
+    deterministicChecks: [
+      { runner: "npm", args: ["install", "--no-fund", "--no-audit"] },
+      { runner: "npm", args: ["run", "typecheck"] },
+      { runner: "npm", args: ["run", "build"] },
+    ],
+  },
+  "vite-app": {
+    requiredFiles: ["package.json", "src/main.tsx", "src/App.tsx", "vite.config.ts", "tsconfig.json"],
+    requiredScripts: ["build", "dev", "preview"],
+    runtimeEntrypoint: "src/main.tsx",
+    requiredDependencies: ["react", "react-dom"],
+    requiredDevDependencies: ["typescript", "vite", "@vitejs/plugin-react"],
+    deterministicChecks: [
+      { runner: "npm", args: ["install", "--no-fund", "--no-audit"] },
+      { runner: "npm", args: ["exec", "tsc", "-b"] },
+      { runner: "npm", args: ["run", "build"] },
+    ],
+  },
+  "next-app": {
+    requiredFiles: ["package.json", "src/app/page.tsx", "src/app/layout.tsx", "next.config.ts", "tsconfig.json"],
+    requiredScripts: ["build", "dev", "lint", "start"],
+    runtimeEntrypoint: "src/app/page.tsx",
+    requiredDependencies: ["next", "react", "react-dom"],
+    requiredDevDependencies: ["typescript", "eslint"],
+    deterministicChecks: [
+      { runner: "npm", args: ["install", "--no-fund", "--no-audit"] },
+      { runner: "npm", args: ["exec", "tsc", "--noEmit"] },
+      { runner: "npm", args: ["run", "build"] },
+      { runner: "npm", args: ["run", "lint"] },
+    ],
+  },
+};
+
 export const DEFAULT_BUILDER_TEMPLATE_PRESETS: BuilderTemplateDefinition[] = [
   {
     key: "node-cli",

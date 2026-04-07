@@ -43,6 +43,13 @@ interface OperationsResponse {
     schedulerRegistered: boolean;
   };
   jobs: OperationJob[];
+  mcpWorker: {
+    queueNames: string[];
+    workerRunning: boolean;
+    workerLastSeenAt: string | null;
+    counts: Record<string, Record<string, number>>;
+  };
+  mcpJobs: Array<OperationJob & { queueName: string }>;
   runs: OperationRun[];
   mcp: {
     connectedClients: Array<{
@@ -97,6 +104,7 @@ export default function OperationsPage() {
   const counts = data?.worker.counts ?? EMPTY_COUNTS;
   const runsPagination = usePagination(data?.runs ?? [], 15);
   const jobsPagination = usePagination(data?.jobs ?? [], 15);
+  const mcpJobsPagination = usePagination(data?.mcpJobs ?? [], 15);
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -118,6 +126,7 @@ export default function OperationsPage() {
             {[
               { label: "worker", value: data?.worker.workerRunning ? "running" : "stopped" },
               { label: "queue", value: data?.worker.queueName ?? "bizbot-agent-heartbeat" },
+              { label: "mcp worker", value: data?.mcpWorker.workerRunning ? "running" : "stopped" },
               { label: "pending approvals", value: String(data?.failures.pendingApprovalCount ?? 0) },
               { label: "failed inbox", value: String(data?.failures.failedInboxCount ?? 0) },
               { label: "failed posts", value: String(data?.failures.failedPostCount ?? 0) },
@@ -146,6 +155,27 @@ export default function OperationsPage() {
           </div>
           <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
             Scheduler registered: {data?.worker.schedulerRegistered ? "yes" : "no"}
+          </div>
+        </section>
+
+        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>mcp queues</div>
+          <div className="space-y-3 text-sm">
+            {Object.entries(data?.mcpWorker.counts ?? {}).length === 0 ? (
+              <div style={{ color: "var(--text-dim)" }}>No MCP queue activity recorded yet.</div>
+            ) : Object.entries(data?.mcpWorker.counts ?? {}).map(([queueName, counts]) => (
+              <div key={queueName} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{queueName}</div>
+                <div className="grid gap-3 sm:grid-cols-5 text-xs" style={{ color: "var(--text-dim)" }}>
+                  {Object.entries(counts).map(([key, value]) => (
+                    <div key={`${queueName}-${key}`}>{key}: {value}</div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            MCP worker last seen: {data?.mcpWorker.workerLastSeenAt ? new Date(data.mcpWorker.workerLastSeenAt).toLocaleString() : "never"}
           </div>
         </section>
 
@@ -216,6 +246,26 @@ export default function OperationsPage() {
               </div>
             ))}
             <PaginationControls {...jobsPagination} />
+          </div>
+        </section>
+
+        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>recent mcp jobs</div>
+          <div className="space-y-3 text-sm">
+            {mcpJobsPagination.pageItems.map((job) => (
+              <div key={`${job.queueName}-${job.id}`} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <span>{job.name}</span>
+                  <span style={{ color: job.status === "failed" ? "var(--danger)" : job.status === "completed" ? "var(--success)" : "var(--text-primary)" }}>{job.status}</span>
+                </div>
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{job.queueName}</div>
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Attempts: {job.attemptsMade}</div>
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Created: {new Date(job.createdAt).toLocaleString()}</div>
+                {job.finishedAt ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Finished: {new Date(job.finishedAt).toLocaleString()}</div> : null}
+                {job.failedReason ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{job.failedReason}</div> : null}
+              </div>
+            ))}
+            <PaginationControls {...mcpJobsPagination} />
           </div>
         </section>
 

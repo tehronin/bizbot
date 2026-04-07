@@ -2,8 +2,16 @@ import type { BuilderProject, BuilderRun, BuilderTask, BuilderTaskStage, Builder
 import { db } from "@/lib/db";
 import type { BuilderAgenticProgressEvent, BuilderAgenticTaskOptions } from "@/lib/builder/agentic";
 import { summarizeBuilderProjectMetrics, type BuilderHealthMetrics } from "@/lib/builder/analytics";
+import {
+  ensureBuilderRunMcpSnapshotPreflight,
+  getBuilderMcpSnapshotOverview,
+  getLatestBuilderMcpSnapshotForRun,
+  queueBuilderMcpSnapshotCleanup,
+  selectRelevantBuilderMcpContext,
+} from "@/lib/builder/mcp-snapshots";
 import { loadBuilderProjectContext, selectRelevantInstructionFragments, syncBuilderProjectProjection } from "@/lib/builder/context";
 import { executeNativeBuilderTask } from "@/lib/builder/native-agent";
+import { inspectBuilderOperationalState, type BuilderOperationalStateSummary } from "@/lib/builder/reconciliation";
 import {
   findExecutionTaskForTaskSpec,
   generateBuilderProjectPlan,
@@ -20,12 +28,15 @@ import { buildBuilderPlanAdherence, composeBuilderTaskPrompt } from "@/lib/build
 import { buildBuilderStructuredReview } from "@/lib/builder/review";
 import { completeBuilderRun, createBuilderRun, getBuilderProject, listBuilderRuns, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
 import { registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
+import { summarizeBuilderBudgetProfiles, summarizeBuilderRunTelemetry, type BuilderBudgetProfile, type BuilderTelemetrySummary } from "@/lib/builder/telemetry";
 import { createBuilderTask, getBuilderTask, listBuilderTasks, reconcileBuilderRunWithTask, resolveBuilderContinuationTask, resumeBuilderTask, updateBuilderTask, updateBuilderTaskExecutionState, updateBuilderTaskStage } from "@/lib/builder/tasks";
+import { ensureMcpClientsInitialized } from "@/lib/mcp/client";
 import {
   defaultBuilderProjectContext,
   normalizeBuilderProjectContext,
   normalizeBuilderTaskMetadata,
   trimReviewSummary,
+  type BuilderMcpSnapshotOverviewState,
   type BuilderMilestoneState,
   type BuilderPlanStep,
   type BuilderPlanningSnapshot,
@@ -59,6 +70,10 @@ export interface BuilderProjectOverview {
   runs: BuilderRun[];
   latestReview: BuilderStructuredReview | null;
   metrics: BuilderHealthMetrics;
+  budgetProfiles: BuilderBudgetProfile[];
+  telemetry: BuilderTelemetrySummary;
+  reconciliation: BuilderOperationalStateSummary;
+  mcpSnapshot: BuilderMcpSnapshotOverviewState;
   nextRecommendedStep: string | null;
 }
 
@@ -117,6 +132,34 @@ function deriveFailureStage(loopStage: string): BuilderTaskStage {
     return "TESTING";
   }
   return "IMPLEMENTING";
+}
+
+function buildRunTelemetryMetadata(args: {
+  project: BuilderProject;
+  run: BuilderRun;
+  mode?: "analysis_only" | "scaffold" | "implementation" | "verification" | null;
+  loop?: Record<string, unknown> | null;
+  blockedReason?: string | null;
+  verificationOutcome?: "passed" | "failed" | "skipped";
+}): Record<string, unknown> {
+  const iterations = Array.isArray(args.loop?.iterations) ? args.loop.iterations : [];
+  const lastIteration = iterations.length > 0 && typeof iterations.at(-1) === "object" && !Array.isArray(iterations.at(-1))
+    ? iterations.at(-1) as Record<string, unknown>
+    : null;
+
+  return {
+    template: args.project.template,
+    ...(args.mode ? { mode: args.mode } : {}),
+    durationMs: Math.max(0, Date.now() - args.run.startedAt.getTime()),
+    ...(typeof lastIteration?.provider === "string" ? { provider: lastIteration.provider } : {}),
+    ...(typeof lastIteration?.model === "string" ? { model: lastIteration.model } : {}),
+    ...(args.blockedReason ? { blockedReason: args.blockedReason } : {}),
+    verificationOutcome: args.verificationOutcome
+      ?? (args.loop?.verificationSkipped === true ? "skipped" : "failed"),
+    ...(args.loop?.usage && typeof args.loop.usage === "object" && !Array.isArray(args.loop.usage)
+      ? { usage: args.loop.usage }
+      : {}),
+  };
 }
 
 function deriveTaskStatus(loopVerdict: string | undefined): BuilderTaskStatus {
@@ -276,6 +319,8 @@ async function updateRunProgress(runId: string, partial: {
   taskId: string;
   progressLoop?: unknown;
   taskSpecId?: string | null;
+  mode?: "analysis_only" | "scaffold" | "implementation" | "verification" | null;
+  template?: string;
   stdout?: string;
   stderr?: string;
 }): Promise<void> {
@@ -287,6 +332,8 @@ async function updateRunProgress(runId: string, partial: {
       stage: partial.stage,
       taskId: partial.taskId,
       ...(partial.taskSpecId ? { taskSpecId: partial.taskSpecId } : {}),
+      ...(partial.mode ? { mode: partial.mode } : {}),
+      ...(partial.template ? { template: partial.template } : {}),
       ...(partial.progressLoop ? { loop: partial.progressLoop } : {}),
     },
   });
@@ -428,6 +475,7 @@ export async function orchestrateBuilderTask(
         title: `Builder task: ${task.title}`,
         command: "builder-orchestrator",
         metadata: {
+          template: project.template,
           taskId: task.id,
           taskSpecId: taskSpec.id,
           stage: "PLANNING",
@@ -463,6 +511,7 @@ export async function orchestrateBuilderTask(
     taskId: task.id,
     taskSpecId: taskSpec.id,
     stage: "PLANNING",
+    template: project.template,
     summary: `Planning Builder task spec ${taskSpec.title}.`,
   });
 
@@ -487,6 +536,21 @@ export async function orchestrateBuilderTask(
     currentTaskSpec: taskSpec,
   });
   assertBuilderPlanAdherence(adherence);
+  await ensureMcpClientsInitialized().catch((error) => {
+    console.warn("[builder orchestrator] MCP client init skipped during snapshot preflight:", error);
+  });
+  await ensureBuilderRunMcpSnapshotPreflight({
+    projectId: project.id,
+    runId: run.id,
+    taskId: task.id,
+    taskSpecId: taskSpec.id,
+  });
+  const mcpContext = selectRelevantBuilderMcpContext({
+    mode: adherence.mode,
+    validators: taskSpec.validators.map((validator) => String(validator)),
+    template: project.template,
+    architecturalDecisionKeys: taskSpec.architecturalDecisionKeys,
+  });
   const prompt = composeBuilderTaskPrompt({
     project,
     task: implementingTask,
@@ -499,9 +563,21 @@ export async function orchestrateBuilderTask(
     stage: "IMPLEMENTING",
     fragments: selectRelevantInstructionFragments(project, request),
     adherence,
+    mcpContext,
   });
 
-  const loopResult = await executeNativeBuilderTask(project, { prompt }, {
+  const loopResult = await executeNativeBuilderTask(project, {
+    prompt,
+    builderMcpContext: {
+      projectId: project.id,
+      builderRunId: run.id,
+      taskId: task.id,
+      taskSpecId: taskSpec.id,
+      validatorContext: taskSpec.validators.map((validator) => String(validator)),
+      activeAdrDecisionKeys: taskSpec.architecturalDecisionKeys,
+      ontologyHints: taskSpec.architecturalDecisionKeys,
+    },
+  }, {
     ...options,
     verification: {
       mode: adherence.mode,
@@ -527,6 +603,8 @@ export async function orchestrateBuilderTask(
       await updateRunProgress(run.id, {
         taskId: task.id,
         taskSpecId: taskSpec.id,
+        mode: adherence.mode,
+        template: project.template,
         stage: event.loop.phase ?? "IMPLEMENTING",
         summary: event.loop.summary,
         progressLoop: event.loop,
@@ -602,6 +680,16 @@ export async function orchestrateBuilderTask(
     stderr: loopResult.result.stderr,
     summary: trimReviewSummary(review.summary, 240),
     metadata: {
+      telemetry: buildRunTelemetryMetadata({
+        project,
+        run,
+        mode: adherence.mode,
+        loop: loopResult.loop as unknown as Record<string, unknown>,
+        blockedReason: taskStatus === "SUCCEEDED" ? null : loopResult.loop.iterations.at(-1)?.review.reason ?? review.summary,
+        verificationOutcome: loopResult.loop.verificationSkipped ? "skipped" : taskStatus === "SUCCEEDED" ? "passed" : "failed",
+      }),
+      template: project.template,
+      mode: adherence.mode,
       taskId: task.id,
       taskSpecId: finalizedTaskSpec.id,
       loop: loopResult.loop,
@@ -610,6 +698,15 @@ export async function orchestrateBuilderTask(
       requestedProfile: input.profile ?? null,
       requestedModel: input.model ?? null,
     },
+  });
+  const latestSnapshot = await getLatestBuilderMcpSnapshotForRun(run.id);
+  await queueBuilderMcpSnapshotCleanup({
+    projectId: project.id,
+    snapshotId: latestSnapshot?.id ?? null,
+    snapshotSequence: latestSnapshot?.snapshotSequence ?? null,
+    reason: "post_build",
+  }).catch((error) => {
+    console.warn("[builder orchestrator] failed to queue MCP cleanup:", error);
   });
 
   return {
@@ -671,6 +768,7 @@ export async function launchBuilderTask(projectId: string, input: BuilderOrchest
     title: `Builder task: ${task.title}`,
     command: "builder-orchestrator",
     metadata: {
+      template: project.template,
       taskId: task.id,
       taskSpecId: taskSpec.id,
       stage: "PLANNING",
@@ -715,6 +813,13 @@ export async function launchBuilderTask(projectId: string, input: BuilderOrchest
       stderr: errorText,
       summary: trimReviewSummary(errorText, 240),
       metadata: {
+        telemetry: buildRunTelemetryMetadata({
+          project,
+          run,
+          blockedReason: errorText,
+          verificationOutcome: "failed",
+        }),
+        template: project.template,
         taskId: task.id,
         taskSpecId: taskSpec.id,
         stage: "FAILED",
@@ -722,6 +827,13 @@ export async function launchBuilderTask(projectId: string, input: BuilderOrchest
         requestedProfile: input.profile ?? null,
         requestedModel: input.model ?? null,
       },
+    }).catch(() => undefined);
+    const latestSnapshot = await getLatestBuilderMcpSnapshotForRun(run.id).catch(() => null);
+    await queueBuilderMcpSnapshotCleanup({
+      projectId: project.id,
+      snapshotId: latestSnapshot?.id ?? null,
+      snapshotSequence: latestSnapshot?.snapshotSequence ?? null,
+      reason: "post_build",
     }).catch(() => undefined);
   }).finally(() => {
     unregisterBuilderRunController(run.id);
@@ -761,6 +873,14 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
     context,
     latestReview: structuredReview,
   });
+  const budgetProfiles = summarizeBuilderBudgetProfiles(reconciledRuns, project.template);
+  const telemetry = summarizeBuilderRunTelemetry(reconciledRuns, project.template);
+  const reconciliation = inspectBuilderOperationalState({ runs: reconciledRuns, tasks });
+  const activeRun = reconciledRuns.find((run) => run.status === "RUNNING") ?? reconciledRuns[0] ?? null;
+  const mcpSnapshot = await getBuilderMcpSnapshotOverview({
+    projectId,
+    runId: activeRun?.id ?? null,
+  });
 
   return {
     project,
@@ -774,6 +894,10 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
     runs: reconciledRuns,
     latestReview: structuredReview,
     metrics,
+    budgetProfiles,
+    telemetry,
+    reconciliation,
+    mcpSnapshot,
     nextRecommendedStep: buildNextRecommendedStep(planning, context),
   };
 }

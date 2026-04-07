@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { syncBuilderCliProfiles } from "@/lib/builder/cli-profiles";
 import { getBuilderConfig } from "@/lib/builder/config";
+import { listBuilderStackPresets } from "@/lib/builder/stacks";
 import { syncBuilderTemplatePresets } from "@/lib/builder/templates";
 
 export async function GET() {
@@ -14,6 +15,7 @@ export async function GET() {
   return Response.json({
     config: getBuilderConfig(),
     templates,
+    stackPresets: listBuilderStackPresets(),
     cliProfiles,
     projects: {
       total: projectCount,

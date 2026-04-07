@@ -10,6 +10,13 @@ const modeMap = {
       { name: "worker", script: "worker" },
     ],
   },
+  "dev-webpack": {
+    label: "dev-webpack",
+    processes: [
+      { name: "web", script: "dev:web:webpack" },
+      { name: "worker", script: "worker" },
+    ],
+  },
   start: {
     label: "start",
     processes: [

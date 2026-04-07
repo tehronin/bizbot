@@ -83,6 +83,7 @@ function renderProjectAgentsFile(project: BuilderProject, context: BuilderProjec
     `Workspace: ${project.relativePath}`,
     `Template: ${project.template}`,
     `Package manager: ${project.packageManager}`,
+    `Planned stack: ${context.plannedStack ? `${context.plannedStack.label} (${context.plannedStack.tags.join(", ")})` : "not recorded"}`,
     "",
     `## Mission`,
     "",
@@ -106,6 +107,12 @@ function renderProjectContextMarkdown(context: BuilderProjectContextState): stri
     `## Objective`,
     "",
     context.objective ?? "Not set yet.",
+    "",
+    `## Planned Stack`,
+    "",
+    context.plannedStack
+      ? `${context.plannedStack.label} using ${context.plannedStack.template} / ${context.plannedStack.packageManager}${context.plannedStack.tags.length > 0 ? ` (${context.plannedStack.tags.join(", ")})` : ""}.`
+      : "Not set yet.",
     "",
     `## Conventions`,
     "",

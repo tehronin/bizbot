@@ -67,6 +67,15 @@ export interface AgentExecutionParams {
   parentRunId?: string;
   delegationReason?: string;
   delegatedByProfile?: AgentProfile;
+  builderMcpContext?: {
+    projectId: string;
+    builderRunId: string;
+    taskId?: string | null;
+    taskSpecId?: string | null;
+    validatorContext?: string[];
+    activeAdrDecisionKeys?: string[];
+    ontologyHints?: string[];
+  };
   onEvent?: (event: AgentExecutionEvent) => Promise<void> | void;
   signal?: AbortSignal;
 }
@@ -184,6 +193,7 @@ export async function executeAgentConversation(
     parentRunId,
     delegationReason,
     delegatedByProfile,
+    builderMcpContext,
     onEvent,
   } = params;
   const { signal } = params;
@@ -385,6 +395,7 @@ export async function executeAgentConversation(
             userId: resolvedUserId,
             provider: resolvedProvider,
             signal,
+            builderContext: builderMcpContext,
           },
         });
 
@@ -597,6 +608,7 @@ export async function executeAgentConversation(
                   userId: resolvedUserId,
                   provider: resolvedProvider,
                   signal,
+                  builderContext: builderMcpContext,
                 },
               });
             } catch (error) {

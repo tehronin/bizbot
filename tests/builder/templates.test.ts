@@ -17,13 +17,14 @@ vi.mock("@/lib/builder/adapters/npx", () => ({
   runNpxPackage: vi.fn(),
 }));
 
-import { bootstrapBuilderProject } from "@/lib/builder/templates";
+import { runNpxPackage } from "@/lib/builder/adapters/npx";
+import { bootstrapBuilderProject, BUILDER_TEMPLATE_VERIFICATION_CONTRACTS } from "@/lib/builder/templates";
 
 function createTempBuilderWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-builder-templates-"));
 }
 
-function makeProject(template: "node-cli" | "plugin-package", slug: string): BuilderProject {
+function makeProject(template: "node-cli" | "plugin-package" | "vite-app" | "next-app", slug: string): BuilderProject {
   return {
     id: `${template}-${slug}`,
     name: slug,
@@ -90,5 +91,47 @@ describe("builder template bootstraps", () => {
     expect(packageJson.devDependencies["@types/node"]).toBe("^24.0.0");
     expect(pluginSource).toContain("export function registerPlugin(): string");
     expect(pluginTest).toContain('expect(pluginName).toBe("plugin-package-test")');
+  });
+
+  it("bootstraps the next-app preset through create-next-app with the shared contract present", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const project = makeProject("next-app", "next-app-test");
+    await bootstrapBuilderProject(project);
+
+    expect(vi.mocked(runNpxPackage)).toHaveBeenCalledWith("projects/next-app-test", [
+      "create-next-app@latest",
+      ".",
+      "--ts",
+      "--eslint",
+      "--app",
+      "--src-dir",
+      "--use-npm",
+      "--yes",
+    ]);
+    expect(BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["next-app"]).toEqual(expect.objectContaining({
+      runtimeEntrypoint: "src/app/page.tsx",
+      requiredScripts: expect.arrayContaining(["build", "lint", "start"]),
+    }));
+  });
+
+  it("bootstraps the vite-app preset through create-vite with the shared contract present", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const project = makeProject("vite-app", "vite-app-test");
+    await bootstrapBuilderProject(project);
+
+    expect(vi.mocked(runNpxPackage)).toHaveBeenCalledWith("projects/vite-app-test", [
+      "create-vite@latest",
+      ".",
+      "--template",
+      "react-ts",
+    ]);
+    expect(BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["vite-app"]).toEqual(expect.objectContaining({
+      runtimeEntrypoint: "src/main.tsx",
+      requiredScripts: expect.arrayContaining(["build", "dev", "preview"]),
+    }));
   });
 });

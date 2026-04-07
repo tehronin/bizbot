@@ -8,6 +8,10 @@ export function unregisterBuilderRunController(runId: string): void {
   activeBuilderRunControllers.delete(runId);
 }
 
+export function hasBuilderRunController(runId: string): boolean {
+  return activeBuilderRunControllers.has(runId);
+}
+
 export function cancelBuilderRunController(runId: string): boolean {
   const controller = activeBuilderRunControllers.get(runId);
   if (!controller) {

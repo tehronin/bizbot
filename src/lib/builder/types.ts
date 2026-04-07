@@ -1,4 +1,5 @@
 import type {
+  BuilderPackageManager,
   BuilderMilestoneStatus,
   BuilderProjectBrief,
   BuilderProjectLifecycle,
@@ -45,6 +46,155 @@ export interface BuilderPlanAdherenceState {
   staleDecisionKeys: string[];
   reconfirmedStaleKeys: string[];
   directives: string[];
+}
+
+export interface BuilderMcpToolSnapshotEntry {
+  name: string;
+  title: string;
+  description: string;
+  ownerId: string;
+  ownerKind: string;
+  annotations: unknown;
+  parameters: unknown;
+}
+
+export interface BuilderMcpPromptSnapshotEntry {
+  sourceKind: "builtin" | "imported";
+  serverName: string | null;
+  name: string;
+  title: string;
+  description: string;
+  ownerId: string;
+  group: string;
+  arguments: Array<{
+    name: string;
+    required: boolean;
+    description: string;
+  }>;
+}
+
+export interface BuilderMcpResourceSnapshotEntry {
+  sourceKind: "builtin" | "imported";
+  serverName: string | null;
+  name: string;
+  uri: string;
+  title: string;
+  description: string;
+  ownerId: string;
+  group: string;
+  mimeType: string;
+}
+
+export interface BuilderMcpContractSnapshotState {
+  profile: {
+    agentProfile: string;
+    autonomyPreset: string;
+    capabilities: unknown;
+  };
+  tools: BuilderMcpToolSnapshotEntry[];
+  prompts: BuilderMcpPromptSnapshotEntry[];
+  resources: BuilderMcpResourceSnapshotEntry[];
+}
+
+export interface BuilderMcpMappingState {
+  toolName: string;
+  toolTitle: string | null;
+  ownerId: string;
+  ownerKind: string;
+  taskId: string | null;
+  taskSpecId: string | null;
+  builderRunId: string;
+  agentRunId: string | null;
+  validatorContext: string[];
+  activeAdrDecisionKeys: string[];
+  ontologyHints: string[];
+  recordedAt: string;
+}
+
+export interface BuilderMcpSnapshotRecordState {
+  id: string;
+  projectId: string;
+  runId: string;
+  taskId: string | null;
+  taskSpecId: string | null;
+  snapshotSequence: number;
+  versionHash: string;
+  snapshot: BuilderMcpContractSnapshotState;
+  mappings: BuilderMcpMappingState[];
+  metadata: Record<string, unknown> | null;
+  appliedAt: string;
+}
+
+export interface BuilderMcpContractDriftSectionState {
+  added: string[];
+  removed: string[];
+  changed: string[];
+}
+
+export interface BuilderMcpContractDriftState {
+  previousHash: string | null;
+  currentHash: string;
+  changed: boolean;
+  tools: BuilderMcpContractDriftSectionState;
+  prompts: BuilderMcpContractDriftSectionState;
+  resources: BuilderMcpContractDriftSectionState;
+  profileChanged: boolean;
+}
+
+export interface BuilderMcpSemanticState {
+  queueState: "idle" | "queued" | "embedded" | "ontology_synced" | "failed";
+  embeddingFormatVersion: string | null;
+  embeddedAt: string | null;
+  ontologySyncVersion: string | null;
+  ontologySyncedAt: string | null;
+  cleanupProcessedAt: string | null;
+  mappingCount: number;
+  uniqueToolCount: number;
+  validatorCount: number;
+  activeAdrDecisionKeys: string[];
+  ontologyHints: string[];
+}
+
+export interface BuilderMcpSemanticSearchMatchState {
+  snapshotId: string;
+  runId: string;
+  snapshotSequence: number;
+  versionHash: string;
+  similarity: number;
+  appliedAt: string;
+}
+
+export interface BuilderMcpPlanningContextState {
+  baselineSnapshotId: string | null;
+  baselineSnapshotSequence: number | null;
+  baselineHash: string | null;
+  currentHash: string;
+  driftDetected: boolean;
+  relatedArchitectureDecisionKeys: string[];
+  recommendations: string[];
+  summary: string;
+  drift: BuilderMcpContractDriftState | null;
+}
+
+export interface BuilderRelevantMcpContextState {
+  currentHash: string;
+  tools: BuilderMcpToolSnapshotEntry[];
+  prompts: BuilderMcpPromptSnapshotEntry[];
+  resources: BuilderMcpResourceSnapshotEntry[];
+  reasons: string[];
+}
+
+export interface BuilderMcpSnapshotOverviewState {
+  activeRunId: string | null;
+  currentSnapshotId: string | null;
+  currentSequence: number | null;
+  currentHash: string | null;
+  state: "pending_capture" | "captured" | "aligned" | "drifted";
+  history: BuilderMcpSnapshotRecordState[];
+  drift: BuilderMcpContractDriftState | null;
+  semantic: BuilderMcpSemanticState;
+  semanticMatches: BuilderMcpSemanticSearchMatchState[];
+  planning: BuilderMcpPlanningContextState | null;
 }
 
 export interface BuilderPlannerCritiqueIssue {
@@ -167,6 +317,7 @@ export interface BuilderNormalizedMilestoneDraft {
 
 export interface BuilderProjectContextState {
   objective: string | null;
+  plannedStack: BuilderPlannedStackState | null;
   architectureNotes: string[];
   architecture?: BuilderArchitectureContextState;
   codingConventions: string[];
@@ -178,6 +329,14 @@ export interface BuilderProjectContextState {
   nextSteps: string[];
   instructionNotes: string | null;
   updatedAt: string | null;
+}
+
+export interface BuilderPlannedStackState {
+  presetKey: string | null;
+  label: string;
+  template: string;
+  packageManager: BuilderPackageManager;
+  tags: string[];
 }
 
 export interface BuilderTaskMetadataState {
@@ -238,6 +397,7 @@ export function defaultBuilderArchitectureContext(): BuilderArchitectureContextS
 export function defaultBuilderProjectContext(): BuilderProjectContextState {
   return {
     objective: null,
+    plannedStack: null,
     architectureNotes: [],
     architecture: defaultBuilderArchitectureContext(),
     codingConventions: [],
@@ -355,6 +515,26 @@ export function normalizeBuilderProjectContext(value: unknown): BuilderProjectCo
 
   return {
     objective: typeof candidate.objective === "string" && candidate.objective.trim() ? candidate.objective.trim() : null,
+    plannedStack: (() => {
+      const input = candidate.plannedStack;
+      if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return null;
+      }
+      const plannedStack = input as Record<string, unknown>;
+      const label = typeof plannedStack.label === "string" ? plannedStack.label.trim() : "";
+      const template = typeof plannedStack.template === "string" ? plannedStack.template.trim() : "";
+      const packageManager = plannedStack.packageManager === "PNPM" ? "PNPM" : plannedStack.packageManager === "NPM" ? "NPM" : null;
+      if (!label || !template || !packageManager) {
+        return null;
+      }
+      return {
+        presetKey: typeof plannedStack.presetKey === "string" && plannedStack.presetKey.trim() ? plannedStack.presetKey.trim() : null,
+        label,
+        template,
+        packageManager,
+        tags: readStringArray(plannedStack.tags),
+      };
+    })(),
     architectureNotes: readStringArray(candidate.architectureNotes),
     architecture: readArchitecture(candidate.architecture),
     codingConventions: readStringArray(candidate.codingConventions),

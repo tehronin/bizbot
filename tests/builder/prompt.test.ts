@@ -112,6 +112,7 @@ describe("builder prompt synthesis", () => {
       },
       context: {
         objective: "Ship the demo app.",
+        plannedStack: null,
         architectureNotes: [],
         architecture: {
           active: [],
@@ -172,6 +173,13 @@ describe("builder prompt synthesis", () => {
       } as never,
       context: {
         objective: "Ship the demo app.",
+        plannedStack: {
+          presetKey: "next-tailwind-prisma",
+          label: "Next.js + Prisma + Tailwind",
+          template: "next-app",
+          packageManager: "NPM",
+          tags: ["react", "nextjs", "prisma", "tailwind"],
+        },
         architectureNotes: [],
         codingConventions: ["Use App Router."],
         constraints: ["Stay inside the external workspace."],
@@ -222,13 +230,114 @@ describe("builder prompt synthesis", () => {
 
     expect(prompt).toContain("Builder mission");
     expect(prompt).toContain("Project lifecycle: active.");
+    expect(prompt).toContain("Planned stack: Next.js + Prisma + Tailwind");
     expect(prompt).toContain("Current milestone: Plan foundation");
     expect(prompt).toContain("Validators: typecheck, manual_review.");
+    expect(prompt).toContain("Next App template guidance:");
     expect(prompt).toContain("[Plan Adherence]");
+    expect(prompt).toContain("Relevant MCP context: none selected.");
     expect(prompt).toContain("Only introduce or revise architecture needed for: planning_schema.");
     expect(prompt).toContain("Add a health endpoint");
     expect(prompt).toContain("Keep edits small and reviewable.");
     expect(prompt).not.toContain("undefined");
+  });
+
+  it("injects only the bounded relevant MCP slice into task and planner prompts", () => {
+    const taskPrompt = composeBuilderTaskPrompt({
+      project: {
+        name: "Demo",
+        relativePath: "projects/demo",
+        template: "node-cli",
+        packageManager: "NPM",
+      } as never,
+      task: {
+        title: "Verify the health route",
+        acceptanceCriteria: ["Run tests"],
+        metadata: null,
+      } as never,
+      context: {
+        objective: "Ship the demo app.",
+        plannedStack: null,
+        architectureNotes: [],
+        codingConventions: [],
+        constraints: [],
+        importantCommands: [],
+        currentPlan: [],
+        latestSessionSummary: null,
+        knownFailures: [],
+        nextSteps: [],
+        instructionNotes: null,
+        updatedAt: null,
+      },
+      lifecycle: "ACTIVE",
+      brief: null,
+      currentMilestone: null,
+      currentTaskSpec: null,
+      request: "Run the targeted verification.",
+      stage: "TESTING",
+      fragments: [],
+      mcpContext: {
+        currentHash: "hash-verify",
+        reasons: ["mode:verification", "validator:test"],
+        tools: [{ name: "builder_run_script", title: "Run Script", description: "Run a package script.", ownerId: "builder", ownerKind: "builtin-plugin", annotations: null, parameters: null }],
+        prompts: [{ sourceKind: "builtin", serverName: null, name: "debug-runtime", title: "Debug Runtime", description: "Investigate runtime issues.", ownerId: "developer", group: "developer", arguments: [] }],
+        resources: [{ sourceKind: "builtin", serverName: null, name: "builder-current-runs", uri: "bizbot://builder/current-runs", title: "Current Builder Runs", description: "Recent Builder runs.", ownerId: "builder", group: "builder", mimeType: "application/json" }],
+      },
+    });
+    const plannerPrompt = composeBuilderPlannerPrompt({
+      project: {
+        name: "Demo",
+        relativePath: "projects/demo",
+        template: "next-app",
+        packageManager: "PNPM",
+      } as never,
+      brief: {
+        id: "brief-1",
+        projectId: "project-1",
+        title: "Planner brief",
+        summary: "Plan the external project.",
+        goals: [],
+        constraints: [],
+        deliverables: [],
+        notes: null,
+      } as never,
+      context: {
+        objective: "Plan the project.",
+        plannedStack: null,
+        architectureNotes: [],
+        codingConventions: [],
+        constraints: [],
+        importantCommands: [],
+        currentPlan: [],
+        latestSessionSummary: null,
+        knownFailures: [],
+        nextSteps: [],
+        instructionNotes: null,
+        updatedAt: null,
+      },
+      constraints: [],
+      nonGoals: [],
+      acceptanceCriteria: [],
+      activeArchitecture: [],
+      staleArchitecture: [],
+      mcpContext: {
+        currentHash: "hash-plan",
+        reasons: ["mode:analysis_only", "template:next-app"],
+        tools: [{ name: "developer_preview_mcp_exposure", title: "Preview MCP Exposure", description: "Inspect the MCP surface.", ownerId: "developer", ownerKind: "builtin-plugin", annotations: null, parameters: null }],
+        prompts: [],
+        resources: [{ sourceKind: "builtin", serverName: null, name: "plugins-mcp-surface-preview", uri: "bizbot://plugins/mcp-surface-preview", title: "Plugin MCP Surface Preview", description: "Current MCP tool, prompt, and resource catalogs.", ownerId: "developer", group: "plugins", mimeType: "application/json" }],
+      },
+    });
+
+    expect(taskPrompt).toContain("[Relevant MCP Context]");
+    expect(taskPrompt).toContain("builder_run_script");
+    expect(taskPrompt).toContain("debug-runtime");
+    expect(taskPrompt).toContain("bizbot://builder/current-runs");
+    expect(taskPrompt).not.toContain("developer_preview_mcp_exposure");
+    expect(plannerPrompt).toContain("hash-plan");
+    expect(plannerPrompt).toContain("developer_preview_mcp_exposure");
+    expect(plannerPrompt).toContain("bizbot://plugins/mcp-surface-preview");
+    expect(plannerPrompt).not.toContain("builder_run_script");
   });
 
   it("adds node-cli guidance for dist outputs, cross-platform scripts, and Prisma runtime alignment", () => {
@@ -240,6 +349,7 @@ describe("builder prompt synthesis", () => {
       },
       context: {
         objective: "Ship the demo app.",
+        plannedStack: null,
         architectureNotes: [],
         architecture: { active: [], stale: [] },
         codingConventions: [],
@@ -288,6 +398,7 @@ describe("builder prompt synthesis", () => {
       } as never,
       context: {
         objective: "Ship the demo app.",
+        plannedStack: null,
         architectureNotes: [],
         codingConventions: [],
         constraints: ["Stay inside the external workspace."],
@@ -351,6 +462,7 @@ describe("builder prompt synthesis", () => {
       },
       context: {
         objective: "Ship the demo app.",
+        plannedStack: null,
         architectureNotes: [],
         architecture: { active: [], stale: [] },
         codingConventions: [],
@@ -413,6 +525,13 @@ describe("builder prompt synthesis", () => {
       } as never,
       context: {
         objective: "Harden Builder planning.",
+        plannedStack: {
+          presetKey: "next-tailwind-prisma",
+          label: "Next.js + Prisma + Tailwind",
+          template: "next-app",
+          packageManager: "NPM",
+          tags: ["react", "nextjs", "prisma", "tailwind"],
+        },
         architectureNotes: [],
         architecture: {
           active: [{
@@ -476,6 +595,7 @@ describe("builder prompt synthesis", () => {
     expect(prompt).toContain("[Non-Goals]");
     expect(prompt).toContain("[Acceptance Criteria]");
     expect(prompt).toContain("[Template Guidance]");
+    expect(prompt).toContain("Planned stack: Next.js + Prisma + Tailwind");
     expect(prompt).toContain("[Active Architecture]");
     expect(prompt).toContain("[Stale Architecture - Needs Reconfirmation]");
     expect(prompt).toContain("No new models.");

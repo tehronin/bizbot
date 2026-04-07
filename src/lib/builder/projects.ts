@@ -3,6 +3,8 @@ import path from "path";
 import type { BuilderPackageManager, BuilderProject, BuilderProjectLifecycle, BuilderRun, BuilderRunKind, BuilderRunStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { assertBuilderWorkspaceSafe, resolveBuilderWorkspacePath } from "@/lib/builder/config";
+import { getBuilderStackPreset } from "@/lib/builder/stacks";
+import { defaultBuilderProjectContext } from "@/lib/builder/types";
 
 export interface CreateBuilderProjectInput {
   name: string;
@@ -10,6 +12,7 @@ export interface CreateBuilderProjectInput {
   relativePath?: string;
   template?: string;
   packageManager?: BuilderPackageManager;
+  stackPresetKey?: string;
 }
 
 export interface UpdateBuilderProjectInput {
@@ -116,16 +119,43 @@ export async function createBuilderProject(input: CreateBuilderProjectInput): Pr
     throw new Error("Builder project name is required.");
   }
 
+  const stackPreset = input.stackPresetKey?.trim() ? getBuilderStackPreset(input.stackPresetKey) : null;
+  if (input.stackPresetKey?.trim() && !stackPreset) {
+    throw new Error(`Unknown builder stack preset: ${input.stackPresetKey}.`);
+  }
+  if (stackPreset && input.template?.trim() && input.template.trim() !== stackPreset.template) {
+    throw new Error(`Builder stack preset ${stackPreset.key} requires template ${stackPreset.template}.`);
+  }
+  if (stackPreset && input.packageManager && input.packageManager !== stackPreset.packageManager) {
+    throw new Error(`Builder stack preset ${stackPreset.key} requires package manager ${stackPreset.packageManager}.`);
+  }
+
   const placement = await resolveUniqueProjectPlacement(input);
   ensureDirectoryAvailable(placement.absolutePath);
+
+  const template = stackPreset?.template ?? input.template?.trim() ?? config.defaultTemplate;
+  const packageManager = stackPreset?.packageManager ?? input.packageManager ?? config.defaultPackageManager;
+  const context = stackPreset
+    ? {
+        ...defaultBuilderProjectContext(),
+        plannedStack: {
+          presetKey: stackPreset.key,
+          label: stackPreset.displayName,
+          template: stackPreset.template,
+          packageManager: stackPreset.packageManager,
+          tags: stackPreset.tags,
+        },
+      }
+    : undefined;
 
   return db.builderProject.create({
     data: {
       name,
       slug: placement.slug,
       relativePath: placement.relativePath,
-      template: input.template?.trim() || config.defaultTemplate,
-      packageManager: input.packageManager ?? config.defaultPackageManager,
+      template,
+      packageManager,
+      ...(context ? { context: context as never } : {}),
     },
   });
 }

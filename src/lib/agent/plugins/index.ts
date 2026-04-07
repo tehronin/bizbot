@@ -9,6 +9,7 @@ import type { AgentRuntimeConfig } from "@/lib/agent/runtime";
 import type { AgentProfile } from "@/lib/agent/profiles";
 import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { canProfileUseTool } from "@/lib/agent/profiles";
+import { appendBuilderMcpSnapshotMapping } from "@/lib/builder/mcp-snapshots";
 import { getMcpClientTools } from "@/lib/mcp/client";
 import { createBizBotPlugin, wrapBuiltinPlugin } from "./contracts";
 import { getBuiltinPlugins, getEnabledBuiltinPlugins, createPluginRegistry } from "./registry";
@@ -23,6 +24,15 @@ export interface ToolAccessContext {
   userId?: string;
   provider?: string;
   signal?: AbortSignal;
+  builderContext?: {
+    projectId: string;
+    builderRunId: string;
+    taskId?: string | null;
+    taskSpecId?: string | null;
+    validatorContext?: string[];
+    activeAdrDecisionKeys?: string[];
+    ontologyHints?: string[];
+  };
 }
 
 function getToolAccessDenialReason(name: string, config: AgentRuntimeConfig, access?: ToolAccessContext): string | null {
@@ -82,7 +92,7 @@ export async function executeTool(
     throw new Error(`Unsupported tool: ${name}`);
   }
 
-  return tool.execute(args, {
+  const result = await tool.execute(args, {
     conversationId: options?.access?.conversationId,
     runId: options?.access?.runId,
     userId: options?.access?.userId,
@@ -90,4 +100,21 @@ export async function executeTool(
     provider: options?.access?.provider,
     signal: options?.access?.signal,
   });
+
+  if (options?.access?.builderContext?.builderRunId) {
+    await appendBuilderMcpSnapshotMapping({
+      runId: options.access.builderContext.builderRunId,
+      toolName: name,
+      agentRunId: options.access.runId ?? null,
+      taskId: options.access.builderContext.taskId,
+      taskSpecId: options.access.builderContext.taskSpecId,
+      validatorContext: options.access.builderContext.validatorContext,
+      activeAdrDecisionKeys: options.access.builderContext.activeAdrDecisionKeys,
+      ontologyHints: options.access.builderContext.ontologyHints,
+    }).catch((error) => {
+      console.warn("[builder mcp mapping] failed to append mapping:", error);
+    });
+  }
+
+  return result;
 }

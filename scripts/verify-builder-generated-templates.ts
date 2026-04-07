@@ -3,7 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { BuilderProject } from "@prisma/client";
-import { bootstrapBuilderProject } from "../src/lib/builder/templates";
+import {
+  bootstrapBuilderProject,
+  BUILDER_TEMPLATE_VERIFICATION_CONTRACTS,
+  type BuilderTemplateVerificationContract,
+} from "../src/lib/builder/templates";
 
 function run(command: string, args: string[], cwd: string): void {
   const result = process.platform === "win32" && command === "npm"
@@ -21,7 +25,7 @@ function run(command: string, args: string[], cwd: string): void {
   }
 }
 
-function makeProject(template: "node-cli" | "plugin-package", slug: string): BuilderProject {
+function makeProject(template: "node-cli" | "plugin-package" | "vite-app" | "next-app", slug: string): BuilderProject {
   return {
     id: `${template}-${slug}`,
     name: slug,
@@ -43,7 +47,47 @@ function readJson<T>(filePath: string): T {
   return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
 }
 
+function verifyRequiredFiles(projectRoot: string, contract: BuilderTemplateVerificationContract): void {
+  for (const requiredFile of contract.requiredFiles) {
+    if (!fs.existsSync(path.join(projectRoot, requiredFile))) {
+      throw new Error(`Expected scaffold to include ${requiredFile}.`);
+    }
+  }
+}
+
+function verifyRequiredPackageJsonFields(
+  projectRoot: string,
+  contract: BuilderTemplateVerificationContract,
+): { scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> } {
+  const packageJson = readJson<{
+    scripts?: Record<string, string>;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  }>(path.join(projectRoot, "package.json"));
+
+  for (const script of contract.requiredScripts) {
+    if (!packageJson.scripts?.[script]) {
+      throw new Error(`Expected scaffold to expose a ${script} script.`);
+    }
+  }
+  for (const dependency of contract.requiredDependencies ?? []) {
+    if (!packageJson.dependencies?.[dependency]) {
+      throw new Error(`Expected scaffold to include dependency ${dependency}.`);
+    }
+  }
+  for (const dependency of contract.requiredDevDependencies ?? []) {
+    if (!packageJson.devDependencies?.[dependency]) {
+      throw new Error(`Expected scaffold to include devDependency ${dependency}.`);
+    }
+  }
+
+  return packageJson;
+}
+
 function verifyNodeCli(projectRoot: string): void {
+  const contract = BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["node-cli"];
+  verifyRequiredFiles(projectRoot, contract);
+  verifyRequiredPackageJsonFields(projectRoot, contract);
   const packageJson = readJson<{
     scripts?: Record<string, string>;
     devDependencies?: Record<string, string>;
@@ -64,10 +108,8 @@ function verifyNodeCli(projectRoot: string): void {
 }
 
 function verifyPluginPackage(projectRoot: string, slug: string): void {
-  const packageJson = readJson<{
-    scripts?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-  }>(path.join(projectRoot, "package.json"));
+  const contract = BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["plugin-package"];
+  const packageJson = verifyRequiredPackageJsonFields(projectRoot, contract);
   const pluginSource = fs.readFileSync(path.join(projectRoot, "src", "plugin.ts"), "utf8");
   const pluginTest = fs.readFileSync(path.join(projectRoot, "tests", "plugin.test.ts"), "utf8");
 
@@ -88,21 +130,50 @@ function verifyPluginPackage(projectRoot: string, slug: string): void {
   }
 }
 
-async function verifyTemplate(template: "node-cli" | "plugin-package", slug: string): Promise<void> {
+function verifyNextApp(projectRoot: string): void {
+  const contract = BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["next-app"];
+  verifyRequiredFiles(projectRoot, contract);
+  verifyRequiredPackageJsonFields(projectRoot, contract);
+}
+
+function verifyViteApp(projectRoot: string): void {
+  const contract = BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["vite-app"];
+  verifyRequiredFiles(projectRoot, contract);
+  verifyRequiredPackageJsonFields(projectRoot, contract);
+}
+
+function verifyTemplateContract(template: "node-cli" | "plugin-package" | "vite-app" | "next-app", projectRoot: string, slug: string): void {
+  if (template === "node-cli") {
+    verifyNodeCli(projectRoot);
+    return;
+  }
+  if (template === "plugin-package") {
+    verifyPluginPackage(projectRoot, slug);
+    return;
+  }
+  if (template === "vite-app") {
+    verifyViteApp(projectRoot);
+    return;
+  }
+  verifyNextApp(projectRoot);
+}
+
+async function verifyTemplate(template: "node-cli" | "plugin-package" | "vite-app" | "next-app", slug: string): Promise<void> {
   const project = makeProject(template, slug);
   const bootstrap = await bootstrapBuilderProject(project);
   const projectRoot = path.join(process.env.BIZBOT_BUILDER_WORKSPACE_PATH!, project.relativePath.replace(/\//g, path.sep));
+  const contract = BUILDER_TEMPLATE_VERIFICATION_CONTRACTS[template];
 
   console.log(`Scaffolded ${bootstrap.root}`);
-  if (template === "node-cli") {
-    verifyNodeCli(projectRoot);
-  } else {
-    verifyPluginPackage(projectRoot, slug);
-  }
+  verifyTemplateContract(template, projectRoot, slug);
 
-  run("npm", ["install", "--no-fund", "--no-audit"], projectRoot);
-  run("npm", ["run", "typecheck"], projectRoot);
-  run("npm", ["run", "build"], projectRoot);
+  for (const check of contract.deterministicChecks) {
+    if (check.runner === "npm") {
+      run("npm", check.args, projectRoot);
+      continue;
+    }
+    run("npx", check.args, projectRoot);
+  }
 }
 
 async function main(): Promise<void> {
@@ -112,6 +183,8 @@ async function main(): Promise<void> {
 
   await verifyTemplate("node-cli", "node-cli-ci");
   await verifyTemplate("plugin-package", "plugin-package-ci");
+  await verifyTemplate("vite-app", "vite-app-ci");
+  await verifyTemplate("next-app", "next-app-ci");
 
   console.log("Builder generated template verification passed.");
 }

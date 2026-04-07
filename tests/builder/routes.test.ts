@@ -177,6 +177,13 @@ describe("builder routes", () => {
       },
       context: {
         objective: "Build the external demo project.",
+        plannedStack: {
+          presetKey: "next-tailwind-prisma",
+          label: "Next.js + Prisma + Tailwind",
+          template: "next-app",
+          packageManager: "NPM",
+          tags: ["react", "nextjs", "prisma", "tailwind"],
+        },
         architectureNotes: ["Keep Builder files under .builder."],
         architecture: {
           active: [{
@@ -318,6 +325,14 @@ describe("builder routes", () => {
           latestRetiredDecisionCount: 1,
         },
       },
+      mcpSnapshot: {
+        activeRunId: "run-1",
+        currentSequence: 1,
+        currentHash: "hash-1",
+        state: "captured",
+        history: [{ id: "snapshot-1", snapshotSequence: 1, versionHash: "hash-1", appliedAt: "2025-01-01T00:00:00.000Z" }],
+        drift: null,
+      },
       nextRecommendedStep: "Continue the current task.",
     });
     mocks.planBuilderProject.mockResolvedValue({
@@ -334,6 +349,7 @@ describe("builder routes", () => {
       },
       context: {
         objective: "Move Builder to canonical project planning.",
+        plannedStack: null,
         architectureNotes: [],
         codingConventions: [],
         constraints: [],
@@ -431,19 +447,23 @@ describe("builder routes", () => {
     expect(payload.config.defaultAgenticProfile).toBe("");
     expect(payload.config.agenticMaxIterations).toBe(3);
     expect(payload.projects).toEqual({ total: 2, running: 1 });
+    expect(payload.stackPresets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "next-tailwind-prisma", template: "next-app" }),
+      expect.objectContaining({ key: "vite-react-tailwind", template: "vite-app" }),
+    ]));
     expect(payload.cliProfiles[0]?.key).toBe("codex");
   });
 
   it("creates builder projects through the collection route", async () => {
     const response = await postProjects(new NextRequest("http://localhost/api/builder/projects", {
       method: "POST",
-      body: JSON.stringify({ name: "Acme", template: "vite-app", packageManager: "PNPM" }),
+      body: JSON.stringify({ name: "Acme", template: "vite-app", packageManager: "PNPM", stackPresetKey: "vite-react-tailwind" }),
       headers: { "Content-Type": "application/json" },
     }));
     const payload = await response.json();
 
     expect(response.status).toBe(201);
-    expect(mocks.createBuilderProject).toHaveBeenCalledWith({ name: "Acme", slug: undefined, relativePath: undefined, template: "vite-app", packageManager: "PNPM" });
+    expect(mocks.createBuilderProject).toHaveBeenCalledWith({ name: "Acme", slug: undefined, relativePath: undefined, template: "vite-app", packageManager: "PNPM", stackPresetKey: "vite-react-tailwind" });
     expect(payload.project.id).toBe("project-2");
   });
 
@@ -459,6 +479,7 @@ describe("builder routes", () => {
     expect(payload.currentTask.id).toBe("task-1");
     expect(payload.runs).toHaveLength(1);
     expect(payload.metrics.architecture.activeDecisionCount).toBe(1);
+    expect(payload.mcpSnapshot.currentSequence).toBe(1);
   });
 
   it("plans a project through the dedicated planning route", async () => {
@@ -566,6 +587,51 @@ describe("builder routes", () => {
     });
     expect(payload.runId).toBe("run-1");
     expect(payload.status).toBe("RUNNING");
+  });
+
+  it("runs the reconciliation command through the project commands api", async () => {
+    const response = await postCommand(new NextRequest("http://localhost/api/builder/projects/project-1/commands", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "reconcile_operational_state",
+      }),
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.recordBuilderProjectCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "project-1" }), {
+      action: "reconcile_operational_state",
+    });
+    expect(payload.runId).toBe("run-1");
+    expect(payload.result).toEqual({ ok: true, stdout: "done", stderr: "", exitCode: 0 });
+  });
+
+  it("parses and forwards MCP drift resolution commands", async () => {
+    const response = await postCommand(new NextRequest("http://localhost/api/builder/projects/project-1/commands", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "resolve_mcp_contract_drift",
+        runId: "run-1",
+        decision: "approve",
+        reason: "Accept the new contract for this task.",
+      }),
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.recordBuilderProjectCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "project-1" }), {
+      action: "resolve_mcp_contract_drift",
+      runId: "run-1",
+      decision: "approve",
+      reason: "Accept the new contract for this task.",
+    });
+    expect(payload.runId).toBe("run-1");
   });
 
   it("cancels a running builder run", async () => {

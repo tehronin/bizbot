@@ -12,6 +12,24 @@ function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
   if (candidate.action === "initialize_git") {
     return { action: "initialize_git" };
   }
+  if (candidate.action === "reconcile_operational_state") {
+    return { action: "reconcile_operational_state" };
+  }
+  if (candidate.action === "resolve_mcp_contract_drift" && typeof candidate.runId === "string") {
+    const decision = candidate.decision === "approve" || candidate.decision === "reject"
+      ? candidate.decision
+      : null;
+    if (!decision) {
+      throw new Error("Builder MCP contract drift resolution requires decision=approve|reject.");
+    }
+
+    return {
+      action: "resolve_mcp_contract_drift",
+      runId: candidate.runId,
+      decision,
+      reason: typeof candidate.reason === "string" ? candidate.reason : undefined,
+    };
+  }
   if (candidate.action === "install_dependencies") {
     return {
       action: "install_dependencies",

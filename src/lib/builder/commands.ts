@@ -2,9 +2,11 @@ import type { BuilderProject, BuilderRunKind } from "@prisma/client";
 import { gitInitRepository } from "@/lib/builder/adapters/git";
 import { buildBuilderAgenticExecution, executeBuilderAgenticTask } from "@/lib/builder/agentic";
 import { npmInstall, npmRunScript } from "@/lib/builder/adapters/npm";
+import { resolveBuilderRunMcpContractDrift } from "@/lib/builder/mcp-snapshots";
 import { pnpmInstall, pnpmRunScript } from "@/lib/builder/adapters/pnpm";
 import { runNpxPackage } from "@/lib/builder/adapters/npx";
 import { completeBuilderRun, createBuilderRun, getBuilderRun, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
+import { reconcileBuilderOperationalState } from "@/lib/builder/reconciliation";
 import { cancelBuilderRunController, registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
 import { updateBuilderTask } from "@/lib/builder/tasks";
 import type { BuilderCommandResult } from "@/lib/builder/workspace";
@@ -18,6 +20,8 @@ export type BuilderProjectCommandInput =
   | { action: "add_dependency"; packages: string[]; dev?: boolean }
   | { action: "run_script"; script: string; args?: string[] }
   | { action: "run_generator"; generator: string; args?: string[] }
+  | { action: "reconcile_operational_state" }
+  | { action: "resolve_mcp_contract_drift"; runId: string; decision: "approve" | "reject"; reason?: string }
   | { action: "run_agentic_task"; profile?: string; prompt: string; model?: string; args?: string[] };
 
 export interface BuilderProjectCommandExecution {
@@ -152,6 +156,76 @@ export async function executeBuilderProjectCommand(
         command: "npx",
         args,
         result,
+      };
+    }
+    case "reconcile_operational_state": {
+      const reconciliation = await reconcileBuilderOperationalState({ projectId: project.id });
+      const result: BuilderCommandResult = {
+        ok: true,
+        command: "builder-reconcile",
+        args: [project.id],
+        cwd: project.relativePath,
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify(reconciliation, null, 2),
+        stderr: "",
+        timedOut: false,
+        cancelled: false,
+      };
+
+      return {
+        kind: "COMMAND",
+        title: "Reconcile Builder operational state",
+        command: "builder-reconcile",
+        args: [project.id],
+        result,
+        summary: reconciliation.reconciledRunCount > 0
+          ? `Applied ${reconciliation.reconciledRunCount} Builder reconciliation correction(s).`
+          : reconciliation.activeAlertCount > 0
+            ? `Detected ${reconciliation.activeAlertCount} Builder operational alert(s) with no safe auto-fix applied.`
+            : "Builder operational state is healthy.",
+        metadata: {
+          reconciliation,
+        },
+      };
+    }
+    case "resolve_mcp_contract_drift": {
+      const resolution = await resolveBuilderRunMcpContractDrift({
+        projectId: project.id,
+        runId: input.runId,
+        decision: input.decision,
+        reason: input.reason,
+      });
+      const result: BuilderCommandResult = {
+        ok: input.decision === "approve" ? resolution.status !== "rejected" : true,
+        command: "builder-mcp-drift",
+        args: [project.id, input.runId, input.decision],
+        cwd: project.relativePath,
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify(resolution, null, 2),
+        stderr: "",
+        timedOut: false,
+        cancelled: false,
+      };
+
+      return {
+        kind: "COMMAND",
+        title: input.decision === "approve" ? "Approve Builder MCP contract rollover" : "Reject Builder MCP contract drift",
+        command: "builder-mcp-drift",
+        args: [project.id, input.runId, input.decision],
+        result,
+        summary: resolution.status === "approved"
+          ? `Rolled Builder MCP contract forward to snapshot sequence ${resolution.snapshot?.snapshotSequence ?? "unknown"}.`
+          : resolution.status === "rejected"
+            ? "Rejected Builder MCP contract drift; execution remains blocked until the contract is aligned."
+            : resolution.status === "captured"
+              ? "Captured the initial Builder MCP contract snapshot."
+              : "Builder MCP contract is already aligned.",
+        metadata: {
+          targetRunId: input.runId,
+          resolution,
+        },
       };
     }
     case "run_agentic_task": {

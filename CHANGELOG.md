@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-04-07
+
+- Added Builder stack presets for common Next.js and Vite flows, surfaced them in the Builder dashboard and status API, and persisted the selected planned stack into project context/projection files.
+- Expanded Builder template verification into a shared contract model that now validates `node-cli`, `plugin-package`, `vite-app`, and `next-app` scaffolds through deterministic checks.
+- Added Builder run telemetry summaries, budget profiles, and operational reconciliation so stale `RUNNING` state, repeated identical failures, and operator-visible repair actions show up in the Builder dashboard and commands API.
+- Introduced deterministic Builder MCP contract snapshots with drift detection, operator rollover/rejection commands, bounded planner/execution MCP context injection, and passive runtime tool provenance capture.
+- Added MCP snapshot BullMQ queues, worker processors, Operations visibility, developer inspection tools, semantic snapshot search, pgvector-backed snapshot embeddings, and ontology-enrichment metadata for snapshot history.
+- Fixed MCP BullMQ job IDs to use a BullMQ-safe deterministic format and added regression coverage so invalid custom IDs with `:` cannot reappear.
+- Added accounting-aware content tool completions so tool-owned LLM usage is recorded into the agent run journal instead of disappearing from usage totals.
+- Updated the worker launch path so `npm run worker` automatically uses `PRISMA_CLIENT_ENGINE_TYPE=binary` on Windows while preserving explicit overrides on other platforms.
+
 ## 2026-04-04
 
 - Added threshold-based Builder dashboard health highlighting so high retry rate, low verification pass rate, blocked task-spec promotion, and stale ADR pressure are visually emphasized instead of buried in raw metrics.

@@ -1,5 +1,12 @@
 import type { BuilderProject, BuilderProjectBrief, BuilderProjectLifecycle } from "@prisma/client";
-import type { BuilderArchitectureDecisionState, BuilderMilestoneState, BuilderPlanAdherenceState, BuilderTaskSpecState } from "@/lib/builder/types";
+import type {
+  BuilderArchitectureDecisionState,
+  BuilderMilestoneState,
+  BuilderMcpPlanningContextState,
+  BuilderPlanAdherenceState,
+  BuilderRelevantMcpContextState,
+  BuilderTaskSpecState,
+} from "@/lib/builder/types";
 import { normalizeBuilderTaskMetadata, type BuilderInstructionFragment, type BuilderProjectContextState } from "@/lib/builder/types";
 
 function joinList(title: string, values: string[], empty = "none"): string {
@@ -16,16 +23,42 @@ function renderArchitectureSection(title: string, decisions: BuilderArchitecture
 }
 
 function renderTemplateExecutionGuidance(project: Pick<BuilderProject, "template" | "packageManager">): string | null {
-  if (project.template !== "node-cli") {
-    return null;
+  if (project.template === "node-cli") {
+    return [
+      "Node CLI template guidance:",
+      "- Keep TypeScript builds emitting to dist and keep start scripts pointing at built files under dist.",
+      `- Keep package manager assumptions aligned to ${project.packageManager} and use cross-platform package scripts; avoid shell-specific env assignment such as NAME=value command.`,
+      "- If the task adds Prisma with a direct PrismaClient, prefer the stable direct-client setup and keep runtime SQLite paths aligned with Prisma migration paths.",
+    ].join("\n");
+  }
+  if (project.template === "next-app") {
+    return [
+      "Next App template guidance:",
+      "- Keep application routes and UI work aligned with the App Router structure under src/app.",
+      "- Add \"use client\" only when browser APIs, local state, or interactive handlers require it; keep data and Prisma access server-side.",
+      `- Keep package manager assumptions aligned to ${project.packageManager} and preserve Next build/lint scripts instead of introducing parallel runtime entrypoints.`,
+      "- If Tailwind or Prisma are part of the planned stack, extend the existing app structure instead of introducing ad hoc styling or client-bundled database code.",
+    ].join("\n");
+  }
+  if (project.template === "vite-app") {
+    return [
+      "Vite App template guidance:",
+      "- Keep the client entry flow anchored in src/main.tsx and src/App.tsx unless the task explicitly requires a broader app shell split.",
+      "- Prefer browser-safe React code and do not introduce Next.js or server-only patterns into the Vite client bundle.",
+      `- Keep package manager assumptions aligned to ${project.packageManager} and preserve Vite's dev/build flow rather than inventing custom runtime wrappers.`,
+      "- If Tailwind is part of the planned stack, extend the existing CSS entrypoints cleanly; if Prisma is requested, keep it behind an API boundary rather than bundling it into the frontend.",
+    ].join("\n");
   }
 
-  return [
-    "Node CLI template guidance:",
-    "- Keep TypeScript builds emitting to dist and keep start scripts pointing at built files under dist.",
-    `- Keep package manager assumptions aligned to ${project.packageManager} and use cross-platform package scripts; avoid shell-specific env assignment such as NAME=value command.`,
-    "- If the task adds Prisma with a direct PrismaClient, prefer the stable direct-client setup and keep runtime SQLite paths aligned with Prisma migration paths.",
-  ].join("\n");
+  return null;
+}
+
+function renderPlannedStack(context: BuilderProjectContextState): string {
+  if (!context.plannedStack) {
+    return "Planned stack: not recorded.";
+  }
+  const tags = context.plannedStack.tags.length > 0 ? ` (${context.plannedStack.tags.join(", ")})` : "";
+  return `Planned stack: ${context.plannedStack.label}${tags}.`;
 }
 
 function inferBuilderTaskExecutionMode(args: {
@@ -151,6 +184,52 @@ function renderPlanAdherenceSection(adherence: BuilderPlanAdherenceState | null 
   ].join("\n");
 }
 
+function renderRelevantMcpContext(context: BuilderRelevantMcpContextState | null | undefined): string {
+  if (!context) {
+    return "Relevant MCP context: none selected.";
+  }
+
+  const toolLines = context.tools.length > 0
+    ? context.tools.map((tool) => `- tool ${tool.name}: ${tool.description}`)
+    : ["- tool none selected"];
+  const promptLines = context.prompts.length > 0
+    ? context.prompts.map((prompt) => `- prompt ${prompt.name}: ${prompt.description}`)
+    : ["- prompt none selected"];
+  const resourceLines = context.resources.length > 0
+    ? context.resources.map((resource) => `- resource ${resource.uri}: ${resource.description}`)
+    : ["- resource none selected"];
+
+  return [
+    "[Relevant MCP Context]",
+    `Current contract hash: ${context.currentHash}`,
+    `Selection reasons: ${context.reasons.join(", ")}`,
+    ...toolLines,
+    ...promptLines,
+    ...resourceLines,
+    "[/Relevant MCP Context]",
+  ].join("\n");
+}
+
+function renderMcpContractEvolution(context: BuilderMcpPlanningContextState | null | undefined): string {
+  if (!context) {
+    return "MCP contract evolution: no accepted project baseline exists yet.";
+  }
+
+  return [
+    "[MCP Contract Evolution]",
+    `Summary: ${context.summary}`,
+    `Baseline sequence: ${context.baselineSnapshotSequence ?? "none"}`,
+    `Baseline hash: ${context.baselineHash ?? "none"}`,
+    `Current hash: ${context.currentHash}`,
+    `Related ADR keys: ${context.relatedArchitectureDecisionKeys.length > 0 ? context.relatedArchitectureDecisionKeys.join(", ") : "none"}`,
+    ...context.recommendations.map((recommendation) => `- ${recommendation}`),
+    context.drift
+      ? `Drift details: tools(+${context.drift.tools.added.length}/-${context.drift.tools.removed.length}/~${context.drift.tools.changed.length}), prompts(+${context.drift.prompts.added.length}/-${context.drift.prompts.removed.length}/~${context.drift.prompts.changed.length}), resources(+${context.drift.resources.added.length}/-${context.drift.resources.removed.length}/~${context.drift.resources.changed.length}), profileChanged=${context.drift.profileChanged}`
+      : "Drift details: none",
+    "[/MCP Contract Evolution]",
+  ].join("\n");
+}
+
 export function composeBuilderTaskPrompt(args: {
   project: BuilderProject;
   task: { title: string; acceptanceCriteria: unknown; metadata: unknown };
@@ -163,6 +242,7 @@ export function composeBuilderTaskPrompt(args: {
   stage: string;
   fragments: BuilderInstructionFragment[];
   adherence?: BuilderPlanAdherenceState | null;
+  mcpContext?: BuilderRelevantMcpContextState | null;
 }): string {
   const metadata = normalizeBuilderTaskMetadata(args.task.metadata);
   const acceptanceCriteria = Array.isArray(args.task.acceptanceCriteria)
@@ -195,7 +275,9 @@ export function composeBuilderTaskPrompt(args: {
     joinList("Known failures", args.context.knownFailures),
     joinList("Next steps", args.context.nextSteps),
     args.context.objective ? `Project objective: ${args.context.objective}` : "Project objective: not yet recorded.",
+    renderPlannedStack(args.context),
     renderPlanAdherenceSection(args.adherence),
+    renderRelevantMcpContext(args.mcpContext),
     planSteps.length > 0
       ? `Active plan: ${planSteps.map((step) => `[${step.status}] ${step.label}`).join("; ")}`
       : "Active plan: inspect the workspace, implement the request, validate the result, and summarize what changed.",
@@ -221,6 +303,8 @@ export function composeBuilderPlannerPrompt(args: {
   acceptanceCriteria: string[];
   activeArchitecture: BuilderArchitectureDecisionState[];
   staleArchitecture: BuilderArchitectureDecisionState[];
+  mcpContext?: BuilderRelevantMcpContextState | null;
+  mcpPlanningContext?: BuilderMcpPlanningContextState | null;
 }): string {
   return [
     "Builder planner mission: produce a concise, dependency-safe project plan for the selected external Builder workspace.",
@@ -229,7 +313,9 @@ export function composeBuilderPlannerPrompt(args: {
     `[Constraints]\n${args.constraints.length > 0 ? args.constraints.map((constraint) => `- ${constraint}`).join("\n") : "- none recorded"}\n[/Constraints]`,
     `[Non-Goals]\n${args.nonGoals.length > 0 ? args.nonGoals.map((item) => `- ${item}`).join("\n") : "- none recorded"}\n[/Non-Goals]`,
     `[Acceptance Criteria]\n${args.acceptanceCriteria.length > 0 ? args.acceptanceCriteria.map((item) => `- ${item}`).join("\n") : "- none recorded"}\n[/Acceptance Criteria]`,
-    `[Template Guidance]\n- Respect the existing template: ${args.project.template}.\n- Keep package manager assumptions aligned to ${args.project.packageManager}.\n- Reuse current context/projection patterns, but keep planning prompting separate from task execution prompting.\n[/Template Guidance]`,
+    `[Template Guidance]\n- Respect the existing template: ${args.project.template}.\n- Keep package manager assumptions aligned to ${args.project.packageManager}.\n- ${renderPlannedStack(args.context).replace(/^Planned stack: /, "Planned stack: ")}\n- Reuse current context/projection patterns, but keep planning prompting separate from task execution prompting.\n[/Template Guidance]`,
+    renderRelevantMcpContext(args.mcpContext),
+    renderMcpContractEvolution(args.mcpPlanningContext),
     `[Active Architecture]\n${renderArchitectureSection("", args.activeArchitecture, "No active architecture decisions recorded.").replace(/^\n/, "")}\n[/Active Architecture]`,
     `[Stale Architecture - Needs Reconfirmation]\n${renderArchitectureSection("", args.staleArchitecture, "No stale architecture decisions require reconciliation.").replace(/^\n/, "")}\n[/Stale Architecture - Needs Reconfirmation]`,
     `[Context Notes]\n${args.context.objective ? `Objective: ${args.context.objective}` : "Objective: none recorded"}\n${args.context.instructionNotes ? `Instruction notes: ${args.context.instructionNotes}` : "Instruction notes: none recorded"}\n[/Context Notes]`,

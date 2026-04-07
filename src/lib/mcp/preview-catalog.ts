@@ -369,8 +369,9 @@ async function buildCurrentBuilderProjectResource() {
     generatedAt: new Date().toISOString(),
     project: overview.project,
     currentTask: overview.currentTask,
+    mcpSnapshot: overview.mcpSnapshot,
     nextRecommendedStep: overview.nextRecommendedStep,
-  } : { generatedAt: new Date().toISOString(), project: null, currentTask: null, nextRecommendedStep: null };
+  } : { generatedAt: new Date().toISOString(), project: null, currentTask: null, mcpSnapshot: null, nextRecommendedStep: null };
 }
 
 async function buildCurrentBuilderPlanResource() {
@@ -398,6 +399,7 @@ async function buildCurrentBuilderRunsResource() {
     generatedAt: new Date().toISOString(),
     projectId: overview?.project.id ?? null,
     runs: overview?.runs ?? [],
+    mcpSnapshot: overview?.mcpSnapshot ?? null,
   };
 }
 

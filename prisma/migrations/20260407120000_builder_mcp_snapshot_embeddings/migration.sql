@@ -1,0 +1,3 @@
+-- Reserved placeholder.
+-- The real snapshot embedding migration runs after mcp_snapshots creation
+-- under 20260407121000_builder_mcp_snapshot_embeddings_post_snapshots.

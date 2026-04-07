@@ -9,9 +9,20 @@ const mocks = vi.hoisted(() => ({
   generateBuilderProjectPlan: vi.fn(),
   listBuilderTasks: vi.fn(),
   listBuilderRuns: vi.fn(),
+  getBuilderMcpSnapshotOverview: vi.fn(),
   updateBuilderProject: vi.fn(),
   readBuilderFile: vi.fn(),
   writeBuilderFile: vi.fn(),
+}));
+
+vi.mock("@/lib/builder/mcp-snapshots", () => ({
+  ensureBuilderRunMcpSnapshotPreflight: vi.fn(),
+  getBuilderMcpSnapshotOverview: mocks.getBuilderMcpSnapshotOverview,
+  selectRelevantBuilderMcpContext: vi.fn(() => ({ currentHash: "hash-1", tools: [], prompts: [], resources: [], reasons: ["mode:analysis_only"] })),
+}));
+
+vi.mock("@/lib/mcp/client", () => ({
+  ensureMcpClientsInitialized: vi.fn(async () => undefined),
 }));
 
 vi.mock("@/lib/builder/projects", () => ({
@@ -152,6 +163,14 @@ describe("builder orchestrator planning", () => {
     }));
     mocks.listBuilderTasks.mockResolvedValue([]);
     mocks.listBuilderRuns.mockResolvedValue([]);
+    mocks.getBuilderMcpSnapshotOverview.mockResolvedValue({
+      activeRunId: null,
+      currentSequence: null,
+      currentHash: null,
+      state: "pending_capture",
+      history: [],
+      drift: null,
+    });
     mocks.recomputeBuilderPlanningProgress.mockResolvedValue({
       lifecycle: "PLANNED",
       brief: {
