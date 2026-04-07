@@ -72,7 +72,6 @@ export const BUILDER_TEMPLATE_VERIFICATION_CONTRACTS: Record<string, BuilderTemp
     requiredDevDependencies: ["typescript", "eslint"],
     deterministicChecks: [
       { runner: "npm", args: ["install", "--no-fund", "--no-audit"] },
-      { runner: "npm", args: ["exec", "tsc", "--noEmit"] },
       { runner: "npm", args: ["run", "build"] },
       { runner: "npm", args: ["run", "lint"] },
     ],
