@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import type { BuilderProject } from "@prisma/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { runNpmCreatePackage } from "@/lib/builder/adapters/npx";
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -14,10 +15,8 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/builder/adapters/npx", () => ({
-  runNpxPackage: vi.fn(),
+  runNpmCreatePackage: vi.fn(async () => ({ ok: true })),
 }));
-
-import { runNpxPackage } from "@/lib/builder/adapters/npx";
 import { bootstrapBuilderProject, BUILDER_TEMPLATE_VERIFICATION_CONTRACTS } from "@/lib/builder/templates";
 
 function createTempBuilderWorkspace(): string {
@@ -100,10 +99,7 @@ describe("builder template bootstraps", () => {
     const project = makeProject("next-app", "next-app-test");
     await bootstrapBuilderProject(project);
 
-    expect(vi.mocked(runNpxPackage)).toHaveBeenCalledWith("projects/next-app-test", [
-      "--yes",
-      "create-next-app@latest",
-      ".",
+    expect(vi.mocked(runNpmCreatePackage)).toHaveBeenCalledWith("projects/next-app-test", "next-app@latest", [
       "--ts",
       "--eslint",
       "--app",
@@ -123,10 +119,7 @@ describe("builder template bootstraps", () => {
     const project = makeProject("vite-app", "vite-app-test");
     await bootstrapBuilderProject(project);
 
-    expect(vi.mocked(runNpxPackage)).toHaveBeenCalledWith("projects/vite-app-test", [
-      "--yes",
-      "create-vite@latest",
-      ".",
+    expect(vi.mocked(runNpmCreatePackage)).toHaveBeenCalledWith("projects/vite-app-test", "vite@latest", [
       "--template",
       "react-ts",
     ]);

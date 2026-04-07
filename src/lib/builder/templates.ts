@@ -1,8 +1,8 @@
 import path from "path";
 import type { BuilderPackageManager, BuilderProject, BuilderTemplatePreset, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { listBuilderFilesRecursive, readBuilderFile, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
-import { runNpxPackage } from "@/lib/builder/adapters/npx";
+import { createBuilderDirectory, listBuilderFilesRecursive, readBuilderFile, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
+import { runNpmCreatePackage } from "@/lib/builder/adapters/npx";
 
 export interface BuilderTemplateDefinition {
   key: string;
@@ -198,7 +198,8 @@ async function bootstrapPluginPackage(project: BuilderProject): Promise<BuilderB
 }
 
 async function bootstrapViteApp(project: BuilderProject): Promise<BuilderBootstrapResult> {
-  await runNpxPackage(project.relativePath, ["--yes", "create-vite@latest", ".", "--template", "react-ts"]);
+  createBuilderDirectory(project.relativePath);
+  await runNpmCreatePackage(project.relativePath, "vite@latest", ["--template", "react-ts"]);
   return {
     template: project.template,
     root: project.relativePath,
@@ -207,10 +208,8 @@ async function bootstrapViteApp(project: BuilderProject): Promise<BuilderBootstr
 }
 
 async function bootstrapNextApp(project: BuilderProject): Promise<BuilderBootstrapResult> {
-  await runNpxPackage(project.relativePath, [
-    "--yes",
-    "create-next-app@latest",
-    ".",
+  createBuilderDirectory(project.relativePath);
+  await runNpmCreatePackage(project.relativePath, "next-app@latest", [
     "--ts",
     "--eslint",
     "--app",
