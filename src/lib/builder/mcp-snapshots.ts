@@ -68,6 +68,16 @@ function readObject(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function readMappings(value: unknown): BuilderMcpMappingState[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry) => Boolean(entry && typeof entry === "object" && !Array.isArray(entry)))
+    .map((entry) => entry as BuilderMcpMappingState);
+}
+
 function mergeMetadataValue(current: unknown, patch: unknown): unknown {
   const currentObject = readObject(current);
   const patchObject = readObject(patch);
@@ -166,9 +176,7 @@ function normalizeSnapshotRecord(record: BuilderMcpSnapshot): BuilderMcpSnapshot
   const metadata = record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
     ? record.metadata as Record<string, unknown>
     : null;
-  const mappings = Array.isArray(record.mappingsJson)
-    ? record.mappingsJson.filter((entry): entry is BuilderMcpMappingState => Boolean(entry && typeof entry === "object" && !Array.isArray(entry)))
-    : [];
+  const mappings = readMappings(record.mappingsJson);
 
   return {
     id: record.id,
@@ -691,7 +699,7 @@ export async function appendBuilderMcpSnapshotMapping(args: {
     recordedAt: new Date().toISOString(),
   };
   const existingMappings = Array.isArray(latestSnapshot.mappingsJson)
-    ? latestSnapshot.mappingsJson.filter((entry): entry is BuilderMcpMappingState => Boolean(entry && typeof entry === "object" && !Array.isArray(entry)))
+    ? readMappings(latestSnapshot.mappingsJson)
     : [];
   const duplicate = existingMappings.some((entry) =>
     entry.toolName === nextMapping.toolName

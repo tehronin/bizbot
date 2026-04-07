@@ -1,4 +1,4 @@
-import type { BuilderRun, BuilderRunStatus, BuilderTask, BuilderTaskStatus } from "@prisma/client";
+import type { BuilderRun, BuilderRunStatus, BuilderTask, BuilderTaskStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { completeBuilderRun, updateBuilderRun } from "@/lib/builder/projects";
 import { hasBuilderRunController } from "@/lib/builder/session";
@@ -52,6 +52,10 @@ function readObject(value: unknown): Record<string, unknown> | null {
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function toInputJsonValue(value: unknown): Prisma.InputJsonValue {
+  return value as Prisma.InputJsonValue;
 }
 
 function appendAuditEntry(metadata: unknown, entry: BuilderReconciliationAuditEntry): Record<string, unknown> {
@@ -301,10 +305,7 @@ export async function reconcileBuilderOperationalState(args: {
         status: nextStatus,
         stage: deriveTaskStage(task, run),
         summary: run.summary ?? task.summary ?? `Reconciled task state from run ${run.id}.`,
-        metadata: {
-          ...(readObject(task.metadata) ?? {}),
-          reconciliationAudit: [...(Array.isArray(readObject(task.metadata)?.reconciliationAudit) ? readObject(task.metadata)?.reconciliationAudit as unknown[] : []), audit],
-        },
+        metadata: toInputJsonValue(appendAuditEntry(task.metadata, audit)),
       });
       await updateBuilderRun(run.id, {
         status: run.status,

@@ -76,6 +76,16 @@ function toJobSummary(job: Job, queueName: string, status: McpJobStatus | "unkno
   };
 }
 
+function normalizeQueueCounts(counts: Record<string, number>): McpQueueCounts {
+  return {
+    waiting: counts.waiting ?? 0,
+    active: counts.active ?? 0,
+    delayed: counts.delayed ?? 0,
+    completed: counts.completed ?? 0,
+    failed: counts.failed ?? 0,
+  };
+}
+
 function getQueues(): SupportedMcpQueue[] {
   return [
     getMcpEmbeddingsQueue(),
@@ -109,6 +119,10 @@ export async function getMcpQueueStatus(): Promise<McpWorkerStatus> {
   const workerLastSeenAt = settingMap.mcp_worker_last_seen_at ?? null;
   const workerRunning = workerLastSeenAt !== null
     && (Date.now() - new Date(workerLastSeenAt).getTime()) <= (3 * 60 * 1000);
+  const queueCounts = counts.reduce<Record<string, McpQueueCounts>>((accumulator, entry) => {
+    accumulator[entry.queueName] = normalizeQueueCounts(entry.counts);
+    return accumulator;
+  }, {});
 
   return {
     queueNames: [MCP_EMBEDDINGS_QUEUE_NAME, MCP_ONTOLOGY_QUEUE_NAME, MCP_CLEANUP_QUEUE_NAME],
@@ -117,7 +131,7 @@ export async function getMcpQueueStatus(): Promise<McpWorkerStatus> {
     workerLastSeenAt,
     workerLastJobStartedAt: settingMap.mcp_worker_last_job_started_at ?? null,
     workerLastJobFinishedAt: settingMap.mcp_worker_last_job_finished_at ?? null,
-    counts: Object.fromEntries(counts.map((entry) => [entry.queueName, entry.counts])),
+    counts: queueCounts,
   };
 }
 
