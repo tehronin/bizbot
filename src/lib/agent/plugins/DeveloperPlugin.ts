@@ -9,7 +9,6 @@ import {
   type AgentHeartbeatJobStatus,
 } from "@/lib/agent/heartbeat-queue";
 import { getMcpQueueStatus, listMcpJobs, retryMcpJob, type McpJobStatus } from "@/lib/mcp/job-status";
-import { searchBuilderMcpSnapshotHistory } from "@/lib/builder/mcp-snapshots";
 import {
   inspectConversationMessages,
   inspectMemories,
@@ -31,6 +30,11 @@ import {
 import { lintPlugin } from "@/lib/agent/plugins/lint";
 import { getAgentRun, listRecentAgentRuns } from "@/lib/agent/run-journal";
 import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
+import type { searchBuilderMcpSnapshotHistory } from "@/lib/builder/mcp-snapshots";
+
+async function loadBuilderMcpSnapshots() {
+  return import("@/lib/builder/mcp-snapshots");
+}
 
 type WorkerStatusArgs = Record<string, never>;
 
@@ -434,9 +438,12 @@ export const developerPlugin = {
         },
         required: ["projectId", "query"],
       },
-      execute: async ({ projectId, query, limit }: McpSnapshotSearchArgs) => ({
-        matches: await searchBuilderMcpSnapshotHistory({ projectId, query, limit: limit ?? 5 }),
-      }),
+      execute: async ({ projectId, query, limit }: McpSnapshotSearchArgs) => {
+        const { searchBuilderMcpSnapshotHistory } = await loadBuilderMcpSnapshots();
+        return {
+          matches: await searchBuilderMcpSnapshotHistory({ projectId, query, limit: limit ?? 5 }),
+        };
+      },
     } satisfies ToolDefinition<McpSnapshotSearchArgs, { matches: Awaited<ReturnType<typeof searchBuilderMcpSnapshotHistory>> }>)),
     registerTool(defineTool({
       name: "developer_get_agent_run",

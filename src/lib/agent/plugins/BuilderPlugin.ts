@@ -1,10 +1,7 @@
 /** BuilderPlugin — Sandbox builder tools for an external project workspace. */
 
 import type { BuilderPackageManager } from "@prisma/client";
-import { runBuilderProjectBootstrap } from "@/lib/builder/bootstrap";
-import { recordBuilderProjectCommand } from "@/lib/builder/commands";
 import { loadBuilderProjectContext, syncBuilderProjectProjection } from "@/lib/builder/context";
-import { getBuilderProjectOverview, launchBuilderTask, planBuilderProject } from "@/lib/builder/orchestrator";
 import { createBuilderProject, deleteBuilderProject, getBuilderProject, getBuilderRun, listBuilderProjects, listBuilderRuns, updateBuilderProject } from "@/lib/builder/projects";
 import { listBuilderTasks } from "@/lib/builder/tasks";
 import {
@@ -17,6 +14,21 @@ import {
   writeBuilderFile,
 } from "@/lib/builder/workspace";
 import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
+import type { runBuilderProjectBootstrap } from "@/lib/builder/bootstrap";
+import type { recordBuilderProjectCommand } from "@/lib/builder/commands";
+import type { getBuilderProjectOverview, launchBuilderTask, planBuilderProject } from "@/lib/builder/orchestrator";
+
+async function loadBuilderBootstrap() {
+  return import("@/lib/builder/bootstrap");
+}
+
+async function loadBuilderCommands() {
+  return import("@/lib/builder/commands");
+}
+
+async function loadBuilderOrchestrator() {
+  return import("@/lib/builder/orchestrator");
+}
 
 interface BuilderListArgs {
   subdir?: string;
@@ -175,7 +187,7 @@ export const builderPlugin = {
         required: ["projectId"],
       },
       execute: async ({ projectId }: BuilderProjectArgs) => ({
-        ...(await getBuilderProjectOverview(projectId)),
+        ...((await loadBuilderOrchestrator()).getBuilderProjectOverview(projectId)),
       }),
     } satisfies ToolDefinition<BuilderProjectArgs, Awaited<ReturnType<typeof getBuilderProjectOverview>>>)),
     registerTool(defineTool({
@@ -196,7 +208,7 @@ export const builderPlugin = {
         required: ["projectId"],
       },
       execute: async ({ projectId, title, summary, goals, constraints, deliverables, notes, regenerate }: BuilderPlanProjectArgs) =>
-        planBuilderProject(projectId, {
+          (await loadBuilderOrchestrator()).planBuilderProject(projectId, {
           title: title ?? "",
           summary: summary ?? "",
           goals,
@@ -231,7 +243,7 @@ export const builderPlugin = {
         },
         required: ["projectId", "request"],
       },
-      execute: async ({ projectId, request, profile, model }: BuilderContinueTaskArgs) => launchBuilderTask(projectId, { request, profile, model }),
+        execute: async ({ projectId, request, profile, model }: BuilderContinueTaskArgs) => (await loadBuilderOrchestrator()).launchBuilderTask(projectId, { request, profile, model }),
     } satisfies ToolDefinition<BuilderContinueTaskArgs, Awaited<ReturnType<typeof launchBuilderTask>>>)),
     registerTool(defineTool({
       name: "builder_continue_task",
@@ -249,7 +261,7 @@ export const builderPlugin = {
         required: ["projectId", "request"],
       },
       execute: async ({ projectId, request, taskId, retryFailed, profile, model }: BuilderContinueTaskArgs) =>
-        launchBuilderTask(projectId, { request, taskId, retryFailed, profile, model }),
+          (await loadBuilderOrchestrator()).launchBuilderTask(projectId, { request, taskId, retryFailed, profile, model }),
     } satisfies ToolDefinition<BuilderContinueTaskArgs, Awaited<ReturnType<typeof launchBuilderTask>>>)),
     registerTool(defineTool({
       name: "builder_write_project_instructions",
@@ -314,7 +326,7 @@ export const builderPlugin = {
         required: ["projectId"],
       },
       execute: async ({ projectId, initializeGit, installDependencies }: BuilderBootstrapProjectArgs) =>
-        runBuilderProjectBootstrap(projectId, { initializeGit, installDependencies }),
+          (await loadBuilderBootstrap()).runBuilderProjectBootstrap(projectId, { initializeGit, installDependencies }),
     } satisfies ToolDefinition<BuilderBootstrapProjectArgs, Awaited<ReturnType<typeof runBuilderProjectBootstrap>>>)),
     registerTool(defineTool({
       name: "builder_initialize_git",
@@ -328,7 +340,7 @@ export const builderPlugin = {
       },
       execute: async ({ projectId }: BuilderProjectArgs) => {
         const project = await getBuilderProject(projectId);
-        return recordBuilderProjectCommand(project, { action: "initialize_git" });
+          return (await loadBuilderCommands()).recordBuilderProjectCommand(project, { action: "initialize_git" });
       },
     } satisfies ToolDefinition<BuilderProjectArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
     registerTool(defineTool({
@@ -345,7 +357,7 @@ export const builderPlugin = {
       },
       execute: async ({ projectId, packages, dev }: BuilderInstallDependenciesArgs) => {
         const project = await getBuilderProject(projectId);
-        return recordBuilderProjectCommand(project, { action: "install_dependencies", packages, dev });
+          return (await loadBuilderCommands()).recordBuilderProjectCommand(project, { action: "install_dependencies", packages, dev });
       },
     } satisfies ToolDefinition<BuilderInstallDependenciesArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
     registerTool(defineTool({
@@ -362,7 +374,7 @@ export const builderPlugin = {
       },
       execute: async ({ projectId, script, args }: BuilderRunScriptArgs) => {
         const project = await getBuilderProject(projectId);
-        return recordBuilderProjectCommand(project, { action: "run_script", script, args });
+          return (await loadBuilderCommands()).recordBuilderProjectCommand(project, { action: "run_script", script, args });
       },
     } satisfies ToolDefinition<BuilderRunScriptArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
     registerTool(defineTool({
@@ -379,7 +391,7 @@ export const builderPlugin = {
       },
       execute: async ({ projectId, packages, dev }: BuilderInstallDependenciesArgs) => {
         const project = await getBuilderProject(projectId);
-        return recordBuilderProjectCommand(project, { action: "add_dependency", packages: packages ?? [], dev });
+          return (await loadBuilderCommands()).recordBuilderProjectCommand(project, { action: "add_dependency", packages: packages ?? [], dev });
       },
     } satisfies ToolDefinition<BuilderInstallDependenciesArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
     registerTool(defineTool({
@@ -396,7 +408,7 @@ export const builderPlugin = {
       },
       execute: async ({ projectId, generator, args }: BuilderRunGeneratorArgs) => {
         const project = await getBuilderProject(projectId);
-        return recordBuilderProjectCommand(project, { action: "run_generator", generator, args });
+          return (await loadBuilderCommands()).recordBuilderProjectCommand(project, { action: "run_generator", generator, args });
       },
     } satisfies ToolDefinition<BuilderRunGeneratorArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
     registerTool(defineTool({
@@ -415,7 +427,7 @@ export const builderPlugin = {
       },
       execute: async ({ projectId, prompt, profile, model, args }: BuilderRunAgenticTaskArgs) => {
         const project = await getBuilderProject(projectId);
-        return recordBuilderProjectCommand(project, { action: "run_agentic_task", prompt, profile, model, args });
+          return (await loadBuilderCommands()).recordBuilderProjectCommand(project, { action: "run_agentic_task", prompt, profile, model, args });
       },
     } satisfies ToolDefinition<BuilderRunAgenticTaskArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
     registerTool(defineTool({

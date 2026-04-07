@@ -1,7 +1,7 @@
 import path from "path";
 import type { BuilderPackageManager, BuilderProject, BuilderTemplatePreset, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { listBuilderFilesRecursive, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
+import { listBuilderFilesRecursive, readBuilderFile, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
 import { runNpxPackage } from "@/lib/builder/adapters/npx";
 
 export interface BuilderTemplateDefinition {
@@ -155,6 +155,21 @@ async function bootstrapPluginPackage(project: BuilderProject): Promise<BuilderB
     description: `${project.name} plugin package scaffolded by BizBot Builder Mode.`,
     entrypoint: "src/plugin.ts",
   });
+
+  const packageJsonPath = path.posix.join(project.relativePath, "package.json");
+  const packageJson = JSON.parse(readBuilderFile(packageJsonPath)) as {
+    scripts?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  packageJson.scripts = {
+    ...(packageJson.scripts ?? {}),
+    test: "vitest run",
+  };
+  packageJson.devDependencies = {
+    ...(packageJson.devDependencies ?? {}),
+    vitest: "^3.2.4",
+  };
+  writeBuilderFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
 
   const testPath = path.posix.join(project.relativePath, "tests/plugin.test.ts");
   writeBuilderFile(testPath, [

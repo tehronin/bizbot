@@ -41,19 +41,21 @@ const builtinPluginModules = {
   "conversation-bridge": conversationBridgePlugin,
 } as const;
 
-const builtinPlugins: BizBotPlugin[] = BUILTIN_PLUGIN_TOGGLES.map((plugin) => {
-  const pluginModule = builtinPluginModules[plugin.id as keyof typeof builtinPluginModules];
-  if (!pluginModule) {
-    throw new Error(`Missing builtin plugin module: ${plugin.id}`);
-  }
+function listBuiltinPlugins(): BizBotPlugin[] {
+  return BUILTIN_PLUGIN_TOGGLES.map((plugin) => {
+    const pluginModule = builtinPluginModules[plugin.id as keyof typeof builtinPluginModules];
+    if (!pluginModule) {
+      throw new Error(`Missing builtin plugin module: ${plugin.id}`);
+    }
 
-  return wrapBuiltinPlugin({
-    id: plugin.id,
-    displayName: plugin.displayName,
-    description: plugin.description,
-    tags: plugin.tags,
-  }, pluginModule);
-});
+    return wrapBuiltinPlugin({
+      id: plugin.id,
+      displayName: plugin.displayName,
+      description: plugin.description,
+      tags: plugin.tags,
+    }, pluginModule);
+  });
+}
 
 const coreToolSets = [
   {
@@ -70,7 +72,7 @@ export interface BizBotPluginRegistry {
 
 export function getBuiltinPlugins(options?: { includeDisabled?: boolean }): BizBotPlugin[] {
   const includeDisabled = options?.includeDisabled ?? true;
-  return builtinPlugins.filter((plugin) => includeDisabled || isBuiltinPluginEnabled(plugin.metadata.id));
+  return listBuiltinPlugins().filter((plugin) => includeDisabled || isBuiltinPluginEnabled(plugin.metadata.id));
 }
 
 export function getEnabledBuiltinPlugins(): BizBotPlugin[] {
