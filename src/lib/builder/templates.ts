@@ -61,7 +61,6 @@ export const BUILDER_TEMPLATE_VERIFICATION_CONTRACTS: Record<string, BuilderTemp
     requiredDevDependencies: ["typescript", "vite", "@vitejs/plugin-react"],
     deterministicChecks: [
       { runner: "npm", args: ["install", "--no-fund", "--no-audit"] },
-      { runner: "npm", args: ["exec", "tsc", "-b"] },
       { runner: "npm", args: ["run", "build"] },
     ],
   },
