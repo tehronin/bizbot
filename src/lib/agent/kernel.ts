@@ -307,7 +307,7 @@ export function buildGoogleToolingConfig(args: {
   functionDeclarations?: FunctionDeclaration[];
   options?: ChatRequestOptions;
 }): {
-  tools: Array<{ functionDeclarations: FunctionDeclaration[] } | { googleSearch: {} } | { codeExecution: {} }>;
+  tools: Array<{ functionDeclarations: FunctionDeclaration[] } | { googleSearch: Record<string, never> } | { codeExecution: Record<string, never> }>;
   toolConfig?: {
     functionCallingConfig: {
       mode: FunctionCallingConfigMode;
