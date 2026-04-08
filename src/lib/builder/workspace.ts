@@ -376,6 +376,23 @@ function resolveBuilderExecutable(command: string): string {
   return match ?? command;
 }
 
+function resolveBuilderSpawnCommand(execution: BuilderResolvedCommandExecution): {
+  command: string;
+  args: string[];
+} {
+  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(execution.resolvedCommand)) {
+    return {
+      command: process.env.ComSpec ?? "cmd.exe",
+      args: ["/d", "/s", "/c", execution.command, ...execution.args],
+    };
+  }
+
+  return {
+    command: execution.resolvedCommand,
+    args: execution.args,
+  };
+}
+
 export function assertBuilderCommandAllowed(command: string): void {
   const allowedCommands = getBuilderAllowedCommands();
   if (allowedCommands.length === 0) {
@@ -476,11 +493,12 @@ export async function runBuilderCliCommand(
   options: BuilderCommandOptions = {},
 ): Promise<BuilderCommandResult> {
   const execution = resolveBuilderCommandExecution(command, args, options);
+  const spawnExecution = resolveBuilderSpawnCommand(execution);
 
   return new Promise<BuilderCommandResult>((resolve, reject) => {
     const child = spawn(
-      execution.resolvedCommand,
-      execution.args,
+      spawnExecution.command,
+      spawnExecution.args,
       {
       cwd: execution.cwdAbsolute,
       env: execution.env,
