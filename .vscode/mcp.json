@@ -2,18 +2,6 @@
   "servers": {
     "bizbot": {
       "type": "stdio",
-      "command": "npm",
-      "args": [
-        "run",
-        "mcp:stdio"
-      ],
-      "cwd": "${workspaceFolder}"
-    }
-  }
-}{
-  "servers": {
-    "bizbot": {
-      "type": "stdio",
       "command": "node",
       "args": [
         "./node_modules/tsx/dist/cli.mjs",
