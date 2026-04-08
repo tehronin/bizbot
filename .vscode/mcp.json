@@ -5,7 +5,6 @@
       "command": "node",
       "args": [
         "./node_modules/tsx/dist/cli.mjs",
-        "--env-file=.env",
         "scripts/mcp-stdio.mjs"
       ],
       "cwd": "${workspaceFolder}"
