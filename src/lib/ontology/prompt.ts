@@ -40,23 +40,24 @@ function collapseByScopePrecedence<T extends { scope: string; type: string; obje
 
 function buildRelationLine(relation: {
   type: string;
-  objectEntity: { displayName: string; canonicalKey: string };
+  objectEntity: { displayName?: string; canonicalKey: string };
 }): string {
+  const objectLabel = relation.objectEntity.displayName ?? relation.objectEntity.canonicalKey;
   switch (relation.type) {
     case "has_identity":
-      return `identity: ${relation.objectEntity.displayName}`;
+      return `identity: ${objectLabel}`;
     case "has_preference":
-      return `preference: ${relation.objectEntity.displayName}`;
+      return `preference: ${objectLabel}`;
     case "has_constraint":
-      return `constraint: ${relation.objectEntity.displayName}`;
+      return `constraint: ${objectLabel}`;
     case "uses_workflow":
-      return `workflow: ${relation.objectEntity.displayName}`;
+      return `workflow: ${objectLabel}`;
     case "configured_with":
-      return `setting: ${relation.objectEntity.displayName}`;
+      return `setting: ${objectLabel}`;
     case "pursues_goal":
-      return `goal: ${relation.objectEntity.displayName}`;
+      return `goal: ${objectLabel}`;
     default:
-      return `relation: ${relation.type} -> ${relation.objectEntity.displayName}`;
+      return `relation: ${relation.type} -> ${objectLabel}`;
   }
 }
 

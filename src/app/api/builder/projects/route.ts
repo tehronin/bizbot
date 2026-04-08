@@ -1,7 +1,7 @@
 import type { BuilderPackageManager } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { createBuilderProject, listBuilderProjects } from "@/lib/builder/projects";
-import { syncBuilderTemplatePresets } from "@/lib/builder/templates";
+import { syncBuilderTemplatePresets } from "@/lib/builder/template-presets";
 
 function parsePackageManager(value: unknown): BuilderPackageManager | undefined {
   return value === "PNPM" || value === "NPM" ? value : undefined;

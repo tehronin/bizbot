@@ -60,7 +60,7 @@ export const schedulePlugin = {
           orderBy: { scheduledAt: "asc" },
         });
         return {
-          scheduledPosts: posts.map((post: { id: string; content: string; platformId: string; scheduledAt: Date | null; status: string }) => ({
+          scheduledPosts: posts.map((post) => ({
             id: post.id,
             content: post.content,
             platformId: post.platformId,

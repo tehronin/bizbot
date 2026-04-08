@@ -4,6 +4,7 @@ import type {
   BuilderProject,
   BuilderProjectBrief,
   BuilderProjectLifecycle,
+  Prisma,
   BuilderTaskSpec,
   BuilderTaskSpecStatus,
   BuilderTaskSpecValidator,
@@ -351,7 +352,7 @@ export async function getBuilderPlanningSnapshot(projectId: string): Promise<Bui
 export async function replaceBuilderProjectPlan(projectId: string, milestones: BuilderNormalizedMilestoneDraft[]): Promise<BuilderPlanningSnapshot> {
   await getBuilderProject(projectId);
 
-  await db.$transaction(async (tx) => {
+  await db.$transaction(async (tx: Prisma.TransactionClient) => {
     const existingTaskSpecs = await tx.builderTaskSpec.findMany({
       where: { projectId },
       select: { id: true },

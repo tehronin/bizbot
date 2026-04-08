@@ -47,6 +47,7 @@ vi.mock("@/lib/agent/runtime", () => ({
 
 vi.mock("@/lib/mcp/tool-presentation", () => ({
   MCP_AGENT_PROFILE: "builder_operator",
+  MCP_BLOCKED_TOOLS: new Set<string>(),
 }));
 
 vi.mock("@/lib/mcp/client", () => ({
@@ -159,6 +160,17 @@ beforeEach(() => {
 describe("builder mcp snapshots", () => {
   it("keeps canonical hashing invariant to object key order but changes on semantic drift", () => {
     const left = {
+      contract: {
+        version: "v1",
+        compatibilityPolicyVersion: "v1",
+        mcpLane: "builder_operator",
+        blockedTools: [],
+        promptsAreServerOwned: true,
+        resourcesAreServerOwned: true,
+        importedCatalogs: { prompts: true, resources: true },
+        toolOwnershipRequired: true,
+        laneBoundedExposure: true,
+      },
       profile: {
         agentProfile: "builder_operator",
         autonomyPreset: "approval_all_posts",
@@ -177,6 +189,17 @@ describe("builder mcp snapshots", () => {
       resources: [],
     };
     const right = {
+      contract: {
+        compatibilityPolicyVersion: "v1",
+        blockedTools: [],
+        importedCatalogs: { resources: true, prompts: true },
+        laneBoundedExposure: true,
+        mcpLane: "builder_operator",
+        promptsAreServerOwned: true,
+        resourcesAreServerOwned: true,
+        toolOwnershipRequired: true,
+        version: "v1",
+      },
       prompts: [],
       resources: [],
       tools: [{

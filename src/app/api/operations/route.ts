@@ -4,11 +4,13 @@ import {
   listAgentHeartbeatJobs,
 } from "@/lib/agent/heartbeat-queue";
 import { listRecentAgentRuns } from "@/lib/agent/run-journal";
+import { getBuilderMcpSnapshotOverview } from "@/lib/builder/mcp-snapshots";
 import { getMcpClientStatus } from "@/lib/mcp/client";
 import { getMcpQueueStatus, listMcpJobs } from "@/lib/mcp/job-status";
+import { BIZBOT_PLATFORM_CONTRACT_VERSION } from "@/lib/platform/contract";
 
 export async function GET() {
-  const [worker, jobs, mcpWorker, mcpJobs, failedInboxCount, failedPostCount, pendingApprovalCount] = await Promise.all([
+  const [worker, jobs, mcpWorker, mcpJobs, failedInboxCount, failedPostCount, pendingApprovalCount, latestBuilderProject] = await Promise.all([
     getAgentWorkerStatus(),
     listAgentHeartbeatJobs(["waiting", "active", "delayed", "completed", "failed"], 12),
     getMcpQueueStatus(),
@@ -16,7 +18,15 @@ export async function GET() {
     db.inboxMessage.count({ where: { status: "FAILED" } }),
     db.post.count({ where: { status: "FAILED" } }),
     db.postApproval.count({ where: { status: "PENDING" } }),
+    db.builderProject.findFirst({
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, name: true },
+    }),
   ]);
+
+  const latestBuilderContract = latestBuilderProject
+    ? await getBuilderMcpSnapshotOverview({ projectId: latestBuilderProject.id })
+    : null;
 
   const heartbeatSettings = await db.setting.findMany({
     where: {
@@ -43,6 +53,17 @@ export async function GET() {
     runs: listRecentAgentRuns(15),
     mcp: {
       connectedClients: getMcpClientStatus(),
+    },
+    contract: {
+      version: BIZBOT_PLATFORM_CONTRACT_VERSION,
+      latestBuilderProject,
+      builderSurface: latestBuilderContract ? {
+        state: latestBuilderContract.state,
+        currentHash: latestBuilderContract.currentHash,
+        driftDetected: Boolean(latestBuilderContract.drift ?? latestBuilderContract.planning?.drift),
+        classification: latestBuilderContract.drift?.impact.classification ?? latestBuilderContract.planning?.drift?.impact.classification ?? "internal_only",
+        requiresVersionBump: latestBuilderContract.drift?.impact.requiresVersionBump ?? latestBuilderContract.planning?.drift?.impact.requiresVersionBump ?? false,
+      } : null,
     },
     failures: {
       failedInboxCount,

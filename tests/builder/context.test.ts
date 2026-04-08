@@ -55,6 +55,7 @@ describe("builder context", () => {
       } as never,
       context: {
         objective: "Ship the demo app.",
+        plannedStack: null,
         architectureNotes: ["Keep reports in .builder/reports."],
         architecture: {
           active: [{

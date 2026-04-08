@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
-import type { BuilderProjectCommandInput } from "@/lib/builder/commands";
-import { launchBuilderProjectCommand, recordBuilderProjectCommand } from "@/lib/builder/commands";
+import type { BuilderProjectCommandInput } from "@/lib/builder/command-types";
 import { getBuilderProject } from "@/lib/builder/projects";
 
 function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
@@ -76,6 +75,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
+    const { launchBuilderProjectCommand, recordBuilderProjectCommand } = await import("@/lib/builder/commands");
     const { id } = await context.params;
     const project = await getBuilderProject(id);
     const payload = parseCommandPayload(await req.json());
@@ -86,6 +86,16 @@ export async function POST(
         title: execution.title,
         status: execution.status,
       }, { status: 202 });
+    }
+
+    if (payload.action === "run_generator") {
+      const { recordBuilderGeneratorCommand } = await import("@/lib/builder/command-generator");
+      const execution = await recordBuilderGeneratorCommand(project, payload);
+      return Response.json({
+        runId: execution.runId,
+        title: execution.title,
+        result: execution.result,
+      });
     }
 
     const execution = await recordBuilderProjectCommand(project, payload);

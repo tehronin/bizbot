@@ -244,7 +244,7 @@ export async function runBuilderCliCommand(
     MAX_COMMAND_TIMEOUT_SECONDS,
     Math.max(1, Math.trunc(options.timeoutSeconds ?? DEFAULT_COMMAND_TIMEOUT_SECONDS)),
   );
-  const useShell = process.platform === "win32";
+  const useShell = process.platform === "win32" && !path.isAbsolute(command);
 
   return new Promise<BuilderCommandResult>((resolve, reject) => {
     const child = spawn(

@@ -65,7 +65,7 @@ export async function resolveOntologyAlias(params: {
     return { status: "not_found", normalizedValue, candidates: [] };
   }
 
-  const candidates = winners.candidates.map((candidate) => toOntologyCandidateSummary(candidate));
+  const candidates = winners.candidates.map((candidate) => toOntologyCandidateSummary(candidate as Parameters<typeof toOntologyCandidateSummary>[0]));
   if (candidates.length === 1) {
     return {
       status: "resolved",
@@ -103,7 +103,7 @@ export async function lookupOntologyCanonicalKey(params: {
     return { status: "not_found", normalizedValue: canonicalKey, candidates: [] };
   }
 
-  const candidates = winners.candidates.map((candidate) => toOntologyCandidateSummary(candidate));
+  const candidates = winners.candidates.map((candidate) => toOntologyCandidateSummary(candidate as Parameters<typeof toOntologyCandidateSummary>[0]));
   if (candidates.length === 1) {
     return {
       status: "resolved",
@@ -160,7 +160,7 @@ export async function searchOntologyEntities(params: {
     normalizedAlias,
     canonicalToken,
     effectiveScope: params.scope ?? winners.scope,
-    matches: visible.map((entity) => toOntologyCandidateSummary(entity)),
+    matches: visible.map((entity) => toOntologyCandidateSummary(entity as Parameters<typeof toOntologyCandidateSummary>[0])),
   };
 }
 

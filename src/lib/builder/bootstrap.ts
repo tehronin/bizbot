@@ -1,7 +1,8 @@
 import { getBuilderConfig } from "@/lib/builder/config";
 import { recordBuilderProjectCommand } from "@/lib/builder/commands";
 import { completeBuilderRun, createBuilderRun, getBuilderProject, updateBuilderProject } from "@/lib/builder/projects";
-import { bootstrapBuilderProject, syncBuilderTemplatePresets } from "@/lib/builder/templates";
+import { syncBuilderTemplatePresets } from "@/lib/builder/template-presets";
+import { bootstrapBuilderProject } from "@/lib/builder/template-bootstrap";
 import { listBuilderScaffoldBlockingEntries } from "@/lib/builder/workspace";
 
 export interface BuilderBootstrapOptions {
@@ -37,7 +38,7 @@ export async function runBuilderProjectBootstrap(projectId: string, options?: Bu
     installDependencies: options?.installDependencies ?? defaults.installDependenciesByDefault,
   };
 
-  const postActions = [];
+  const postActions: Array<Awaited<ReturnType<typeof recordBuilderProjectCommand>>> = [];
   if (resolvedOptions.initializeGit) {
     postActions.push(await recordBuilderProjectCommand(project, { action: "initialize_git" }));
     await updateBuilderProject(project.id, { gitInitialized: true });

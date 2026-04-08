@@ -24,15 +24,31 @@ describe("MCP contract snapshots", () => {
   it("matches the stable normalized Builder MCP contract seed", () => {
     const snapshot = buildCurrentBuilderMcpContractSnapshot();
 
+    expect(hashBuilderMcpContractSnapshot(snapshot)).toHaveLength(64);
     expect({
-      hash: hashBuilderMcpContractSnapshot(snapshot),
+      contract: snapshot.contract,
       toolNames: snapshot.tools.map((tool) => tool.name),
       promptNames: snapshot.prompts.map((prompt) => `${prompt.sourceKind}:${prompt.serverName ?? "builtin"}:${prompt.name}`),
       resourceUris: snapshot.resources.map((resource) => `${resource.sourceKind}:${resource.serverName ?? "builtin"}:${resource.uri}`),
       profile: snapshot.profile,
     }).toMatchInlineSnapshot(`
       {
-        "hash": "f0bea7a941fed86c2e38628f46888a7a6e459e39f0998986ad8e24a5ad2fe25c",
+        "contract": {
+          "blockedTools": [
+            "agent_delegate_run",
+          ],
+          "compatibilityPolicyVersion": "v1",
+          "importedCatalogs": {
+            "prompts": true,
+            "resources": true,
+          },
+          "laneBoundedExposure": true,
+          "mcpLane": "mcp_operator",
+          "promptsAreServerOwned": true,
+          "resourcesAreServerOwned": true,
+          "toolOwnershipRequired": true,
+          "version": "v1",
+        },
         "profile": {
           "agentProfile": "mcp_operator",
           "autonomyPreset": "approval_all_posts",
@@ -481,7 +497,7 @@ describe("MCP contract snapshots", () => {
           "uri": "bizbot://plugins/mcp-surface-preview",
         },
         {
-          "description": "Current MCP contract catalog shape and test coverage guidance for plugin authors",
+          "description": "Current MCP contract catalog shape, compatibility policy, and test coverage guidance for plugin authors",
           "mimeType": "application/json",
           "name": "plugins-contracts-status",
           "title": "Plugin Contracts Status",

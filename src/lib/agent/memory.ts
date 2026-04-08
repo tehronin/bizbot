@@ -463,7 +463,7 @@ export async function recall(
       where: { userId, value: { contains: query.slice(0, 50) } },
       take: limit,
     });
-    return results.map((memory: MemoryFallbackRow) => ({
+    return results.map((memory) => ({
       key: memory.key,
       value: memory.value,
       category: memory.category,

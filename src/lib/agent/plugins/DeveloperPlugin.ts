@@ -30,6 +30,8 @@ import {
 import { lintPlugin } from "@/lib/agent/plugins/lint";
 import { getAgentRun, listRecentAgentRuns } from "@/lib/agent/run-journal";
 import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
+import type { BizBotContractCompatibilityClassification } from "@/lib/platform/contract";
+import { getBizBotPlatformContract } from "@/lib/platform/contract";
 import type { searchBuilderMcpSnapshotHistory } from "@/lib/builder/mcp-snapshots";
 
 async function loadBuilderMcpSnapshots() {
@@ -553,8 +555,13 @@ export const developerPlugin = {
         const previewCatalog = await loadPreviewCatalog();
         const plugin = await resolveInspectablePlugin(args);
         const inspection = inspectPluginDefinition(plugin, await buildInspectionContext());
+        const platformContract = getBizBotPlatformContract();
         return {
           plugin: plugin.metadata,
+          platformContract: {
+            version: platformContract.version,
+            mcpLane: platformContract.mcpExposureContract.mcpLane,
+          },
           exposure: inspection.exposure,
           currentCatalog: {
             tools: previewCatalog.listCurrentMcpToolDescriptors().map((tool) => ({ name: tool.name, ownerId: tool.ownerId })),
@@ -753,12 +760,24 @@ export const developerPlugin = {
         const previewCatalog = await loadPreviewCatalog();
         const plugin = await resolveInspectablePlugin(args);
         const inspection = inspectPluginDefinition(plugin, await buildInspectionContext());
+        const platformContract = getBizBotPlatformContract();
+        const classification: BizBotContractCompatibilityClassification = inspection.conflicts.some((issue) => issue.severity === "error")
+          ? "breaking"
+          : inspection.exposure.tools.length > 0
+            ? "non_breaking"
+            : "internal_only";
         return {
           plugin: plugin.metadata,
+          platformContract: {
+            version: platformContract.version,
+            compatibilityPolicy: platformContract.compatibilityPolicy,
+          },
           impact: {
             addedTools: inspection.exposure.tools,
             promptsChanged: inspection.exposure.notes.some((note) => note.includes("Prompt and resource catalogs are currently server-owned")),
             resourcesChanged: inspection.exposure.notes.some((note) => note.includes("Prompt and resource catalogs are currently server-owned")),
+            classification,
+            requiresPlatformVersionBump: classification === "breaking",
             notes: inspection.exposure.notes,
           },
           currentCatalog: {
@@ -767,13 +786,16 @@ export const developerPlugin = {
             resources: previewCatalog.listBizBotResourceDefinitions().map((resource) => resource.uri),
           },
           testsToReview: [
+            platformContract.docs.spec,
+            platformContract.docs.changelog,
             "tests/plugins/registry.test.ts",
             "tests/mcp/contracts.test.ts",
             "tests/mcp/http-route.test.ts",
+            "tests/builder/mcp-snapshots.test.ts",
           ],
         };
       },
-    } satisfies ToolDefinition<PluginLocatorArgs, { plugin: InspectablePluginShape["metadata"]; impact: { addedTools: string[]; promptsChanged: boolean; resourcesChanged: boolean; notes: string[] }; currentCatalog: { tools: string[]; prompts: string[]; resources: string[] }; testsToReview: string[] }>)),
+    } satisfies ToolDefinition<PluginLocatorArgs, { plugin: InspectablePluginShape["metadata"]; platformContract: { version: string; compatibilityPolicy: ReturnType<typeof getBizBotPlatformContract>["compatibilityPolicy"] }; impact: { addedTools: string[]; promptsChanged: boolean; resourcesChanged: boolean; classification: BizBotContractCompatibilityClassification; requiresPlatformVersionBump: boolean; notes: string[] }; currentCatalog: { tools: string[]; prompts: string[]; resources: string[] }; testsToReview: string[] }>)),
     registerTool(defineTool({
       name: "developer_plan_plugin",
       description: "Turn a plugin goal into a suggested boundary, namespace, tool list, and next implementation steps.",

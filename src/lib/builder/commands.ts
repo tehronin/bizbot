@@ -2,9 +2,9 @@ import type { BuilderProject, BuilderRunKind } from "@prisma/client";
 import { gitInitRepository } from "@/lib/builder/adapters/git";
 import { buildBuilderAgenticExecution, executeBuilderAgenticTask } from "@/lib/builder/agentic";
 import { npmInstall, npmRunScript } from "@/lib/builder/adapters/npm";
+import type { BuilderProjectCommandInput, BuilderProjectRecordedCommandInput } from "@/lib/builder/command-types";
 import { resolveBuilderRunMcpContractDrift } from "@/lib/builder/mcp-snapshots";
 import { pnpmInstall, pnpmRunScript } from "@/lib/builder/adapters/pnpm";
-import { runNpxPackage } from "@/lib/builder/adapters/npx";
 import { completeBuilderRun, createBuilderRun, getBuilderRun, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
 import { reconcileBuilderOperationalState } from "@/lib/builder/reconciliation";
 import { cancelBuilderRunController, registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
@@ -13,16 +13,6 @@ import type { BuilderCommandResult } from "@/lib/builder/workspace";
 
 const MAX_PROGRESS_OUTPUT_CHARS = 24_000;
 const PROGRESS_FLUSH_INTERVAL_MS = 250;
-
-export type BuilderProjectCommandInput =
-  | { action: "initialize_git" }
-  | { action: "install_dependencies"; packages?: string[]; dev?: boolean }
-  | { action: "add_dependency"; packages: string[]; dev?: boolean }
-  | { action: "run_script"; script: string; args?: string[] }
-  | { action: "run_generator"; generator: string; args?: string[] }
-  | { action: "reconcile_operational_state" }
-  | { action: "resolve_mcp_contract_drift"; runId: string; decision: "approve" | "reject"; reason?: string }
-  | { action: "run_agentic_task"; profile?: string; prompt: string; model?: string; args?: string[] };
 
 export interface BuilderProjectCommandExecution {
   kind: BuilderRunKind;
@@ -89,7 +79,7 @@ async function runScriptForProject(project: BuilderProject, script: string, extr
 
 export async function executeBuilderProjectCommand(
   project: BuilderProject,
-  input: BuilderProjectCommandInput,
+  input: BuilderProjectRecordedCommandInput,
 ): Promise<BuilderProjectCommandExecution> {
   switch (input.action) {
     case "initialize_git": {
@@ -140,21 +130,6 @@ export async function executeBuilderProjectCommand(
         title: `Run script: ${script}`,
         command: project.packageManager === "PNPM" ? "pnpm" : "npm",
         args: project.packageManager === "PNPM" ? [script, ...(input.args ?? [])] : ["run", script, ...(input.args ?? [])],
-        result,
-      };
-    }
-    case "run_generator": {
-      const generator = input.generator.trim();
-      if (!generator) {
-        throw new Error("Generator package is required.");
-      }
-      const args = [generator, ...(input.args ?? [])];
-      const result = await runNpxPackage(project.relativePath, args);
-      return {
-        kind: "GENERATOR",
-        title: `Run generator: ${generator}`,
-        command: "npx",
-        args,
         result,
       };
     }
@@ -251,7 +226,7 @@ export async function executeBuilderProjectCommand(
 
 export async function recordBuilderProjectCommand(
   project: BuilderProject,
-  input: BuilderProjectCommandInput,
+  input: BuilderProjectRecordedCommandInput,
 ): Promise<BuilderProjectCommandExecution & { runId: string }> {
   const execution = await executeBuilderProjectCommand(project, input);
   const run = await createBuilderRun({
@@ -423,35 +398,3 @@ export async function launchBuilderProjectCommand(
   };
 }
 
-export async function cancelBuilderProjectRun(runId: string): Promise<{ runId: string; status: "CANCELLED" | "NOT_RUNNING" }> {
-  const cancelled = cancelBuilderRunController(runId);
-  const run = await getBuilderRun(runId);
-  if (run.status !== "RUNNING") {
-    return { runId, status: "NOT_RUNNING" };
-  }
-
-  if (cancelled) {
-    await updateBuilderRun(runId, {
-      summary: "Cancellation requested.",
-    });
-    return { runId, status: "CANCELLED" };
-  }
-
-  await completeBuilderRun(runId, {
-    status: "CANCELLED",
-    summary: "Cancelled after the live Builder controller was no longer attached to this run.",
-    metadata: {
-      ...(run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata) ? run.metadata as Record<string, unknown> : {}),
-      cancellationReason: "missing_live_controller",
-    },
-  });
-
-  if (run.taskId) {
-    await updateBuilderTask(run.taskId, {
-      status: "CANCELLED",
-      summary: "Cancelled after the live Builder controller was no longer attached to the run.",
-    }).catch(() => undefined);
-  }
-
-  return { runId, status: "CANCELLED" };
-}

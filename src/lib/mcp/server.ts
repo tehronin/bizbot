@@ -11,6 +11,7 @@ import { getActiveProvider } from "@/lib/agent/kernel";
 import { getAgentRuntimeConfig, getAutonomyDescription } from "@/lib/agent/runtime";
 import type { JsonObject, ToolParametersSchema, ToolPropertySchema } from "@/lib/agent/tools";
 import { listBizBotPromptDefinitions, listBizBotResourceDefinitions } from "@/lib/mcp/preview-catalog";
+import { BIZBOT_PLATFORM_CONTRACT_VERSION } from "@/lib/platform/contract";
 import { getToolAnnotations, getToolDescription, getToolTitle, MCP_AGENT_PROFILE, MCP_BLOCKED_TOOLS } from "@/lib/mcp/tool-presentation";
 import { z } from "zod/v4";
 
@@ -123,6 +124,7 @@ export function createBizBotMcpServer(): McpServer {
       },
       instructions: [
         "BizBot is a local-first social media agent.",
+        `Platform contract: ${BIZBOT_PLATFORM_CONTRACT_VERSION}.`,
         `Autonomy: ${config.autonomyPreset}. ${getAutonomyDescription(config)}`,
         `MCP tool execution is bounded to the ${MCP_AGENT_PROFILE} lane for control-plane safety.`,
         "When debugging, inspect BizBot debug resources before mutating tools.",

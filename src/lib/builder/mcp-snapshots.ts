@@ -8,6 +8,10 @@ import { MCP_EMBEDDING_FORMAT_VERSION } from "@/lib/mcp/embedding-document";
 import { enqueueMcpCleanupJob, enqueueMcpEmbeddingJob, shouldEnqueueMcpSnapshotJobs } from "@/lib/mcp/jobs";
 import { MCP_AGENT_PROFILE } from "@/lib/mcp/tool-presentation";
 import {
+  buildBizBotPlatformContractSnapshot,
+  classifyBizBotContractDrift,
+} from "@/lib/platform/contract";
+import {
   listBizBotPromptDefinitions,
   listBizBotResourceDefinitions,
   listCurrentMcpToolDescriptors,
@@ -154,6 +158,9 @@ function hasMcpRelevantArchitectureKey(key: string): boolean {
 
 function buildPlanningRecommendations(drift: BuilderMcpContractDriftState): string[] {
   const recommendations: string[] = [];
+  if (drift.contractChanged) {
+    recommendations.push("Platform contract metadata changed; review docs, changelog entries, and version-bump expectations before continuing.");
+  }
   if (drift.tools.added.length > 0) {
     recommendations.push(`Review whether newly exposed tools supersede existing architecture assumptions: ${drift.tools.added.join(", ")}.`);
   }
@@ -165,6 +172,9 @@ function buildPlanningRecommendations(drift: BuilderMcpContractDriftState): stri
   }
   if (drift.profileChanged) {
     recommendations.push("Operator capability or autonomy surface changed; review approval and routing assumptions.");
+  }
+  if (drift.impact.requiresVersionBump) {
+    recommendations.push("This drift is classified as breaking; update the platform contract changelog and review whether the contract version should advance.");
   }
   if (recommendations.length === 0) {
     recommendations.push("No contract evolution action is required for the current MCP surface.");
@@ -366,6 +376,7 @@ export function buildCurrentBuilderMcpContractSnapshot(): BuilderMcpContractSnap
   ].sort((left, right) => `${left.sourceKind}:${left.serverName ?? ""}:${left.uri}`.localeCompare(`${right.sourceKind}:${right.serverName ?? ""}:${right.uri}`));
 
   return {
+    contract: buildBizBotPlatformContractSnapshot(),
     profile: {
       agentProfile: MCP_AGENT_PROFILE,
       autonomyPreset: runtimeConfig.autonomyPreset,
@@ -393,7 +404,7 @@ export function compareBuilderMcpContractSnapshots(
 ): BuilderMcpContractDriftState {
   const currentHash = hashBuilderMcpContractSnapshot(current);
   if (!previous) {
-    return {
+    const draft = {
       previousHash: null,
       currentHash,
       changed: false,
@@ -401,6 +412,12 @@ export function compareBuilderMcpContractSnapshots(
       prompts: { added: [], removed: [], changed: [] },
       resources: { added: [], removed: [], changed: [] },
       profileChanged: false,
+      contractChanged: false,
+    } satisfies Omit<BuilderMcpContractDriftState, "impact">;
+
+    return {
+      ...draft,
+      impact: classifyBizBotContractDrift(draft),
     };
   }
 
@@ -424,8 +441,9 @@ export function compareBuilderMcpContractSnapshots(
     serialize: (entry) => canonicalizeJsonValue(normalizeJsonValue(entry)),
   });
   const profileChanged = canonicalizeJsonValue(normalizeJsonValue(previous.profile)) !== canonicalizeJsonValue(normalizeJsonValue(current.profile));
+  const contractChanged = canonicalizeJsonValue(normalizeJsonValue(previous.contract ?? null)) !== canonicalizeJsonValue(normalizeJsonValue(current.contract));
 
-  return {
+  const draft = {
     previousHash,
     currentHash,
     changed: previousHash !== currentHash,
@@ -433,6 +451,12 @@ export function compareBuilderMcpContractSnapshots(
     prompts,
     resources,
     profileChanged,
+    contractChanged,
+  } satisfies Omit<BuilderMcpContractDriftState, "impact">;
+
+  return {
+    ...draft,
+    impact: classifyBizBotContractDrift(draft),
   };
 }
 
@@ -539,6 +563,7 @@ export async function ensureBuilderRunMcpSnapshotPreflight(args: {
       versionHash: currentHash,
       metadata: {
         reason: "initial_capture",
+        contractVersion: currentSnapshot.contract.version,
       },
     });
 
@@ -564,6 +589,7 @@ export async function ensureBuilderRunMcpSnapshotPreflight(args: {
       versionHash: currentHash,
       metadata: {
         reason: "run_capture",
+        contractVersion: currentSnapshot.contract.version,
         carriedForwardFromSnapshotId: baselineSnapshot.id,
         carriedForwardFromRunId: baselineSnapshot.runId,
       },
@@ -608,6 +634,7 @@ export async function resolveBuilderRunMcpContractDrift(args: {
       versionHash: currentHash,
       metadata: {
         reason: "manual_capture",
+        contractVersion: currentSnapshot.contract.version,
         operatorDecision: args.decision,
         operatorReason: args.reason ?? null,
       },
@@ -630,6 +657,7 @@ export async function resolveBuilderRunMcpContractDrift(args: {
       versionHash: currentHash,
       metadata: {
         reason: "run_capture",
+        contractVersion: currentSnapshot.contract.version,
         operatorDecision: args.decision,
         operatorReason: args.reason ?? null,
         carriedForwardFromSnapshotId: baselineSnapshot.id,
@@ -654,6 +682,7 @@ export async function resolveBuilderRunMcpContractDrift(args: {
     versionHash: currentHash,
     metadata: {
       reason: "approved_rollover",
+        contractVersion: currentSnapshot.contract.version,
       previousSnapshotId: baselineSnapshot.id,
       previousHash: baselineSnapshot.versionHash,
       operatorDecision: args.decision,
@@ -892,7 +921,7 @@ export async function searchBuilderMcpSnapshotHistory(args: {
   const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 5), 20));
 
   try {
-    return await db.$queryRawUnsafe<BuilderMcpSemanticSearchMatchState[]>(
+    return (await db.$queryRawUnsafe(
       `SELECT
          id AS "snapshotId",
          "runId" AS "runId",
@@ -908,7 +937,7 @@ export async function searchBuilderMcpSnapshotHistory(args: {
       embeddingStr,
       args.projectId,
       limit,
-    );
+    )) as BuilderMcpSemanticSearchMatchState[];
   } catch {
     return [];
   }

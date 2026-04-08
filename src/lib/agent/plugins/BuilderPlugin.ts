@@ -26,6 +26,10 @@ async function loadBuilderCommands() {
   return import("@/lib/builder/commands");
 }
 
+async function loadBuilderGenerator() {
+  return import("@/lib/builder/command-generator");
+}
+
 async function loadBuilderOrchestrator() {
   return import("@/lib/builder/orchestrator");
 }
@@ -408,7 +412,7 @@ export const builderPlugin = {
       },
       execute: async ({ projectId, generator, args }: BuilderRunGeneratorArgs) => {
         const project = await getBuilderProject(projectId);
-          return (await loadBuilderCommands()).recordBuilderProjectCommand(project, { action: "run_generator", generator, args });
+          return (await loadBuilderGenerator()).recordBuilderGeneratorCommand(project, { action: "run_generator", generator, args });
       },
     } satisfies ToolDefinition<BuilderRunGeneratorArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
     registerTool(defineTool({

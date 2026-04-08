@@ -8,6 +8,11 @@ import type {
   BuilderTaskStage,
   BuilderTaskStatus,
 } from "@prisma/client";
+import type {
+  BizBotContractDriftSectionState,
+  BizBotPlatformContractImpactState,
+  BizBotPlatformContractSnapshotState,
+} from "@/lib/platform/contract";
 
 export interface BuilderArchitectureDecisionState {
   key: string;
@@ -86,6 +91,7 @@ export interface BuilderMcpResourceSnapshotEntry {
 }
 
 export interface BuilderMcpContractSnapshotState {
+  contract: BizBotPlatformContractSnapshotState;
   profile: {
     agentProfile: string;
     autonomyPreset: string;
@@ -135,10 +141,12 @@ export interface BuilderMcpContractDriftState {
   previousHash: string | null;
   currentHash: string;
   changed: boolean;
-  tools: BuilderMcpContractDriftSectionState;
-  prompts: BuilderMcpContractDriftSectionState;
-  resources: BuilderMcpContractDriftSectionState;
+  tools: BizBotContractDriftSectionState;
+  prompts: BizBotContractDriftSectionState;
+  resources: BizBotContractDriftSectionState;
   profileChanged: boolean;
+  contractChanged: boolean;
+  impact: BizBotPlatformContractImpactState;
 }
 
 export interface BuilderMcpSemanticState {

@@ -55,7 +55,7 @@ export const approvalPlugin = {
           orderBy: { createdAt: "asc" },
         });
         return {
-          pendingApprovals: approvals.map((approval: { id: string; postId: string; status: string; notes: string | null; createdAt: Date }) => ({
+          pendingApprovals: approvals.map((approval) => ({
             id: approval.id,
             postId: approval.postId,
             status: approval.status,

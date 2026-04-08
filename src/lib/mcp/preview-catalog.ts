@@ -26,6 +26,7 @@ import {
   ONTOLOGY_RUNTIME_CONTEXT_POLICY,
 } from "@/lib/ontology/constants";
 import { getOntologySchemaSummary, getOntologySummary } from "@/lib/ontology/service";
+import { getBizBotPlatformContract } from "@/lib/platform/contract";
 import type { JsonObject, ToolDescriptor } from "@/lib/agent/tools";
 
 const DEV_LOG_TAIL_LINES = 120;
@@ -538,7 +539,7 @@ export function listBizBotResourceDefinitions(): BizBotResourceDefinition[] {
     { name: "posts-scheduled", uri: "bizbot://posts/scheduled", title: "Scheduled Posts", description: "Posts scheduled for future publishing", mimeType: "application/json", ownerId: "schedule", group: "publishing", read: async () => db.post.findMany({ where: { status: "SCHEDULED" }, orderBy: { scheduledAt: "asc" }, take: 50, include: { platform: true } }) },
     { name: "approvals-pending", uri: "bizbot://approvals/pending", title: "Pending Approvals", description: "Posts waiting for human approval", mimeType: "application/json", ownerId: "approval", group: "publishing", read: async () => db.postApproval.findMany({ where: { status: "PENDING" }, include: { post: { include: { platform: true } } }, orderBy: { createdAt: "asc" } }) },
     { name: "settings", uri: "bizbot://settings", title: "BizBot Settings", description: "Current agent settings and autonomy configuration", mimeType: "application/json", ownerId: "core", group: "runtime", read: async () => {
-      const settings = filterVisibleSettings(await db.setting.findMany());
+      const settings: Array<{ key: string; value: string }> = filterVisibleSettings(await db.setting.findMany());
       const mapped = Object.fromEntries(settings.map((s) => [s.key, s.value]));
       return { ...mapped, runtimeConfig: getAgentRuntimeConfig() };
     } },
@@ -557,7 +558,43 @@ export function listBizBotResourceDefinitions(): BizBotResourceDefinition[] {
     { name: "plugins-naming-rules", uri: "bizbot://plugins/naming-rules", title: "Plugin Naming Rules", description: "BizBot naming conventions, prefix guidance, and good versus bad tool-name examples", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), ...NAMING_RULES }) },
     { name: "plugins-authoring-checklist", uri: "bizbot://plugins/authoring-checklist", title: "Plugin Authoring Checklist", description: "Checklist for metadata, schemas, tests, registry registration, and MCP contract review", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), checklist: AUTHORING_CHECKLIST }) },
     { name: "plugins-mcp-surface-preview", uri: "bizbot://plugins/mcp-surface-preview", title: "Plugin MCP Surface Preview", description: "Current MCP tool, prompt, and resource catalogs with ownership and grouping details", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), tools: listCurrentMcpToolDescriptors(), prompts: listBizBotPromptDefinitions().map((prompt) => ({ name: prompt.name, title: prompt.title, description: prompt.description, ownerId: prompt.ownerId, group: prompt.group, arguments: prompt.arguments })), resources: listBizBotResourceDefinitions().map((resource) => ({ name: resource.name, uri: resource.uri, title: resource.title, description: resource.description, ownerId: resource.ownerId, group: resource.group, mimeType: resource.mimeType })) }) },
-    { name: "plugins-contracts-status", uri: "bizbot://plugins/contracts-status", title: "Plugin Contracts Status", description: "Current MCP contract catalog shape and test coverage guidance for plugin authors", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), contractTests: { file: "tests/mcp/contracts.test.ts", routeFile: "tests/mcp/http-route.test.ts", snapshots: ["tools/list", "prompts/list", "resources/list"] }, currentCatalog: { toolNames: listCurrentMcpToolDescriptors().map((tool) => tool.name), promptNames: listBizBotPromptDefinitions().map((prompt) => prompt.name), resourceUris: listBizBotResourceDefinitions().map((resource) => resource.uri) }, history: { detectable: false, note: "BizBot does not currently persist historical MCP catalog snapshots outside the test file." } }) },
+    { name: "plugins-contracts-status", uri: "bizbot://plugins/contracts-status", title: "Plugin Contracts Status", description: "Current MCP contract catalog shape, compatibility policy, and test coverage guidance for plugin authors", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => {
+      const platformContract = getBizBotPlatformContract();
+      return {
+        generatedAt: new Date().toISOString(),
+        platformContract,
+        contractTests: {
+          file: "tests/mcp/contracts.test.ts",
+          routeFile: "tests/mcp/http-route.test.ts",
+          snapshots: ["tools/list", "prompts/list", "resources/list"],
+          builderSnapshots: "tests/builder/mcp-snapshots.test.ts",
+        },
+        currentCatalog: {
+          toolNames: listCurrentMcpToolDescriptors().map((tool) => tool.name),
+          toolDescriptors: listCurrentMcpToolDescriptors().map((tool) => ({
+            name: tool.name,
+            ownerId: tool.ownerId,
+            ownerKind: tool.ownerKind,
+            parameters: tool.parameters,
+          })),
+          promptDefinitions: listBizBotPromptDefinitions().map((prompt) => ({
+            name: prompt.name,
+            ownerId: prompt.ownerId,
+            arguments: prompt.arguments,
+          })),
+          resourceMetadata: listBizBotResourceDefinitions().map((resource) => ({
+            uri: resource.uri,
+            ownerId: resource.ownerId,
+            mimeType: resource.mimeType,
+          })),
+        },
+        history: {
+          detectable: true,
+          note: "Builder MCP snapshots persist accepted MCP catalog baselines and runtime provenance.",
+          changelog: platformContract.docs.changelog,
+        },
+      };
+    } },
     { name: "ontology-schema", uri: "bizbot://ontology/schema", title: "Ontology Schema", description: "Ontology v1 scopes, statuses, sources, types, and budget policy for developer inspection", mimeType: "application/json", ownerId: "developer", group: "ontology", read: async () => getOntologySchemaSummary() },
     { name: "ontology-entity-types", uri: "bizbot://ontology/entity-types", title: "Ontology Entity Types", description: "Canonical ontology entity types supported in v1", mimeType: "application/json", ownerId: "developer", group: "ontology", read: async () => ({ generatedAt: new Date().toISOString(), entityTypes: ONTOLOGY_ENTITY_TYPES }) },
     { name: "ontology-relation-types", uri: "bizbot://ontology/relation-types", title: "Ontology Relation Types", description: "Canonical ontology relation types supported in v1", mimeType: "application/json", ownerId: "developer", group: "ontology", read: async () => ({ generatedAt: new Date().toISOString(), relationTypes: ONTOLOGY_RELATION_TYPES }) },

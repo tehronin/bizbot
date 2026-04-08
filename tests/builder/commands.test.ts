@@ -40,7 +40,7 @@ vi.mock("@/lib/builder/adapters/npm", () => ({ npmInstall: vi.fn(), npmRunScript
 vi.mock("@/lib/builder/adapters/pnpm", () => ({ pnpmInstall: vi.fn(), pnpmRunScript: vi.fn() }));
 vi.mock("@/lib/builder/adapters/npx", () => ({ runNpxPackage: vi.fn() }));
 
-import { cancelBuilderProjectRun } from "@/lib/builder/commands";
+import { cancelBuilderProjectRun } from "@/lib/builder/command-cancel";
 
 describe("builder command cancellation", () => {
   beforeEach(() => {

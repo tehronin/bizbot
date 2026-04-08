@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
 import { getBuilderConfig } from "@/lib/builder/config";
-import { runBuilderProjectBootstrap } from "@/lib/builder/bootstrap";
 
 function parseBootstrapRequest(value: object | null, defaults: ReturnType<typeof getBuilderConfig>): {
   initializeGit: boolean;
@@ -25,6 +24,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
+    const { runBuilderProjectBootstrap } = await import("@/lib/builder/bootstrap");
     const defaults = getBuilderConfig();
     const { id } = await context.params;
     const options = parseBootstrapRequest(await req.json().catch(() => null), defaults);

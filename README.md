@@ -10,6 +10,8 @@ It is designed more like an agent OS than a single-purpose app. BizBot combines 
 
 See `CHANGELOG.md` for short rollout notes tied to shipped changes.
 
+The current platform contract is `v1`. See `docs/platform-contract-v1.md` for the bounded MCP/lane/plugin contract and `docs/platform-contract-changelog.json` for contract-specific change history.
+
 ## Current Product State
 
 BizBot is no longer just a social posting bot. The app now includes:
@@ -91,6 +93,7 @@ BizBot is set up so feature work can move through a plugin-shaped path instead o
 - Runtime exposure stays predictable through the plugin registry instead of ad hoc imports.
 - MCP contract tests catch drift in the OSS-facing tool, prompt, and resource surface before it leaks into integrations.
 - Power users can inspect exactly how plugin changes alter tools, prompts, resources, and imported MCP provenance before shipping.
+- Platform contract v1 keeps the public lane/plugin/MCP boundary explicit so Builder drift, developer previews, and docs all refer to the same compatibility policy.
 
 ### Dev Tools For Feature Work
 

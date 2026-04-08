@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { syncBuilderCliProfiles } from "@/lib/builder/cli-profiles";
 import { getBuilderConfig } from "@/lib/builder/config";
 import { listBuilderStackPresets } from "@/lib/builder/stacks";
-import { syncBuilderTemplatePresets } from "@/lib/builder/templates";
+import { syncBuilderTemplatePresets } from "@/lib/builder/template-presets";
 
 export async function GET() {
   const [templates, cliProfiles, projectCount, runningCount] = await Promise.all([

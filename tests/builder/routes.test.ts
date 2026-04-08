@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   runBuilderProjectBootstrap: vi.fn(),
   recordBuilderProjectCommand: vi.fn(),
   launchBuilderProjectCommand: vi.fn(),
+  recordBuilderGeneratorCommand: vi.fn(),
   cancelBuilderProjectRun: vi.fn(),
   count: vi.fn(),
 }));
@@ -32,7 +33,7 @@ vi.mock("@/lib/builder/cli-profiles", () => ({
   syncBuilderCliProfiles: mocks.syncBuilderCliProfiles,
 }));
 
-vi.mock("@/lib/builder/templates", () => ({
+vi.mock("@/lib/builder/template-presets", () => ({
   syncBuilderTemplatePresets: mocks.syncBuilderTemplatePresets,
 }));
 
@@ -67,6 +68,13 @@ vi.mock("@/lib/builder/tasks", () => ({
 vi.mock("@/lib/builder/commands", () => ({
   recordBuilderProjectCommand: mocks.recordBuilderProjectCommand,
   launchBuilderProjectCommand: mocks.launchBuilderProjectCommand,
+}));
+
+vi.mock("@/lib/builder/command-generator", () => ({
+  recordBuilderGeneratorCommand: mocks.recordBuilderGeneratorCommand,
+}));
+
+vi.mock("@/lib/builder/command-cancel", () => ({
   cancelBuilderProjectRun: mocks.cancelBuilderProjectRun,
 }));
 
@@ -417,6 +425,11 @@ describe("builder routes", () => {
     mocks.recordBuilderProjectCommand.mockResolvedValue({
       runId: "run-1",
       title: "Run Codex CLI task",
+      result: { ok: true, stdout: "done", stderr: "", exitCode: 0 },
+    });
+    mocks.recordBuilderGeneratorCommand.mockResolvedValue({
+      runId: "run-1",
+      title: "Run generator: create-demo",
       result: { ok: true, stdout: "done", stderr: "", exitCode: 0 },
     });
     mocks.launchBuilderProjectCommand.mockResolvedValue({

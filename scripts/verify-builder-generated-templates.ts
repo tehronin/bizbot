@@ -2,12 +2,12 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BuilderProject } from "@prisma/client";
+import { BUILDER_TEMPLATE_VERIFICATION_CONTRACTS, type BuilderTemplateVerificationContract } from "../src/lib/builder/template-presets";
 import {
   bootstrapBuilderProject,
-  BUILDER_TEMPLATE_VERIFICATION_CONTRACTS,
-  type BuilderTemplateVerificationContract,
-} from "../src/lib/builder/templates";
+} from "../src/lib/builder/template-bootstrap";
+
+type BuilderProject = Parameters<typeof bootstrapBuilderProject>[0];
 
 function run(command: string, args: string[], cwd: string): void {
   const result = process.platform === "win32" && command === "npm"

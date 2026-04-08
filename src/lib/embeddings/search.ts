@@ -29,7 +29,7 @@ export async function searchMemories(
 
   const categoryFilter = category ? `AND m."category" = '${category}'` : "";
 
-  const results = await db.$queryRawUnsafe<MemorySearchResult[]>(
+  const results = (await db.$queryRawUnsafe(
     `SELECT 
        m.id,
        m.key,
@@ -45,7 +45,7 @@ export async function searchMemories(
     embeddingStr,
     userId,
     limit,
-  );
+  )) as MemorySearchResult[];
 
   return results;
 }

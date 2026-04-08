@@ -4,6 +4,7 @@ import path from "path";
 import type { BuilderProject } from "@prisma/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runNpmCreatePackage } from "@/lib/builder/adapters/npx";
+import { BUILDER_TEMPLATE_VERIFICATION_CONTRACTS } from "@/lib/builder/template-presets";
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -17,7 +18,7 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/builder/adapters/npx", () => ({
   runNpmCreatePackage: vi.fn(async () => ({ ok: true })),
 }));
-import { bootstrapBuilderProject, BUILDER_TEMPLATE_VERIFICATION_CONTRACTS } from "@/lib/builder/templates";
+import { bootstrapBuilderProject } from "@/lib/builder/template-bootstrap";
 
 function createTempBuilderWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-builder-templates-"));

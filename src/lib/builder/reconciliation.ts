@@ -152,7 +152,7 @@ export function inspectBuilderOperationalState(args: {
   const now = args.now ?? new Date();
   const corrections = collectAuditEntries(args.runs);
   const alerts: BuilderOperationalAlert[] = [];
-  const taskById = new Map(args.tasks.map((task) => [task.id, task]));
+  const taskById = new Map<string, (typeof args.tasks)[number]>(args.tasks.map((task) => [task.id, task]));
 
   for (const run of args.runs) {
     const task = run.taskId ? taskById.get(run.taskId) ?? null : null;
@@ -254,7 +254,7 @@ export async function reconcileBuilderOperationalState(args: {
     orderBy: { updatedAt: "desc" },
     take: 100,
   });
-  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const taskById = new Map<string, (typeof tasks)[number]>(tasks.map((task) => [task.id, task]));
   const now = args.now ?? new Date();
 
   for (const run of runs) {

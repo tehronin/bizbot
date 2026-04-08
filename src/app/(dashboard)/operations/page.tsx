@@ -59,6 +59,17 @@ interface OperationsResponse {
       toolCount: number;
     }>;
   };
+  contract: {
+    version: string;
+    latestBuilderProject: { id: string; name: string } | null;
+    builderSurface: {
+      state: string;
+      currentHash: string | null;
+      driftDetected: boolean;
+      classification: string;
+      requiresVersionBump: boolean;
+    } | null;
+  };
   failures: {
     failedInboxCount: number;
     failedPostCount: number;
@@ -127,6 +138,7 @@ export default function OperationsPage() {
               { label: "worker", value: data?.worker.workerRunning ? "running" : "stopped" },
               { label: "queue", value: data?.worker.queueName ?? "bizbot-agent-heartbeat" },
               { label: "mcp worker", value: data?.mcpWorker.workerRunning ? "running" : "stopped" },
+              { label: "contract", value: data?.contract.version ?? "v1" },
               { label: "pending approvals", value: String(data?.failures.pendingApprovalCount ?? 0) },
               { label: "failed inbox", value: String(data?.failures.failedInboxCount ?? 0) },
               { label: "failed posts", value: String(data?.failures.failedPostCount ?? 0) },
@@ -156,6 +168,34 @@ export default function OperationsPage() {
           <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
             Scheduler registered: {data?.worker.schedulerRegistered ? "yes" : "no"}
           </div>
+        </section>
+
+        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>platform contract</div>
+          <div className="grid gap-3 sm:grid-cols-2 text-sm">
+            <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>version</div>
+              <div>{data?.contract.version ?? "v1"}</div>
+            </div>
+            <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>builder surface</div>
+              <div>{data?.contract.builderSurface?.state ?? "untracked"}</div>
+            </div>
+            <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>compatibility</div>
+              <div>{data?.contract.builderSurface?.classification ?? "internal_only"}</div>
+            </div>
+            <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>version bump</div>
+              <div>{data?.contract.builderSurface?.requiresVersionBump ? "required" : "not required"}</div>
+            </div>
+          </div>
+          <div className="mt-4 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            Latest Builder project: {data?.contract.latestBuilderProject?.name ?? "none"}
+          </div>
+          {data?.contract.builderSurface?.currentHash ? (
+            <div className="text-xs leading-6 break-all" style={{ color: "var(--text-dim)" }}>{data.contract.builderSurface.currentHash}</div>
+          ) : null}
         </section>
 
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
