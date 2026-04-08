@@ -1,5 +1,11 @@
 # Builder Mode
 
+## Builder Capability Contract
+
+Builder capability taxonomy, policy boundaries, and audit envelopes are defined in [docs/builder-capabilities.md](docs/builder-capabilities.md).
+
+Use that document as the contract layer for new Builder surfaces before adding tools or widening Builder authority.
+
 ## Builder MCP Policy Artifact
 
 Builder-owned scaffolds now generate `.builder/mcp-policy.json` at bootstrap time.

@@ -1,3 +1,4 @@
+import { execFileSync } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -20,6 +21,19 @@ function createTempBuilderWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-builder-"));
 }
 
+function createTempBuilderRepo(): { workspaceRoot: string; repoPath: string } {
+  const workspaceRoot = createTempBuilderWorkspace();
+  const repoPath = path.join(workspaceRoot, "apps", "repo-demo");
+  fs.mkdirSync(repoPath, { recursive: true });
+  execFileSync("git", ["init"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "builder@example.com"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Builder Test"], { cwd: repoPath, stdio: "ignore" });
+  fs.writeFileSync(path.join(repoPath, "README.md"), "seed\n", "utf-8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "seed"], { cwd: repoPath, stdio: "ignore" });
+  return { workspaceRoot, repoPath };
+}
+
 afterEach(() => {
   delete process.env.BIZBOT_BUILDER_WORKSPACE_PATH;
   delete process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS;
@@ -32,6 +46,8 @@ describe("builder plugin", () => {
     expect(plugin?.metadata.displayName).toBe("Builder");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_plan_project");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_run_command");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_start_process");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_list_processes");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_run_agentic_task");
   });
 
@@ -43,21 +59,34 @@ describe("builder plugin", () => {
     expect(String(result.reason)).toContain("BIZBOT_BUILDER_WORKSPACE_PATH");
   });
 
-  it("writes, reads, lists, and scaffolds inside the dedicated builder workspace", async () => {
+  it("mutates files and directories inside the dedicated builder workspace", async () => {
     process.env.BIZBOT_BUILDER_WORKSPACE_PATH = createTempBuilderWorkspace();
 
-    await requireTool("builder_create_directory").execute({ path: "apps/demo/src" }, {});
+    await requireTool("builder_ensure_directory").execute({ path: "apps/demo/src" }, {});
     await requireTool("builder_write_file").execute({ path: "apps/demo/src/value.txt", content: "42" }, {});
+    await requireTool("builder_append_file").execute({ path: "apps/demo/src/value.txt", content: "\n43" }, {});
     const readResult = await requireTool("builder_read_file").execute({ path: "apps/demo/src/value.txt" }, {});
     const listResult = asObjectResult<{ files: Array<{ path: string }> }>(await requireTool("builder_list_files").execute({ subdir: "apps/demo/src" }, {}));
+    const statResult = asObjectResult<{ exists: boolean; type: string; size: number | null }>(await requireTool("builder_stat_path").execute({ path: "apps/demo/src/value.txt" }, {}));
+    const existsBeforeMove = asObjectResult<{ exists: boolean }>(await requireTool("builder_path_exists").execute({ path: "apps/demo/src/value.txt" }, {}));
+    await requireTool("builder_move_path").execute({ fromPath: "apps/demo/src/value.txt", toPath: "apps/demo/src/value-renamed.txt" }, {});
+    const existsAfterMove = asObjectResult<{ exists: boolean }>(await requireTool("builder_path_exists").execute({ path: "apps/demo/src/value-renamed.txt" }, {}));
     const scaffoldResult = await requireTool("builder_scaffold_node_package").execute({
       projectDir: "apps/pkg",
       packageName: "pkg-demo",
       description: "fixture package",
     }, {});
+    await requireTool("builder_delete_path").execute({ path: "apps/demo/src/value-renamed.txt" }, {});
+    const existsAfterDelete = asObjectResult<{ exists: boolean }>(await requireTool("builder_path_exists").execute({ path: "apps/demo/src/value-renamed.txt" }, {}));
 
-    expect(readResult).toEqual({ content: "42" });
+    expect(readResult).toEqual({ content: "42\n43" });
     expect(listResult.files.map((entry: { path: string }) => entry.path)).toContain("apps/demo/src/value.txt");
+    expect(statResult.exists).toBe(true);
+    expect(statResult.type).toBe("file");
+    expect(statResult.size).toBe(5);
+    expect(existsBeforeMove.exists).toBe(true);
+    expect(existsAfterMove.exists).toBe(true);
+    expect(existsAfterDelete.exists).toBe(false);
     expect(scaffoldResult).toEqual({
       scaffolded: true,
       root: "apps/pkg",
@@ -69,6 +98,48 @@ describe("builder plugin", () => {
         "apps/pkg/src/index.ts",
       ],
     });
+  });
+
+  it("applies patches and performs first-class VCS operations inside a builder repo", async () => {
+    const { workspaceRoot } = createTempBuilderRepo();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    await requireTool("builder_apply_patch").execute({
+      cwd: "apps/repo-demo",
+      patch: [
+        "diff --git a/README.md b/README.md",
+        "--- a/README.md",
+        "+++ b/README.md",
+        "@@ -1 +1,2 @@",
+        " seed",
+        "+patched",
+        "",
+      ].join("\n"),
+    }, {});
+
+    const diffResult = asObjectResult<{ patch: string }>(await requireTool("builder_diff").execute({ subdir: "apps/repo-demo" }, {}));
+    const statusAfterPatch = asObjectResult<{ unstaged: Array<{ path: string }>; staged: Array<{ path: string }>; currentBranch: string | null }>(await requireTool("builder_repo_status").execute({ subdir: "apps/repo-demo" }, {}));
+    const initialBranch = statusAfterPatch.currentBranch;
+    expect(initialBranch).toBeTruthy();
+    const statusAfterStage = asObjectResult<{ staged: Array<{ path: string }> }>(await requireTool("builder_stage_paths").execute({ subdir: "apps/repo-demo", paths: ["README.md"] }, {}));
+    const stagedDiff = asObjectResult<{ patch: string }>(await requireTool("builder_diff").execute({ subdir: "apps/repo-demo", staged: true }, {}));
+    const statusAfterUnstage = asObjectResult<{ staged: Array<{ path: string }> }>(await requireTool("builder_unstage_paths").execute({ subdir: "apps/repo-demo", paths: ["README.md"] }, {}));
+    await requireTool("builder_stage_paths").execute({ subdir: "apps/repo-demo", paths: ["README.md"] }, {});
+    const commitResult = asObjectResult<{ commitSha: string; summary: string }>(await requireTool("builder_commit").execute({ subdir: "apps/repo-demo", message: "Patch readme" }, {}));
+    const branchStatus = asObjectResult<{ currentBranch: string | null }>(await requireTool("builder_create_branch").execute({ subdir: "apps/repo-demo", name: "feature/test-branch", checkout: true }, {}));
+    const switchedStatus = asObjectResult<{ currentBranch: string | null }>(await requireTool("builder_switch_branch").execute({ subdir: "apps/repo-demo", name: initialBranch ?? "main" }, {}));
+
+    expect(diffResult.patch).toContain("+patched");
+    expect(statusAfterPatch.currentBranch).toBeTruthy();
+    expect(statusAfterPatch.unstaged.map((entry) => entry.path)).toContain("README.md");
+    expect(statusAfterPatch.staged).toHaveLength(0);
+    expect(statusAfterStage.staged.map((entry) => entry.path)).toContain("README.md");
+    expect(stagedDiff.patch).toContain("+patched");
+    expect(statusAfterUnstage.staged).toHaveLength(0);
+    expect(commitResult.commitSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(commitResult.summary).toContain("Patch readme");
+    expect(branchStatus.currentBranch).toBe("feature/test-branch");
+    expect(switchedStatus.currentBranch).toBe(initialBranch);
   });
 
   it("runs only allowlisted commands and blocks repo path references", async () => {
@@ -95,6 +166,81 @@ describe("builder plugin", () => {
     }, {})).rejects.toThrow("Builder command arguments reference the BizBot repository");
   });
 
+  it("persists managed builder processes and supports filtered listing plus tail/follow logs", async () => {
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS = "node";
+
+    const started = asObjectResult<{ started: boolean; process: { processId: string; status: string; metadataPath: string; logPath: string } }>(await requireTool("builder_start_process").execute({
+      command: "node",
+      args: ["-e", "let count = 0; const timer = setInterval(() => { console.log(`tick-${++count}`); if (count === 2) { clearInterval(timer); process.exit(0); } }, 50);"] ,
+      timeoutSeconds: 30,
+    }, {}));
+    const workspaceRoot = process.env.BIZBOT_BUILDER_WORKSPACE_PATH!;
+    expect(fs.existsSync(path.join(workspaceRoot, started.process.metadataPath))).toBe(true);
+    expect(fs.existsSync(path.join(workspaceRoot, started.process.logPath))).toBe(true);
+
+    const finished = asObjectResult<{ completed: boolean; timedOut: boolean; process: { processId: string; status: string; exitCode: number | null } }>(await requireTool("builder_wait_for_process").execute({
+      processId: started.process.processId,
+      timeoutSeconds: 5,
+    }, {}));
+    const listedExited = asObjectResult<{ returned: number; processes: Array<{ processId: string; status: string }> }>(await requireTool("builder_list_processes").execute({
+      statuses: ["exited"],
+      commandContains: "node",
+      cwdPrefix: ".",
+    }, {}));
+    const logs = asObjectResult<{ logs: string; complete: boolean; nextCursor: number }>(await requireTool("builder_stream_process_logs").execute({
+      processId: started.process.processId,
+    }, {}));
+    const tailed = asObjectResult<{ logs: string }>(await requireTool("builder_stream_process_logs").execute({
+      processId: started.process.processId,
+      tailBytes: 8,
+    }, {}));
+    const finishedState = asObjectResult<{ process: { status: string; exitCode: number | null } }>(await requireTool("builder_get_process").execute({
+      processId: started.process.processId,
+    }, {}));
+
+    const stoppable = asObjectResult<{ process: { processId: string } }>(await requireTool("builder_start_process").execute({
+      command: "node",
+      args: ["-e", "setTimeout(() => console.log('late-log'), 150); setInterval(() => {}, 1000);"],
+      timeoutSeconds: 30,
+    }, {}));
+    const listedRunning = asObjectResult<{ returned: number; processes: Array<{ processId: string; status: string }> }>(await requireTool("builder_list_processes").execute({
+      statuses: ["running"],
+      includeFinished: false,
+    }, {}));
+    const followed = asObjectResult<{ logs: string; followed: boolean; followTimedOut: boolean }>(await requireTool("builder_stream_process_logs").execute({
+      processId: stoppable.process.processId,
+      followSeconds: 2,
+    }, {}));
+    const stopped = asObjectResult<{ stopped: boolean; process: { status: string } }>(await requireTool("builder_stop_process").execute({
+      processId: stoppable.process.processId,
+    }, {}));
+    const stoppedWait = asObjectResult<{ completed: boolean; process: { status: string } }>(await requireTool("builder_wait_for_process").execute({
+      processId: stoppable.process.processId,
+      timeoutSeconds: 5,
+    }, {}));
+
+    expect(started.started).toBe(true);
+    expect(finished.completed).toBe(true);
+    expect(finished.timedOut).toBe(false);
+    expect(finished.process.status).toBe("exited");
+    expect(finished.process.exitCode).toBe(0);
+    expect(listedExited.processes.map((entry) => entry.processId)).toContain(started.process.processId);
+    expect(logs.logs).toContain("tick-1");
+    expect(logs.logs).toContain("tick-2");
+    expect(logs.complete).toBe(true);
+    expect(tailed.logs).toContain("tick-2");
+    expect(finishedState.process.status).toBe("exited");
+    expect(listedRunning.processes.map((entry) => entry.processId)).toContain(stoppable.process.processId);
+    expect(followed.followed).toBe(true);
+    expect(followed.followTimedOut).toBe(false);
+    expect(followed.logs).toContain("late-log");
+    expect(stopped.stopped).toBe(true);
+    expect(["running", "cancelled"]).toContain(stopped.process.status);
+    expect(stoppedWait.completed).toBe(true);
+    expect(stoppedWait.process.status).toBe("cancelled");
+  });
+
   it("enforces lane gating for builder tools and exposes them to the MCP lane", () => {
     expect(canProfileUseTool("builder_operator", "builder_get_status")).toBe(true);
     expect(canProfileUseTool("builder_operator", "builder_continue_task")).toBe(false);
@@ -107,6 +253,8 @@ describe("builder plugin", () => {
     const mcpTools = getAllToolDefinitions(undefined, { agentProfile: "mcp_operator" }).map((tool) => tool.name);
     expect(mcpTools).toContain("builder_get_status");
     expect(mcpTools).toContain("builder_run_command");
+    expect(mcpTools).toContain("builder_start_process");
+    expect(mcpTools).toContain("builder_list_processes");
   });
 
   it("rejects unsafe builder workspace execution through the shared tool executor", async () => {

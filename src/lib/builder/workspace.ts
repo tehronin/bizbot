@@ -1,6 +1,7 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { 
   assertBuilderWorkspaceSafe as assertBuilderConfigSafe,
   getBuilderAllowedCommands,
@@ -15,6 +16,22 @@ const DEFAULT_COMMAND_TIMEOUT_SECONDS = 60;
 const MAX_COMMAND_TIMEOUT_SECONDS = 600;
 const MAX_CAPTURED_OUTPUT_CHARS = 24_000;
 const BUILDER_MANAGED_PROJECT_ROOT_ENTRIES = new Set([".builder", "AGENTS.md"]);
+const BUILDER_PROTECTED_MUTATION_SEGMENTS = new Set([".git", "node_modules"]);
+
+export interface BuilderPathStat {
+  path: string;
+  name: string;
+  exists: boolean;
+  type: "file" | "directory" | "missing";
+  size: number | null;
+  modifiedAt: string | null;
+}
+
+export interface BuilderPatchResult {
+  applied: boolean;
+  cwd: string;
+  touchedPaths: string[];
+}
 
 export interface BuilderFileInfo {
   name: string;
@@ -48,6 +65,17 @@ export interface BuilderCommandOptions {
   onStderrChunk?: (chunk: string) => void | Promise<void>;
 }
 
+export interface BuilderResolvedCommandExecution {
+  workspaceRoot: string;
+  cwdAbsolute: string;
+  cwd: string;
+  command: string;
+  resolvedCommand: string;
+  args: string[];
+  timeoutSeconds: number;
+  env: NodeJS.ProcessEnv;
+}
+
 export function getBuilderWorkspaceStatus(): BuilderWorkspaceStatus {
   return getBuilderConfig();
 }
@@ -68,6 +96,46 @@ function safeBuilderPath(relativePath: string): string {
     throw new Error("Access denied: path escapes builder workspace root");
   }
   return resolved;
+}
+
+function assertBuilderMutationPathAllowed(relativePath: string): void {
+  const normalizedPath = relativePath.replace(/\\/g, "/").replace(/^\.\//, "");
+  const segments = normalizedPath.split("/").filter(Boolean);
+  for (const segment of segments) {
+    if (BUILDER_PROTECTED_MUTATION_SEGMENTS.has(segment)) {
+      throw new Error(`Access denied: mutation path targets protected builder segment '${segment}'.`);
+    }
+  }
+}
+
+function writeFileAtomic(absolutePath: string, content: string): void {
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  const tempPath = path.join(
+    path.dirname(absolutePath),
+    `.builder-tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}-${path.basename(absolutePath)}`,
+  );
+  fs.writeFileSync(tempPath, content, "utf-8");
+  fs.renameSync(tempPath, absolutePath);
+}
+
+function collectPatchTargetPaths(patch: string): string[] {
+  const touched = new Set<string>();
+  const lines = patch.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.startsWith("+++ ") && !line.startsWith("--- ")) {
+      continue;
+    }
+    const raw = line.slice(4).trim();
+    if (!raw || raw === "/dev/null") {
+      continue;
+    }
+    const normalized = raw.replace(/^[ab]\//, "").replace(/^\.\//, "");
+    if (!normalized) {
+      continue;
+    }
+    touched.add(normalized.replace(/\\/g, "/"));
+  }
+  return [...touched];
 }
 
 export function listBuilderFiles(subdir = "."): BuilderFileInfo[] {
@@ -132,14 +200,130 @@ export function readBuilderFile(relativePath: string): string {
 }
 
 export function writeBuilderFile(relativePath: string, content: string): void {
+  assertBuilderMutationPathAllowed(relativePath);
   const absolutePath = safeBuilderPath(relativePath);
-  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-  fs.writeFileSync(absolutePath, content, "utf-8");
+  writeFileAtomic(absolutePath, content);
 }
 
 export function createBuilderDirectory(relativePath: string): void {
+  assertBuilderMutationPathAllowed(relativePath);
   const absolutePath = safeBuilderPath(relativePath);
   fs.mkdirSync(absolutePath, { recursive: true });
+}
+
+export function ensureBuilderDirectory(relativePath: string): void {
+  createBuilderDirectory(relativePath);
+}
+
+export function appendBuilderFile(relativePath: string, content: string): void {
+  assertBuilderMutationPathAllowed(relativePath);
+  const absolutePath = safeBuilderPath(relativePath);
+  const existing = fs.existsSync(absolutePath) ? fs.readFileSync(absolutePath, "utf-8") : "";
+  writeFileAtomic(absolutePath, `${existing}${content}`);
+}
+
+export function deleteBuilderPath(relativePath: string): void {
+  assertBuilderMutationPathAllowed(relativePath);
+  const absolutePath = safeBuilderPath(relativePath);
+  if (!fs.existsSync(absolutePath)) {
+    return;
+  }
+  fs.rmSync(absolutePath, { recursive: true, force: true });
+}
+
+export function moveBuilderPath(fromRelativePath: string, toRelativePath: string): void {
+  assertBuilderMutationPathAllowed(fromRelativePath);
+  assertBuilderMutationPathAllowed(toRelativePath);
+  const fromAbsolutePath = safeBuilderPath(fromRelativePath);
+  const toAbsolutePath = safeBuilderPath(toRelativePath);
+  if (!fs.existsSync(fromAbsolutePath)) {
+    throw new Error(`Path not found: ${fromRelativePath}`);
+  }
+  fs.mkdirSync(path.dirname(toAbsolutePath), { recursive: true });
+  fs.renameSync(fromAbsolutePath, toAbsolutePath);
+}
+
+export function builderPathExists(relativePath: string): boolean {
+  const absolutePath = safeBuilderPath(relativePath);
+  return fs.existsSync(absolutePath);
+}
+
+export function statBuilderPath(relativePath: string): BuilderPathStat {
+  const absolutePath = safeBuilderPath(relativePath);
+  const workspaceRoot = assertBuilderWorkspaceSafe();
+  if (!fs.existsSync(absolutePath)) {
+    return {
+      path: relativePath.replace(/\\/g, "/"),
+      name: path.posix.basename(relativePath.replace(/\\/g, "/")) || ".",
+      exists: false,
+      type: "missing",
+      size: null,
+      modifiedAt: null,
+    };
+  }
+
+  const stat = fs.statSync(absolutePath);
+  return {
+    path: toWorkspaceRelativePath(workspaceRoot, absolutePath),
+    name: path.basename(absolutePath),
+    exists: true,
+    type: stat.isDirectory() ? "directory" : "file",
+    size: stat.isDirectory() ? null : stat.size,
+    modifiedAt: stat.mtime.toISOString(),
+  };
+}
+
+export async function applyBuilderPatch(patch: string, cwd = "."): Promise<BuilderPatchResult> {
+  const touchedPaths = collectPatchTargetPaths(patch);
+  if (touchedPaths.length === 0) {
+    throw new Error("Builder patch does not reference any target files.");
+  }
+
+  for (const targetPath of touchedPaths) {
+    assertBuilderMutationPathAllowed(targetPath);
+    safeBuilderPath(targetPath);
+  }
+
+  const patchCwd = safeBuilderPath(cwd);
+  const patchFilePath = path.join(os.tmpdir(), `bizbot-builder-patch-${process.pid}-${Date.now()}.diff`);
+  fs.writeFileSync(patchFilePath, patch, "utf-8");
+
+  try {
+    const result = await runBuilderCliCommand("git", [
+      "apply",
+      "--check",
+      "--unsafe-paths",
+      patchFilePath,
+    ], {
+      cwd,
+      timeoutSeconds: 30,
+    });
+    if (!result.ok) {
+      throw new Error(result.stderr.trim() || result.stdout.trim() || "Builder patch validation failed.");
+    }
+
+    const applyResult = await runBuilderCliCommand("git", [
+      "apply",
+      "--unsafe-paths",
+      patchFilePath,
+    ], {
+      cwd,
+      timeoutSeconds: 30,
+    });
+    if (!applyResult.ok) {
+      throw new Error(applyResult.stderr.trim() || applyResult.stdout.trim() || "Builder patch apply failed.");
+    }
+
+    return {
+      applied: true,
+      cwd: toWorkspaceRelativePath(assertBuilderWorkspaceSafe(), patchCwd),
+      touchedPaths,
+    };
+  } finally {
+    if (fs.existsSync(patchFilePath)) {
+      fs.rmSync(patchFilePath, { force: true });
+    }
+  }
 }
 
 export function listBuilderScaffoldBlockingEntries(relativePath: string): string[] {
@@ -170,7 +354,29 @@ function normalizeCommandName(command: string): string {
   return path.basename(command).toLowerCase().replace(/\.(exe|cmd|bat|ps1)$/i, "");
 }
 
-function assertCommandAllowed(command: string): void {
+function resolveBuilderExecutable(command: string): string {
+  if (path.isAbsolute(command)) {
+    return command;
+  }
+
+  const locator = process.platform === "win32" ? "where.exe" : "which";
+  const lookup = spawnSync(locator, [command], {
+    encoding: "utf-8",
+    windowsHide: true,
+  });
+  if (lookup.status !== 0) {
+    return command;
+  }
+
+  const match = (lookup.stdout ?? "")
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.length > 0);
+
+  return match ?? command;
+}
+
+export function assertBuilderCommandAllowed(command: string): void {
   const allowedCommands = getBuilderAllowedCommands();
   if (allowedCommands.length === 0) {
     throw new Error("No builder commands are allowed. Configure BIZBOT_BUILDER_ALLOWED_COMMANDS.");
@@ -223,8 +429,45 @@ export async function runBuilderCommand(
   args: string[] = [],
   options: BuilderCommandOptions = {},
 ): Promise<BuilderCommandResult> {
-  assertCommandAllowed(command);
+  assertBuilderCommandAllowed(command);
   return runBuilderCliCommand(command, args, options);
+}
+
+export function resolveBuilderCommandExecution(
+  command: string,
+  args: string[] = [],
+  options: BuilderCommandOptions = {},
+): BuilderResolvedCommandExecution {
+  if (path.isAbsolute(command) && pathsOverlap(command, getBuilderRepositoryRoot())) {
+    throw new Error("Builder command path references the BizBot repository.");
+  }
+
+  const workspaceRoot = assertBuilderWorkspaceSafe();
+  const cwdAbsolute = safeBuilderPath(options.cwd ?? ".");
+  assertCommandArgsSafe(args, cwdAbsolute);
+
+  const timeoutSeconds = Math.min(
+    MAX_COMMAND_TIMEOUT_SECONDS,
+    Math.max(1, Math.trunc(options.timeoutSeconds ?? DEFAULT_COMMAND_TIMEOUT_SECONDS)),
+  );
+  const resolvedCommand = resolveBuilderExecutable(command);
+  if (path.isAbsolute(resolvedCommand) && pathsOverlap(resolvedCommand, getBuilderRepositoryRoot())) {
+    throw new Error("Builder command path references the BizBot repository.");
+  }
+
+  return {
+    workspaceRoot,
+    cwdAbsolute,
+    cwd: toWorkspaceRelativePath(workspaceRoot, cwdAbsolute),
+    command,
+    resolvedCommand,
+    args,
+    timeoutSeconds,
+    env: {
+      ...process.env,
+      ...(options.env ?? {}),
+    },
+  };
 }
 
 export async function runBuilderCliCommand(
@@ -232,31 +475,16 @@ export async function runBuilderCliCommand(
   args: string[] = [],
   options: BuilderCommandOptions = {},
 ): Promise<BuilderCommandResult> {
-  if (path.isAbsolute(command) && pathsOverlap(command, getBuilderRepositoryRoot())) {
-    throw new Error("Builder command path references the BizBot repository.");
-  }
-
-  const workspaceRoot = assertBuilderWorkspaceSafe();
-  const cwd = safeBuilderPath(options.cwd ?? ".");
-  assertCommandArgsSafe(args, cwd);
-
-  const timeoutSeconds = Math.min(
-    MAX_COMMAND_TIMEOUT_SECONDS,
-    Math.max(1, Math.trunc(options.timeoutSeconds ?? DEFAULT_COMMAND_TIMEOUT_SECONDS)),
-  );
-  const useShell = process.platform === "win32" && !path.isAbsolute(command);
+  const execution = resolveBuilderCommandExecution(command, args, options);
 
   return new Promise<BuilderCommandResult>((resolve, reject) => {
     const child = spawn(
-      command,
-      args,
+      execution.resolvedCommand,
+      execution.args,
       {
-      cwd,
-      env: {
-        ...process.env,
-        ...(options.env ?? {}),
-      },
-      shell: useShell,
+      cwd: execution.cwdAbsolute,
+      env: execution.env,
+      shell: false,
       stdio: ["ignore", "pipe", "pipe"],
       },
     );
@@ -292,7 +520,7 @@ export async function runBuilderCliCommand(
     const timeout = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
-    }, timeoutSeconds * 1000);
+    }, execution.timeoutSeconds * 1000);
 
     child.stdout.on("data", (chunk) => {
       const text = String(chunk);
@@ -318,8 +546,8 @@ export async function runBuilderCliCommand(
       finalize({
         ok: exitCode === 0 && !timedOut && !cancelled,
         command,
-        args,
-        cwd: toWorkspaceRelativePath(workspaceRoot, cwd),
+        args: execution.args,
+        cwd: execution.cwd,
         exitCode,
         signal,
         stdout,

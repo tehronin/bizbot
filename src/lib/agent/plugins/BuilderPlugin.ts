@@ -5,14 +5,38 @@ import { loadBuilderProjectContext, syncBuilderProjectProjection } from "@/lib/b
 import { createBuilderProject, deleteBuilderProject, getBuilderProject, getBuilderRun, listBuilderProjects, listBuilderRuns, updateBuilderProject } from "@/lib/builder/projects";
 import { listBuilderTasks } from "@/lib/builder/tasks";
 import {
+  appendBuilderFile,
+  applyBuilderPatch,
+  builderPathExists,
   createBuilderDirectory,
+  deleteBuilderPath,
+  ensureBuilderDirectory,
   getBuilderWorkspaceStatus,
   listBuilderFiles,
+  moveBuilderPath,
   readBuilderFile,
   runBuilderCommand,
   scaffoldBuilderNodePackage,
+  statBuilderPath,
   writeBuilderFile,
 } from "@/lib/builder/workspace";
+import {
+  getBuilderManagedProcess,
+  listBuilderManagedProcesses,
+  startBuilderManagedProcess,
+  stopBuilderManagedProcess,
+  streamBuilderManagedProcessLogs,
+  waitForBuilderManagedProcess,
+} from "@/lib/builder/process-registry";
+import {
+  commitBuilderRepo,
+  createBuilderRepoBranch,
+  getBuilderRepoDiff,
+  getBuilderRepoStatus,
+  stageBuilderRepoPaths,
+  switchBuilderRepoBranch,
+  unstageBuilderRepoPaths,
+} from "@/lib/builder/vcs";
 import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
 import type { runBuilderProjectBootstrap } from "@/lib/builder/bootstrap";
 import type { recordBuilderProjectCommand } from "@/lib/builder/commands";
@@ -47,14 +71,70 @@ interface BuilderWriteArgs {
   content: string;
 }
 
+interface BuilderAppendArgs {
+  path: string;
+  content: string;
+}
+
+interface BuilderDeletePathArgs {
+  path: string;
+}
+
+interface BuilderMovePathArgs {
+  fromPath: string;
+  toPath: string;
+}
+
 interface BuilderCreateDirectoryArgs {
   path: string;
+}
+
+interface BuilderPathArgs {
+  path: string;
+}
+
+interface BuilderPatchArgs {
+  patch: string;
+  cwd?: string;
 }
 
 interface BuilderRunCommandArgs {
   command: string;
   args?: string[];
   cwd?: string;
+  timeoutSeconds?: number;
+}
+
+interface BuilderStartProcessArgs {
+  command: string;
+  args?: string[];
+  cwd?: string;
+  timeoutSeconds?: number;
+}
+
+interface BuilderProcessArgs {
+  processId: string;
+}
+
+interface BuilderListProcessesArgs {
+  statuses?: Array<"running" | "exited" | "failed" | "cancelled" | "timed_out">;
+  includeFinished?: boolean;
+  commandContains?: string;
+  cwdPrefix?: string;
+  startedAfter?: string;
+  startedBefore?: string;
+  limit?: number;
+}
+
+interface BuilderProcessLogArgs extends BuilderProcessArgs {
+  cursor?: number;
+  maxChars?: number;
+  maxBytes?: number;
+  tailBytes?: number;
+  followSeconds?: number;
+}
+
+interface BuilderWaitProcessArgs extends BuilderProcessArgs {
   timeoutSeconds?: number;
 }
 
@@ -116,6 +196,29 @@ interface BuilderRunAgenticTaskArgs {
 
 interface BuilderRunArgs {
   runId: string;
+}
+
+interface BuilderRepoArgs {
+  subdir?: string;
+}
+
+interface BuilderRepoDiffArgs extends BuilderRepoArgs {
+  staged?: boolean;
+  paths?: string[];
+}
+
+interface BuilderRepoPathsArgs extends BuilderRepoArgs {
+  paths: string[];
+}
+
+interface BuilderRepoCommitArgs extends BuilderRepoArgs {
+  message: string;
+  allowEmpty?: boolean;
+}
+
+interface BuilderRepoBranchArgs extends BuilderRepoArgs {
+  name: string;
+  checkout?: boolean;
 }
 
 interface BuilderContinueTaskArgs {
@@ -497,6 +600,53 @@ export const builderPlugin = {
       },
     } satisfies ToolDefinition<BuilderWriteArgs, { written: boolean; path: string }>)),
     registerTool(defineTool({
+      name: "builder_append_file",
+      description: "Append text to a file inside the external Builder Mode workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          content: { type: "string" },
+        },
+        required: ["path", "content"],
+      },
+      execute: async ({ path, content }: BuilderAppendArgs) => {
+        appendBuilderFile(path, content);
+        return { appended: true, path };
+      },
+    } satisfies ToolDefinition<BuilderAppendArgs, { appended: boolean; path: string }>)),
+    registerTool(defineTool({
+      name: "builder_delete_path",
+      description: "Delete a file or directory inside the external Builder Mode workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+        },
+        required: ["path"],
+      },
+      execute: async ({ path }: BuilderDeletePathArgs) => {
+        deleteBuilderPath(path);
+        return { deleted: true, path };
+      },
+    } satisfies ToolDefinition<BuilderDeletePathArgs, { deleted: boolean; path: string }>)),
+    registerTool(defineTool({
+      name: "builder_move_path",
+      description: "Move or rename a file or directory inside the external Builder Mode workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          fromPath: { type: "string" },
+          toPath: { type: "string" },
+        },
+        required: ["fromPath", "toPath"],
+      },
+      execute: async ({ fromPath, toPath }: BuilderMovePathArgs) => {
+        moveBuilderPath(fromPath, toPath);
+        return { moved: true, fromPath, toPath };
+      },
+    } satisfies ToolDefinition<BuilderMovePathArgs, { moved: boolean; fromPath: string; toPath: string }>)),
+    registerTool(defineTool({
       name: "builder_create_directory",
       description: "Create a directory inside the external Builder Mode workspace.",
       parameters: {
@@ -511,6 +661,58 @@ export const builderPlugin = {
         return { created: true, path };
       },
     } satisfies ToolDefinition<BuilderCreateDirectoryArgs, { created: boolean; path: string }>)),
+    registerTool(defineTool({
+      name: "builder_ensure_directory",
+      description: "Ensure a directory exists inside the external Builder Mode workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+        },
+        required: ["path"],
+      },
+      execute: async ({ path }: BuilderCreateDirectoryArgs) => {
+        ensureBuilderDirectory(path);
+        return { ensured: true, path };
+      },
+    } satisfies ToolDefinition<BuilderCreateDirectoryArgs, { ensured: boolean; path: string }>)),
+    registerTool(defineTool({
+      name: "builder_stat_path",
+      description: "Inspect whether a path exists in the external Builder Mode workspace and return its metadata.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+        },
+        required: ["path"],
+      },
+      execute: async ({ path }: BuilderPathArgs) => statBuilderPath(path),
+    } satisfies ToolDefinition<BuilderPathArgs, ReturnType<typeof statBuilderPath>>)),
+    registerTool(defineTool({
+      name: "builder_path_exists",
+      description: "Check whether a path exists in the external Builder Mode workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+        },
+        required: ["path"],
+      },
+      execute: async ({ path }: BuilderPathArgs) => ({ exists: builderPathExists(path), path }),
+    } satisfies ToolDefinition<BuilderPathArgs, { exists: boolean; path: string }>)),
+    registerTool(defineTool({
+      name: "builder_apply_patch",
+      description: "Apply a unified diff patch inside the external Builder Mode workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          patch: { type: "string" },
+          cwd: { type: "string" },
+        },
+        required: ["patch"],
+      },
+      execute: async ({ patch, cwd }: BuilderPatchArgs) => applyBuilderPatch(patch, cwd),
+    } satisfies ToolDefinition<BuilderPatchArgs, Awaited<ReturnType<typeof applyBuilderPatch>>>)),
     registerTool(defineTool({
       name: "builder_scaffold_node_package",
       description: "Scaffold a minimal TypeScript Node package inside the external Builder Mode workspace.",
@@ -544,5 +746,182 @@ export const builderPlugin = {
       },
       execute: async ({ command, args, cwd, timeoutSeconds }: BuilderRunCommandArgs) => runBuilderCommand(command, args ?? [], { cwd, timeoutSeconds }),
     } satisfies ToolDefinition<BuilderRunCommandArgs, Awaited<ReturnType<typeof runBuilderCommand>>>)),
+    registerTool(defineTool({
+      name: "builder_start_process",
+      description: "Start a managed long-running process inside the external Builder Mode workspace with bounded logs and timeout control.",
+      parameters: {
+        type: "object",
+        properties: {
+          command: { type: "string" },
+          args: { type: "array", items: { type: "string" } },
+          cwd: { type: "string" },
+          timeoutSeconds: { type: "number", default: 1800 },
+        },
+        required: ["command"],
+      },
+      execute: async ({ command, args, cwd, timeoutSeconds }: BuilderStartProcessArgs) => startBuilderManagedProcess({ command, args, cwd, timeoutSeconds }),
+    } satisfies ToolDefinition<BuilderStartProcessArgs, ReturnType<typeof startBuilderManagedProcess>>)),
+    registerTool(defineTool({
+      name: "builder_get_process",
+      description: "Inspect the current state of a managed Builder process.",
+      parameters: {
+        type: "object",
+        properties: {
+          processId: { type: "string" },
+        },
+        required: ["processId"],
+      },
+      execute: async ({ processId }: BuilderProcessArgs) => getBuilderManagedProcess(processId),
+    } satisfies ToolDefinition<BuilderProcessArgs, ReturnType<typeof getBuilderManagedProcess>>)),
+    registerTool(defineTool({
+      name: "builder_list_processes",
+      description: "List managed Builder processes with optional lifecycle and metadata filters.",
+      parameters: {
+        type: "object",
+        properties: {
+          statuses: { type: "array", items: { type: "string", enum: ["running", "exited", "failed", "cancelled", "timed_out"] } },
+          includeFinished: { type: "boolean" },
+          commandContains: { type: "string" },
+          cwdPrefix: { type: "string" },
+          startedAfter: { type: "string" },
+          startedBefore: { type: "string" },
+          limit: { type: "number", default: 25 },
+        },
+      },
+      execute: async ({ statuses, includeFinished, commandContains, cwdPrefix, startedAfter, startedBefore, limit }: BuilderListProcessesArgs) => listBuilderManagedProcesses({ statuses, includeFinished, commandContains, cwdPrefix, startedAfter, startedBefore, limit }),
+    } satisfies ToolDefinition<BuilderListProcessesArgs, ReturnType<typeof listBuilderManagedProcesses>>)),
+    registerTool(defineTool({
+      name: "builder_stream_process_logs",
+      description: "Read buffered logs from a managed Builder process using a resumable cursor.",
+      parameters: {
+        type: "object",
+        properties: {
+          processId: { type: "string" },
+          cursor: { type: "number" },
+          maxChars: { type: "number" },
+          maxBytes: { type: "number" },
+          tailBytes: { type: "number" },
+          followSeconds: { type: "number", default: 0 },
+        },
+        required: ["processId"],
+      },
+      execute: async ({ processId, cursor, maxChars, maxBytes, tailBytes, followSeconds }: BuilderProcessLogArgs) => await streamBuilderManagedProcessLogs({ processId, cursor, maxChars, maxBytes, tailBytes, followSeconds }),
+    } satisfies ToolDefinition<BuilderProcessLogArgs, Awaited<ReturnType<typeof streamBuilderManagedProcessLogs>>>)),
+    registerTool(defineTool({
+      name: "builder_stop_process",
+      description: "Stop a managed Builder process using a terminate-first strategy.",
+      parameters: {
+        type: "object",
+        properties: {
+          processId: { type: "string" },
+        },
+        required: ["processId"],
+      },
+      execute: async ({ processId }: BuilderProcessArgs) => stopBuilderManagedProcess(processId),
+    } satisfies ToolDefinition<BuilderProcessArgs, ReturnType<typeof stopBuilderManagedProcess>>)),
+    registerTool(defineTool({
+      name: "builder_wait_for_process",
+      description: "Wait for a managed Builder process to complete without blocking indefinitely.",
+      parameters: {
+        type: "object",
+        properties: {
+          processId: { type: "string" },
+          timeoutSeconds: { type: "number", default: 60 },
+        },
+        required: ["processId"],
+      },
+      execute: async ({ processId, timeoutSeconds }: BuilderWaitProcessArgs) => waitForBuilderManagedProcess({ processId, timeoutSeconds }),
+    } satisfies ToolDefinition<BuilderWaitProcessArgs, Awaited<ReturnType<typeof waitForBuilderManagedProcess>>>)),
+    registerTool(defineTool({
+      name: "builder_repo_status",
+      description: "Inspect git status for a Builder-managed repository inside the external Builder workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+        },
+      },
+      execute: async ({ subdir }: BuilderRepoArgs) => getBuilderRepoStatus(subdir),
+    } satisfies ToolDefinition<BuilderRepoArgs, ReturnType<typeof getBuilderRepoStatus>>)),
+    registerTool(defineTool({
+      name: "builder_diff",
+      description: "Return a staged or unstaged git diff for a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          staged: { type: "boolean", default: false },
+          paths: { type: "array", items: { type: "string" } },
+        },
+      },
+      execute: async ({ subdir, staged, paths }: BuilderRepoDiffArgs) => getBuilderRepoDiff({ subdir, staged, paths }),
+    } satisfies ToolDefinition<BuilderRepoDiffArgs, ReturnType<typeof getBuilderRepoDiff>>)),
+    registerTool(defineTool({
+      name: "builder_stage_paths",
+      description: "Stage one or more paths in a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          paths: { type: "array", items: { type: "string" } },
+        },
+        required: ["paths"],
+      },
+      execute: async ({ subdir, paths }: BuilderRepoPathsArgs) => stageBuilderRepoPaths(paths, subdir),
+    } satisfies ToolDefinition<BuilderRepoPathsArgs, ReturnType<typeof stageBuilderRepoPaths>>)),
+    registerTool(defineTool({
+      name: "builder_unstage_paths",
+      description: "Unstage one or more paths in a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          paths: { type: "array", items: { type: "string" } },
+        },
+        required: ["paths"],
+      },
+      execute: async ({ subdir, paths }: BuilderRepoPathsArgs) => unstageBuilderRepoPaths(paths, subdir),
+    } satisfies ToolDefinition<BuilderRepoPathsArgs, ReturnType<typeof unstageBuilderRepoPaths>>)),
+    registerTool(defineTool({
+      name: "builder_commit",
+      description: "Create a git commit in a Builder-managed repository with an explicit message.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          message: { type: "string" },
+          allowEmpty: { type: "boolean", default: false },
+        },
+        required: ["message"],
+      },
+      execute: async ({ subdir, message, allowEmpty }: BuilderRepoCommitArgs) => commitBuilderRepo({ subdir, message, allowEmpty }),
+    } satisfies ToolDefinition<BuilderRepoCommitArgs, ReturnType<typeof commitBuilderRepo>>)),
+    registerTool(defineTool({
+      name: "builder_create_branch",
+      description: "Create a branch in a Builder-managed repository and optionally check it out immediately.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          name: { type: "string" },
+          checkout: { type: "boolean", default: false },
+        },
+        required: ["name"],
+      },
+      execute: async ({ subdir, name, checkout }: BuilderRepoBranchArgs) => createBuilderRepoBranch({ subdir, name, checkout }),
+    } satisfies ToolDefinition<BuilderRepoBranchArgs, ReturnType<typeof createBuilderRepoBranch>>)),
+    registerTool(defineTool({
+      name: "builder_switch_branch",
+      description: "Switch branches in a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          name: { type: "string" },
+        },
+        required: ["name"],
+      },
+      execute: async ({ subdir, name }: BuilderRepoBranchArgs) => switchBuilderRepoBranch({ subdir, name }),
+    } satisfies ToolDefinition<BuilderRepoBranchArgs, ReturnType<typeof switchBuilderRepoBranch>>)),
   ],
 };
