@@ -3,6 +3,8 @@ import path from "path";
 import { spawn } from "child_process";
 import { randomUUID } from "crypto";
 import { getBuilderConfig, resolveBuilderWorkspacePath } from "@/lib/builder/config";
+import { getBuilderProject, getBuilderRun } from "@/lib/builder/projects";
+import { getBuilderTask } from "@/lib/builder/tasks";
 import { assertBuilderCommandAllowed, resolveBuilderCommandExecution } from "@/lib/builder/workspace";
 
 const DEFAULT_PROCESS_TIMEOUT_SECONDS = 1800;
@@ -19,14 +21,33 @@ const PROCESS_STOP_GRACE_MS = 5000;
 const PROCESS_POLL_INTERVAL_MS = 250;
 const PROCESS_ARTIFACTS_DIR = ".builder/processes";
 const MANAGED_PROCESS_MONITOR_PAYLOAD_ENV = "BIZBOT_BUILDER_MANAGED_PROCESS_PAYLOAD";
+const PROCESS_RETENTION_MAX_COMPLETED = 100;
+const PROCESS_RETENTION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type BuilderManagedProcessStatus = "running" | "exited" | "failed" | "cancelled" | "timed_out";
+
+export type BuilderManagedProcessAuditAction = "started" | "stop_requested" | "completed";
+
+export interface BuilderManagedProcessAuditEvent {
+  eventId: string;
+  processId: string;
+  action: BuilderManagedProcessAuditAction;
+  timestamp: string;
+  status: BuilderManagedProcessStatus | "running";
+  projectId: string | null;
+  taskId: string | null;
+  runId: string | null;
+  metadata?: Record<string, unknown>;
+}
 
 export interface BuilderManagedProcessSnapshot {
   processId: string;
   command: string;
   args: string[];
   cwd: string;
+  projectId: string | null;
+  taskId: string | null;
+  runId: string | null;
   pid: number | null;
   monitorPid: number | null;
   status: BuilderManagedProcessStatus;
@@ -45,6 +66,7 @@ export interface BuilderManagedProcessSnapshot {
   nextCursor: number;
   metadataPath: string;
   logPath: string;
+  auditPath: string;
 }
 
 export interface BuilderManagedProcessStartArgs {
@@ -52,6 +74,9 @@ export interface BuilderManagedProcessStartArgs {
   args?: string[];
   cwd?: string;
   timeoutSeconds?: number;
+  projectId?: string;
+  taskId?: string;
+  runId?: string;
 }
 
 export interface BuilderManagedProcessListArgs {
@@ -61,6 +86,9 @@ export interface BuilderManagedProcessListArgs {
   cwdPrefix?: string;
   startedAfter?: string;
   startedBefore?: string;
+  projectId?: string;
+  taskId?: string;
+  runId?: string;
   limit?: number;
 }
 
@@ -70,6 +98,8 @@ interface BuilderManagedProcessArtifacts {
   metadataPath: string;
   logAbsolutePath: string;
   logPath: string;
+  auditAbsolutePath: string;
+  auditPath: string;
 }
 
 interface BuilderManagedProcessMonitorPayload {
@@ -78,6 +108,9 @@ interface BuilderManagedProcessMonitorPayload {
   args: string[];
   cwd: string;
   cwdAbsolute: string;
+  projectId: string | null;
+  taskId: string | null;
+  runId: string | null;
   resolvedCommand: string;
   env: NodeJS.ProcessEnv;
   timeoutSeconds: number;
@@ -85,6 +118,13 @@ interface BuilderManagedProcessMonitorPayload {
   maxLogBytes: number;
   metadataPath: string;
   logPath: string;
+  auditPath: string;
+}
+
+interface BuilderManagedProcessScope {
+  projectId: string | null;
+  taskId: string | null;
+  runId: string | null;
 }
 
 const MANAGED_PROCESS_MONITOR_SOURCE = [
@@ -103,6 +143,20 @@ const MANAGED_PROCESS_MONITOR_SOURCE = [
   "  const tempPath = `${payload.metadataPath}.tmp-${process.pid}-${Date.now()}`;",
   "  fs.writeFileSync(tempPath, JSON.stringify(next, null, 2), 'utf8');",
   "  fs.renameSync(tempPath, payload.metadataPath);",
+  "}",
+  "function appendAudit(action, status, metadata) {",
+  "  const event = {",
+  "    eventId: `${payload.processId}:${action}:${Date.now()}:${Math.random().toString(36).slice(2)}` ,",
+  "    processId: payload.processId,",
+  "    action,",
+  "    timestamp: new Date().toISOString(),",
+  "    status,",
+  "    projectId: payload.projectId || null,",
+  "    taskId: payload.taskId || null,",
+  "    runId: payload.runId || null,",
+  "    metadata: metadata && typeof metadata === 'object' ? metadata : undefined,",
+  "  };",
+  "  fs.appendFileSync(payload.auditPath, JSON.stringify(event) + '\\n', 'utf8');",
   "}",
   "function trimLog(state) {",
   "  const size = fs.existsSync(payload.logPath) ? fs.statSync(payload.logPath).size : 0;",
@@ -198,6 +252,7 @@ const MANAGED_PROCESS_MONITOR_SOURCE = [
   "  state.exitedAt = new Date().toISOString();",
   "  state.status = state.timedOut ? 'timed_out' : state.cancelled ? 'cancelled' : state.exitCode === 0 ? 'exited' : 'failed';",
   "  persist(state);",
+  "  appendAudit('completed', state.status, { exitCode: state.exitCode, signal: state.signal, timedOut: state.timedOut, cancelled: state.cancelled });",
   "  process.exit(0);",
   "}",
   "child.stdout.on('data', (chunk) => appendChunk(state, Buffer.from(chunk), 'stdout'));",
@@ -243,6 +298,7 @@ function getProcessArtifacts(processId: string): BuilderManagedProcessArtifacts 
   const root = ensureProcessArtifactsRoot();
   const metadataAbsolutePath = path.join(root, `${processId}.json`);
   const logAbsolutePath = path.join(root, `${processId}.log`);
+  const auditAbsolutePath = path.join(root, `${processId}.audit.jsonl`);
   const workspaceRoot = getBuilderConfig().workspaceRoot;
 
   return {
@@ -251,7 +307,103 @@ function getProcessArtifacts(processId: string): BuilderManagedProcessArtifacts 
     metadataPath: toWorkspaceRelativePath(workspaceRoot, metadataAbsolutePath),
     logAbsolutePath,
     logPath: toWorkspaceRelativePath(workspaceRoot, logAbsolutePath),
+    auditAbsolutePath,
+    auditPath: toWorkspaceRelativePath(workspaceRoot, auditAbsolutePath),
   };
+}
+
+function appendManagedProcessAuditEvent(absolutePath: string, event: BuilderManagedProcessAuditEvent): void {
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  fs.appendFileSync(absolutePath, `${JSON.stringify(event)}\n`, "utf-8");
+}
+
+function buildManagedProcessAuditEvent(
+  snapshot: Pick<BuilderManagedProcessSnapshot, "processId" | "projectId" | "taskId" | "runId">,
+  action: BuilderManagedProcessAuditAction,
+  status: BuilderManagedProcessStatus | "running",
+  metadata?: Record<string, unknown>,
+): BuilderManagedProcessAuditEvent {
+  return {
+    eventId: `${snapshot.processId}:${action}:${Date.now()}:${randomUUID()}`,
+    processId: snapshot.processId,
+    action,
+    timestamp: new Date().toISOString(),
+    status,
+    projectId: snapshot.projectId,
+    taskId: snapshot.taskId,
+    runId: snapshot.runId,
+    ...(metadata ? { metadata } : {}),
+  };
+}
+
+function getSnapshotTerminalTimestamp(snapshot: BuilderManagedProcessSnapshot): number {
+  const reference = snapshot.exitedAt ?? snapshot.updatedAt ?? snapshot.startedAt;
+  const value = Date.parse(reference);
+  return Number.isFinite(value) ? value : 0;
+}
+
+export function cleanupBuilderManagedProcesses(): { deletedCount: number; deletedProcessIds: string[] } {
+  const now = Date.now();
+  const completed = listProcessMetadataFiles()
+    .map((filePath) => readManagedProcess(path.basename(filePath, ".json")))
+    .filter((snapshot) => snapshot.status !== "running")
+    .sort((left, right) => getSnapshotTerminalTimestamp(right) - getSnapshotTerminalTimestamp(left));
+
+  const retained = new Set(
+    completed
+      .filter((snapshot, index) => index < PROCESS_RETENTION_MAX_COMPLETED && (now - getSnapshotTerminalTimestamp(snapshot)) <= PROCESS_RETENTION_MAX_AGE_MS)
+      .map((snapshot) => snapshot.processId),
+  );
+
+  const deletedProcessIds: string[] = [];
+  for (const snapshot of completed) {
+    if (retained.has(snapshot.processId)) {
+      continue;
+    }
+    const artifacts = getProcessArtifacts(snapshot.processId);
+    for (const artifactPath of [artifacts.metadataAbsolutePath, artifacts.logAbsolutePath, artifacts.auditAbsolutePath]) {
+      if (fs.existsSync(artifactPath)) {
+        fs.rmSync(artifactPath, { force: true });
+      }
+    }
+    deletedProcessIds.push(snapshot.processId);
+  }
+
+  return {
+    deletedCount: deletedProcessIds.length,
+    deletedProcessIds,
+  };
+}
+
+async function resolveManagedProcessScope(args: Pick<BuilderManagedProcessStartArgs, "projectId" | "taskId" | "runId">): Promise<BuilderManagedProcessScope> {
+  let projectId = typeof args.projectId === "string" && args.projectId.trim() ? args.projectId.trim() : null;
+  const taskId = typeof args.taskId === "string" && args.taskId.trim() ? args.taskId.trim() : null;
+  const runId = typeof args.runId === "string" && args.runId.trim() ? args.runId.trim() : null;
+
+  if (taskId) {
+    const task = await getBuilderTask(taskId);
+    if (projectId && task.projectId !== projectId) {
+      throw new Error(`Builder managed process task ${taskId} does not belong to project ${projectId}.`);
+    }
+    projectId = task.projectId;
+  }
+
+  if (runId) {
+    const run = await getBuilderRun(runId);
+    if (projectId && run.projectId !== projectId) {
+      throw new Error(`Builder managed process run ${runId} does not belong to project ${projectId}.`);
+    }
+    if (taskId && run.taskId !== taskId) {
+      throw new Error(`Builder managed process run ${runId} does not belong to task ${taskId}.`);
+    }
+    projectId = run.projectId;
+  }
+
+  if (projectId) {
+    await getBuilderProject(projectId);
+  }
+
+  return { projectId, taskId, runId };
 }
 
 function writeJsonAtomic(absolutePath: string, value: unknown): void {
@@ -281,6 +433,9 @@ function normalizeSnapshot(value: unknown, artifacts: BuilderManagedProcessArtif
     command: String(snapshot.command ?? ""),
     args: Array.isArray(snapshot.args) ? snapshot.args.map((entry) => String(entry)) : [],
     cwd: String(snapshot.cwd ?? "."),
+    projectId: typeof snapshot.projectId === "string" && snapshot.projectId.trim() ? snapshot.projectId.trim() : null,
+    taskId: typeof snapshot.taskId === "string" && snapshot.taskId.trim() ? snapshot.taskId.trim() : null,
+    runId: typeof snapshot.runId === "string" && snapshot.runId.trim() ? snapshot.runId.trim() : null,
     pid: typeof snapshot.pid === "number" ? snapshot.pid : null,
     monitorPid: typeof snapshot.monitorPid === "number" ? snapshot.monitorPid : null,
     status: snapshot.status === "exited" || snapshot.status === "failed" || snapshot.status === "cancelled" || snapshot.status === "timed_out"
@@ -301,6 +456,7 @@ function normalizeSnapshot(value: unknown, artifacts: BuilderManagedProcessArtif
     nextCursor: typeof snapshot.nextCursor === "number" ? snapshot.nextCursor : 0,
     metadataPath: artifacts.metadataPath,
     logPath: artifacts.logPath,
+    auditPath: artifacts.auditPath,
   };
 }
 
@@ -311,6 +467,7 @@ function persistSnapshot(snapshot: BuilderManagedProcessSnapshot): BuilderManage
     updatedAt: new Date().toISOString(),
     metadataPath: artifacts.metadataPath,
     logPath: artifacts.logPath,
+    auditPath: artifacts.auditPath,
   };
   writeJsonAtomic(artifacts.metadataAbsolutePath, nextSnapshot);
   return nextSnapshot;
@@ -401,6 +558,15 @@ function matchesProcessFilters(snapshot: BuilderManagedProcessSnapshot, filters:
   if (filters.startedBefore && snapshot.startedAt > filters.startedBefore) {
     return false;
   }
+  if (filters.projectId && snapshot.projectId !== filters.projectId) {
+    return false;
+  }
+  if (filters.taskId && snapshot.taskId !== filters.taskId) {
+    return false;
+  }
+  if (filters.runId && snapshot.runId !== filters.runId) {
+    return false;
+  }
   return true;
 }
 
@@ -432,9 +598,11 @@ function startMonitorProcess(payload: BuilderManagedProcessMonitorPayload): numb
   return monitor.pid ?? null;
 }
 
-export function startBuilderManagedProcess(args: BuilderManagedProcessStartArgs): { started: true; process: BuilderManagedProcessSnapshot } {
+export async function startBuilderManagedProcess(args: BuilderManagedProcessStartArgs): Promise<{ started: true; process: BuilderManagedProcessSnapshot }> {
+  cleanupBuilderManagedProcesses();
   assertBuilderCommandAllowed(args.command);
   const timeoutSeconds = clampProcessTimeoutSeconds(args.timeoutSeconds, DEFAULT_PROCESS_TIMEOUT_SECONDS);
+  const scope = await resolveManagedProcessScope(args);
   const execution = resolveBuilderCommandExecution(args.command, args.args ?? [], {
     cwd: args.cwd,
     timeoutSeconds,
@@ -444,12 +612,16 @@ export function startBuilderManagedProcess(args: BuilderManagedProcessStartArgs)
   const artifacts = getProcessArtifacts(processId);
   fs.mkdirSync(path.dirname(artifacts.metadataAbsolutePath), { recursive: true });
   fs.writeFileSync(artifacts.logAbsolutePath, "", "utf-8");
+  fs.writeFileSync(artifacts.auditAbsolutePath, "", "utf-8");
 
   const initialSnapshot = persistSnapshot({
     processId,
     command: args.command,
     args: [...execution.args],
     cwd: execution.cwd,
+    projectId: scope.projectId,
+    taskId: scope.taskId,
+    runId: scope.runId,
     pid: null,
     monitorPid: null,
     status: "running",
@@ -468,7 +640,18 @@ export function startBuilderManagedProcess(args: BuilderManagedProcessStartArgs)
     nextCursor: 0,
     metadataPath: artifacts.metadataPath,
     logPath: artifacts.logPath,
+    auditPath: artifacts.auditPath,
   });
+
+  appendManagedProcessAuditEvent(
+    artifacts.auditAbsolutePath,
+    buildManagedProcessAuditEvent(initialSnapshot, "started", "running", {
+      command: args.command,
+      args: execution.args,
+      cwd: execution.cwd,
+      timeoutSeconds,
+    }),
+  );
 
   const monitorPid = startMonitorProcess({
     processId,
@@ -476,6 +659,9 @@ export function startBuilderManagedProcess(args: BuilderManagedProcessStartArgs)
     args: execution.args,
     cwd: execution.cwd,
     cwdAbsolute: execution.cwdAbsolute,
+    projectId: scope.projectId,
+    taskId: scope.taskId,
+    runId: scope.runId,
     resolvedCommand: execution.resolvedCommand,
     env: execution.env,
     timeoutSeconds,
@@ -483,6 +669,7 @@ export function startBuilderManagedProcess(args: BuilderManagedProcessStartArgs)
     maxLogBytes: MAX_LOG_BUFFER_BYTES,
     metadataPath: artifacts.metadataAbsolutePath,
     logPath: artifacts.logAbsolutePath,
+    auditPath: artifacts.auditAbsolutePath,
   });
 
   return {
@@ -495,6 +682,7 @@ export function startBuilderManagedProcess(args: BuilderManagedProcessStartArgs)
 }
 
 export function getBuilderManagedProcess(processId: string): { process: BuilderManagedProcessSnapshot } {
+  cleanupBuilderManagedProcesses();
   return { process: readManagedProcess(processId) };
 }
 
@@ -503,6 +691,7 @@ export function listBuilderManagedProcesses(filters: BuilderManagedProcessListAr
   total: number;
   returned: number;
 } {
+  cleanupBuilderManagedProcesses();
   const snapshots = listProcessMetadataFiles()
     .map((filePath) => readManagedProcess(path.basename(filePath, ".json")))
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
@@ -606,6 +795,13 @@ export function stopBuilderManagedProcess(processId: string): { stopped: boolean
     ...snapshot,
     cancelled: true,
   });
+  appendManagedProcessAuditEvent(
+    getProcessArtifacts(processId).auditAbsolutePath,
+    buildManagedProcessAuditEvent(flagged, "stop_requested", flagged.status, {
+      pid: flagged.pid,
+      monitorPid: flagged.monitorPid,
+    }),
+  );
   sendTerminationSignal(flagged, "SIGTERM");
   setTimeout(() => {
     const latest = readManagedProcess(processId);

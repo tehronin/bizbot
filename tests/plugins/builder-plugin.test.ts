@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { builderPlugin } from "@/lib/agent/plugins/BuilderPlugin";
 import { executeTool, getAllToolDefinitions, getBuiltinPlugins } from "@/lib/agent/plugins";
 import { canProfileUseTool } from "@/lib/agent/profiles";
+import { cleanupBuilderManagedProcesses, listBuilderManagedProcesses } from "@/lib/builder/process-registry";
 
 function asObjectResult<T extends object>(value: unknown): T {
   return value as T;
@@ -32,6 +33,52 @@ function createTempBuilderRepo(): { workspaceRoot: string; repoPath: string } {
   execFileSync("git", ["add", "README.md"], { cwd: repoPath, stdio: "ignore" });
   execFileSync("git", ["commit", "-m", "seed"], { cwd: repoPath, stdio: "ignore" });
   return { workspaceRoot, repoPath };
+}
+
+function writeManagedProcessFixture(args: {
+  workspaceRoot: string;
+  processId: string;
+  status: "running" | "exited" | "failed" | "cancelled" | "timed_out";
+  startedAt: string;
+  updatedAt?: string;
+  exitedAt?: string | null;
+  projectId?: string | null;
+  taskId?: string | null;
+  runId?: string | null;
+}): void {
+  const processesRoot = path.join(args.workspaceRoot, ".builder", "processes");
+  fs.mkdirSync(processesRoot, { recursive: true });
+  const baseName = path.join(processesRoot, args.processId);
+  fs.writeFileSync(`${baseName}.log`, `${args.processId}-log\n`, "utf-8");
+  fs.writeFileSync(`${baseName}.audit.jsonl`, "", "utf-8");
+  fs.writeFileSync(`${baseName}.json`, JSON.stringify({
+    processId: args.processId,
+    command: "node",
+    args: ["-e", "console.log('fixture')"],
+    cwd: ".",
+    projectId: args.projectId ?? null,
+    taskId: args.taskId ?? null,
+    runId: args.runId ?? null,
+    pid: null,
+    monitorPid: null,
+    status: args.status,
+    startedAt: args.startedAt,
+    updatedAt: args.updatedAt ?? args.startedAt,
+    exitedAt: args.exitedAt ?? (args.status === "running" ? null : args.startedAt),
+    exitCode: args.status === "exited" ? 0 : args.status === "running" ? null : 1,
+    signal: null,
+    timedOut: args.status === "timed_out",
+    cancelled: args.status === "cancelled",
+    timeoutSeconds: 30,
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    logBytes: 0,
+    logStartCursor: 0,
+    nextCursor: 0,
+    metadataPath: `.builder/processes/${args.processId}.json`,
+    logPath: `.builder/processes/${args.processId}.log`,
+    auditPath: `.builder/processes/${args.processId}.audit.jsonl`,
+  }, null, 2), "utf-8");
 }
 
 afterEach(() => {
@@ -170,7 +217,7 @@ describe("builder plugin", () => {
     process.env.BIZBOT_BUILDER_WORKSPACE_PATH = createTempBuilderWorkspace();
     process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS = "node";
 
-    const started = asObjectResult<{ started: boolean; process: { processId: string; status: string; metadataPath: string; logPath: string } }>(await requireTool("builder_start_process").execute({
+    const started = asObjectResult<{ started: boolean; process: { processId: string; status: string; metadataPath: string; logPath: string; auditPath: string } }>(await requireTool("builder_start_process").execute({
       command: "node",
       args: ["-e", "let count = 0; const timer = setInterval(() => { console.log(`tick-${++count}`); if (count === 2) { clearInterval(timer); process.exit(0); } }, 50);"] ,
       timeoutSeconds: 30,
@@ -178,6 +225,7 @@ describe("builder plugin", () => {
     const workspaceRoot = process.env.BIZBOT_BUILDER_WORKSPACE_PATH!;
     expect(fs.existsSync(path.join(workspaceRoot, started.process.metadataPath))).toBe(true);
     expect(fs.existsSync(path.join(workspaceRoot, started.process.logPath))).toBe(true);
+    expect(fs.existsSync(path.join(workspaceRoot, started.process.auditPath))).toBe(true);
 
     const finished = asObjectResult<{ completed: boolean; timedOut: boolean; process: { processId: string; status: string; exitCode: number | null } }>(await requireTool("builder_wait_for_process").execute({
       processId: started.process.processId,
@@ -230,6 +278,9 @@ describe("builder plugin", () => {
     expect(logs.logs).toContain("tick-2");
     expect(logs.complete).toBe(true);
     expect(tailed.logs).toContain("tick-2");
+    const startedAudit = fs.readFileSync(path.join(workspaceRoot, started.process.auditPath), "utf-8");
+    expect(startedAudit).toContain('"action":"started"');
+    expect(startedAudit).toContain('"action":"completed"');
     expect(finishedState.process.status).toBe("exited");
     expect(listedRunning.processes.map((entry) => entry.processId)).toContain(stoppable.process.processId);
     expect(followed.followed).toBe(true);
@@ -239,6 +290,48 @@ describe("builder plugin", () => {
     expect(["running", "cancelled"]).toContain(stopped.process.status);
     expect(stoppedWait.completed).toBe(true);
     expect(stoppedWait.process.status).toBe("cancelled");
+    const stoppedAudit = fs.readFileSync(path.join(workspaceRoot, ".builder", "processes", `${stoppable.process.processId}.audit.jsonl`), "utf-8");
+    expect(stoppedAudit).toContain('"action":"stop_requested"');
+  });
+
+  it("filters scoped process metadata and prunes stale completed artifacts", () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const staleTimestamp = new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString();
+    const recentTimestamp = new Date().toISOString();
+    writeManagedProcessFixture({
+      workspaceRoot,
+      processId: "process-stale",
+      status: "exited",
+      startedAt: staleTimestamp,
+      updatedAt: staleTimestamp,
+      exitedAt: staleTimestamp,
+      projectId: "project-stale",
+    });
+    writeManagedProcessFixture({
+      workspaceRoot,
+      processId: "process-recent",
+      status: "exited",
+      startedAt: recentTimestamp,
+      updatedAt: recentTimestamp,
+      exitedAt: recentTimestamp,
+      projectId: "project-1",
+      taskId: "task-1",
+      runId: "run-1",
+    });
+
+    const cleanup = cleanupBuilderManagedProcesses();
+    const filtered = listBuilderManagedProcesses({
+      projectId: "project-1",
+      taskId: "task-1",
+      runId: "run-1",
+    });
+
+    expect(cleanup.deletedProcessIds).toContain("process-stale");
+    expect(fs.existsSync(path.join(workspaceRoot, ".builder", "processes", "process-stale.json"))).toBe(false);
+    expect(fs.existsSync(path.join(workspaceRoot, ".builder", "processes", "process-recent.json"))).toBe(true);
+    expect(filtered.processes.map((entry) => entry.processId)).toEqual(["process-recent"]);
   });
 
   it("enforces lane gating for builder tools and exposes them to the MCP lane", () => {

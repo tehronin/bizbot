@@ -110,6 +110,9 @@ interface BuilderStartProcessArgs {
   args?: string[];
   cwd?: string;
   timeoutSeconds?: number;
+  projectId?: string;
+  taskId?: string;
+  runId?: string;
 }
 
 interface BuilderProcessArgs {
@@ -123,6 +126,9 @@ interface BuilderListProcessesArgs {
   cwdPrefix?: string;
   startedAfter?: string;
   startedBefore?: string;
+  projectId?: string;
+  taskId?: string;
+  runId?: string;
   limit?: number;
 }
 
@@ -756,11 +762,14 @@ export const builderPlugin = {
           args: { type: "array", items: { type: "string" } },
           cwd: { type: "string" },
           timeoutSeconds: { type: "number", default: 1800 },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
         },
         required: ["command"],
       },
-      execute: async ({ command, args, cwd, timeoutSeconds }: BuilderStartProcessArgs) => startBuilderManagedProcess({ command, args, cwd, timeoutSeconds }),
-    } satisfies ToolDefinition<BuilderStartProcessArgs, ReturnType<typeof startBuilderManagedProcess>>)),
+      execute: async ({ command, args, cwd, timeoutSeconds, projectId, taskId, runId }: BuilderStartProcessArgs) => startBuilderManagedProcess({ command, args, cwd, timeoutSeconds, projectId, taskId, runId }),
+    } satisfies ToolDefinition<BuilderStartProcessArgs, Awaited<ReturnType<typeof startBuilderManagedProcess>>>)),
     registerTool(defineTool({
       name: "builder_get_process",
       description: "Inspect the current state of a managed Builder process.",
@@ -785,10 +794,13 @@ export const builderPlugin = {
           cwdPrefix: { type: "string" },
           startedAfter: { type: "string" },
           startedBefore: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
           limit: { type: "number", default: 25 },
         },
       },
-      execute: async ({ statuses, includeFinished, commandContains, cwdPrefix, startedAfter, startedBefore, limit }: BuilderListProcessesArgs) => listBuilderManagedProcesses({ statuses, includeFinished, commandContains, cwdPrefix, startedAfter, startedBefore, limit }),
+      execute: async ({ statuses, includeFinished, commandContains, cwdPrefix, startedAfter, startedBefore, projectId, taskId, runId, limit }: BuilderListProcessesArgs) => listBuilderManagedProcesses({ statuses, includeFinished, commandContains, cwdPrefix, startedAfter, startedBefore, projectId, taskId, runId, limit }),
     } satisfies ToolDefinition<BuilderListProcessesArgs, ReturnType<typeof listBuilderManagedProcesses>>)),
     registerTool(defineTool({
       name: "builder_stream_process_logs",

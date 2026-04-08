@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   launchBuilderProjectCommand: vi.fn(),
   recordBuilderGeneratorCommand: vi.fn(),
   cancelBuilderProjectRun: vi.fn(),
+  streamBuilderManagedProcessLogs: vi.fn(),
   count: vi.fn(),
 }));
 
@@ -78,6 +79,10 @@ vi.mock("@/lib/builder/command-cancel", () => ({
   cancelBuilderProjectRun: mocks.cancelBuilderProjectRun,
 }));
 
+vi.mock("@/lib/builder/process-registry", () => ({
+  streamBuilderManagedProcessLogs: mocks.streamBuilderManagedProcessLogs,
+}));
+
 vi.mock("@/lib/db", () => ({
   db: {
     builderProject: {
@@ -92,6 +97,7 @@ import { DELETE as deleteProject, GET as getProject, PATCH as patchProject } fro
 import { POST as postBootstrap } from "@/app/api/builder/projects/[id]/bootstrap/route";
 import { POST as postCommand } from "@/app/api/builder/projects/[id]/commands/route";
 import { POST as postPlan } from "@/app/api/builder/projects/[id]/plan/route";
+import { GET as getProcessStream } from "@/app/api/builder/processes/[processId]/stream/route";
 import { GET as getTasks, POST as postTask } from "@/app/api/builder/projects/[id]/tasks/route";
 import { POST as postCancelRun } from "@/app/api/builder/runs/[runId]/cancel/route";
 import { GET as getTaskHistory } from "@/app/api/builder/tasks/[taskId]/history/route";
@@ -169,6 +175,19 @@ describe("builder routes", () => {
       avgIterationsPerTask: 2,
       avgIterationsPerRun: 1.67,
       statusCounts: { SUCCEEDED: 2, FAILED: 1 },
+    });
+    mocks.streamBuilderManagedProcessLogs.mockResolvedValue({
+      process: {
+        processId: "proc-1",
+        status: "exited",
+      },
+      cursorUsed: 0,
+      nextCursor: 12,
+      logs: "hello world\n",
+      truncatedBeforeCursor: false,
+      complete: true,
+      followed: true,
+      followTimedOut: false,
     });
     mocks.getBuilderProjectOverview.mockResolvedValue({
       project: {
@@ -805,6 +824,24 @@ describe("builder routes", () => {
       model: undefined,
     });
     expect(payload.taskId).toBe("task-1");
+  });
+
+  it("streams managed Builder process logs over SSE", async () => {
+    const response = await getProcessStream(new NextRequest("http://localhost/api/builder/processes/proc-1/stream?tailBytes=64"), {
+      params: Promise.resolve({ processId: "proc-1" }),
+    });
+    const payload = await response.text();
+
+    expect(response.headers.get("Content-Type")).toContain("text/event-stream");
+    expect(payload).toContain("event: open");
+    expect(payload).toContain("event: state");
+    expect(payload).toContain("event: log");
+    expect(payload).toContain("hello world");
+    expect(payload).toContain("event: complete");
+    expect(mocks.streamBuilderManagedProcessLogs).toHaveBeenCalledWith(expect.objectContaining({
+      processId: "proc-1",
+      tailBytes: 64,
+    }));
   });
 
   it("returns builder stats from the analytics route", async () => {

@@ -226,7 +226,7 @@ export const BUILDER_CAPABILITY_CATALOG: BuilderCapabilityDefinition[] = [
     domain: "process",
     tier: "core",
     status: "available",
-    summary: "Allowlisted one-shot and persisted managed process execution with lifecycle inspection, metadata filtering, and tail/follow log streaming.",
+    summary: "Allowlisted one-shot and managed process execution inside the Builder workspace with lifecycle controls, scoped audit metadata, retention cleanup, and bounded live logs.",
     tools: [
       "builder_run_command",
       "builder_run_script",

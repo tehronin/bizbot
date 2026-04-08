@@ -40,7 +40,7 @@ The initial capability catalog is defined in [src/lib/builder/capabilities.ts](s
 | `workspace_manipulation` | workspace | core | available | Builder now exposes read, write, list, append, delete, move, ensure-directory, stat, existence, patch, and scaffold operations inside the external workspace boundary. |
 | `project_orchestration` | orchestration | core | available | Builder projects, tasks, runs, planning, bootstrap, and projections are already persisted and reviewable. |
 | `governance_contracts` | governance | core | available | MCP policy, dependency contract, and file topology contract are deterministic and drift-enforced. |
-| `process_execution` | process | core | available | Builder now exposes allowlisted one-shot command execution plus persisted managed processes with lifecycle inspection, filtered listing, tail or follow log streaming, wait, and stop controls. |
+| `process_execution` | process | core | available | Builder now exposes allowlisted one-shot command execution plus persisted managed processes with lifecycle inspection, project or task or run filters, audit artifacts, automatic retention cleanup, live SSE log following, wait, and stop controls. |
 | `version_control` | version control | core | available | Builder now exposes typed repo status, diff, stage, unstage, commit, branch-create, and branch-switch operations for managed repos inside the Builder workspace. |
 | `environment_configuration` | configuration | core | partial | Builder host config exists; project-local env inspection and redacted editing are not formalized yet. |
 | `network_http` | network | extended | planned | No first-class allowlisted HTTP engine yet. |

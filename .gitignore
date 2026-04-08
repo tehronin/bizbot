@@ -1,1 +1,6 @@
 node_modules
+.next/
+test-results/
+tsconfig.tsbuildinfo
+src-tauri/resources/
+workspace/
