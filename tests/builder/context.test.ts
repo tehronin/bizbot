@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   readBuilderFile: vi.fn(),
   writeBuilderFile: vi.fn(),
+  listBuilderFiles: vi.fn(),
 }));
 
 vi.mock("@/lib/builder/workspace", () => ({
   readBuilderFile: mocks.readBuilderFile,
   writeBuilderFile: mocks.writeBuilderFile,
+  listBuilderFiles: mocks.listBuilderFiles,
 }));
 
 import { loadBuilderProjectContext, selectRelevantInstructionFragments, syncBuilderProjectProjection } from "@/lib/builder/context";
@@ -15,6 +17,34 @@ import { loadBuilderProjectContext, selectRelevantInstructionFragments, syncBuil
 describe("builder context", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.listBuilderFiles.mockImplementation((relativePath: string) => {
+      const entries: Record<string, Array<{ path: string; type: "file" | "directory" }>> = {
+        "projects/demo": [
+          { path: "projects/demo/package.json", type: "file" },
+          { path: "projects/demo/src", type: "directory" },
+          { path: "projects/demo/tests", type: "directory" },
+          { path: "projects/demo/.builder", type: "directory" },
+        ],
+        "projects/demo/src": [
+          { path: "projects/demo/src/app", type: "directory" },
+          { path: "projects/demo/src/lib", type: "directory" },
+        ],
+        "projects/demo/src/app": [
+          { path: "projects/demo/src/app/layout.tsx", type: "file" },
+          { path: "projects/demo/src/app/page.tsx", type: "file" },
+        ],
+        "projects/demo/src/lib": [
+          { path: "projects/demo/src/lib/env.ts", type: "file" },
+        ],
+        "projects/demo/tests": [
+          { path: "projects/demo/tests/app.test.ts", type: "file" },
+        ],
+        "projects/demo/.builder": [
+          { path: "projects/demo/.builder/state.json", type: "file" },
+        ],
+      };
+      return entries[relativePath] ?? [];
+    });
   });
 
   it("prefers database context when the .builder state projection is stale", () => {
@@ -88,6 +118,42 @@ describe("builder context", () => {
               validation: [],
               graph: [],
               ai: [],
+            },
+          },
+        },
+        fileTopologyContract: {
+          version: 1,
+          expectedHash: "topology-hash-1",
+          decisionKeys: ["file_topology_src_root", "file_topology_builder_projection_reserved"],
+          updatedAt: "2025-01-01T00:00:00.000Z",
+          snapshot: {
+            root: ".",
+            topLevel: ["package.json", "src", "tests"],
+            anchors: {
+              appRoot: "src/app",
+              libRoot: "src/lib",
+              componentsRoot: null,
+              testsRoot: "tests",
+              scriptsRoot: null,
+              prismaRoot: null,
+              tauriRoot: null,
+              builderProjectionRoot: ".builder",
+            },
+            directories: ["src", "src/app", "src/lib", "tests"],
+            importantFiles: ["package.json", "src/app/layout.tsx", "src/app/page.tsx"],
+            classifications: {
+              usesSrcRoot: true,
+              usesNextAppRouter: true,
+              usesTestsRoot: true,
+              usesScriptsRoot: false,
+              usesDesktopShell: false,
+              rootMinimal: true,
+            },
+            rules: {
+              preferSrcLib: true,
+              preferSrcComponents: false,
+              discourageTopLevelFeatureFolders: true,
+              reserveBuilderProjectionPaths: true,
             },
           },
         },
@@ -168,6 +234,7 @@ describe("builder context", () => {
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/task-board.md", expect.stringContaining("Add planning tables"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/project-context.md", expect.stringContaining("Use strict TypeScript."));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/dependency-contract.md", expect.stringContaining("dependency-hash-1"));
+    expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/file-topology.md", expect.stringContaining("topology-hash-1"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/architecture.md", expect.stringContaining("planning_schema"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/architecture.md", expect.stringContaining("legacy_projection_path"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/state.json", expect.stringContaining("Ship the demo app."));

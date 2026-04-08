@@ -1,9 +1,10 @@
 import path from "path";
 import type { BuilderPackageManager, BuilderProject } from "@prisma/client";
 import { buildBuilderDependencyContractBaseline, buildCurrentBuilderDependencyContractSnapshot } from "@/lib/builder/dependency-contract";
+import { buildBuilderFileTopologyContractBaseline, buildCurrentBuilderFileTopologyContractSnapshot } from "@/lib/builder/file-topology-snapshots";
 import { buildCurrentBuilderMcpContractSnapshot, hashBuilderMcpContractSnapshot } from "@/lib/builder/mcp-snapshots";
 import { writeBuilderMcpPolicyArtifact, type BuilderMcpPolicyArtifactState } from "@/lib/builder/mcp-policy";
-import type { BuilderDependencyContractBaselineState, BuilderMcpPolicyBaselineState } from "@/lib/builder/types";
+import type { BuilderDependencyContractBaselineState, BuilderFileTopologyContractBaselineState, BuilderMcpPolicyBaselineState } from "@/lib/builder/types";
 import { createBuilderDirectory, listBuilderFilesRecursive, readBuilderFile, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
 
 export interface BuilderBootstrapResult {
@@ -11,6 +12,7 @@ export interface BuilderBootstrapResult {
   root: string;
   files: string[];
   dependencyContract: BuilderDependencyContractBaselineState | null;
+  fileTopologyContract: BuilderFileTopologyContractBaselineState;
   mcpPolicy: {
     artifactPath: string;
     policy: BuilderMcpPolicyArtifactState;
@@ -18,7 +20,7 @@ export interface BuilderBootstrapResult {
   };
 }
 
-type BuilderTemplateScaffoldResult = Omit<BuilderBootstrapResult, "mcpPolicy" | "dependencyContract">;
+type BuilderTemplateScaffoldResult = Omit<BuilderBootstrapResult, "mcpPolicy" | "dependencyContract" | "fileTopologyContract">;
 
 function packageManagerFlag(packageManager: BuilderPackageManager): "--use-npm" | "--use-pnpm" {
   return packageManager === "PNPM" ? "--use-pnpm" : "--use-npm";
@@ -147,11 +149,17 @@ export async function bootstrapBuilderProject(project: BuilderProject): Promise<
         snapshot: dependencySnapshot,
       })
     : null;
+  const fileTopologyContract = buildBuilderFileTopologyContractBaseline({
+    snapshot: buildCurrentBuilderFileTopologyContractSnapshot({
+      projectRelativePath: project.relativePath,
+    }),
+  });
 
   return {
     ...scaffold,
     files: Array.from(new Set([...scaffold.files, mcpPolicy.artifactPath])),
     dependencyContract,
+    fileTopologyContract,
     mcpPolicy,
   };
 }

@@ -255,6 +255,98 @@ export interface BuilderDependencyContractBaselineState {
   updatedAt: string;
 }
 
+export interface BuilderFileTopologyContractSnapshotState {
+  root: ".";
+  topLevel: string[];
+  anchors: {
+    appRoot: string | null;
+    libRoot: string | null;
+    componentsRoot: string | null;
+    testsRoot: string | null;
+    scriptsRoot: string | null;
+    prismaRoot: string | null;
+    tauriRoot: string | null;
+    builderProjectionRoot: ".builder";
+  };
+  directories: string[];
+  importantFiles: string[];
+  classifications: {
+    usesSrcRoot: boolean;
+    usesNextAppRouter: boolean;
+    usesTestsRoot: boolean;
+    usesScriptsRoot: boolean;
+    usesDesktopShell: boolean;
+    rootMinimal: boolean;
+  };
+  rules: {
+    preferSrcLib: boolean;
+    preferSrcComponents: boolean;
+    discourageTopLevelFeatureFolders: boolean;
+    reserveBuilderProjectionPaths: boolean;
+  };
+}
+
+export interface BuilderFileTopologySnapshotRecordState {
+  snapshotSequence: number;
+  versionHash: string;
+  snapshot: BuilderFileTopologyContractSnapshotState;
+  appliedAt: string;
+}
+
+export interface BuilderFileTopologyContractDriftState {
+  previousHash: string | null;
+  currentHash: string;
+  changed: boolean;
+  directories: {
+    added: string[];
+    removed: string[];
+  };
+  importantFiles: {
+    added: string[];
+    removed: string[];
+  };
+  anchorsChanged: string[];
+  classificationsChanged: string[];
+  rulesChanged: string[];
+}
+
+export interface BuilderFileTopologyContractBaselineState {
+  version: number;
+  expectedHash: string;
+  decisionKeys: string[];
+  snapshot: BuilderFileTopologyContractSnapshotState;
+  updatedAt: string;
+}
+
+export interface BuilderRelevantFileTopologyContextState {
+  currentHash: string;
+  anchors: BuilderFileTopologyContractSnapshotState["anchors"];
+  topLevel: string[];
+  placementGuidance: string[];
+  reasons: string[];
+}
+
+export interface BuilderFileTopologyPlanningContextState {
+  baselineHash: string | null;
+  currentHash: string;
+  driftDetected: boolean;
+  relatedArchitectureDecisionKeys: string[];
+  anchors: BuilderFileTopologyContractSnapshotState["anchors"];
+  topLevel: string[];
+  placementGuidance: string[];
+  recommendations: string[];
+  summary: string;
+  drift: BuilderFileTopologyContractDriftState | null;
+}
+
+export interface BuilderFileTopologySnapshotOverviewState {
+  currentHash: string | null;
+  state: "pending_capture" | "captured" | "aligned" | "drifted";
+  baseline: BuilderFileTopologyContractBaselineState | null;
+  drift: BuilderFileTopologyContractDriftState | null;
+  planning: BuilderFileTopologyPlanningContextState | null;
+}
+
 export interface BuilderDependencyPlanningContextState {
   baselineHash: string | null;
   currentHash: string;
@@ -419,6 +511,7 @@ export interface BuilderProjectContextState {
   plannedStack: BuilderPlannedStackState | null;
   mcpPolicy?: BuilderMcpPolicyBaselineState | null;
   dependencyContract?: BuilderDependencyContractBaselineState | null;
+  fileTopologyContract?: BuilderFileTopologyContractBaselineState | null;
   architectureNotes: string[];
   architecture?: BuilderArchitectureContextState;
   codingConventions: string[];
@@ -513,6 +606,7 @@ export function defaultBuilderProjectContext(): BuilderProjectContextState {
     plannedStack: null,
     mcpPolicy: null,
     dependencyContract: null,
+    fileTopologyContract: null,
     architectureNotes: [],
     architecture: defaultBuilderArchitectureContext(),
     codingConventions: [],
@@ -808,6 +902,76 @@ export function normalizeBuilderProjectContext(value: unknown): BuilderProjectCo
             contentHash: typeof lockfile.contentHash === "string" && lockfile.contentHash.trim() ? lockfile.contentHash.trim() : null,
           },
           classifications: readDependencyClassifications(snapshot.classifications),
+        },
+      };
+    })(),
+    fileTopologyContract: (() => {
+      const input = candidate.fileTopologyContract;
+      if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return null;
+      }
+
+      const fileTopologyContract = input as Record<string, unknown>;
+      const expectedHash = typeof fileTopologyContract.expectedHash === "string" ? fileTopologyContract.expectedHash.trim() : "";
+      const version = typeof fileTopologyContract.version === "number" && Number.isFinite(fileTopologyContract.version)
+        ? Math.trunc(fileTopologyContract.version)
+        : null;
+      const updatedAt = typeof fileTopologyContract.updatedAt === "string" && fileTopologyContract.updatedAt.trim()
+        ? fileTopologyContract.updatedAt.trim()
+        : null;
+      const snapshotValue = fileTopologyContract.snapshot;
+      if (!expectedHash || !version || !updatedAt || !snapshotValue || typeof snapshotValue !== "object" || Array.isArray(snapshotValue)) {
+        return null;
+      }
+
+      const snapshot = snapshotValue as Record<string, unknown>;
+      const anchorsValue = snapshot.anchors;
+      const classificationsValue = snapshot.classifications;
+      const rulesValue = snapshot.rules;
+      if (!anchorsValue || typeof anchorsValue !== "object" || Array.isArray(anchorsValue)
+        || !classificationsValue || typeof classificationsValue !== "object" || Array.isArray(classificationsValue)
+        || !rulesValue || typeof rulesValue !== "object" || Array.isArray(rulesValue)) {
+        return null;
+      }
+
+      const anchors = anchorsValue as Record<string, unknown>;
+      const classifications = classificationsValue as Record<string, unknown>;
+      const rules = rulesValue as Record<string, unknown>;
+
+      return {
+        version,
+        expectedHash,
+        decisionKeys: readStringArray(fileTopologyContract.decisionKeys),
+        updatedAt,
+        snapshot: {
+          root: ".",
+          topLevel: readStringArray(snapshot.topLevel),
+          anchors: {
+            appRoot: typeof anchors.appRoot === "string" && anchors.appRoot.trim() ? anchors.appRoot.trim() : null,
+            libRoot: typeof anchors.libRoot === "string" && anchors.libRoot.trim() ? anchors.libRoot.trim() : null,
+            componentsRoot: typeof anchors.componentsRoot === "string" && anchors.componentsRoot.trim() ? anchors.componentsRoot.trim() : null,
+            testsRoot: typeof anchors.testsRoot === "string" && anchors.testsRoot.trim() ? anchors.testsRoot.trim() : null,
+            scriptsRoot: typeof anchors.scriptsRoot === "string" && anchors.scriptsRoot.trim() ? anchors.scriptsRoot.trim() : null,
+            prismaRoot: typeof anchors.prismaRoot === "string" && anchors.prismaRoot.trim() ? anchors.prismaRoot.trim() : null,
+            tauriRoot: typeof anchors.tauriRoot === "string" && anchors.tauriRoot.trim() ? anchors.tauriRoot.trim() : null,
+            builderProjectionRoot: ".builder",
+          },
+          directories: readStringArray(snapshot.directories),
+          importantFiles: readStringArray(snapshot.importantFiles),
+          classifications: {
+            usesSrcRoot: classifications.usesSrcRoot === true,
+            usesNextAppRouter: classifications.usesNextAppRouter === true,
+            usesTestsRoot: classifications.usesTestsRoot === true,
+            usesScriptsRoot: classifications.usesScriptsRoot === true,
+            usesDesktopShell: classifications.usesDesktopShell === true,
+            rootMinimal: classifications.rootMinimal === true,
+          },
+          rules: {
+            preferSrcLib: rules.preferSrcLib === true,
+            preferSrcComponents: rules.preferSrcComponents === true,
+            discourageTopLevelFeatureFolders: rules.discourageTopLevelFeatureFolders === true,
+            reserveBuilderProjectionPaths: rules.reserveBuilderProjectionPaths === true,
+          },
         },
       };
     })(),

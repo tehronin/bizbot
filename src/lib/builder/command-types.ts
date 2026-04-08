@@ -8,6 +8,7 @@ export type BuilderProjectCommandInput =
   | { action: "reconcile_operational_state" }
   | { action: "resolve_mcp_contract_drift"; runId: string; decision: "approve" | "reject"; reason?: string }
   | { action: "resolve_dependency_contract_drift"; runId: string; decision: "approve" | "reject"; reason?: string }
+  | { action: "resolve_file_topology_contract_drift"; runId: string; decision: "approve" | "reject"; reason?: string }
   | { action: "run_agentic_task"; profile?: string; prompt: string; model?: string; args?: string[] };
 
 export type BuilderProjectRecordedCommandInput = Exclude<BuilderProjectCommandInput, { action: "run_generator" }>;

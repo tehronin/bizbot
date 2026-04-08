@@ -72,3 +72,31 @@ At later execution preflight, Builder:
 ## Dependency Reconciliation Path
 
 When dependency policy legitimately changes, use the Builder `resolve_dependency_contract_drift` command with an explicit `approve` or `reject` decision so the persisted baseline and ontology-promoted decision keys move together.
+
+## Builder File Topology Contract
+
+Builder also persists an accepted file topology contract baseline in project state.
+
+The topology contract is structural and deterministic. It records:
+
+- top-level entries under the project root,
+- canonical anchor directories such as `src/app`, `src/lib`, `tests`, `scripts`, `prisma`, and `src-tauri`,
+- selected important anchor files,
+- lightweight classifications about source-root, router, test-root, and desktop-shell usage,
+- placement rules that keep Builder-managed projection paths under `.builder/` reserved.
+
+Builder projects project the accepted topology baseline and the live drift summary into `.builder/file-topology.md` for review, but the database context remains authoritative.
+
+## File Topology Enforcement Lifecycle
+
+At bootstrap or first execution preflight, Builder captures the current file topology contract.
+
+At later execution preflight, Builder:
+
+- compares the current directory/file structure against the accepted topology baseline,
+- blocks execution if anchor roots, important files, or placement rules drifted,
+- expects drift to be resolved explicitly before implementation continues.
+
+## File Topology Reconciliation Path
+
+When project structure legitimately changes, use the Builder `resolve_file_topology_contract_drift` command with an explicit `approve` or `reject` decision so the persisted baseline and ontology-promoted topology ADR keys move together.

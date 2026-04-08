@@ -2,10 +2,12 @@ import type { BuilderProject, BuilderProjectBrief, BuilderProjectLifecycle } fro
 import type {
   BuilderArchitectureDecisionState,
   BuilderDependencyPlanningContextState,
+  BuilderFileTopologyPlanningContextState,
   BuilderMilestoneState,
   BuilderMcpPlanningContextState,
   BuilderPlanAdherenceState,
   BuilderRelevantDependencyContextState,
+  BuilderRelevantFileTopologyContextState,
   BuilderRelevantMcpContextState,
   BuilderTaskSpecState,
 } from "@/lib/builder/types";
@@ -77,6 +79,14 @@ function renderDependencyContractGuidance(context: BuilderProjectContextState): 
   }
 
   return `Builder dependency contract: keep direct package.json dependencies, scripts, and the active lockfile aligned with the accepted hash ${context.dependencyContract.expectedHash.slice(0, 12)}…; if dependency policy legitimately changes, resolve the dependency contract drift instead of bypassing it.`;
+}
+
+function renderFileTopologyContractGuidance(context: BuilderProjectContextState): string | null {
+  if (!context.fileTopologyContract) {
+    return null;
+  }
+
+  return `Builder file topology contract: keep new files aligned with the accepted topology hash ${context.fileTopologyContract.expectedHash.slice(0, 12)}… and preserve ${context.fileTopologyContract.snapshot.anchors.builderProjectionRoot} as Builder-managed projection space; if structure legitimately changes, resolve file topology drift instead of silently moving the baseline.`;
 }
 
 function inferBuilderTaskExecutionMode(args: {
@@ -248,6 +258,22 @@ function renderRelevantDependencyContext(context: BuilderRelevantDependencyConte
   ].join("\n");
 }
 
+function renderRelevantFileTopologyContext(context: BuilderRelevantFileTopologyContextState | null | undefined): string {
+  if (!context) {
+    return "Relevant file topology context: none selected.";
+  }
+
+  return [
+    "[Relevant File Topology Context]",
+    `Current topology hash: ${context.currentHash}`,
+    `Selection reasons: ${context.reasons.join(", ")}`,
+    `Top-level entries: ${context.topLevel.length > 0 ? context.topLevel.join(", ") : "none recorded"}`,
+    `Anchors: app=${context.anchors.appRoot ?? "none"}, lib=${context.anchors.libRoot ?? "none"}, components=${context.anchors.componentsRoot ?? "none"}, tests=${context.anchors.testsRoot ?? "none"}, scripts=${context.anchors.scriptsRoot ?? "none"}, prisma=${context.anchors.prismaRoot ?? "none"}, tauri=${context.anchors.tauriRoot ?? "none"}, builder=${context.anchors.builderProjectionRoot}`,
+    ...(context.placementGuidance.length > 0 ? context.placementGuidance.map((item) => `- ${item}`) : ["- placement guidance unavailable"]),
+    "[/Relevant File Topology Context]",
+  ].join("\n");
+}
+
 function renderMcpContractEvolution(context: BuilderMcpPlanningContextState | null | undefined): string {
   if (!context) {
     return "MCP contract evolution: no accepted project baseline exists yet.";
@@ -289,6 +315,28 @@ function renderDependencyContractEvolution(context: BuilderDependencyPlanningCon
   ].join("\n");
 }
 
+function renderFileTopologyEvolution(context: BuilderFileTopologyPlanningContextState | null | undefined): string {
+  if (!context) {
+    return "File topology evolution: no accepted topology baseline exists yet.";
+  }
+
+  return [
+    "[File Topology Evolution]",
+    `Summary: ${context.summary}`,
+    `Baseline hash: ${context.baselineHash ?? "none"}`,
+    `Current hash: ${context.currentHash}`,
+    `Related ADR keys: ${context.relatedArchitectureDecisionKeys.length > 0 ? context.relatedArchitectureDecisionKeys.join(", ") : "none"}`,
+    `Top-level entries: ${context.topLevel.length > 0 ? context.topLevel.join(", ") : "none recorded"}`,
+    `Anchors: app=${context.anchors.appRoot ?? "none"}, lib=${context.anchors.libRoot ?? "none"}, components=${context.anchors.componentsRoot ?? "none"}, tests=${context.anchors.testsRoot ?? "none"}, scripts=${context.anchors.scriptsRoot ?? "none"}, prisma=${context.anchors.prismaRoot ?? "none"}, tauri=${context.anchors.tauriRoot ?? "none"}, builder=${context.anchors.builderProjectionRoot}`,
+    ...context.placementGuidance.map((item) => `- ${item}`),
+    ...context.recommendations.map((item) => `- ${item}`),
+    context.drift
+      ? `Drift details: directories(+${context.drift.directories.added.length}/-${context.drift.directories.removed.length}), importantFiles(+${context.drift.importantFiles.added.length}/-${context.drift.importantFiles.removed.length}), anchorsChanged=${context.drift.anchorsChanged.length}, classificationsChanged=${context.drift.classificationsChanged.length}, rulesChanged=${context.drift.rulesChanged.length}`
+      : "Drift details: none",
+    "[/File Topology Evolution]",
+  ].join("\n");
+}
+
 export function composeBuilderTaskPrompt(args: {
   project: BuilderProject;
   task: { title: string; acceptanceCriteria: unknown; metadata: unknown };
@@ -303,6 +351,7 @@ export function composeBuilderTaskPrompt(args: {
   adherence?: BuilderPlanAdherenceState | null;
   mcpContext?: BuilderRelevantMcpContextState | null;
   dependencyContext?: BuilderRelevantDependencyContextState | null;
+  fileTopologyContext?: BuilderRelevantFileTopologyContextState | null;
 }): string {
   const metadata = normalizeBuilderTaskMetadata(args.task.metadata);
   const acceptanceCriteria = Array.isArray(args.task.acceptanceCriteria)
@@ -338,9 +387,11 @@ export function composeBuilderTaskPrompt(args: {
     renderPlannedStack(args.context),
     renderMcpPolicyGuidance(args.context),
     renderDependencyContractGuidance(args.context),
+    renderFileTopologyContractGuidance(args.context),
     renderPlanAdherenceSection(args.adherence),
     renderRelevantMcpContext(args.mcpContext),
     renderRelevantDependencyContext(args.dependencyContext),
+    renderRelevantFileTopologyContext(args.fileTopologyContext),
     planSteps.length > 0
       ? `Active plan: ${planSteps.map((step) => `[${step.status}] ${step.label}`).join("; ")}`
       : "Active plan: inspect the workspace, implement the request, validate the result, and summarize what changed.",
@@ -370,6 +421,8 @@ export function composeBuilderPlannerPrompt(args: {
   mcpContext?: BuilderRelevantMcpContextState | null;
   mcpPlanningContext?: BuilderMcpPlanningContextState | null;
   dependencyPlanningContext?: BuilderDependencyPlanningContextState | null;
+  fileTopologyContext?: BuilderRelevantFileTopologyContextState | null;
+  fileTopologyPlanningContext?: BuilderFileTopologyPlanningContextState | null;
 }): string {
   return [
     "Builder planner mission: produce a concise, dependency-safe project plan for the selected external Builder workspace.",
@@ -378,11 +431,13 @@ export function composeBuilderPlannerPrompt(args: {
     `[Constraints]\n${args.constraints.length > 0 ? args.constraints.map((constraint) => `- ${constraint}`).join("\n") : "- none recorded"}\n[/Constraints]`,
     `[Non-Goals]\n${args.nonGoals.length > 0 ? args.nonGoals.map((item) => `- ${item}`).join("\n") : "- none recorded"}\n[/Non-Goals]`,
     `[Acceptance Criteria]\n${args.acceptanceCriteria.length > 0 ? args.acceptanceCriteria.map((item) => `- ${item}`).join("\n") : "- none recorded"}\n[/Acceptance Criteria]`,
-    `[Template Guidance]\n- Respect the existing template: ${args.project.template}.\n- Keep package manager assumptions aligned to ${args.project.packageManager}.\n- ${renderPlannedStack(args.context).replace(/^Planned stack: /, "Planned stack: ")}\n${renderMcpPolicyGuidance(args.context) ? `- ${renderMcpPolicyGuidance(args.context)}\n` : ""}${renderDependencyContractGuidance(args.context) ? `- ${renderDependencyContractGuidance(args.context)}\n` : ""}- Reuse current context/projection patterns, but keep planning prompting separate from task execution prompting.\n[/Template Guidance]`,
+    `[Template Guidance]\n- Respect the existing template: ${args.project.template}.\n- Keep package manager assumptions aligned to ${args.project.packageManager}.\n- ${renderPlannedStack(args.context).replace(/^Planned stack: /, "Planned stack: ")}\n${renderMcpPolicyGuidance(args.context) ? `- ${renderMcpPolicyGuidance(args.context)}\n` : ""}${renderDependencyContractGuidance(args.context) ? `- ${renderDependencyContractGuidance(args.context)}\n` : ""}${renderFileTopologyContractGuidance(args.context) ? `- ${renderFileTopologyContractGuidance(args.context)}\n` : ""}- Reuse current context/projection patterns, but keep planning prompting separate from task execution prompting.\n[/Template Guidance]`,
     renderRelevantDependencyContext(args.dependencyContext),
+    renderRelevantFileTopologyContext(args.fileTopologyContext),
     renderRelevantMcpContext(args.mcpContext),
     renderMcpContractEvolution(args.mcpPlanningContext),
     renderDependencyContractEvolution(args.dependencyPlanningContext),
+    renderFileTopologyEvolution(args.fileTopologyPlanningContext),
     `[Active Architecture]\n${renderArchitectureSection("", args.activeArchitecture, "No active architecture decisions recorded.").replace(/^\n/, "")}\n[/Active Architecture]`,
     `[Stale Architecture - Needs Reconfirmation]\n${renderArchitectureSection("", args.staleArchitecture, "No stale architecture decisions require reconciliation.").replace(/^\n/, "")}\n[/Stale Architecture - Needs Reconfirmation]`,
     `[Context Notes]\n${args.context.objective ? `Objective: ${args.context.objective}` : "Objective: none recorded"}\n${args.context.instructionNotes ? `Instruction notes: ${args.context.instructionNotes}` : "Instruction notes: none recorded"}\n[/Context Notes]`,

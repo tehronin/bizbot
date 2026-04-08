@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import type { BuilderAgenticProgressEvent, BuilderAgenticTaskOptions } from "@/lib/builder/agentic";
 import { summarizeBuilderProjectMetrics, type BuilderHealthMetrics } from "@/lib/builder/analytics";
 import { ensureBuilderRunDependencyContractPreflight, selectRelevantBuilderDependencyContext } from "@/lib/builder/dependency-contract";
+import { ensureBuilderRunFileTopologySnapshotPreflight, selectRelevantBuilderFileTopologyContext } from "@/lib/builder/file-topology-snapshots";
 import {
   ensureBuilderRunMcpSnapshotPreflight,
   getBuilderMcpSnapshotOverview,
@@ -557,6 +558,14 @@ export async function orchestrateBuilderTask(
     },
     runId: run.id,
   });
+  await ensureBuilderRunFileTopologySnapshotPreflight({
+    project: {
+      id: project.id,
+      relativePath: project.relativePath,
+      context: project.context,
+    },
+    runId: run.id,
+  });
   const mcpContext = selectRelevantBuilderMcpContext({
     mode: adherence.mode,
     validators: taskSpec.validators.map((validator) => String(validator)),
@@ -566,6 +575,10 @@ export async function orchestrateBuilderTask(
   const dependencyContext = selectRelevantBuilderDependencyContext({
     projectRelativePath: project.relativePath,
     packageManager: project.packageManager,
+    reasons: [`mode:${adherence.mode}`, `template:${project.template}`],
+  });
+  const fileTopologyContext = selectRelevantBuilderFileTopologyContext({
+    projectRelativePath: project.relativePath,
     reasons: [`mode:${adherence.mode}`, `template:${project.template}`],
   });
   const prompt = composeBuilderTaskPrompt({
@@ -582,6 +595,7 @@ export async function orchestrateBuilderTask(
     adherence,
     mcpContext,
     dependencyContext,
+    fileTopologyContext,
   });
 
   const loopResult = await executeNativeBuilderTask(project, {

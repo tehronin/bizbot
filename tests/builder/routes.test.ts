@@ -672,6 +672,31 @@ describe("builder routes", () => {
     expect(payload.runId).toBe("run-1");
   });
 
+  it("parses and forwards file topology drift resolution commands", async () => {
+    const response = await postCommand(new NextRequest("http://localhost/api/builder/projects/project-1/commands", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "resolve_file_topology_contract_drift",
+        runId: "run-1",
+        decision: "approve",
+        reason: "Accept the structural rollover.",
+      }),
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.recordBuilderProjectCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "project-1" }), {
+      action: "resolve_file_topology_contract_drift",
+      runId: "run-1",
+      decision: "approve",
+      reason: "Accept the structural rollover.",
+    });
+    expect(payload.runId).toBe("run-1");
+  });
+
   it("cancels a running builder run", async () => {
     const response = await postCancelRun(new NextRequest("http://localhost/api/builder/runs/run-1/cancel", {
       method: "POST",

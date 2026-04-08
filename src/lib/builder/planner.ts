@@ -9,6 +9,7 @@ import {
   normalizeBuilderProjectContext,
   type BuilderArchitectureContextState,
   type BuilderDependencyPlanningContextState,
+  type BuilderFileTopologyPlanningContextState,
   type BuilderMcpPlanningContextState,
   type BuilderNormalizedMilestoneDraft,
   type BuilderNormalizedTaskSpecDraft,
@@ -19,6 +20,7 @@ import {
   type BuilderProjectBriefState,
   type BuilderProjectContextState,
   type BuilderRelevantDependencyContextState,
+  type BuilderRelevantFileTopologyContextState,
 } from "@/lib/builder/types";
 function isNormalizedValidator(
   value: BuilderNormalizedTaskSpecDraft["validators"][number] | null,
@@ -701,6 +703,8 @@ export function runBuilderPlannerPipeline(args: {
   mcpPlanningContext?: BuilderMcpPlanningContextState | null;
   dependencyPlanningContext?: BuilderDependencyPlanningContextState | null;
   dependencyContext?: BuilderRelevantDependencyContextState | null;
+  fileTopologyPlanningContext?: BuilderFileTopologyPlanningContextState | null;
+  fileTopologyContext?: BuilderRelevantFileTopologyContextState | null;
 }): {
   input: BuilderPlannerInputState;
   prompt: string;
@@ -731,6 +735,8 @@ export function runBuilderPlannerPipeline(args: {
     mcpContext: plannerMcpContext,
     mcpPlanningContext: args.mcpPlanningContext,
     dependencyPlanningContext: args.dependencyPlanningContext,
+    fileTopologyContext: args.fileTopologyContext,
+    fileTopologyPlanningContext: args.fileTopologyPlanningContext,
   });
   const candidateMilestones = buildDeterministicPlannerDraft(args.brief, args.architecture ?? defaultBuilderArchitectureContext());
   const normalizedMilestones = normalizePlannerOutput(candidateMilestones);

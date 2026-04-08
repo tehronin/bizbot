@@ -2,6 +2,8 @@
 
 ## 2026-04-08
 
+- Added the Builder file-topology ADR lane with deterministic structural snapshots, planner and task placement guidance, `.builder/file-topology.md` projection output, drift preflight blocking, bootstrap baselines, and explicit approve or reject reconciliation commands.
+- Hardened local test and build script execution on Windows-style installs that lack `node_modules/.bin` shims by invoking the repo-local Vitest and Next.js entrypoints directly, and updated Builder orchestration regression coverage for the new topology preflight.
 - Completed the sovereign baseline build stabilization pass: regenerated the real Prisma client, removed the temporary Prisma enum bridge, restored strict TypeScript settings, and kept the production build green without fallback typing hacks.
 - Added BizBot Platform Contract v1 as a repo-grounded source of truth for lane exposure, plugin metadata, MCP catalog expectations, side-effect classes, provenance rules, and compatibility policy.
 - Threaded the platform contract version through MCP server instructions, Builder MCP contract snapshots, developer contract inspection surfaces, and the Operations dashboard/API.

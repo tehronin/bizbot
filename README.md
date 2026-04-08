@@ -192,6 +192,8 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Builder now captures a deterministic MCP contract snapshot for each active run, hashes the normalized tool/prompt/resource surface, and blocks execution when the live contract drifts from the latest accepted Builder baseline.
 - Operators can approve drift through the Builder commands API, which rolls the run onto the next snapshot sequence and preserves rollover history for inspection instead of silently mutating assumptions under an active task.
 - Runtime tool provenance is now appended passively by the execution gateway into the active Builder MCP snapshot so contract history reflects what the runtime actually used, not what the model claimed it used.
+- Builder now persists a deterministic file topology contract that captures the accepted project structure, projects it into `.builder/file-topology.md`, and blocks execution when structural placement policy drifts from the approved baseline.
+- Operators can resolve structural drift explicitly through `resolve_file_topology_contract_drift`, which rolls the accepted topology baseline and its promoted topology ADR keys forward together.
 - Deterministic Builder verification now forces `NODE_ENV=test` for the `test` script so Jest-style suites do not inherit the host app server environment.
 - The live Builder validation path has now been proven on both a minimal hello-world artifact and a realistic Express REST API project that completed planning, continuation, test creation, and passing verification inside the external Builder workspace.
 

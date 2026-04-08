@@ -180,6 +180,42 @@ describe("builder prompt synthesis", () => {
           packageManager: "NPM",
           tags: ["react", "nextjs", "prisma", "tailwind"],
         },
+        fileTopologyContract: {
+          version: 1,
+          expectedHash: "topology-hash-1",
+          decisionKeys: ["file_topology_src_root"],
+          updatedAt: "2026-04-08T00:00:00.000Z",
+          snapshot: {
+            root: ".",
+            topLevel: ["package.json", "src", "tests"],
+            anchors: {
+              appRoot: "src/app",
+              libRoot: "src/lib",
+              componentsRoot: "src/components",
+              testsRoot: "tests",
+              scriptsRoot: null,
+              prismaRoot: null,
+              tauriRoot: null,
+              builderProjectionRoot: ".builder",
+            },
+            directories: ["src", "src/app", "src/components", "src/lib", "tests"],
+            importantFiles: ["package.json", "src/app/layout.tsx", "src/app/page.tsx"],
+            classifications: {
+              usesSrcRoot: true,
+              usesNextAppRouter: true,
+              usesTestsRoot: true,
+              usesScriptsRoot: false,
+              usesDesktopShell: false,
+              rootMinimal: true,
+            },
+            rules: {
+              preferSrcLib: true,
+              preferSrcComponents: true,
+              discourageTopLevelFeatureFolders: true,
+              reserveBuilderProjectionPaths: true,
+            },
+          },
+        },
         architectureNotes: [],
         codingConventions: ["Use App Router."],
         constraints: ["Stay inside the external workspace."],
@@ -226,6 +262,25 @@ describe("builder prompt synthesis", () => {
       stage: "IMPLEMENTING",
       fragments: [{ source: "AGENTS.md", heading: "Mission", content: "Keep edits small and reviewable." }],
       adherence,
+      fileTopologyContext: {
+        currentHash: "topology-live-1",
+        anchors: {
+          appRoot: "src/app",
+          libRoot: "src/lib",
+          componentsRoot: "src/components",
+          testsRoot: "tests",
+          scriptsRoot: null,
+          prismaRoot: null,
+          tauriRoot: null,
+          builderProjectionRoot: ".builder",
+        },
+        topLevel: ["package.json", "src", "tests"],
+        placementGuidance: [
+          "Route files belong under src/app.",
+          "Shared runtime helpers belong under src/lib.",
+        ],
+        reasons: ["mode:implementation", "template:next-app"],
+      },
     });
 
     expect(prompt).toContain("Builder mission");
@@ -236,6 +291,8 @@ describe("builder prompt synthesis", () => {
     expect(prompt).toContain("Next App template guidance:");
     expect(prompt).toContain("[Plan Adherence]");
     expect(prompt).toContain("Relevant MCP context: none selected.");
+    expect(prompt).toContain("[Relevant File Topology Context]");
+    expect(prompt).toContain("Route files belong under src/app.");
     expect(prompt).toContain("Only introduce or revise architecture needed for: planning_schema.");
     expect(prompt).toContain("Add a health endpoint");
     expect(prompt).toContain("Keep edits small and reviewable.");

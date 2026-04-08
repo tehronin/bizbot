@@ -1,5 +1,7 @@
 import path from "path";
 import type { BuilderProject, BuilderTask } from "@prisma/client";
+import { getBuilderFileTopologyPlanningContext } from "@/lib/builder/file-topology-snapshots";
+import { renderBuilderFileTopologyProjectionMarkdown } from "@/lib/builder/file-topology-render";
 import { renderBuilderReviewMarkdown } from "@/lib/builder/review";
 import { readBuilderFile, writeBuilderFile } from "@/lib/builder/workspace";
 import {
@@ -101,6 +103,12 @@ function renderProjectAgentsFile(project: BuilderProject, context: BuilderProjec
       ? `Builder tracks direct dependency policy with accepted hash ${context.dependencyContract.expectedHash.slice(0, 12)}… and decision keys ${context.dependencyContract.decisionKeys.join(", ") || "none"}.`
       : "No Builder dependency contract baseline recorded yet.",
     "",
+    `## Builder File Topology Contract`,
+    "",
+    context.fileTopologyContract
+      ? `Builder tracks structural placement policy with accepted hash ${context.fileTopologyContract.expectedHash.slice(0, 12)}… and decision keys ${context.fileTopologyContract.decisionKeys.join(", ") || "none"}.`
+      : "No Builder file topology contract baseline recorded yet.",
+    "",
     `## Constraints`,
     "",
     ...constraints.map((constraint) => `- ${constraint}`),
@@ -147,6 +155,17 @@ function renderProjectContextMarkdown(context: BuilderProjectContextState): stri
           `Decision keys: ${context.dependencyContract.decisionKeys.length > 0 ? context.dependencyContract.decisionKeys.join(", ") : "none"}`,
           `Highlighted packages: ${context.dependencyContract.snapshot.packages.length > 0 ? context.dependencyContract.snapshot.packages.map((item) => `${item.name}@${item.range}`).join(", ") : "none"}`,
           `Lockfile: ${context.dependencyContract.snapshot.lockfile.present ? `${context.dependencyContract.snapshot.lockfile.path ?? "present"} (${context.dependencyContract.snapshot.lockfile.contentHash?.slice(0, 12) ?? "hash unavailable"}…)` : "not recorded"}`,
+        ].join("\n")
+      : "Not set yet.",
+    "",
+    `## Builder File Topology Contract`,
+    "",
+    context.fileTopologyContract
+      ? [
+          `Expected topology hash: ${context.fileTopologyContract.expectedHash}`,
+          `Decision keys: ${context.fileTopologyContract.decisionKeys.length > 0 ? context.fileTopologyContract.decisionKeys.join(", ") : "none"}`,
+          `Top-level entries: ${context.fileTopologyContract.snapshot.topLevel.length > 0 ? context.fileTopologyContract.snapshot.topLevel.join(", ") : "none"}`,
+          `Anchors: app=${context.fileTopologyContract.snapshot.anchors.appRoot ?? "none"}, lib=${context.fileTopologyContract.snapshot.anchors.libRoot ?? "none"}, components=${context.fileTopologyContract.snapshot.anchors.componentsRoot ?? "none"}, tests=${context.fileTopologyContract.snapshot.anchors.testsRoot ?? "none"}, scripts=${context.fileTopologyContract.snapshot.anchors.scriptsRoot ?? "none"}, prisma=${context.fileTopologyContract.snapshot.anchors.prismaRoot ?? "none"}, tauri=${context.fileTopologyContract.snapshot.anchors.tauriRoot ?? "none"}, builder=${context.fileTopologyContract.snapshot.anchors.builderProjectionRoot}`,
         ].join("\n")
       : "Not set yet.",
     "",
@@ -371,10 +390,18 @@ export function syncBuilderProjectProjection(args: {
   const currentTaskMetadata = args.currentTask ? normalizeBuilderTaskMetadata(args.currentTask.metadata) : null;
   const planSteps = currentTaskMetadata?.planSteps ?? context.currentPlan;
   const baseDir = builderDir(args.project);
+  const fileTopologyPlanningContext = getBuilderFileTopologyPlanningContext({
+    projectRelativePath: args.project.relativePath,
+    context,
+  });
 
   writeBuilderFile(path.posix.join(args.project.relativePath, "AGENTS.md"), renderProjectAgentsFile(args.project, context));
   writeBuilderFile(path.posix.join(baseDir, "project-context.md"), renderProjectContextMarkdown(context));
   writeBuilderFile(path.posix.join(baseDir, "dependency-contract.md"), renderDependencyContractMarkdown(context));
+  writeBuilderFile(path.posix.join(baseDir, "file-topology.md"), renderBuilderFileTopologyProjectionMarkdown({
+    baseline: context.fileTopologyContract ?? null,
+    planningContext: fileTopologyPlanningContext,
+  }));
   writeBuilderFile(path.posix.join(baseDir, "project-brief.md"), renderProjectBriefMarkdown(args.planning));
   writeBuilderFile(path.posix.join(baseDir, "architecture.md"), renderArchitectureMarkdown(context));
   writeBuilderFile(path.posix.join(baseDir, "milestones.md"), renderMilestonesMarkdown(args.planning));

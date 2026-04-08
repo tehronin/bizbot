@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createBuilderRun: vi.fn(),
   createBuilderTask: vi.fn(),
   ensureBuilderRunMcpSnapshotPreflight: vi.fn(),
+  ensureBuilderRunFileTopologySnapshotPreflight: vi.fn(),
   executeNativeBuilderTask: vi.fn(),
   findExecutionTaskForTaskSpec: vi.fn(),
   getLatestBuilderMcpSnapshotForRun: vi.fn(),
@@ -75,6 +76,26 @@ vi.mock("@/lib/builder/mcp-snapshots", () => ({
     tools: [{ name: "builder_get_project", title: "Get Builder Project", description: "Read the current Builder project.", ownerId: "builder", ownerKind: "builtin-plugin", annotations: null, parameters: null }],
     prompts: [],
     resources: [],
+    reasons: ["mode:analysis_only"],
+  })),
+}));
+
+vi.mock("@/lib/builder/file-topology-snapshots", () => ({
+  ensureBuilderRunFileTopologySnapshotPreflight: mocks.ensureBuilderRunFileTopologySnapshotPreflight,
+  selectRelevantBuilderFileTopologyContext: vi.fn(() => ({
+    currentHash: "topology-hash-1",
+    roots: ["src", "tests", ".builder"],
+    anchors: {
+      appRoot: "src/app",
+      libRoot: "src/lib",
+      componentsRoot: null,
+      testsRoot: "tests",
+      scriptsRoot: null,
+      prismaRoot: null,
+      tauriRoot: null,
+      builderProjectionRoot: ".builder",
+    },
+    placementGuidance: ["Route files belong under src/app."],
     reasons: ["mode:analysis_only"],
   })),
 }));
@@ -282,6 +303,11 @@ describe("builder orchestrator finalization", () => {
     mocks.ensureBuilderRunMcpSnapshotPreflight.mockResolvedValue({
       status: "captured",
       snapshot: { id: "snapshot-1", snapshotSequence: 1 },
+      drift: { changed: false },
+    });
+    mocks.ensureBuilderRunFileTopologySnapshotPreflight.mockResolvedValue({
+      status: "captured",
+      snapshot: { expectedHash: "topology-hash-1" },
       drift: { changed: false },
     });
     mocks.getLatestBuilderMcpSnapshotForRun.mockResolvedValue({

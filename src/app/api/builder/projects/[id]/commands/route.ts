@@ -47,6 +47,21 @@ function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
       reason: typeof candidate.reason === "string" ? candidate.reason : undefined,
     };
   }
+  if (candidate.action === "resolve_file_topology_contract_drift" && typeof candidate.runId === "string") {
+    const decision = candidate.decision === "approve" || candidate.decision === "reject"
+      ? candidate.decision
+      : null;
+    if (!decision) {
+      throw new Error("Builder file topology contract drift resolution requires decision=approve|reject.");
+    }
+
+    return {
+      action: "resolve_file_topology_contract_drift",
+      runId: candidate.runId,
+      decision,
+      reason: typeof candidate.reason === "string" ? candidate.reason : undefined,
+    };
+  }
   if (candidate.action === "install_dependencies") {
     return {
       action: "install_dependencies",

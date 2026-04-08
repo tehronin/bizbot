@@ -11,6 +11,7 @@ import type {
 } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getBuilderDependencyPlanningContext, selectRelevantBuilderDependencyContext } from "@/lib/builder/dependency-contract";
+import { getBuilderFileTopologyPlanningContext, selectRelevantBuilderFileTopologyContext } from "@/lib/builder/file-topology-snapshots";
 import { getBuilderMcpPlanningContext } from "@/lib/builder/mcp-snapshots";
 import { getBuilderProject, updateBuilderProject } from "@/lib/builder/projects";
 import { runBuilderPlannerPipeline } from "@/lib/builder/planner";
@@ -158,6 +159,14 @@ export async function generateBuilderProjectPlan(args: {
     packageManager: args.project.packageManager,
     reasons: ["mode:analysis_only", `template:${args.project.template}`],
   });
+  const fileTopologyPlanningContext = getBuilderFileTopologyPlanningContext({
+    projectRelativePath: args.project.relativePath,
+    context: args.project.context,
+  });
+  const fileTopologyContext = selectRelevantBuilderFileTopologyContext({
+    projectRelativePath: args.project.relativePath,
+    reasons: ["mode:analysis_only", `template:${args.project.template}`],
+  });
   const pipeline = runBuilderPlannerPipeline({
     project: args.project,
     brief: args.brief,
@@ -166,6 +175,8 @@ export async function generateBuilderProjectPlan(args: {
     mcpPlanningContext,
     dependencyPlanningContext,
     dependencyContext,
+    fileTopologyPlanningContext,
+    fileTopologyContext,
   });
   const persisted = await replaceBuilderProjectPlanWithValidation({
     projectId: args.project.id,

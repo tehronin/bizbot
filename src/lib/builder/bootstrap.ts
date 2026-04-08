@@ -37,6 +37,13 @@ export async function runBuilderProjectBootstrap(projectId: string, options?: Bu
       decisionKeys: bootstrap.dependencyContract.decisionKeys,
     });
   }
+  if (bootstrap.fileTopologyContract) {
+    await promoteBuilderArchitecturalDecisionsToOntology({
+      projectId: project.id,
+      sourceRef: `builder:${project.id}:bootstrap:file_topology_contract`,
+      decisionKeys: bootstrap.fileTopologyContract.decisionKeys,
+    });
+  }
   await promoteBuilderArchitecturalDecisionsToOntology({
     projectId: project.id,
     sourceRef: `builder:${project.id}:bootstrap:mcp_policy`,
@@ -48,6 +55,7 @@ export async function runBuilderProjectBootstrap(projectId: string, options?: Bu
     context: {
       ...currentContext,
       dependencyContract: bootstrap.dependencyContract,
+      fileTopologyContract: bootstrap.fileTopologyContract,
       mcpPolicy: bootstrap.mcpPolicy.baseline,
       architecture,
     } as never,

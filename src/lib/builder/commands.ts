@@ -4,6 +4,7 @@ import { buildBuilderAgenticExecution, executeBuilderAgenticTask } from "@/lib/b
 import { npmInstall, npmRunScript } from "@/lib/builder/adapters/npm";
 import type { BuilderProjectCommandInput, BuilderProjectRecordedCommandInput } from "@/lib/builder/command-types";
 import { resolveBuilderProjectDependencyContractDrift } from "@/lib/builder/dependency-contract";
+import { resolveBuilderRunFileTopologyContractDrift } from "@/lib/builder/file-topology-snapshots";
 import {
   buildCurrentBuilderMcpContractSnapshot,
   hashBuilderMcpContractSnapshot,
@@ -308,6 +309,59 @@ export async function executeBuilderProjectCommand(
               : resolution.status === "aligned"
                 ? "Builder dependency contract is already aligned."
                 : "No dependency contract baseline is required for the current workspace state.",
+        metadata: {
+          targetRunId: input.runId,
+          resolution,
+        },
+      };
+    }
+    case "resolve_file_topology_contract_drift": {
+      const resolution = await resolveBuilderRunFileTopologyContractDrift({
+        project: {
+          id: project.id,
+          relativePath: project.relativePath,
+          context: project.context,
+        },
+        runId: input.runId,
+        decision: input.decision,
+        reason: input.reason,
+      });
+      if (resolution.baseline && (resolution.status === "approved" || resolution.status === "captured")) {
+        const architecture = await listBuilderProjectArchitecture(project.id);
+        await updateBuilderProject(project.id, {
+          context: {
+            ...normalizeBuilderProjectContext(project.context),
+            fileTopologyContract: resolution.baseline,
+            architecture,
+          } as never,
+        });
+      }
+      const result: BuilderCommandResult = {
+        ok: input.decision === "approve" ? resolution.status !== "rejected" : true,
+        command: "builder-file-topology-drift",
+        args: [project.id, input.runId, input.decision],
+        cwd: project.relativePath,
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify(resolution, null, 2),
+        stderr: "",
+        timedOut: false,
+        cancelled: false,
+      };
+
+      return {
+        kind: "COMMAND",
+        title: input.decision === "approve" ? "Approve Builder file topology contract rollover" : "Reject Builder file topology contract drift",
+        command: "builder-file-topology-drift",
+        args: [project.id, input.runId, input.decision],
+        result,
+        summary: resolution.status === "approved"
+          ? "Rolled the Builder file topology contract forward to the current structural baseline."
+          : resolution.status === "captured"
+            ? "Captured the initial Builder file topology contract baseline."
+            : resolution.status === "rejected"
+              ? "Rejected Builder file topology contract drift; execution remains blocked until structural placement policy is aligned."
+              : "Builder file topology contract is already aligned.",
         metadata: {
           targetRunId: input.runId,
           resolution,
