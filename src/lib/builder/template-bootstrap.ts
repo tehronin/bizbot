@@ -1,14 +1,16 @@
 import path from "path";
 import type { BuilderPackageManager, BuilderProject } from "@prisma/client";
+import { buildBuilderDependencyContractBaseline, buildCurrentBuilderDependencyContractSnapshot } from "@/lib/builder/dependency-contract";
 import { buildCurrentBuilderMcpContractSnapshot, hashBuilderMcpContractSnapshot } from "@/lib/builder/mcp-snapshots";
 import { writeBuilderMcpPolicyArtifact, type BuilderMcpPolicyArtifactState } from "@/lib/builder/mcp-policy";
-import type { BuilderMcpPolicyBaselineState } from "@/lib/builder/types";
+import type { BuilderDependencyContractBaselineState, BuilderMcpPolicyBaselineState } from "@/lib/builder/types";
 import { createBuilderDirectory, listBuilderFilesRecursive, readBuilderFile, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
 
 export interface BuilderBootstrapResult {
   template: string;
   root: string;
   files: string[];
+  dependencyContract: BuilderDependencyContractBaselineState | null;
   mcpPolicy: {
     artifactPath: string;
     policy: BuilderMcpPolicyArtifactState;
@@ -16,7 +18,7 @@ export interface BuilderBootstrapResult {
   };
 }
 
-type BuilderTemplateScaffoldResult = Omit<BuilderBootstrapResult, "mcpPolicy">;
+type BuilderTemplateScaffoldResult = Omit<BuilderBootstrapResult, "mcpPolicy" | "dependencyContract">;
 
 function packageManagerFlag(packageManager: BuilderPackageManager): "--use-npm" | "--use-pnpm" {
   return packageManager === "PNPM" ? "--use-pnpm" : "--use-npm";
@@ -135,10 +137,21 @@ export async function bootstrapBuilderProject(project: BuilderProject): Promise<
     packageManager: project.packageManager,
     expectedMcpContractHash,
   });
+  const dependencySnapshot = buildCurrentBuilderDependencyContractSnapshot({
+    projectRelativePath: project.relativePath,
+    packageManager: project.packageManager,
+  });
+  const dependencyContract = dependencySnapshot
+    ? buildBuilderDependencyContractBaseline({
+        packageManager: project.packageManager,
+        snapshot: dependencySnapshot,
+      })
+    : null;
 
   return {
     ...scaffold,
     files: Array.from(new Set([...scaffold.files, mcpPolicy.artifactPath])),
+    dependencyContract,
     mcpPolicy,
   };
 }

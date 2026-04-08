@@ -30,6 +30,13 @@ export async function runBuilderProjectBootstrap(projectId: string, options?: Bu
   });
 
   const bootstrap = await bootstrapBuilderProject(project);
+  if (bootstrap.dependencyContract) {
+    await promoteBuilderArchitecturalDecisionsToOntology({
+      projectId: project.id,
+      sourceRef: `builder:${project.id}:bootstrap:dependency_contract`,
+      decisionKeys: bootstrap.dependencyContract.decisionKeys,
+    });
+  }
   await promoteBuilderArchitecturalDecisionsToOntology({
     projectId: project.id,
     sourceRef: `builder:${project.id}:bootstrap:mcp_policy`,
@@ -40,6 +47,7 @@ export async function runBuilderProjectBootstrap(projectId: string, options?: Bu
   await updateBuilderProject(project.id, {
     context: {
       ...currentContext,
+      dependencyContract: bootstrap.dependencyContract,
       mcpPolicy: bootstrap.mcpPolicy.baseline,
       architecture,
     } as never,

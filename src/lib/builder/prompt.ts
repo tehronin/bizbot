@@ -1,9 +1,11 @@
 import type { BuilderProject, BuilderProjectBrief, BuilderProjectLifecycle } from "@prisma/client";
 import type {
   BuilderArchitectureDecisionState,
+  BuilderDependencyPlanningContextState,
   BuilderMilestoneState,
   BuilderMcpPlanningContextState,
   BuilderPlanAdherenceState,
+  BuilderRelevantDependencyContextState,
   BuilderRelevantMcpContextState,
   BuilderTaskSpecState,
 } from "@/lib/builder/types";
@@ -67,6 +69,14 @@ function renderMcpPolicyGuidance(context: BuilderProjectContextState): string | 
   }
 
   return `Builder MCP policy: keep ${context.mcpPolicy.artifactPath} aligned with Builder-managed control-plane state; if control-plane behavior changes, reconcile the policy artifact instead of hand-editing drift.`;
+}
+
+function renderDependencyContractGuidance(context: BuilderProjectContextState): string | null {
+  if (!context.dependencyContract) {
+    return null;
+  }
+
+  return `Builder dependency contract: keep direct package.json dependencies, scripts, and the active lockfile aligned with the accepted hash ${context.dependencyContract.expectedHash.slice(0, 12)}…; if dependency policy legitimately changes, resolve the dependency contract drift instead of bypassing it.`;
 }
 
 function inferBuilderTaskExecutionMode(args: {
@@ -218,6 +228,26 @@ function renderRelevantMcpContext(context: BuilderRelevantMcpContextState | null
   ].join("\n");
 }
 
+function renderRelevantDependencyContext(context: BuilderRelevantDependencyContextState | null | undefined): string {
+  if (!context) {
+    return "Relevant dependency context: none selected.";
+  }
+
+  const classificationEntries = Object.entries(context.classifications)
+    .filter(([, values]) => values.length > 0)
+    .map(([category, values]) => `- ${category}: ${values.join(", ")}`);
+
+  return [
+    "[Relevant Dependency Context]",
+    `Current contract hash: ${context.currentHash}`,
+    `Package manager: ${context.packageManager}`,
+    `Selection reasons: ${context.reasons.join(", ")}`,
+    `Highlighted packages: ${context.highlightedPackages.length > 0 ? context.highlightedPackages.join(", ") : "none selected"}`,
+    ...(classificationEntries.length > 0 ? classificationEntries : ["- classifications: none selected"]),
+    "[/Relevant Dependency Context]",
+  ].join("\n");
+}
+
 function renderMcpContractEvolution(context: BuilderMcpPlanningContextState | null | undefined): string {
   if (!context) {
     return "MCP contract evolution: no accepted project baseline exists yet.";
@@ -238,6 +268,27 @@ function renderMcpContractEvolution(context: BuilderMcpPlanningContextState | nu
   ].join("\n");
 }
 
+function renderDependencyContractEvolution(context: BuilderDependencyPlanningContextState | null | undefined): string {
+  if (!context) {
+    return "Dependency contract evolution: no package manifest is available for this Builder project yet.";
+  }
+
+  return [
+    "[Dependency Contract Evolution]",
+    `Summary: ${context.summary}`,
+    `Baseline hash: ${context.baselineHash ?? "none"}`,
+    `Current hash: ${context.currentHash}`,
+    `Package manager: ${context.packageManager}`,
+    `Related ADR keys: ${context.relatedArchitectureDecisionKeys.length > 0 ? context.relatedArchitectureDecisionKeys.join(", ") : "none"}`,
+    `Highlighted packages: ${context.highlightedPackages.length > 0 ? context.highlightedPackages.join(", ") : "none"}`,
+    ...context.recommendations.map((recommendation) => `- ${recommendation}`),
+    context.drift
+      ? `Drift details: packages(+${context.drift.packages.added.length}/-${context.drift.packages.removed.length}/~${context.drift.packages.changed.length}/reclass ${context.drift.packages.reclassified.length}), scripts(+${context.drift.scripts.added.length}/-${context.drift.scripts.removed.length}/~${context.drift.scripts.changed.length}), lockfileChanged=${context.drift.lockfileChanged}, packageManagerChanged=${context.drift.packageManagerChanged}`
+      : "Drift details: none",
+    "[/Dependency Contract Evolution]",
+  ].join("\n");
+}
+
 export function composeBuilderTaskPrompt(args: {
   project: BuilderProject;
   task: { title: string; acceptanceCriteria: unknown; metadata: unknown };
@@ -251,6 +302,7 @@ export function composeBuilderTaskPrompt(args: {
   fragments: BuilderInstructionFragment[];
   adherence?: BuilderPlanAdherenceState | null;
   mcpContext?: BuilderRelevantMcpContextState | null;
+  dependencyContext?: BuilderRelevantDependencyContextState | null;
 }): string {
   const metadata = normalizeBuilderTaskMetadata(args.task.metadata);
   const acceptanceCriteria = Array.isArray(args.task.acceptanceCriteria)
@@ -285,8 +337,10 @@ export function composeBuilderTaskPrompt(args: {
     args.context.objective ? `Project objective: ${args.context.objective}` : "Project objective: not yet recorded.",
     renderPlannedStack(args.context),
     renderMcpPolicyGuidance(args.context),
+    renderDependencyContractGuidance(args.context),
     renderPlanAdherenceSection(args.adherence),
     renderRelevantMcpContext(args.mcpContext),
+    renderRelevantDependencyContext(args.dependencyContext),
     planSteps.length > 0
       ? `Active plan: ${planSteps.map((step) => `[${step.status}] ${step.label}`).join("; ")}`
       : "Active plan: inspect the workspace, implement the request, validate the result, and summarize what changed.",
@@ -312,8 +366,10 @@ export function composeBuilderPlannerPrompt(args: {
   acceptanceCriteria: string[];
   activeArchitecture: BuilderArchitectureDecisionState[];
   staleArchitecture: BuilderArchitectureDecisionState[];
+  dependencyContext?: BuilderRelevantDependencyContextState | null;
   mcpContext?: BuilderRelevantMcpContextState | null;
   mcpPlanningContext?: BuilderMcpPlanningContextState | null;
+  dependencyPlanningContext?: BuilderDependencyPlanningContextState | null;
 }): string {
   return [
     "Builder planner mission: produce a concise, dependency-safe project plan for the selected external Builder workspace.",
@@ -322,9 +378,11 @@ export function composeBuilderPlannerPrompt(args: {
     `[Constraints]\n${args.constraints.length > 0 ? args.constraints.map((constraint) => `- ${constraint}`).join("\n") : "- none recorded"}\n[/Constraints]`,
     `[Non-Goals]\n${args.nonGoals.length > 0 ? args.nonGoals.map((item) => `- ${item}`).join("\n") : "- none recorded"}\n[/Non-Goals]`,
     `[Acceptance Criteria]\n${args.acceptanceCriteria.length > 0 ? args.acceptanceCriteria.map((item) => `- ${item}`).join("\n") : "- none recorded"}\n[/Acceptance Criteria]`,
-    `[Template Guidance]\n- Respect the existing template: ${args.project.template}.\n- Keep package manager assumptions aligned to ${args.project.packageManager}.\n- ${renderPlannedStack(args.context).replace(/^Planned stack: /, "Planned stack: ")}\n${renderMcpPolicyGuidance(args.context) ? `- ${renderMcpPolicyGuidance(args.context)}\n` : ""}- Reuse current context/projection patterns, but keep planning prompting separate from task execution prompting.\n[/Template Guidance]`,
+    `[Template Guidance]\n- Respect the existing template: ${args.project.template}.\n- Keep package manager assumptions aligned to ${args.project.packageManager}.\n- ${renderPlannedStack(args.context).replace(/^Planned stack: /, "Planned stack: ")}\n${renderMcpPolicyGuidance(args.context) ? `- ${renderMcpPolicyGuidance(args.context)}\n` : ""}${renderDependencyContractGuidance(args.context) ? `- ${renderDependencyContractGuidance(args.context)}\n` : ""}- Reuse current context/projection patterns, but keep planning prompting separate from task execution prompting.\n[/Template Guidance]`,
+    renderRelevantDependencyContext(args.dependencyContext),
     renderRelevantMcpContext(args.mcpContext),
     renderMcpContractEvolution(args.mcpPlanningContext),
+    renderDependencyContractEvolution(args.dependencyPlanningContext),
     `[Active Architecture]\n${renderArchitectureSection("", args.activeArchitecture, "No active architecture decisions recorded.").replace(/^\n/, "")}\n[/Active Architecture]`,
     `[Stale Architecture - Needs Reconfirmation]\n${renderArchitectureSection("", args.staleArchitecture, "No stale architecture decisions require reconciliation.").replace(/^\n/, "")}\n[/Stale Architecture - Needs Reconfirmation]`,
     `[Context Notes]\n${args.context.objective ? `Objective: ${args.context.objective}` : "Objective: none recorded"}\n${args.context.instructionNotes ? `Instruction notes: ${args.context.instructionNotes}` : "Instruction notes: none recorded"}\n[/Context Notes]`,

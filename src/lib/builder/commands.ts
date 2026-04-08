@@ -3,6 +3,7 @@ import { gitInitRepository } from "@/lib/builder/adapters/git";
 import { buildBuilderAgenticExecution, executeBuilderAgenticTask } from "@/lib/builder/agentic";
 import { npmInstall, npmRunScript } from "@/lib/builder/adapters/npm";
 import type { BuilderProjectCommandInput, BuilderProjectRecordedCommandInput } from "@/lib/builder/command-types";
+import { resolveBuilderProjectDependencyContractDrift } from "@/lib/builder/dependency-contract";
 import {
   buildCurrentBuilderMcpContractSnapshot,
   hashBuilderMcpContractSnapshot,
@@ -251,6 +252,62 @@ export async function executeBuilderProjectCommand(
             : resolution.status === "captured"
               ? "Captured the initial Builder MCP contract snapshot."
               : "Builder MCP contract is already aligned.",
+        metadata: {
+          targetRunId: input.runId,
+          resolution,
+        },
+      };
+    }
+    case "resolve_dependency_contract_drift": {
+      const resolution = await resolveBuilderProjectDependencyContractDrift({
+        project: {
+          id: project.id,
+          relativePath: project.relativePath,
+          packageManager: project.packageManager,
+          context: project.context,
+        },
+        runId: input.runId,
+        decision: input.decision,
+        reason: input.reason,
+      });
+      if (resolution.baseline && (resolution.status === "approved" || resolution.status === "captured")) {
+        const architecture = await listBuilderProjectArchitecture(project.id);
+        await updateBuilderProject(project.id, {
+          context: {
+            ...normalizeBuilderProjectContext(project.context),
+            dependencyContract: resolution.baseline,
+            architecture,
+          } as never,
+        });
+      }
+      const result: BuilderCommandResult = {
+        ok: input.decision === "approve" ? resolution.status !== "rejected" : true,
+        command: "builder-dependency-drift",
+        args: [project.id, input.runId, input.decision],
+        cwd: project.relativePath,
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify(resolution, null, 2),
+        stderr: "",
+        timedOut: false,
+        cancelled: false,
+      };
+
+      return {
+        kind: "COMMAND",
+        title: input.decision === "approve" ? "Approve Builder dependency contract rollover" : "Reject Builder dependency contract drift",
+        command: "builder-dependency-drift",
+        args: [project.id, input.runId, input.decision],
+        result,
+        summary: resolution.status === "approved"
+          ? "Rolled the Builder dependency contract forward to the current package manifest and lockfile baseline."
+          : resolution.status === "captured"
+            ? "Captured the initial Builder dependency contract baseline."
+            : resolution.status === "rejected"
+              ? "Rejected Builder dependency contract drift; execution remains blocked until the dependency policy is aligned."
+              : resolution.status === "aligned"
+                ? "Builder dependency contract is already aligned."
+                : "No dependency contract baseline is required for the current workspace state.",
         metadata: {
           targetRunId: input.runId,
           resolution,

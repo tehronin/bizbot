@@ -184,6 +184,97 @@ export interface BuilderMcpPlanningContextState {
   drift: BuilderMcpContractDriftState | null;
 }
 
+export interface BuilderDependencyPackageEntry {
+  name: string;
+  kind: "runtime" | "dev" | "optional" | "peer";
+  range: string;
+  resolvedVersion: string | null;
+}
+
+export interface BuilderDependencyScriptEntry {
+  name: string;
+  command: string;
+}
+
+export interface BuilderDependencyClassificationState {
+  framework: string[];
+  ui: string[];
+  database: string[];
+  mcp: string[];
+  queue: string[];
+  desktop: string[];
+  validation: string[];
+  graph: string[];
+  ai: string[];
+}
+
+export interface BuilderDependencyContractSnapshotState {
+  packageManager: "npm" | "pnpm";
+  manifest: {
+    name: string | null;
+    version: string | null;
+    private: boolean;
+    type: string | null;
+  };
+  scripts: BuilderDependencyScriptEntry[];
+  packages: BuilderDependencyPackageEntry[];
+  lockfile: {
+    path: string | null;
+    present: boolean;
+    lockfileVersion: number | null;
+    contentHash: string | null;
+  };
+  classifications: BuilderDependencyClassificationState;
+}
+
+export interface BuilderDependencyContractDriftState {
+  previousHash: string | null;
+  currentHash: string;
+  changed: boolean;
+  packageManagerChanged: boolean;
+  lockfileChanged: boolean;
+  packages: {
+    added: string[];
+    removed: string[];
+    changed: string[];
+    reclassified: string[];
+  };
+  scripts: {
+    added: string[];
+    removed: string[];
+    changed: string[];
+  };
+}
+
+export interface BuilderDependencyContractBaselineState {
+  version: number;
+  expectedHash: string;
+  packageManager: "npm" | "pnpm";
+  decisionKeys: string[];
+  snapshot: BuilderDependencyContractSnapshotState;
+  updatedAt: string;
+}
+
+export interface BuilderDependencyPlanningContextState {
+  baselineHash: string | null;
+  currentHash: string;
+  driftDetected: boolean;
+  packageManager: "npm" | "pnpm";
+  relatedArchitectureDecisionKeys: string[];
+  highlightedPackages: string[];
+  recommendations: string[];
+  summary: string;
+  drift: BuilderDependencyContractDriftState | null;
+}
+
+export interface BuilderRelevantDependencyContextState {
+  currentHash: string;
+  packageManager: "npm" | "pnpm";
+  highlightedPackages: string[];
+  classifications: BuilderDependencyClassificationState;
+  reasons: string[];
+}
+
 export interface BuilderRelevantMcpContextState {
   currentHash: string;
   tools: BuilderMcpToolSnapshotEntry[];
@@ -327,6 +418,7 @@ export interface BuilderProjectContextState {
   objective: string | null;
   plannedStack: BuilderPlannedStackState | null;
   mcpPolicy?: BuilderMcpPolicyBaselineState | null;
+  dependencyContract?: BuilderDependencyContractBaselineState | null;
   architectureNotes: string[];
   architecture?: BuilderArchitectureContextState;
   codingConventions: string[];
@@ -420,6 +512,7 @@ export function defaultBuilderProjectContext(): BuilderProjectContextState {
     objective: null,
     plannedStack: null,
     mcpPolicy: null,
+    dependencyContract: null,
     architectureNotes: [],
     architecture: defaultBuilderArchitectureContext(),
     codingConventions: [],
@@ -496,6 +589,34 @@ export function normalizeBuilderProjectContext(value: unknown): BuilderProjectCo
   const readStringArray = (input: unknown): string[] => Array.isArray(input)
     ? input.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : [])
     : [];
+  const readDependencyClassifications = (input: unknown): BuilderDependencyClassificationState => {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      return {
+        framework: [],
+        ui: [],
+        database: [],
+        mcp: [],
+        queue: [],
+        desktop: [],
+        validation: [],
+        graph: [],
+        ai: [],
+      };
+    }
+
+    const candidateClassifications = input as Record<string, unknown>;
+    return {
+      framework: readStringArray(candidateClassifications.framework),
+      ui: readStringArray(candidateClassifications.ui),
+      database: readStringArray(candidateClassifications.database),
+      mcp: readStringArray(candidateClassifications.mcp),
+      queue: readStringArray(candidateClassifications.queue),
+      desktop: readStringArray(candidateClassifications.desktop),
+      validation: readStringArray(candidateClassifications.validation),
+      graph: readStringArray(candidateClassifications.graph),
+      ai: readStringArray(candidateClassifications.ai),
+    };
+  };
   const readArchitecture = (input: unknown): BuilderArchitectureContextState => {
     if (!input || typeof input !== "object" || Array.isArray(input)) {
       return defaultBuilderArchitectureContext();
@@ -587,6 +708,107 @@ export function normalizeBuilderProjectContext(value: unknown): BuilderProjectCo
         policyHashVersion,
         allowedToolCategories: readStringArray(policy.allowedToolCategories),
         decisionKeys: readStringArray(policy.decisionKeys),
+      };
+    })(),
+    dependencyContract: (() => {
+      const input = candidate.dependencyContract;
+      if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return null;
+      }
+
+      const dependencyContract = input as Record<string, unknown>;
+      const expectedHash = typeof dependencyContract.expectedHash === "string" ? dependencyContract.expectedHash.trim() : "";
+      const packageManager = dependencyContract.packageManager === "pnpm"
+        ? "pnpm"
+        : dependencyContract.packageManager === "npm"
+          ? "npm"
+          : null;
+      const version = typeof dependencyContract.version === "number" && Number.isFinite(dependencyContract.version)
+        ? Math.trunc(dependencyContract.version)
+        : null;
+      const updatedAt = typeof dependencyContract.updatedAt === "string" && dependencyContract.updatedAt.trim()
+        ? dependencyContract.updatedAt.trim()
+        : null;
+      const snapshotValue = dependencyContract.snapshot;
+      if (!expectedHash || !packageManager || !version || !updatedAt || !snapshotValue || typeof snapshotValue !== "object" || Array.isArray(snapshotValue)) {
+        return null;
+      }
+
+      const snapshot = snapshotValue as Record<string, unknown>;
+      const manifestValue = snapshot.manifest;
+      const lockfileValue = snapshot.lockfile;
+      if (!manifestValue || typeof manifestValue !== "object" || Array.isArray(manifestValue) || !lockfileValue || typeof lockfileValue !== "object" || Array.isArray(lockfileValue)) {
+        return null;
+      }
+
+      const manifest = manifestValue as Record<string, unknown>;
+      const lockfile = lockfileValue as Record<string, unknown>;
+      return {
+        version,
+        expectedHash,
+        packageManager,
+        decisionKeys: readStringArray(dependencyContract.decisionKeys),
+        updatedAt,
+        snapshot: {
+          packageManager,
+          manifest: {
+            name: typeof manifest.name === "string" && manifest.name.trim() ? manifest.name.trim() : null,
+            version: typeof manifest.version === "string" && manifest.version.trim() ? manifest.version.trim() : null,
+            private: manifest.private === true,
+            type: typeof manifest.type === "string" && manifest.type.trim() ? manifest.type.trim() : null,
+          },
+          scripts: Array.isArray(snapshot.scripts)
+            ? snapshot.scripts.flatMap((item) => {
+                if (!item || typeof item !== "object" || Array.isArray(item)) {
+                  return [];
+                }
+                const script = item as Record<string, unknown>;
+                const name = typeof script.name === "string" ? script.name.trim() : "";
+                const command = typeof script.command === "string" ? script.command.trim() : "";
+                return name && command ? [{ name, command }] : [];
+              })
+            : [],
+          packages: Array.isArray(snapshot.packages)
+            ? snapshot.packages.flatMap((item) => {
+                if (!item || typeof item !== "object" || Array.isArray(item)) {
+                  return [];
+                }
+                const dependency = item as Record<string, unknown>;
+                const name = typeof dependency.name === "string" ? dependency.name.trim() : "";
+                const range = typeof dependency.range === "string" ? dependency.range.trim() : "";
+                const kind = dependency.kind === "dev"
+                  ? "dev"
+                  : dependency.kind === "optional"
+                    ? "optional"
+                    : dependency.kind === "peer"
+                      ? "peer"
+                      : dependency.kind === "runtime"
+                        ? "runtime"
+                        : null;
+                if (!name || !range || !kind) {
+                  return [];
+                }
+
+                return [{
+                  name,
+                  kind,
+                  range,
+                  resolvedVersion: typeof dependency.resolvedVersion === "string" && dependency.resolvedVersion.trim()
+                    ? dependency.resolvedVersion.trim()
+                    : null,
+                }];
+              })
+            : [],
+          lockfile: {
+            path: typeof lockfile.path === "string" && lockfile.path.trim() ? lockfile.path.trim() : null,
+            present: lockfile.present === true,
+            lockfileVersion: typeof lockfile.lockfileVersion === "number" && Number.isFinite(lockfile.lockfileVersion)
+              ? Math.trunc(lockfile.lockfileVersion)
+              : null,
+            contentHash: typeof lockfile.contentHash === "string" && lockfile.contentHash.trim() ? lockfile.contentHash.trim() : null,
+          },
+          classifications: readDependencyClassifications(snapshot.classifications),
+        },
       };
     })(),
     architectureNotes: readStringArray(candidate.architectureNotes),

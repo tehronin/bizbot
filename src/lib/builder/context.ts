@@ -95,6 +95,12 @@ function renderProjectAgentsFile(project: BuilderProject, context: BuilderProjec
       ? `Builder manages ${context.mcpPolicy.artifactPath} with expected hash ${context.mcpPolicy.expectedHash.slice(0, 12)}… and decision keys ${context.mcpPolicy.decisionKeys.join(", ") || "none"}.`
       : "No Builder MCP policy baseline recorded yet.",
     "",
+    `## Builder Dependency Contract`,
+    "",
+    context.dependencyContract
+      ? `Builder tracks direct dependency policy with accepted hash ${context.dependencyContract.expectedHash.slice(0, 12)}… and decision keys ${context.dependencyContract.decisionKeys.join(", ") || "none"}.`
+      : "No Builder dependency contract baseline recorded yet.",
+    "",
     `## Constraints`,
     "",
     ...constraints.map((constraint) => `- ${constraint}`),
@@ -129,6 +135,18 @@ function renderProjectContextMarkdown(context: BuilderProjectContextState): stri
           `Expected MCP contract hash: ${context.mcpPolicy.expectedMcpContractHash}`,
           `Decision keys: ${context.mcpPolicy.decisionKeys.length > 0 ? context.mcpPolicy.decisionKeys.join(", ") : "none"}`,
           `Allowed tool categories: ${context.mcpPolicy.allowedToolCategories.length > 0 ? context.mcpPolicy.allowedToolCategories.join(", ") : "none"}`,
+        ].join("\n")
+      : "Not set yet.",
+    "",
+    `## Builder Dependency Contract`,
+    "",
+    context.dependencyContract
+      ? [
+          `Expected dependency hash: ${context.dependencyContract.expectedHash}`,
+          `Package manager: ${context.dependencyContract.packageManager}`,
+          `Decision keys: ${context.dependencyContract.decisionKeys.length > 0 ? context.dependencyContract.decisionKeys.join(", ") : "none"}`,
+          `Highlighted packages: ${context.dependencyContract.snapshot.packages.length > 0 ? context.dependencyContract.snapshot.packages.map((item) => `${item.name}@${item.range}`).join(", ") : "none"}`,
+          `Lockfile: ${context.dependencyContract.snapshot.lockfile.present ? `${context.dependencyContract.snapshot.lockfile.path ?? "present"} (${context.dependencyContract.snapshot.lockfile.contentHash?.slice(0, 12) ?? "hash unavailable"}…)` : "not recorded"}`,
         ].join("\n")
       : "Not set yet.",
     "",
@@ -172,6 +190,55 @@ function renderArchitectureMarkdown(context: BuilderProjectContextState): string
     `## Notes`,
     "",
     ...(context.architectureNotes.length > 0 ? context.architectureNotes.map((item) => `- ${item}`) : ["- No architecture notes recorded yet."]),
+    "",
+  ].join("\n");
+}
+
+function renderDependencyContractMarkdown(context: BuilderProjectContextState): string {
+  return [
+    "# Dependency Contract",
+    "",
+    context.dependencyContract
+      ? `Accepted dependency contract hash: ${context.dependencyContract.expectedHash}`
+      : "Accepted dependency contract hash: none recorded.",
+    context.dependencyContract
+      ? `Package manager: ${context.dependencyContract.packageManager}`
+      : "Package manager: none recorded.",
+    context.dependencyContract
+      ? `Updated at: ${context.dependencyContract.updatedAt}`
+      : "Updated at: none recorded.",
+    "",
+    "## Decision Keys",
+    "",
+    ...(context.dependencyContract?.decisionKeys.length
+      ? context.dependencyContract.decisionKeys.map((item) => `- ${item}`)
+      : ["- none recorded"]),
+    "",
+    "## Direct Packages",
+    "",
+    ...(context.dependencyContract?.snapshot.packages.length
+      ? context.dependencyContract.snapshot.packages.map((item) => `- ${item.name} (${item.kind}) ${item.range}${item.resolvedVersion ? ` -> ${item.resolvedVersion}` : ""}`)
+      : ["- none recorded"]),
+    "",
+    "## Scripts",
+    "",
+    ...(context.dependencyContract?.snapshot.scripts.length
+      ? context.dependencyContract.snapshot.scripts.map((item) => `- ${item.name}: ${item.command}`)
+      : ["- none recorded"]),
+    "",
+    "## Lockfile",
+    "",
+    context.dependencyContract
+      ? context.dependencyContract.snapshot.lockfile.present
+        ? `Tracked lockfile: ${context.dependencyContract.snapshot.lockfile.path ?? "present"}`
+        : "Tracked lockfile: none recorded."
+      : "Tracked lockfile: none recorded.",
+    context.dependencyContract && context.dependencyContract.snapshot.lockfile.lockfileVersion !== null
+      ? `Lockfile version: ${context.dependencyContract.snapshot.lockfile.lockfileVersion}`
+      : "Lockfile version: none recorded.",
+    context.dependencyContract?.snapshot.lockfile.contentHash
+      ? `Lockfile content hash: ${context.dependencyContract.snapshot.lockfile.contentHash}`
+      : "Lockfile content hash: none recorded.",
     "",
   ].join("\n");
 }
@@ -307,6 +374,7 @@ export function syncBuilderProjectProjection(args: {
 
   writeBuilderFile(path.posix.join(args.project.relativePath, "AGENTS.md"), renderProjectAgentsFile(args.project, context));
   writeBuilderFile(path.posix.join(baseDir, "project-context.md"), renderProjectContextMarkdown(context));
+  writeBuilderFile(path.posix.join(baseDir, "dependency-contract.md"), renderDependencyContractMarkdown(context));
   writeBuilderFile(path.posix.join(baseDir, "project-brief.md"), renderProjectBriefMarkdown(args.planning));
   writeBuilderFile(path.posix.join(baseDir, "architecture.md"), renderArchitectureMarkdown(context));
   writeBuilderFile(path.posix.join(baseDir, "milestones.md"), renderMilestonesMarkdown(args.planning));

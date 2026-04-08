@@ -8,6 +8,7 @@ import {
   normalizeBuilderProjectBriefState,
   normalizeBuilderProjectContext,
   type BuilderArchitectureContextState,
+  type BuilderDependencyPlanningContextState,
   type BuilderMcpPlanningContextState,
   type BuilderNormalizedMilestoneDraft,
   type BuilderNormalizedTaskSpecDraft,
@@ -17,6 +18,7 @@ import {
   type BuilderPlannerMilestoneDraft,
   type BuilderProjectBriefState,
   type BuilderProjectContextState,
+  type BuilderRelevantDependencyContextState,
 } from "@/lib/builder/types";
 function isNormalizedValidator(
   value: BuilderNormalizedTaskSpecDraft["validators"][number] | null,
@@ -692,11 +694,13 @@ export function critiqueBuilderPlanCandidate(args: {
 }
 
 export function runBuilderPlannerPipeline(args: {
-  project: Pick<BuilderProject, "id" | "name" | "template" | "packageManager">;
+  project: Pick<BuilderProject, "id" | "name" | "relativePath" | "template" | "packageManager">;
   brief: BuilderProjectBrief;
   context?: BuilderProjectContextState;
   architecture?: BuilderArchitectureContextState;
   mcpPlanningContext?: BuilderMcpPlanningContextState | null;
+  dependencyPlanningContext?: BuilderDependencyPlanningContextState | null;
+  dependencyContext?: BuilderRelevantDependencyContextState | null;
 }): {
   input: BuilderPlannerInputState;
   prompt: string;
@@ -723,8 +727,10 @@ export function runBuilderPlannerPipeline(args: {
     acceptanceCriteria: input.acceptanceCriteria,
     activeArchitecture: input.activeArchitecture,
     staleArchitecture: input.staleArchitecture,
+    dependencyContext: args.dependencyContext,
     mcpContext: plannerMcpContext,
     mcpPlanningContext: args.mcpPlanningContext,
+    dependencyPlanningContext: args.dependencyPlanningContext,
   });
   const candidateMilestones = buildDeterministicPlannerDraft(args.brief, args.architecture ?? defaultBuilderArchitectureContext());
   const normalizedMilestones = normalizePlannerOutput(candidateMilestones);
@@ -746,7 +752,7 @@ export function runBuilderPlannerPipeline(args: {
 export function buildPlanFromBrief(
   brief: BuilderProjectBrief,
   options?: {
-    project?: Pick<BuilderProject, "id" | "name" | "template" | "packageManager">;
+    project?: Pick<BuilderProject, "id" | "name" | "relativePath" | "template" | "packageManager">;
     context?: BuilderProjectContextState;
     architecture?: BuilderArchitectureContextState;
   },

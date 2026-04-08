@@ -320,12 +320,57 @@ describe("builder prompt synthesis", () => {
       acceptanceCriteria: [],
       activeArchitecture: [],
       staleArchitecture: [],
+      dependencyContext: {
+        currentHash: "dep-hash-plan",
+        packageManager: "pnpm",
+        highlightedPackages: ["next", "react", "@prisma/client"],
+        classifications: {
+          framework: ["next"],
+          ui: ["react"],
+          database: ["@prisma/client"],
+          mcp: [],
+          queue: [],
+          desktop: [],
+          validation: [],
+          graph: [],
+          ai: [],
+        },
+        reasons: ["mode:analysis_only", "template:next-app"],
+      },
       mcpContext: {
         currentHash: "hash-plan",
         reasons: ["mode:analysis_only", "template:next-app"],
         tools: [{ name: "developer_preview_mcp_exposure", title: "Preview MCP Exposure", description: "Inspect the MCP surface.", ownerId: "developer", ownerKind: "builtin-plugin", annotations: null, parameters: null }],
         prompts: [],
         resources: [{ sourceKind: "builtin", serverName: null, name: "plugins-mcp-surface-preview", uri: "bizbot://plugins/mcp-surface-preview", title: "Plugin MCP Surface Preview", description: "Current MCP tool, prompt, and resource catalogs.", ownerId: "developer", group: "plugins", mimeType: "application/json" }],
+      },
+      dependencyPlanningContext: {
+        baselineHash: "dep-hash-baseline",
+        currentHash: "dep-hash-plan",
+        driftDetected: true,
+        packageManager: "pnpm",
+        relatedArchitectureDecisionKeys: ["dependency_manager_pnpm", "framework_next", "orm_prisma"],
+        highlightedPackages: ["next", "react", "@prisma/client"],
+        recommendations: ["Review package.json and the active lockfile together."],
+        summary: "Dependency contract drift detected.",
+        drift: {
+          previousHash: "dep-hash-baseline",
+          currentHash: "dep-hash-plan",
+          changed: true,
+          packageManagerChanged: false,
+          lockfileChanged: true,
+          packages: {
+            added: ["zod"],
+            removed: [],
+            changed: ["next"],
+            reclassified: [],
+          },
+          scripts: {
+            added: [],
+            removed: [],
+            changed: ["build"],
+          },
+        },
       },
     });
 
@@ -334,6 +379,11 @@ describe("builder prompt synthesis", () => {
     expect(taskPrompt).toContain("debug-runtime");
     expect(taskPrompt).toContain("bizbot://builder/current-runs");
     expect(taskPrompt).not.toContain("developer_preview_mcp_exposure");
+    expect(plannerPrompt).toContain("[Relevant Dependency Context]");
+    expect(plannerPrompt).toContain("dep-hash-plan");
+    expect(plannerPrompt).toContain("@prisma/client");
+    expect(plannerPrompt).toContain("[Dependency Contract Evolution]");
+    expect(plannerPrompt).toContain("Dependency contract drift detected.");
     expect(plannerPrompt).toContain("hash-plan");
     expect(plannerPrompt).toContain("developer_preview_mcp_exposure");
     expect(plannerPrompt).toContain("bizbot://plugins/mcp-surface-preview");

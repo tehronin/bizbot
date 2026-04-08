@@ -10,6 +10,7 @@ import type {
   BuilderTaskSpecValidator,
 } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getBuilderDependencyPlanningContext, selectRelevantBuilderDependencyContext } from "@/lib/builder/dependency-contract";
 import { getBuilderMcpPlanningContext } from "@/lib/builder/mcp-snapshots";
 import { getBuilderProject, updateBuilderProject } from "@/lib/builder/projects";
 import { runBuilderPlannerPipeline } from "@/lib/builder/planner";
@@ -132,7 +133,7 @@ export async function replaceBuilderProjectPlanWithValidation(args: {
 }
 
 export async function generateBuilderProjectPlan(args: {
-  project: Pick<BuilderProject, "id" | "name" | "template" | "packageManager" | "context">;
+  project: Pick<BuilderProject, "id" | "name" | "relativePath" | "template" | "packageManager" | "context">;
   brief: BuilderProjectBrief;
 }): Promise<{
   planning: BuilderPlanningSnapshot;
@@ -147,12 +148,24 @@ export async function generateBuilderProjectPlan(args: {
       ...architecture.stale.map((decision) => decision.key),
     ],
   });
+  const dependencyPlanningContext = getBuilderDependencyPlanningContext({
+    projectRelativePath: args.project.relativePath,
+    packageManager: args.project.packageManager,
+    context: args.project.context,
+  });
+  const dependencyContext = selectRelevantBuilderDependencyContext({
+    projectRelativePath: args.project.relativePath,
+    packageManager: args.project.packageManager,
+    reasons: ["mode:analysis_only", `template:${args.project.template}`],
+  });
   const pipeline = runBuilderPlannerPipeline({
     project: args.project,
     brief: args.brief,
     context: args.project.context as never,
     architecture,
     mcpPlanningContext,
+    dependencyPlanningContext,
+    dependencyContext,
   });
   const persisted = await replaceBuilderProjectPlanWithValidation({
     projectId: args.project.id,

@@ -56,6 +56,41 @@ describe("builder context", () => {
       context: {
         objective: "Ship the demo app.",
         plannedStack: null,
+        dependencyContract: {
+          version: 1,
+          expectedHash: "dependency-hash-1",
+          packageManager: "npm",
+          decisionKeys: ["dependency_manager_npm", "ui_react"],
+          updatedAt: "2025-01-01T00:00:00.000Z",
+          snapshot: {
+            packageManager: "npm",
+            manifest: {
+              name: "demo",
+              version: "1.0.0",
+              private: true,
+              type: null,
+            },
+            scripts: [{ name: "build", command: "tsc -p tsconfig.json" }],
+            packages: [{ name: "react", kind: "runtime", range: "^19.0.0", resolvedVersion: "19.0.0" }],
+            lockfile: {
+              path: "package-lock.json",
+              present: true,
+              lockfileVersion: 3,
+              contentHash: "lock-hash-1",
+            },
+            classifications: {
+              framework: [],
+              ui: ["react"],
+              database: [],
+              mcp: [],
+              queue: [],
+              desktop: [],
+              validation: [],
+              graph: [],
+              ai: [],
+            },
+          },
+        },
         architectureNotes: ["Keep reports in .builder/reports."],
         architecture: {
           active: [{
@@ -132,6 +167,7 @@ describe("builder context", () => {
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/milestones.md", expect.stringContaining("Plan foundation"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/task-board.md", expect.stringContaining("Add planning tables"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/project-context.md", expect.stringContaining("Use strict TypeScript."));
+    expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/dependency-contract.md", expect.stringContaining("dependency-hash-1"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/architecture.md", expect.stringContaining("planning_schema"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/architecture.md", expect.stringContaining("legacy_projection_path"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/state.json", expect.stringContaining("Ship the demo app."));

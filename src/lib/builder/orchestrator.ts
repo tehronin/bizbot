@@ -2,6 +2,7 @@ import type { BuilderProject, BuilderRun, BuilderTask, BuilderTaskStage, Builder
 import { db } from "@/lib/db";
 import type { BuilderAgenticProgressEvent, BuilderAgenticTaskOptions } from "@/lib/builder/agentic";
 import { summarizeBuilderProjectMetrics, type BuilderHealthMetrics } from "@/lib/builder/analytics";
+import { ensureBuilderRunDependencyContractPreflight, selectRelevantBuilderDependencyContext } from "@/lib/builder/dependency-contract";
 import {
   ensureBuilderRunMcpSnapshotPreflight,
   getBuilderMcpSnapshotOverview,
@@ -547,11 +548,25 @@ export async function orchestrateBuilderTask(
     projectRelativePath: project.relativePath,
     projectContext: project.context,
   });
+  await ensureBuilderRunDependencyContractPreflight({
+    project: {
+      id: project.id,
+      relativePath: project.relativePath,
+      packageManager: project.packageManager,
+      context: project.context,
+    },
+    runId: run.id,
+  });
   const mcpContext = selectRelevantBuilderMcpContext({
     mode: adherence.mode,
     validators: taskSpec.validators.map((validator) => String(validator)),
     template: project.template,
     architecturalDecisionKeys: taskSpec.architecturalDecisionKeys,
+  });
+  const dependencyContext = selectRelevantBuilderDependencyContext({
+    projectRelativePath: project.relativePath,
+    packageManager: project.packageManager,
+    reasons: [`mode:${adherence.mode}`, `template:${project.template}`],
   });
   const prompt = composeBuilderTaskPrompt({
     project,
@@ -566,6 +581,7 @@ export async function orchestrateBuilderTask(
     fragments: selectRelevantInstructionFragments(project, request),
     adherence,
     mcpContext,
+    dependencyContext,
   });
 
   const loopResult = await executeNativeBuilderTask(project, {
