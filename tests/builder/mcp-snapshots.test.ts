@@ -1,4 +1,8 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { writeBuilderMcpPolicyArtifact } from "@/lib/builder/mcp-policy";
 
 const state = vi.hoisted(() => ({
   autonomyPreset: "approval_all_posts",
@@ -155,6 +159,7 @@ beforeEach(() => {
   state.importedResources = [];
   state.snapshots = [];
   state.nextId = 1;
+  delete process.env.BIZBOT_BUILDER_WORKSPACE_PATH;
 });
 
 describe("builder mcp snapshots", () => {
@@ -357,5 +362,32 @@ describe("builder mcp snapshots", () => {
     expect(overview.state).toBe("drifted");
     expect(overview.currentSequence).toBe(1);
     expect(overview.drift?.tools.added).toContain("developer_preview_mcp_exposure");
+  });
+
+  it("blocks execution when the Builder MCP policy artifact drifts from the persisted baseline", async () => {
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-builder-policy-"));
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    fs.mkdirSync(path.join(workspaceRoot, "projects", "project-1"), { recursive: true });
+
+    const written = writeBuilderMcpPolicyArtifact({
+      relativePath: "projects/project-1",
+      template: "node-cli",
+      packageManager: "NPM",
+      expectedMcpContractHash: "expected-contract-hash",
+    });
+    fs.writeFileSync(
+      path.join(workspaceRoot, written.artifactPath.replace(/\//g, path.sep)),
+      JSON.stringify({ ...written.policy, decisionKeys: ["changed_policy"] }, null, 2),
+      "utf8",
+    );
+
+    await expect(ensureBuilderRunMcpSnapshotPreflight({
+      projectId: "project-1",
+      runId: "run-policy",
+      projectRelativePath: "projects/project-1",
+      projectContext: {
+        mcpPolicy: written.baseline,
+      },
+    })).rejects.toThrow("Reconcile the Builder-managed policy artifact");
   });
 });

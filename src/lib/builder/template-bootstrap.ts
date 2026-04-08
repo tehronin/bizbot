@@ -1,18 +1,28 @@
 import path from "path";
 import type { BuilderPackageManager, BuilderProject } from "@prisma/client";
+import { buildCurrentBuilderMcpContractSnapshot, hashBuilderMcpContractSnapshot } from "@/lib/builder/mcp-snapshots";
+import { writeBuilderMcpPolicyArtifact, type BuilderMcpPolicyArtifactState } from "@/lib/builder/mcp-policy";
+import type { BuilderMcpPolicyBaselineState } from "@/lib/builder/types";
 import { createBuilderDirectory, listBuilderFilesRecursive, readBuilderFile, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
 
 export interface BuilderBootstrapResult {
   template: string;
   root: string;
   files: string[];
+  mcpPolicy: {
+    artifactPath: string;
+    policy: BuilderMcpPolicyArtifactState;
+    baseline: BuilderMcpPolicyBaselineState;
+  };
 }
+
+type BuilderTemplateScaffoldResult = Omit<BuilderBootstrapResult, "mcpPolicy">;
 
 function packageManagerFlag(packageManager: BuilderPackageManager): "--use-npm" | "--use-pnpm" {
   return packageManager === "PNPM" ? "--use-pnpm" : "--use-npm";
 }
 
-async function bootstrapNodeCli(project: BuilderProject): Promise<BuilderBootstrapResult> {
+async function bootstrapNodeCli(project: BuilderProject): Promise<BuilderTemplateScaffoldResult> {
   const scaffold = scaffoldBuilderNodePackage({
     projectDir: project.relativePath,
     packageName: project.slug,
@@ -22,7 +32,7 @@ async function bootstrapNodeCli(project: BuilderProject): Promise<BuilderBootstr
   return { template: project.template, ...scaffold };
 }
 
-async function bootstrapPluginPackage(project: BuilderProject): Promise<BuilderBootstrapResult> {
+async function bootstrapPluginPackage(project: BuilderProject): Promise<BuilderTemplateScaffoldResult> {
   const scaffold = scaffoldBuilderNodePackage({
     projectDir: project.relativePath,
     packageName: project.slug,
@@ -73,7 +83,7 @@ async function bootstrapPluginPackage(project: BuilderProject): Promise<BuilderB
   };
 }
 
-async function bootstrapViteApp(project: BuilderProject): Promise<BuilderBootstrapResult> {
+async function bootstrapViteApp(project: BuilderProject): Promise<BuilderTemplateScaffoldResult> {
   const { runNpmCreatePackage } = await import("@/lib/builder/adapters/npx");
   createBuilderDirectory(project.relativePath);
   await runNpmCreatePackage(project.relativePath, "vite@latest", ["--template", "react-ts"]);
@@ -84,7 +94,7 @@ async function bootstrapViteApp(project: BuilderProject): Promise<BuilderBootstr
   };
 }
 
-async function bootstrapNextApp(project: BuilderProject): Promise<BuilderBootstrapResult> {
+async function bootstrapNextApp(project: BuilderProject): Promise<BuilderTemplateScaffoldResult> {
   const { runNpmCreatePackage } = await import("@/lib/builder/adapters/npx");
   createBuilderDirectory(project.relativePath);
   await runNpmCreatePackage(project.relativePath, "next-app@latest", [
@@ -103,16 +113,32 @@ async function bootstrapNextApp(project: BuilderProject): Promise<BuilderBootstr
 }
 
 export async function bootstrapBuilderProject(project: BuilderProject): Promise<BuilderBootstrapResult> {
-  switch (project.template) {
-    case "node-cli":
-      return bootstrapNodeCli(project);
-    case "plugin-package":
-      return bootstrapPluginPackage(project);
-    case "vite-app":
-      return bootstrapViteApp(project);
-    case "next-app":
-      return bootstrapNextApp(project);
-    default:
-      throw new Error(`Unsupported builder template: ${project.template}`);
-  }
+  const scaffold = await (async () => {
+    switch (project.template) {
+      case "node-cli":
+        return bootstrapNodeCli(project);
+      case "plugin-package":
+        return bootstrapPluginPackage(project);
+      case "vite-app":
+        return bootstrapViteApp(project);
+      case "next-app":
+        return bootstrapNextApp(project);
+      default:
+        throw new Error(`Unsupported builder template: ${project.template}`);
+    }
+  })();
+
+  const expectedMcpContractHash = hashBuilderMcpContractSnapshot(buildCurrentBuilderMcpContractSnapshot());
+  const mcpPolicy = writeBuilderMcpPolicyArtifact({
+    relativePath: project.relativePath,
+    template: project.template,
+    packageManager: project.packageManager,
+    expectedMcpContractHash,
+  });
+
+  return {
+    ...scaffold,
+    files: Array.from(new Set([...scaffold.files, mcpPolicy.artifactPath])),
+    mcpPolicy,
+  };
 }

@@ -11,6 +11,9 @@ function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
   if (candidate.action === "initialize_git") {
     return { action: "initialize_git" };
   }
+  if (candidate.action === "reconcile_mcp_policy") {
+    return { action: "reconcile_mcp_policy" };
+  }
   if (candidate.action === "reconcile_operational_state") {
     return { action: "reconcile_operational_state" };
   }

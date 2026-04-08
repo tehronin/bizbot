@@ -18,6 +18,49 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/builder/adapters/npx", () => ({
   runNpmCreatePackage: vi.fn(async () => ({ ok: true })),
 }));
+vi.mock("@/lib/agent/runtime", () => ({
+  getAgentRuntimeConfig: () => ({ autonomyPreset: "approval_all_posts" }),
+  getAgentCapabilities: () => ({ promptAssembly: true, toolExecution: true }),
+}));
+vi.mock("@/lib/mcp/tool-presentation", () => ({
+  MCP_AGENT_PROFILE: "builder_operator",
+}));
+vi.mock("@/lib/mcp/client", () => ({
+  getMcpClientPrompts: () => [],
+  getMcpClientResources: () => [],
+}));
+vi.mock("@/lib/mcp/preview-catalog", () => ({
+  listCurrentMcpToolDescriptors: () => [],
+  listBizBotPromptDefinitions: () => [],
+  listBizBotResourceDefinitions: () => [],
+}));
+vi.mock("@/lib/platform/contract", () => ({
+  buildBizBotPlatformContractSnapshot: () => ({
+    version: "v1",
+    compatibilityPolicyVersion: "v1",
+    mcpLane: "builder_operator",
+    blockedTools: [],
+    promptsAreServerOwned: true,
+    resourcesAreServerOwned: true,
+    importedCatalogs: { prompts: true, resources: true },
+    toolOwnershipRequired: true,
+    laneBoundedExposure: true,
+  }),
+  classifyBizBotContractDrift: () => ({
+    level: "internal_only",
+    requiresVersionBump: false,
+    summary: "none",
+  }),
+}));
+vi.mock("@/lib/mcp/jobs", () => ({
+  enqueueMcpCleanupJob: vi.fn(),
+  enqueueMcpEmbeddingJob: vi.fn(),
+  shouldEnqueueMcpSnapshotJobs: () => false,
+}));
+vi.mock("@/lib/embeddings/embed", () => ({
+  embed: vi.fn(),
+  formatEmbedding: vi.fn(),
+}));
 import { bootstrapBuilderProject } from "@/lib/builder/template-bootstrap";
 
 function createTempBuilderWorkspace(): string {
@@ -62,6 +105,7 @@ describe("builder template bootstraps", () => {
     expect(bootstrap.files).toEqual(expect.arrayContaining([
       "projects/node-cli-test/package.json",
       "projects/node-cli-test/src/index.ts",
+      "projects/node-cli-test/.builder/mcp-policy.json",
     ]));
     expect(packageJson.scripts.start).toBe("node dist/index.js");
     expect(packageJson.scripts.typecheck).toBe("tsc --noEmit -p tsconfig.json");
@@ -85,6 +129,7 @@ describe("builder template bootstraps", () => {
     expect(bootstrap.files).toEqual(expect.arrayContaining([
       "projects/plugin-package-test/src/plugin.ts",
       "projects/plugin-package-test/tests/plugin.test.ts",
+      "projects/plugin-package-test/.builder/mcp-policy.json",
     ]));
     expect(packageJson.scripts.start).toBe("node dist/plugin.js");
     expect(packageJson.scripts.typecheck).toBe("tsc --noEmit -p tsconfig.json");
@@ -108,9 +153,11 @@ describe("builder template bootstraps", () => {
       "--use-npm",
     ]);
     expect(BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["next-app"]).toEqual(expect.objectContaining({
+      requiredFiles: expect.arrayContaining([".builder/mcp-policy.json"]),
       runtimeEntrypoint: "src/app/page.tsx",
       requiredScripts: expect.arrayContaining(["build", "lint", "start"]),
     }));
+    expect(fs.existsSync(path.join(workspaceRoot, "projects", "next-app-test", ".builder", "mcp-policy.json"))).toBe(true);
   });
 
   it("bootstraps the vite-app preset through create-vite with the shared contract present", async () => {
@@ -125,8 +172,10 @@ describe("builder template bootstraps", () => {
       "react-ts",
     ]);
     expect(BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["vite-app"]).toEqual(expect.objectContaining({
+      requiredFiles: expect.arrayContaining([".builder/mcp-policy.json"]),
       runtimeEntrypoint: "src/main.tsx",
       requiredScripts: expect.arrayContaining(["build", "dev", "preview"]),
     }));
+    expect(fs.existsSync(path.join(workspaceRoot, "projects", "vite-app-test", ".builder", "mcp-policy.json"))).toBe(true);
   });
 });

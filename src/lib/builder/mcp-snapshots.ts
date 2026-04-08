@@ -1,5 +1,10 @@
-import { createHash } from "node:crypto";
 import type { BuilderMcpSnapshot, Prisma } from "@prisma/client";
+import {
+  canonicalizeBuilderJsonValue,
+  hashCanonicalBuilderJsonValue,
+  normalizeBuilderJsonValue,
+} from "@/lib/builder/canonical-json";
+import { resolveBuilderMcpPolicyDrift, type BuilderMcpPolicyDriftState } from "@/lib/builder/mcp-policy";
 import { db } from "@/lib/db";
 import { getAgentCapabilities, getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { embed, formatEmbedding } from "@/lib/embeddings/embed";
@@ -16,6 +21,7 @@ import {
   listBizBotResourceDefinitions,
   listCurrentMcpToolDescriptors,
 } from "@/lib/mcp/preview-catalog";
+import { normalizeBuilderProjectContext } from "@/lib/builder/types";
 import type {
   BuilderMcpContractDriftSectionState,
   BuilderMcpContractDriftState,
@@ -31,39 +37,6 @@ import type {
 
 function toInputJsonValue(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
-}
-
-function normalizeJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((entry) => normalizeJsonValue(entry));
-  }
-  if (!value || typeof value !== "object") {
-    return value ?? null;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => [key, normalizeJsonValue(entry)]),
-  );
-}
-
-function canonicalizeJsonValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "null";
-  }
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => canonicalizeJsonValue(entry)).join(",")}]`;
-  }
-
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, entry]) => entry !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right));
-  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalizeJsonValue(entry)}`).join(",")}}`;
 }
 
 function readObject(value: unknown): Record<string, unknown> | null {
@@ -312,8 +285,8 @@ export function buildCurrentBuilderMcpContractSnapshot(): BuilderMcpContractSnap
       description: tool.description,
       ownerId: tool.ownerId,
       ownerKind: tool.ownerKind,
-      annotations: normalizeJsonValue(tool.annotations),
-      parameters: normalizeJsonValue(tool.parameters),
+      annotations: normalizeBuilderJsonValue(tool.annotations),
+      parameters: normalizeBuilderJsonValue(tool.parameters),
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
   const prompts = [
@@ -380,7 +353,7 @@ export function buildCurrentBuilderMcpContractSnapshot(): BuilderMcpContractSnap
     profile: {
       agentProfile: MCP_AGENT_PROFILE,
       autonomyPreset: runtimeConfig.autonomyPreset,
-      capabilities: normalizeJsonValue(getAgentCapabilities()),
+      capabilities: normalizeBuilderJsonValue(getAgentCapabilities()),
     },
     tools,
     prompts,
@@ -389,13 +362,11 @@ export function buildCurrentBuilderMcpContractSnapshot(): BuilderMcpContractSnap
 }
 
 export function canonicalizeBuilderMcpContractSnapshot(snapshot: BuilderMcpContractSnapshotState): string {
-  return canonicalizeJsonValue(normalizeJsonValue(snapshot));
+  return canonicalizeBuilderJsonValue(normalizeBuilderJsonValue(snapshot));
 }
 
 export function hashBuilderMcpContractSnapshot(snapshot: BuilderMcpContractSnapshotState): string {
-  return createHash("sha256")
-    .update(canonicalizeBuilderMcpContractSnapshot(snapshot), "utf8")
-    .digest("hex");
+  return hashCanonicalBuilderJsonValue(snapshot);
 }
 
 export function compareBuilderMcpContractSnapshots(
@@ -426,22 +397,22 @@ export function compareBuilderMcpContractSnapshots(
     previous: previous.tools,
     current: current.tools,
     getKey: (entry) => entry.name,
-    serialize: (entry) => canonicalizeJsonValue(normalizeJsonValue(entry)),
+    serialize: (entry) => canonicalizeBuilderJsonValue(normalizeBuilderJsonValue(entry)),
   });
   const prompts = buildSectionDrift({
     previous: previous.prompts,
     current: current.prompts,
     getKey: (entry) => `${entry.sourceKind}:${entry.serverName ?? ""}:${entry.name}`,
-    serialize: (entry) => canonicalizeJsonValue(normalizeJsonValue(entry)),
+    serialize: (entry) => canonicalizeBuilderJsonValue(normalizeBuilderJsonValue(entry)),
   });
   const resources = buildSectionDrift({
     previous: previous.resources,
     current: current.resources,
     getKey: (entry) => `${entry.sourceKind}:${entry.serverName ?? ""}:${entry.uri}`,
-    serialize: (entry) => canonicalizeJsonValue(normalizeJsonValue(entry)),
+    serialize: (entry) => canonicalizeBuilderJsonValue(normalizeBuilderJsonValue(entry)),
   });
-  const profileChanged = canonicalizeJsonValue(normalizeJsonValue(previous.profile)) !== canonicalizeJsonValue(normalizeJsonValue(current.profile));
-  const contractChanged = canonicalizeJsonValue(normalizeJsonValue(previous.contract ?? null)) !== canonicalizeJsonValue(normalizeJsonValue(current.contract));
+  const profileChanged = canonicalizeBuilderJsonValue(normalizeBuilderJsonValue(previous.profile)) !== canonicalizeBuilderJsonValue(normalizeBuilderJsonValue(current.profile));
+  const contractChanged = canonicalizeBuilderJsonValue(normalizeBuilderJsonValue(previous.contract ?? null)) !== canonicalizeBuilderJsonValue(normalizeBuilderJsonValue(current.contract));
 
   const draft = {
     previousHash,
@@ -468,6 +439,24 @@ export class BuilderMcpContractDriftError extends Error {
   constructor(args: { projectId: string; runId: string; drift: BuilderMcpContractDriftState }) {
     super(`Builder MCP contract drift detected for run ${args.runId}; operator approval is required before task execution can continue.`);
     this.name = "BuilderMcpContractDriftError";
+    this.projectId = args.projectId;
+    this.runId = args.runId;
+    this.drift = args.drift;
+  }
+}
+
+export class BuilderMcpPolicyDriftError extends Error {
+  readonly drift: BuilderMcpPolicyDriftState;
+  readonly runId: string;
+  readonly projectId: string;
+
+  constructor(args: { projectId: string; runId: string; drift: BuilderMcpPolicyDriftState }) {
+    super(
+      `Builder MCP policy artifact drift detected for run ${args.runId} at ${args.drift.artifactPath} `
+      + `(expected ${args.drift.expectedHash}, actual ${args.drift.actualHash ?? "missing"}). `
+      + `Reconcile the Builder-managed policy artifact before task execution can continue.`,
+    );
+    this.name = "BuilderMcpPolicyDriftError";
     this.projectId = args.projectId;
     this.runId = args.runId;
     this.drift = args.drift;
@@ -541,6 +530,8 @@ export async function ensureBuilderRunMcpSnapshotPreflight(args: {
   runId: string;
   taskId?: string | null;
   taskSpecId?: string | null;
+  projectRelativePath?: string;
+  projectContext?: unknown;
 }): Promise<{
   status: "captured" | "aligned";
   snapshot: BuilderMcpSnapshotRecordState;
@@ -548,6 +539,22 @@ export async function ensureBuilderRunMcpSnapshotPreflight(args: {
 }> {
   const currentSnapshot = buildCurrentBuilderMcpContractSnapshot();
   const currentHash = hashBuilderMcpContractSnapshot(currentSnapshot);
+  const projectContext = normalizeBuilderProjectContext(args.projectContext ?? null);
+  const policyBaseline = projectContext.mcpPolicy;
+  if (policyBaseline && args.projectRelativePath) {
+    const policyDrift = resolveBuilderMcpPolicyDrift({
+      projectRelativePath: args.projectRelativePath,
+      baseline: policyBaseline,
+      actualMcpContractHash: currentHash,
+    });
+    if (policyDrift) {
+      throw new BuilderMcpPolicyDriftError({
+        projectId: args.projectId,
+        runId: args.runId,
+        drift: policyDrift,
+      });
+    }
+  }
   const latestRunSnapshot = await getLatestBuilderMcpSnapshotForRun(args.runId);
   const baselineSnapshot = latestRunSnapshot ?? await getLatestBuilderMcpSnapshotForProject(args.projectId);
   const drift = compareBuilderMcpContractSnapshots(baselineSnapshot?.snapshot ?? null, currentSnapshot);

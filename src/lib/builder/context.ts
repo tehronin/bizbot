@@ -89,6 +89,12 @@ function renderProjectAgentsFile(project: BuilderProject, context: BuilderProjec
     "",
     context.objective ?? "Complete the active Builder task while keeping the project reviewable and safe.",
     "",
+    `## Builder MCP Policy`,
+    "",
+    context.mcpPolicy
+      ? `Builder manages ${context.mcpPolicy.artifactPath} with expected hash ${context.mcpPolicy.expectedHash.slice(0, 12)}… and decision keys ${context.mcpPolicy.decisionKeys.join(", ") || "none"}.`
+      : "No Builder MCP policy baseline recorded yet.",
+    "",
     `## Constraints`,
     "",
     ...constraints.map((constraint) => `- ${constraint}`),
@@ -112,6 +118,18 @@ function renderProjectContextMarkdown(context: BuilderProjectContextState): stri
     "",
     context.plannedStack
       ? `${context.plannedStack.label} using ${context.plannedStack.template} / ${context.plannedStack.packageManager}${context.plannedStack.tags.length > 0 ? ` (${context.plannedStack.tags.join(", ")})` : ""}.`
+      : "Not set yet.",
+    "",
+    `## Builder MCP Policy`,
+    "",
+    context.mcpPolicy
+      ? [
+          `Artifact: ${context.mcpPolicy.artifactPath}`,
+          `Expected policy hash: ${context.mcpPolicy.expectedHash}`,
+          `Expected MCP contract hash: ${context.mcpPolicy.expectedMcpContractHash}`,
+          `Decision keys: ${context.mcpPolicy.decisionKeys.length > 0 ? context.mcpPolicy.decisionKeys.join(", ") : "none"}`,
+          `Allowed tool categories: ${context.mcpPolicy.allowedToolCategories.length > 0 ? context.mcpPolicy.allowedToolCategories.join(", ") : "none"}`,
+        ].join("\n")
       : "Not set yet.",
     "",
     `## Conventions`,

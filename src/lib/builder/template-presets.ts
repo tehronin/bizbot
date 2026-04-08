@@ -23,7 +23,7 @@ export interface BuilderTemplateVerificationContract {
 
 export const BUILDER_TEMPLATE_VERIFICATION_CONTRACTS: Record<string, BuilderTemplateVerificationContract> = {
   "node-cli": {
-    requiredFiles: ["package.json", "src/index.ts", "tsconfig.json"],
+    requiredFiles: ["package.json", "src/index.ts", "tsconfig.json", ".builder/mcp-policy.json"],
     requiredScripts: ["build", "start", "typecheck"],
     runtimeEntrypoint: "src/index.ts",
     requiredDevDependencies: ["@types/node", "typescript"],
@@ -34,7 +34,7 @@ export const BUILDER_TEMPLATE_VERIFICATION_CONTRACTS: Record<string, BuilderTemp
     ],
   },
   "plugin-package": {
-    requiredFiles: ["package.json", "src/plugin.ts", "tests/plugin.test.ts", "tsconfig.json"],
+    requiredFiles: ["package.json", "src/plugin.ts", "tests/plugin.test.ts", "tsconfig.json", ".builder/mcp-policy.json"],
     requiredScripts: ["build", "start", "typecheck", "test"],
     runtimeEntrypoint: "src/plugin.ts",
     requiredDevDependencies: ["@types/node", "typescript", "vitest"],
@@ -45,7 +45,7 @@ export const BUILDER_TEMPLATE_VERIFICATION_CONTRACTS: Record<string, BuilderTemp
     ],
   },
   "vite-app": {
-    requiredFiles: ["package.json", "src/main.tsx", "src/App.tsx", "vite.config.ts", "tsconfig.json"],
+    requiredFiles: ["package.json", "src/main.tsx", "src/App.tsx", "vite.config.ts", "tsconfig.json", ".builder/mcp-policy.json"],
     requiredScripts: ["build", "dev", "preview"],
     runtimeEntrypoint: "src/main.tsx",
     requiredDependencies: ["react", "react-dom"],
@@ -56,7 +56,7 @@ export const BUILDER_TEMPLATE_VERIFICATION_CONTRACTS: Record<string, BuilderTemp
     ],
   },
   "next-app": {
-    requiredFiles: ["package.json", "src/app/page.tsx", "src/app/layout.tsx", "next.config.ts", "tsconfig.json"],
+    requiredFiles: ["package.json", "src/app/page.tsx", "src/app/layout.tsx", "next.config.ts", "tsconfig.json", ".builder/mcp-policy.json"],
     requiredScripts: ["build", "dev", "lint", "start"],
     runtimeEntrypoint: "src/app/page.tsx",
     requiredDependencies: ["next", "react", "react-dom"],

@@ -1,9 +1,12 @@
 import { getBuilderConfig } from "@/lib/builder/config";
 import { recordBuilderProjectCommand } from "@/lib/builder/commands";
 import { completeBuilderRun, createBuilderRun, getBuilderProject, updateBuilderProject } from "@/lib/builder/projects";
+import { listBuilderProjectArchitecture } from "@/lib/builder/planning";
 import { syncBuilderTemplatePresets } from "@/lib/builder/template-presets";
 import { bootstrapBuilderProject } from "@/lib/builder/template-bootstrap";
+import { normalizeBuilderProjectContext } from "@/lib/builder/types";
 import { listBuilderScaffoldBlockingEntries } from "@/lib/builder/workspace";
+import { promoteBuilderArchitecturalDecisionsToOntology } from "@/lib/ontology/promotion";
 
 export interface BuilderBootstrapOptions {
   initializeGit?: boolean;
@@ -27,6 +30,20 @@ export async function runBuilderProjectBootstrap(projectId: string, options?: Bu
   });
 
   const bootstrap = await bootstrapBuilderProject(project);
+  await promoteBuilderArchitecturalDecisionsToOntology({
+    projectId: project.id,
+    sourceRef: `builder:${project.id}:bootstrap:mcp_policy`,
+    decisionKeys: bootstrap.mcpPolicy.baseline.decisionKeys,
+  });
+  const architecture = await listBuilderProjectArchitecture(project.id);
+  const currentContext = normalizeBuilderProjectContext(project.context);
+  await updateBuilderProject(project.id, {
+    context: {
+      ...currentContext,
+      mcpPolicy: bootstrap.mcpPolicy.baseline,
+      architecture,
+    } as never,
+  });
   await completeBuilderRun(run.id, {
     status: "SUCCEEDED",
     summary: `Bootstrap completed for ${project.name}.`,

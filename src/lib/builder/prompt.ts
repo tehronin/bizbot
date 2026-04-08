@@ -61,6 +61,14 @@ function renderPlannedStack(context: BuilderProjectContextState): string {
   return `Planned stack: ${context.plannedStack.label}${tags}.`;
 }
 
+function renderMcpPolicyGuidance(context: BuilderProjectContextState): string | null {
+  if (!context.mcpPolicy) {
+    return null;
+  }
+
+  return `Builder MCP policy: keep ${context.mcpPolicy.artifactPath} aligned with Builder-managed control-plane state; if control-plane behavior changes, reconcile the policy artifact instead of hand-editing drift.`;
+}
+
 function inferBuilderTaskExecutionMode(args: {
   taskTitle: string;
   taskSummary: string;
@@ -276,6 +284,7 @@ export function composeBuilderTaskPrompt(args: {
     joinList("Next steps", args.context.nextSteps),
     args.context.objective ? `Project objective: ${args.context.objective}` : "Project objective: not yet recorded.",
     renderPlannedStack(args.context),
+    renderMcpPolicyGuidance(args.context),
     renderPlanAdherenceSection(args.adherence),
     renderRelevantMcpContext(args.mcpContext),
     planSteps.length > 0
@@ -313,7 +322,7 @@ export function composeBuilderPlannerPrompt(args: {
     `[Constraints]\n${args.constraints.length > 0 ? args.constraints.map((constraint) => `- ${constraint}`).join("\n") : "- none recorded"}\n[/Constraints]`,
     `[Non-Goals]\n${args.nonGoals.length > 0 ? args.nonGoals.map((item) => `- ${item}`).join("\n") : "- none recorded"}\n[/Non-Goals]`,
     `[Acceptance Criteria]\n${args.acceptanceCriteria.length > 0 ? args.acceptanceCriteria.map((item) => `- ${item}`).join("\n") : "- none recorded"}\n[/Acceptance Criteria]`,
-    `[Template Guidance]\n- Respect the existing template: ${args.project.template}.\n- Keep package manager assumptions aligned to ${args.project.packageManager}.\n- ${renderPlannedStack(args.context).replace(/^Planned stack: /, "Planned stack: ")}\n- Reuse current context/projection patterns, but keep planning prompting separate from task execution prompting.\n[/Template Guidance]`,
+    `[Template Guidance]\n- Respect the existing template: ${args.project.template}.\n- Keep package manager assumptions aligned to ${args.project.packageManager}.\n- ${renderPlannedStack(args.context).replace(/^Planned stack: /, "Planned stack: ")}\n${renderMcpPolicyGuidance(args.context) ? `- ${renderMcpPolicyGuidance(args.context)}\n` : ""}- Reuse current context/projection patterns, but keep planning prompting separate from task execution prompting.\n[/Template Guidance]`,
     renderRelevantMcpContext(args.mcpContext),
     renderMcpContractEvolution(args.mcpPlanningContext),
     `[Active Architecture]\n${renderArchitectureSection("", args.activeArchitecture, "No active architecture decisions recorded.").replace(/^\n/, "")}\n[/Active Architecture]`,

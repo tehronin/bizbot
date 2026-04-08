@@ -326,6 +326,7 @@ export interface BuilderNormalizedMilestoneDraft {
 export interface BuilderProjectContextState {
   objective: string | null;
   plannedStack: BuilderPlannedStackState | null;
+  mcpPolicy?: BuilderMcpPolicyBaselineState | null;
   architectureNotes: string[];
   architecture?: BuilderArchitectureContextState;
   codingConventions: string[];
@@ -345,6 +346,18 @@ export interface BuilderPlannedStackState {
   template: string;
   packageManager: BuilderPackageManager;
   tags: string[];
+}
+
+export interface BuilderMcpPolicyBaselineState {
+  artifactPath: string;
+  version: number;
+  template: string;
+  packageManager: "npm" | "pnpm";
+  expectedHash: string;
+  expectedMcpContractHash: string;
+  policyHashVersion: number;
+  allowedToolCategories: string[];
+  decisionKeys: string[];
 }
 
 export interface BuilderTaskMetadataState {
@@ -406,6 +419,7 @@ export function defaultBuilderProjectContext(): BuilderProjectContextState {
   return {
     objective: null,
     plannedStack: null,
+    mcpPolicy: null,
     architectureNotes: [],
     architecture: defaultBuilderArchitectureContext(),
     codingConventions: [],
@@ -541,6 +555,38 @@ export function normalizeBuilderProjectContext(value: unknown): BuilderProjectCo
         template,
         packageManager,
         tags: readStringArray(plannedStack.tags),
+      };
+    })(),
+    mcpPolicy: (() => {
+      const input = candidate.mcpPolicy;
+      if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return null;
+      }
+
+      const policy = input as Record<string, unknown>;
+      const artifactPath = typeof policy.artifactPath === "string" ? policy.artifactPath.trim() : "";
+      const template = typeof policy.template === "string" ? policy.template.trim() : "";
+      const packageManager = policy.packageManager === "pnpm" ? "pnpm" : policy.packageManager === "npm" ? "npm" : null;
+      const expectedHash = typeof policy.expectedHash === "string" ? policy.expectedHash.trim() : "";
+      const expectedMcpContractHash = typeof policy.expectedMcpContractHash === "string" ? policy.expectedMcpContractHash.trim() : "";
+      const version = typeof policy.version === "number" && Number.isFinite(policy.version) ? Math.trunc(policy.version) : null;
+      const policyHashVersion = typeof policy.policyHashVersion === "number" && Number.isFinite(policy.policyHashVersion)
+        ? Math.trunc(policy.policyHashVersion)
+        : null;
+      if (!artifactPath || !template || !packageManager || !expectedHash || !expectedMcpContractHash || !version || !policyHashVersion) {
+        return null;
+      }
+
+      return {
+        artifactPath,
+        version,
+        template,
+        packageManager,
+        expectedHash,
+        expectedMcpContractHash,
+        policyHashVersion,
+        allowedToolCategories: readStringArray(policy.allowedToolCategories),
+        decisionKeys: readStringArray(policy.decisionKeys),
       };
     })(),
     architectureNotes: readStringArray(candidate.architectureNotes),

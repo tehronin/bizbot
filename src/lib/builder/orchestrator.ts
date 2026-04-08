@@ -544,6 +544,8 @@ export async function orchestrateBuilderTask(
     runId: run.id,
     taskId: task.id,
     taskSpecId: taskSpec.id,
+    projectRelativePath: project.relativePath,
+    projectContext: project.context,
   });
   const mcpContext = selectRelevantBuilderMcpContext({
     mode: adherence.mode,

@@ -55,6 +55,34 @@ function verifyRequiredFiles(projectRoot: string, contract: BuilderTemplateVerif
   }
 }
 
+function verifyMcpPolicy(projectRoot: string, template: string): void {
+  const policy = readJson<{
+    version: number;
+    template: string;
+    packageManager: string;
+    expectedMcpContractHash: string;
+    policyHashVersion: number;
+    allowedToolCategories: string[];
+    decisionKeys: string[];
+  }>(path.join(projectRoot, ".builder", "mcp-policy.json"));
+
+  if (policy.version !== 1 || policy.policyHashVersion !== 1) {
+    throw new Error("Expected scaffolded MCP policy artifact to use version 1.");
+  }
+  if (policy.template !== template) {
+    throw new Error(`Expected scaffolded MCP policy artifact to record template ${template}.`);
+  }
+  if (!policy.expectedMcpContractHash || policy.expectedMcpContractHash.length < 32) {
+    throw new Error("Expected scaffolded MCP policy artifact to include a deterministic MCP contract hash.");
+  }
+  if (!policy.allowedToolCategories.includes("builder_scaffold")) {
+    throw new Error("Expected scaffolded MCP policy artifact to include builder_scaffold among allowed tool categories.");
+  }
+  if (!policy.decisionKeys.includes("mcp_control_plane")) {
+    throw new Error("Expected scaffolded MCP policy artifact to seed mcp_control_plane governance.");
+  }
+}
+
 function verifyRequiredPackageJsonFields(
   projectRoot: string,
   contract: BuilderTemplateVerificationContract,
@@ -134,21 +162,25 @@ function verifyNextApp(projectRoot: string): void {
   const contract = BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["next-app"];
   verifyRequiredFiles(projectRoot, contract);
   verifyRequiredPackageJsonFields(projectRoot, contract);
+  verifyMcpPolicy(projectRoot, "next-app");
 }
 
 function verifyViteApp(projectRoot: string): void {
   const contract = BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["vite-app"];
   verifyRequiredFiles(projectRoot, contract);
   verifyRequiredPackageJsonFields(projectRoot, contract);
+  verifyMcpPolicy(projectRoot, "vite-app");
 }
 
 function verifyTemplateContract(template: "node-cli" | "plugin-package" | "vite-app" | "next-app", projectRoot: string, slug: string): void {
   if (template === "node-cli") {
     verifyNodeCli(projectRoot);
+    verifyMcpPolicy(projectRoot, template);
     return;
   }
   if (template === "plugin-package") {
     verifyPluginPackage(projectRoot, slug);
+    verifyMcpPolicy(projectRoot, template);
     return;
   }
   if (template === "vite-app") {

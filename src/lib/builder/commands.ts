@@ -3,13 +3,21 @@ import { gitInitRepository } from "@/lib/builder/adapters/git";
 import { buildBuilderAgenticExecution, executeBuilderAgenticTask } from "@/lib/builder/agentic";
 import { npmInstall, npmRunScript } from "@/lib/builder/adapters/npm";
 import type { BuilderProjectCommandInput, BuilderProjectRecordedCommandInput } from "@/lib/builder/command-types";
-import { resolveBuilderRunMcpContractDrift } from "@/lib/builder/mcp-snapshots";
+import {
+  buildCurrentBuilderMcpContractSnapshot,
+  hashBuilderMcpContractSnapshot,
+  resolveBuilderRunMcpContractDrift,
+} from "@/lib/builder/mcp-snapshots";
+import { writeBuilderMcpPolicyArtifact } from "@/lib/builder/mcp-policy";
 import { pnpmInstall, pnpmRunScript } from "@/lib/builder/adapters/pnpm";
+import { listBuilderProjectArchitecture } from "@/lib/builder/planning";
 import { completeBuilderRun, createBuilderRun, getBuilderRun, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
 import { reconcileBuilderOperationalState } from "@/lib/builder/reconciliation";
 import { cancelBuilderRunController, registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
 import { updateBuilderTask } from "@/lib/builder/tasks";
+import { normalizeBuilderProjectContext } from "@/lib/builder/types";
 import type { BuilderCommandResult } from "@/lib/builder/workspace";
+import { promoteBuilderArchitecturalDecisionsToOntology } from "@/lib/ontology/promotion";
 
 const MAX_PROGRESS_OUTPUT_CHARS = 24_000;
 const PROGRESS_FLUSH_INTERVAL_MS = 250;
@@ -131,6 +139,52 @@ export async function executeBuilderProjectCommand(
         command: project.packageManager === "PNPM" ? "pnpm" : "npm",
         args: project.packageManager === "PNPM" ? [script, ...(input.args ?? [])] : ["run", script, ...(input.args ?? [])],
         result,
+      };
+    }
+    case "reconcile_mcp_policy": {
+      const expectedMcpContractHash = hashBuilderMcpContractSnapshot(buildCurrentBuilderMcpContractSnapshot());
+      const written = writeBuilderMcpPolicyArtifact({
+        relativePath: project.relativePath,
+        template: project.template,
+        packageManager: project.packageManager,
+        expectedMcpContractHash,
+      });
+      await promoteBuilderArchitecturalDecisionsToOntology({
+        projectId: project.id,
+        sourceRef: `builder:${project.id}:reconcile:mcp_policy`,
+        decisionKeys: written.baseline.decisionKeys,
+      });
+      const architecture = await listBuilderProjectArchitecture(project.id);
+      await updateBuilderProject(project.id, {
+        context: {
+          ...normalizeBuilderProjectContext(project.context),
+          mcpPolicy: written.baseline,
+          architecture,
+        } as never,
+      });
+      const result: BuilderCommandResult = {
+        ok: true,
+        command: "builder-reconcile-mcp-policy",
+        args: [project.id],
+        cwd: project.relativePath,
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify({ baseline: written.baseline }, null, 2),
+        stderr: "",
+        timedOut: false,
+        cancelled: false,
+      };
+
+      return {
+        kind: "COMMAND",
+        title: "Reconcile Builder MCP policy",
+        command: "builder-reconcile-mcp-policy",
+        args: [project.id],
+        result,
+        summary: `Rebuilt ${written.baseline.artifactPath} and updated the persisted Builder MCP policy baseline.`,
+        metadata: {
+          baseline: written.baseline,
+        },
       };
     }
     case "reconcile_operational_state": {
