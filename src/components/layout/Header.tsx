@@ -109,7 +109,7 @@ export default function Header() {
           {now ? now.toLocaleString() : "--"}
         </div>
       </div>
-      <div className="flex items-center gap-6 font-mono text-[10px] uppercase tracking-widest">
+      <div className="flex items-center gap-5 font-mono text-[10px] uppercase tracking-widest">
         <Link href="/chat?setup=1" className="inline-flex items-center gap-2 border px-3 py-2" style={{ borderColor: setupToneColor, color: setupToneColor, background: setupToneBackground }} title={getSetupTooltip(setupState)}>
           <span>{setupState?.tone === "ready" ? "check" : setupState?.tone === "partial" ? "pending" : "setup"}</span>
           <span>{setupState?.label ?? "Start setup"}</span>

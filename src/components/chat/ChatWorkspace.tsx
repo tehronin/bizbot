@@ -863,7 +863,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           <button
             type="submit"
             disabled={panelMode === "history" || chat.isPending || !input.trim()}
-            className="px-4 py-2 text-sm uppercase tracking-[0.18em] border disabled:opacity-50"
+            className="px-4 py-2 text-sm uppercase tracking-[0.18em] border disabled:opacity-40"
             style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
           >
             {chat.isPending ? "Running" : "Send"}

@@ -310,7 +310,7 @@ export default function SidecarHost() {
         <div className="sticky top-0 z-10 border-b px-5 py-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-2 min-w-0">
-              <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>sidecar</div>
+              <div className="text-xs font-mono uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>sidecar</div>
               <div className="text-sm font-medium break-words" style={{ color: "var(--text-primary)" }}>{panel.title}</div>
               <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{panel.content.type}</div>
             </div>

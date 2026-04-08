@@ -94,12 +94,29 @@ textarea::placeholder {
 
 /* ── Scrollbars ── */
 ::-webkit-scrollbar        { width: 6px; height: 6px; }
-::-webkit-scrollbar-track  { background: #050505; }
+::-webkit-scrollbar-track  { background: transparent; }
 ::-webkit-scrollbar-thumb  { background: #262626; }
 ::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
 
 /* ── Selection ── */
-::selection { background: var(--accent-dim); color: var(--text-primary); }
+::selection {
+  background: rgba(56,189,248,0.25);
+  color: #FFFFFF;
+}
+
+/* ── Smooth interactive transitions ── */
+button, a, select {
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+input, textarea {
+  transition: outline-color 0.15s ease, border-color 0.15s ease;
+}
+
+/* ── Subtle border default for bordered containers ── */
+.border {
+  border-color: var(--border);
+}
 
 /* ── Button resets ── */
 button {

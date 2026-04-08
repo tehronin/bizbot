@@ -40,7 +40,7 @@ export default function Sidebar() {
       style={{ background: "var(--bg-surface)", borderRight: "1px solid var(--border)" }}
     >
       <div className="h-14 flex items-center px-5" style={{ borderBottom: "1px solid var(--border)" }}>
-        <span className="font-black text-sm tracking-tighter" style={{ color: "var(--accent)" }}>
+        <span className="font-black text-sm tracking-tight" style={{ color: "var(--accent)" }}>
           BIZBOT
         </span>
       </div>
@@ -84,7 +84,7 @@ export default function Sidebar() {
           );
         })}
       </nav>
-      <div className="px-4 py-3 font-mono text-[9px] uppercase tracking-widest" style={{ borderTop: "1px solid var(--border)", color: "var(--text-dim)" }}>
+      <div className="px-4 py-3 font-mono text-[9px] uppercase tracking-widest" style={{ borderTop: "1px solid var(--border)", color: "var(--text-muted)" }}>
         local agent
       </div>
     </aside>
