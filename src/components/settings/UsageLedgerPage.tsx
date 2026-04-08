@@ -139,7 +139,7 @@ function getPricingPresetBadge(model: string, provider: string, pricing: ModelPr
       label: "zero-cost local",
       color: "var(--success)",
       borderColor: "var(--success)",
-      background: "rgba(58,140,92,0.10)",
+      background: "rgba(34,197,94,0.10)",
     };
   }
 
@@ -156,7 +156,7 @@ function getPricingPresetBadge(model: string, provider: string, pricing: ModelPr
     label: "custom",
     color: "var(--warning)",
     borderColor: "var(--warning)",
-    background: "rgba(214,146,58,0.10)",
+    background: "rgba(245,158,11,0.10)",
   };
 }
 

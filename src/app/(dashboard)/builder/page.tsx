@@ -1790,7 +1790,7 @@ export default function BuilderPage() {
                                 {iteration.verification.steps.length > 0 ? (
                                   <div className="flex flex-wrap gap-2">
                                     {iteration.verification.steps.map((step) => (
-                                      <span key={`${run.id}-iteration-${iteration.iteration}-${step.script}`} className="border px-2 py-1" style={{ borderColor: step.ok ? "rgba(36,196,162,0.35)" : "rgba(255,90,90,0.35)", color: step.ok ? "var(--success)" : "var(--danger)" }}>
+                                      <span key={`${run.id}-iteration-${iteration.iteration}-${step.script}`} className="border px-2 py-1" style={{ borderColor: step.ok ? "rgba(34,197,94,0.35)" : "rgba(239,68,68,0.35)", color: step.ok ? "var(--success)" : "var(--danger)" }}>
                                         {step.script} {step.ok ? "passed" : `failed (${step.exitCode ?? "?"})`}
                                       </span>
                                     ))}

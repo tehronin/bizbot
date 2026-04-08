@@ -39,9 +39,9 @@ export default function Sidebar() {
       className="w-48 shrink-0 flex flex-col h-screen sticky top-0"
       style={{ background: "var(--bg-surface)", borderRight: "1px solid var(--border)" }}
     >
-      <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border-sub)" }}>
-        <span className="text-sm font-semibold tracking-widest uppercase" style={{ color: "var(--accent)" }}>
-          BizBot
+      <div className="h-14 flex items-center px-5" style={{ borderBottom: "1px solid var(--border)" }}>
+        <span className="font-black text-sm tracking-tighter" style={{ color: "var(--accent)" }}>
+          BIZBOT
         </span>
       </div>
       <nav className="flex-1 overflow-y-auto py-3 space-y-0.5 px-2">
@@ -51,25 +51,31 @@ export default function Sidebar() {
             <Link
               key={href}
               href={href}
-              className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors"
+              className="flex items-center gap-3 px-3 py-2 font-mono text-[10px] tracking-widest uppercase transition-colors"
               style={
                 active
                   ? { background: "var(--accent-glow)", color: "var(--accent)", borderLeft: "2px solid var(--accent)" }
-                  : { color: "var(--text-muted)", borderLeft: "2px solid transparent" }
+                  : { color: "var(--text-dim)", borderLeft: "2px solid transparent" }
               }
               onMouseEnter={(e) => {
-                if (!active) (e.currentTarget as HTMLAnchorElement).style.background = "var(--bg-hover)";
+                if (!active) {
+                  (e.currentTarget as HTMLAnchorElement).style.background = "var(--bg-hover)";
+                  (e.currentTarget as HTMLAnchorElement).style.color = "#FFFFFF";
+                }
               }}
               onMouseLeave={(e) => {
-                if (!active) (e.currentTarget as HTMLAnchorElement).style.background = "";
+                if (!active) {
+                  (e.currentTarget as HTMLAnchorElement).style.background = "";
+                  (e.currentTarget as HTMLAnchorElement).style.color = "var(--text-dim)";
+                }
               }}
             >
-              <span className="opacity-60 text-xs">{icon}</span>
-              <span className="flex-1 tracking-wide">{label}</span>
+              <span className="opacity-60 text-[10px]">{icon}</span>
+              <span className="flex-1">{label}</span>
               {label === "Approvals" && pendingCount > 0 && (
                 <span
-                  className="ml-auto text-xs font-bold px-1.5 py-0.5"
-                  style={{ background: "var(--danger)", color: "#f0f0f0" }}
+                  className="ml-auto text-[9px] font-bold px-1.5 py-0.5"
+                  style={{ background: "var(--danger)", color: "#FFFFFF" }}
                 >
                   {pendingCount}
                 </span>
@@ -78,7 +84,7 @@ export default function Sidebar() {
           );
         })}
       </nav>
-      <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border-sub)", color: "var(--text-muted)", fontSize: "11px", letterSpacing: "0.05em" }}>
+      <div className="px-4 py-3 font-mono text-[9px] uppercase tracking-widest" style={{ borderTop: "1px solid var(--border)", color: "var(--text-dim)" }}>
         local agent
       </div>
     </aside>

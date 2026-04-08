@@ -91,25 +91,25 @@ export default function Header() {
 
   const setupToneBackground =
     setupState?.tone === "ready"
-      ? "rgba(58,140,92,0.10)"
+      ? "rgba(34,197,94,0.10)"
       : setupState?.tone === "partial"
-        ? "rgba(214,146,58,0.10)"
-        : "rgba(217,79,79,0.10)";
+        ? "rgba(245,158,11,0.10)"
+        : "rgba(239,68,68,0.10)";
 
   return (
     <header
-      className="flex items-center justify-between px-5 py-3 border-b"
-      style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}
+      className="h-14 flex items-center justify-between px-5 border-b"
+      style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}
     >
       <div>
-        <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
-          stealth console
+        <div className="font-mono text-[9px] uppercase tracking-widest" style={{ color: "var(--text-dim)" }}>
+          command console
         </div>
-        <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+        <div className="text-xs font-mono" style={{ color: "var(--text-primary)" }}>
           {now ? now.toLocaleString() : "--"}
         </div>
       </div>
-      <div className="flex items-center gap-6 text-xs uppercase tracking-[0.2em]">
+      <div className="flex items-center gap-6 font-mono text-[10px] uppercase tracking-widest">
         <Link href="/chat?setup=1" className="inline-flex items-center gap-2 border px-3 py-2" style={{ borderColor: setupToneColor, color: setupToneColor, background: setupToneBackground }} title={getSetupTooltip(setupState)}>
           <span>{setupState?.tone === "ready" ? "check" : setupState?.tone === "partial" ? "pending" : "setup"}</span>
           <span>{setupState?.label ?? "Start setup"}</span>

@@ -150,12 +150,12 @@ function emitSetupChanged(): void {
 
 function getToneStyles(tone: AgenticSetupResponse["state"]["tone"]): { border: string; text: string; bg: string } {
   if (tone === "ready") {
-    return { border: "var(--success)", text: "var(--success)", bg: "rgba(58,140,92,0.10)" };
+    return { border: "var(--success)", text: "var(--success)", bg: "rgba(34,197,94,0.10)" };
   }
   if (tone === "partial") {
-    return { border: "var(--warning)", text: "var(--warning)", bg: "rgba(214,146,58,0.10)" };
+    return { border: "var(--warning)", text: "var(--warning)", bg: "rgba(245,158,11,0.10)" };
   }
-  return { border: "var(--danger)", text: "var(--danger)", bg: "rgba(217,79,79,0.10)" };
+  return { border: "var(--danger)", text: "var(--danger)", bg: "rgba(239,68,68,0.10)" };
 }
 
 function getProviderSecretKey(provider: AgenticSetupChatProvider): keyof SetupFormState | null {
@@ -452,7 +452,7 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
 
         <div className="p-5 space-y-5">
           {loading ? <div className="text-sm" style={{ color: "var(--text-dim)" }}>Loading setup state...</div> : null}
-          {error ? <div className="border px-4 py-3 text-sm" style={{ borderColor: "var(--danger)", color: "var(--danger)", background: "rgba(217,79,79,0.08)" }}>{error}</div> : null}
+          {error ? <div className="border px-4 py-3 text-sm" style={{ borderColor: "var(--danger)", color: "var(--danger)", background: "rgba(239,68,68,0.08)" }}>{error}</div> : null}
           {!loading && session && state ? (
             <>
               <section className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
@@ -594,7 +594,7 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                     </div>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="border p-4 space-y-2" style={{ borderColor: "var(--success)", background: "rgba(58,140,92,0.08)" }}>
+                    <div className="border p-4 space-y-2" style={{ borderColor: "var(--success)", background: "rgba(34,197,94,0.08)" }}>
                       <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--success)" }}>chat status</div>
                       <div className="text-sm" style={{ color: "var(--text-primary)" }}>Google chat is configured and ready.</div>
                     </div>

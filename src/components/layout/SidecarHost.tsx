@@ -306,7 +306,7 @@ export default function SidecarHost() {
         onPointerDown={beginResize}
         style={{ background: "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.12) 50%, transparent 100%)" }}
       />
-      <aside className="h-full w-full border-l shadow-2xl" style={{ width: `min(${width}px, 100vw)`, borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <aside className="h-full w-full border-l" style={{ width: `min(${width}px, 100vw)`, borderColor: "var(--border)", background: "var(--bg-surface)" }}>
         <div className="sticky top-0 z-10 border-b px-5 py-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-2 min-w-0">

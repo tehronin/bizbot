@@ -135,7 +135,7 @@ export default function InboxPage() {
 
       <div className="space-y-3">
         {loading ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div> : null}
-        {error ? <div className="text-sm" style={{ color: "var(--danger, #d16b6b)" }}>{error}</div> : null}
+        {error ? <div className="text-sm" style={{ color: "var(--danger)" }}>{error}</div> : null}
         {!loading && items.length === 0 ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>No inbox items yet.</div> : null}
         {itemsPagination.pageItems.map((item) => (
           <article key={item.id} className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>

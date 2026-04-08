@@ -693,7 +693,7 @@ export default function LeadsPage() {
           <button onClick={() => void load()} className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--accent)" }}>refresh</button>
         </div>
         {loading ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div> : null}
-        {error ? <div className="text-sm" style={{ color: "var(--danger, #d16b6b)" }}>{error}</div> : null}
+        {error ? <div className="text-sm" style={{ color: "var(--danger)" }}>{error}</div> : null}
         <div className="grid gap-4 grid-cols-5">
           {STAGES.map((stage) => (
             <div key={stage} className="space-y-3 min-w-0">
@@ -754,7 +754,7 @@ export default function LeadsPage() {
         {selectedTree ? (
           <article className="border p-4 space-y-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
             {selectedTreeValidation && selectedTreeValidation.errors.length > 0 ? (
-              <div className="border p-3 space-y-2 text-sm" style={{ borderColor: "var(--danger, #d16b6b)", background: "var(--bg-surface)", color: "var(--danger, #d16b6b)" }}>
+              <div className="border p-3 space-y-2 text-sm" style={{ borderColor: "var(--danger)", background: "var(--bg-surface)", color: "var(--danger)" }}>
                 <div className="text-xs uppercase tracking-[0.18em]">validation</div>
                 {selectedTreeValidation.errors.map((issue) => (
                   <div key={issue}>{issue}</div>
@@ -863,10 +863,10 @@ export default function LeadsPage() {
                 <section key={`${node.key}-${nodeIndex}`} className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
                   <div className="flex items-center justify-between">
                     <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>node {nodeIndex + 1}</div>
-                    <button onClick={() => removeNode(selectedTree.id, nodeIndex)} className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--danger, #d16b6b)" }}>remove</button>
+                    <button onClick={() => removeNode(selectedTree.id, nodeIndex)} className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--danger)" }}>remove</button>
                   </div>
                   {selectedTreeValidation?.nodeIssues[nodeIndex]?.length ? (
-                    <div className="border p-3 space-y-1 text-sm" style={{ borderColor: "var(--danger, #d16b6b)", color: "var(--danger, #d16b6b)" }}>
+                    <div className="border p-3 space-y-1 text-sm" style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>
                       {selectedTreeValidation.nodeIssues[nodeIndex].map((issue) => (
                         <div key={issue}>{issue}</div>
                       ))}
@@ -1016,7 +1016,7 @@ export default function LeadsPage() {
                               : entry),
                           }))}
                           className="text-xs uppercase tracking-[0.16em]"
-                          style={{ color: "var(--danger, #d16b6b)" }}
+                          style={{ color: "var(--danger)" }}
                         >
                           remove
                         </button>

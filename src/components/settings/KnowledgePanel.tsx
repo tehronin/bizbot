@@ -142,7 +142,7 @@ function highlightSnippet(snippet: string, query: string, activeMatchIndex: numb
         key={`mark:${matchIndex}`}
         data-active-match={isActive ? "true" : "false"}
         style={{
-          background: isActive ? "rgba(205, 176, 62, 0.52)" : "rgba(205, 176, 62, 0.28)",
+          background: isActive ? "rgba(56, 189, 248, 0.45)" : "rgba(56, 189, 248, 0.20)",
           color: "inherit",
           padding: 0,
         }}

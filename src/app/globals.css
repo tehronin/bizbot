@@ -1,25 +1,25 @@
 @import "tailwindcss";
 
-/* ── Stealth palette ── no pure blacks, sharp corners ── */
+/* ── Blueprint palette ── void/matter/border, zero radius ── */
 :root {
-  --bg-base:     #0e0e14;
-  --bg-surface:  #13131b;
-  --bg-raised:   #181822;
-  --bg-hover:    #1e1e2c;
-  --border:      #22222e;
-  --border-sub:  #1a1a26;
+  --bg-base:     #050505;
+  --bg-surface:  #171717;
+  --bg-raised:   #171717;
+  --bg-hover:    #1a1a1a;
+  --border:      #262626;
+  --border-sub:  #262626;
 
-  --text-primary: #c4c4d4;
-  --text-dim:     #707088;
-  --text-muted:   #484860;
+  --text-primary: #FFFFFF;
+  --text-dim:     #737373;
+  --text-muted:   #525252;
 
-  --accent:      #5b6af0;
-  --accent-dim:  #2c3070;
-  --accent-glow: rgba(91,106,240,0.15);
+  --accent:      #38bdf8;
+  --accent-dim:  rgba(56,189,248,0.3);
+  --accent-glow: rgba(56,189,248,0.15);
 
-  --danger:      #d94f4f;
-  --warning:     #d6923a;
-  --success:     #3a8c5c;
+  --danger:      #ef4444;
+  --warning:     #f59e0b;
+  --success:     #22c55e;
 
   --background: var(--bg-base);
   --foreground: var(--text-primary);
@@ -82,7 +82,7 @@ input, textarea, select {
 input:focus,
 textarea:focus,
 select:focus {
-  outline: 1px solid var(--accent-dim);
+  outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
 
@@ -92,11 +92,11 @@ textarea::placeholder {
   opacity: 1;
 }
 
-/* ── Subtle scrollbars ── */
-::-webkit-scrollbar        { width: 5px; height: 5px; }
-::-webkit-scrollbar-track  { background: var(--bg-base); }
-::-webkit-scrollbar-thumb  { background: var(--border); }
-::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+/* ── Scrollbars ── */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: #050505; }
+::-webkit-scrollbar-thumb  { background: #262626; }
+::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
 
 /* ── Selection ── */
 ::selection { background: var(--accent-dim); color: var(--text-primary); }

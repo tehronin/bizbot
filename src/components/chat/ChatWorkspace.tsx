@@ -120,7 +120,7 @@ function MessageGroups({
             className="border px-4 py-3 whitespace-pre-wrap"
             style={{
               borderColor: group.entry.role === "user" ? "var(--accent-dim)" : "var(--border)",
-              background: group.entry.role === "user" ? "rgba(91,106,240,0.08)" : "var(--bg-raised)",
+              background: group.entry.role === "user" ? "rgba(56,189,248,0.08)" : "var(--bg-raised)",
             }}
           >
             <div className="flex items-center justify-between gap-3 mb-2">
@@ -145,9 +145,9 @@ function MessageGroups({
             {group.entries.map((entry) => {
               const isExpanded = expandedBadges.has(entry.id);
               const badgeColor = entry.role === "meta"
-                ? { bg: "rgba(36,196,162,0.10)", border: "rgba(36,196,162,0.30)", dot: "rgb(36,196,162)" }
+                ? { bg: "rgba(34,197,94,0.10)", border: "rgba(34,197,94,0.30)", dot: "rgb(34,197,94)" }
                 : entry.role === "tool"
-                  ? { bg: "rgba(91,106,240,0.08)", border: "rgba(91,106,240,0.22)", dot: "rgb(91,106,240)" }
+                  ? { bg: "rgba(56,189,248,0.08)", border: "rgba(56,189,248,0.22)", dot: "rgb(56,189,248)" }
                   : { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.10)", dot: "rgba(255,255,255,0.35)" };
               const label = entry.role === "meta"
                 ? (entry.profileLabel ? `Routed -> ${entry.profileLabel}` : "Routed")
@@ -834,7 +834,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
               <div
                 data-testid="oracle-mode-chip"
                 className="inline-flex items-center gap-2 px-3 py-1 text-[11px] uppercase tracking-[0.18em] border"
-                style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(214,146,58,0.08)" }}
+                style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(245,158,11,0.08)" }}
               >
                 <span>Oracle mode</span>
                 <span style={{ color: "var(--text-dim)", textTransform: "none", letterSpacing: "0.04em" }}>
@@ -853,7 +853,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   setInput("");
                 }}
                 className="inline-flex items-center gap-2 px-3 py-1 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-                style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(214,146,58,0.08)" }}
+                style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(245,158,11,0.08)" }}
               >
                 <span>Oracle</span>
                 <span>Run prediction</span>

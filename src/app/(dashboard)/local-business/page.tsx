@@ -128,7 +128,7 @@ export default function LocalBusinessPage() {
           <button onClick={() => void load(true)} className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--accent)" }}>sync</button>
         </div>
         {loading ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div> : null}
-        {error ? <div className="text-sm" style={{ color: "var(--danger, #d16b6b)" }}>{error}</div> : null}
+        {error ? <div className="text-sm" style={{ color: "var(--danger)" }}>{error}</div> : null}
         {!configured ? (
           <div className="text-sm leading-7" style={{ color: "var(--text-dim)" }}>
             Configure `GOOGLE_BUSINESS_CLIENT_ID`, `GOOGLE_BUSINESS_CLIENT_SECRET`, `GOOGLE_BUSINESS_REFRESH_TOKEN`, `GOOGLE_BUSINESS_ACCOUNT_NAME`, and `GOOGLE_BUSINESS_LOCATION_NAME` in settings or `.env`.
