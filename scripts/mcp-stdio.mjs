@@ -22,7 +22,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 // Load env from .env file if present
 import { config } from "dotenv";
-config();
+config({ quiet: true });
 
 const { configureStdioMcpEnvironment } = await import("../src/lib/mcp/stdio.ts");
 configureStdioMcpEnvironment(process.env);
