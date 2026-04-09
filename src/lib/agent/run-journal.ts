@@ -33,6 +33,8 @@ export interface AgentRunRetrievalDecision {
 }
 
 export interface AgentRunPromptAssembly {
+  capabilitySummaryChars: number;
+  runtimeToolVisibilityChars: number;
   explicitMemoryChars: number;
   ontologyChars: number;
   conversationSummaryChars: number;
