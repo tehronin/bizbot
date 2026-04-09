@@ -83,7 +83,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { completeBuilderRun, createBuilderProject, createBuilderRun, deleteBuilderProject, listBuilderProjects, updateBuilderRun } from "@/lib/builder/projects";
+import { completeBuilderRun, createBuilderProject, createBuilderRun, deleteBuilderProject, listBuilderProjects, reconcileBuilderWorkspaceProjects, updateBuilderRun } from "@/lib/builder/projects";
 
 function createTempBuilderWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-builder-projects-"));
@@ -129,6 +129,36 @@ describe("builder projects", () => {
     expect(second.slug).toBe("widget-app-2");
     expect(second.relativePath).toBe("projects/widget-app-2");
     expect(fs.existsSync(path.resolve(workspaceRoot, "projects", "widget-app-2"))).toBe(true);
+  });
+
+  it("labels projects with a missing workspace state when the folder is gone", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const project = await createBuilderProject({ name: "Missing Folder" });
+    fs.rmSync(path.resolve(workspaceRoot, "projects", "missing-folder"), { recursive: true, force: true });
+
+    const projects = await listBuilderProjects();
+    expect(projects[0]?.id).toBe(project.id);
+    expect(projects[0]?.workspaceState).toBe("missing");
+  });
+
+  it("relinks a moved workspace folder back to the persisted Builder record via project metadata", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const project = await createBuilderProject({ name: "Move Me" });
+    const originalPath = path.resolve(workspaceRoot, "projects", "move-me");
+    const movedPath = path.resolve(workspaceRoot, "projects", "rescued", "move-me");
+    fs.mkdirSync(path.dirname(movedPath), { recursive: true });
+    fs.renameSync(originalPath, movedPath);
+
+    const result = await reconcileBuilderWorkspaceProjects();
+    const refreshed = (await listBuilderProjects()).find((candidate) => candidate.id === project.id);
+
+    expect(result.relinked).toBe(1);
+    expect(refreshed?.relativePath).toBe("projects/rescued/move-me");
+    expect(refreshed?.workspaceState).toBe("present");
   });
 
   it("can delete project records while preserving files by default", async () => {

@@ -2,6 +2,7 @@ import type { BuilderProject, BuilderRun, BuilderTask, BuilderTaskStage, Builder
 import { db } from "@/lib/db";
 import type { BuilderAgenticProgressEvent, BuilderAgenticTaskOptions } from "@/lib/builder/agentic";
 import { summarizeBuilderProjectMetrics, type BuilderHealthMetrics } from "@/lib/builder/analytics";
+import { validateBuilderProjectEnv, type BuilderConfigReadinessState } from "@/lib/builder/environment";
 import { ensureBuilderRunDependencyContractPreflight, selectRelevantBuilderDependencyContext } from "@/lib/builder/dependency-contract";
 import { ensureBuilderRunFileTopologySnapshotPreflight, selectRelevantBuilderFileTopologyContext } from "@/lib/builder/file-topology-snapshots";
 import {
@@ -13,6 +14,7 @@ import {
 } from "@/lib/builder/mcp-snapshots";
 import { loadBuilderProjectContext, selectRelevantInstructionFragments, syncBuilderProjectProjection } from "@/lib/builder/context";
 import { executeNativeBuilderTask } from "@/lib/builder/native-agent";
+import { buildBuilderOperatorTrustState } from "@/lib/builder/operator-trust";
 import { inspectBuilderOperationalState, type BuilderOperationalStateSummary } from "@/lib/builder/reconciliation";
 import {
   findExecutionTaskForTaskSpec,
@@ -27,8 +29,9 @@ import {
   type UpsertBuilderProjectBriefInput,
 } from "@/lib/builder/planning";
 import { buildBuilderPlanAdherence, composeBuilderTaskPrompt } from "@/lib/builder/prompt";
+import type { BuilderProjectRecord } from "@/lib/builder/projects";
 import { buildBuilderStructuredReview } from "@/lib/builder/review";
-import { completeBuilderRun, createBuilderRun, getBuilderProject, listBuilderRuns, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
+import { completeBuilderRun, createBuilderRun, getBuilderProject, getBuilderProjectRecord, listBuilderRuns, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
 import { registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
 import { summarizeBuilderBudgetProfiles, summarizeBuilderRunTelemetry, type BuilderBudgetProfile, type BuilderTelemetrySummary } from "@/lib/builder/telemetry";
 import { createBuilderTask, getBuilderTask, listBuilderTasks, reconcileBuilderRunWithTask, resolveBuilderContinuationTask, resumeBuilderTask, updateBuilderTask, updateBuilderTaskExecutionState, updateBuilderTaskStage } from "@/lib/builder/tasks";
@@ -40,6 +43,7 @@ import {
   trimReviewSummary,
   type BuilderMcpSnapshotOverviewState,
   type BuilderMilestoneState,
+  type BuilderOperatorTrustState,
   type BuilderPlanStep,
   type BuilderPlanningSnapshot,
   type BuilderProjectContextState,
@@ -61,8 +65,10 @@ export interface BuilderPlanProjectInput extends Partial<UpsertBuilderProjectBri
 }
 
 export interface BuilderProjectOverview {
-  project: BuilderProject;
+  project: BuilderProjectRecord;
   context: BuilderProjectContextState;
+  configReadiness: BuilderConfigReadinessState;
+  operatorTrust: BuilderOperatorTrustState;
   brief: BuilderPlanningSnapshot["brief"];
   milestones: BuilderPlanningSnapshot["milestones"];
   currentMilestone: BuilderMilestoneState | null;
@@ -305,12 +311,26 @@ async function syncProjectState(args: {
     latestSessionSummary: nextContext.latestSessionSummary,
     lifecycle: args.planning.lifecycle,
   });
+  const [tasks, runs, mcpSnapshot] = await Promise.all([
+    listBuilderTasks(updatedProject.id, 25),
+    listBuilderRuns(updatedProject.id, 50),
+    getBuilderMcpSnapshotOverview({ projectId: updatedProject.id }),
+  ]);
+  const configReadiness = validateBuilderProjectEnv(updatedProject.relativePath);
+  const reconciliation = inspectBuilderOperationalState({ runs, tasks });
+  const operatorTrust = await buildBuilderOperatorTrustState({
+    review: args.review ?? null,
+    configReadiness,
+    reconciliation,
+    mcpSnapshot,
+  });
   syncBuilderProjectProjection({
     project: updatedProject,
     context: nextContext,
     planning: args.planning,
     currentTask: args.currentTask,
     latestReview: args.review,
+    latestOperatorTrust: operatorTrust,
   });
   return { project: updatedProject, context: nextContext, planning: args.planning };
 }
@@ -650,12 +670,14 @@ export async function orchestrateBuilderTask(
   const taskStatus = deriveTaskStatus(loopResult.loop.finalVerdict);
   const taskStage = taskStatus === "SUCCEEDED" ? "DONE" : deriveFailureStage(loopResult.loop.phase ?? "reviewing");
   const architectureContext = loadBuilderProjectContext(project).context.architecture;
+  const configReadiness = validateBuilderProjectEnv(project.relativePath);
   const review = buildBuilderStructuredReview({
     task: implementingTask,
     projectId,
     status: taskStatus,
     stage: taskStage,
     loop: loopResult.loop,
+    config: configReadiness,
     architecture: architectureContext
       ? {
           activeKeys: architectureContext.active.map((item) => item.key),
@@ -880,6 +902,7 @@ export async function launchBuilderTask(projectId: string, input: BuilderOrchest
 
 export async function getBuilderProjectOverview(projectId: string): Promise<BuilderProjectOverview> {
   const project = await getBuilderProject(projectId);
+  const projectRecord = await getBuilderProjectRecord(projectId);
   const tasks = await listBuilderTasks(projectId, 25);
   const planning = await getBuilderPlanningSnapshot(projectId);
   const currentTask = planning.currentTaskSpec
@@ -897,6 +920,7 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
   });
   const latestReview = reconciledRuns.find((run) => run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata) && "review" in (run.metadata as Record<string, unknown>))?.metadata as Record<string, unknown> | undefined;
   const { context } = loadBuilderProjectContext(project);
+  const configReadiness = validateBuilderProjectEnv(project.relativePath);
   const structuredReview = latestReview?.review as BuilderStructuredReview ?? null;
   const metrics = summarizeBuilderProjectMetrics({
     runs: reconciledRuns,
@@ -913,10 +937,18 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
     projectId,
     runId: activeRun?.id ?? null,
   });
+  const operatorTrust = await buildBuilderOperatorTrustState({
+    review: structuredReview,
+    configReadiness,
+    reconciliation,
+    mcpSnapshot,
+  });
 
   return {
-    project,
+    project: projectRecord,
     context,
+    configReadiness,
+    operatorTrust,
     brief: planning.brief,
     milestones: planning.milestones,
     currentMilestone: planning.currentMilestone,

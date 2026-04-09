@@ -95,6 +95,14 @@ describe("builder plugin", () => {
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_run_command");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_start_process");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_list_processes");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_http_get");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_db_schema_summary");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_list_services");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_service_logs");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_start_service");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_stop_service");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_restart_service");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_exec_in_service");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_run_agentic_task");
   });
 
@@ -348,6 +356,14 @@ describe("builder plugin", () => {
     expect(mcpTools).toContain("builder_run_command");
     expect(mcpTools).toContain("builder_start_process");
     expect(mcpTools).toContain("builder_list_processes");
+    expect(mcpTools).toContain("builder_http_get");
+    expect(mcpTools).toContain("builder_db_schema_summary");
+    expect(mcpTools).toContain("builder_list_services");
+    expect(mcpTools).toContain("builder_service_logs");
+    expect(mcpTools).toContain("builder_start_service");
+    expect(mcpTools).toContain("builder_stop_service");
+    expect(mcpTools).toContain("builder_restart_service");
+    expect(mcpTools).toContain("builder_exec_in_service");
   });
 
   it("rejects unsafe builder workspace execution through the shared tool executor", async () => {

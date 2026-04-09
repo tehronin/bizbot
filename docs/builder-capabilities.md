@@ -42,10 +42,10 @@ The initial capability catalog is defined in [src/lib/builder/capabilities.ts](s
 | `governance_contracts` | governance | core | available | MCP policy, dependency contract, and file topology contract are deterministic and drift-enforced. |
 | `process_execution` | process | core | available | Builder now exposes allowlisted one-shot command execution plus persisted managed processes with lifecycle inspection, project or task or run filters, audit artifacts, automatic retention cleanup, live SSE log following, wait, and stop controls. |
 | `version_control` | version control | core | available | Builder now exposes typed repo status, diff, stage, unstage, commit, branch-create, and branch-switch operations for managed repos inside the Builder workspace. |
-| `environment_configuration` | configuration | core | partial | Builder host config exists; project-local env inspection and redacted editing are not formalized yet. |
-| `network_http` | network | extended | planned | No first-class allowlisted HTTP engine yet. |
-| `database_introspection` | database | extended | planned | No read-only DB inspection surface yet. |
-| `runtime_orchestration` | runtime | experimental | planned | No first-class service/container lifecycle surface yet. |
+| `environment_configuration` | configuration | core | available | Builder exposes env schema inspection, validation, redacted reads, safe project-local writes, and `.env.example` synchronization. |
+| `network_http` | network | extended | partial | Builder exposes allowlisted HTTP GET/POST/PUT/DELETE probes with bounded responses and capability audit logs; richer auth policies remain future work. |
+| `database_introspection` | database | extended | partial | Builder exposes read-only Prisma schema, table, and migration inspection with datasource allowlist enforcement and capability audit logs; live SQL remains out of scope. |
+| `runtime_orchestration` | runtime | experimental | partial | Builder exposes declared service discovery from package manifests, Procfiles, and compose files, passive and live managed log inspection, plus guarded restart and exec controls. Full container lifecycle control remains future work. |
 
 ## Policy Model
 
@@ -83,6 +83,18 @@ Every Builder capability must declare a policy story before it is exposed.
 - Database capability starts read-only.
 - Targets must be project-bound and explicitly allowlisted.
 - Destructive SQL is out of scope for the first rollout.
+
+### Acceptance and audit guarantees
+
+- Capability rollout state in the catalog must match the real exposed surface.
+- Policy constraints such as command, host, and database allowlists must be enforced in code.
+- New Builder capability surfaces should ship with focused contract tests.
+- Capability actions that expand Builder authority should emit stable audit records.
+
+Current audit artifact locations:
+
+- managed processes: `.builder/processes/*.audit.jsonl`
+- HTTP and DB extension surfaces: `.builder/reports/capability-audit.jsonl`
 
 ### Runtime policy
 

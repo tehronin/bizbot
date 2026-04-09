@@ -11,6 +11,8 @@ function createTempBuilderWorkspace(): string {
 afterEach(() => {
   delete process.env.BIZBOT_BUILDER_WORKSPACE_PATH;
   delete process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_HOSTS;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_DATABASES;
   delete process.env.BIZBOT_BUILDER_DEFAULT_TEMPLATE;
   delete process.env.BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER;
   delete process.env.BIZBOT_BUILDER_INIT_GIT;
@@ -34,6 +36,8 @@ describe("builder config", () => {
     const workspaceRoot = createTempBuilderWorkspace();
     process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
     process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS = "npm,pnpm,npx,git";
+    process.env.BIZBOT_BUILDER_ALLOWED_HOSTS = "api.example.com,localhost:3000";
+    process.env.BIZBOT_BUILDER_ALLOWED_DATABASES = "db.example.com:5432,file";
     process.env.BIZBOT_BUILDER_DEFAULT_TEMPLATE = "vite-app";
     process.env.BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER = "PNPM";
     process.env.BIZBOT_BUILDER_INIT_GIT = "false";
@@ -48,6 +52,8 @@ describe("builder config", () => {
     expect(config.workspaceRoot).toBe(path.resolve(workspaceRoot));
     expect(config.projectsRoot).toBe(path.resolve(workspaceRoot, "projects"));
     expect(config.allowedCommands).toEqual(["npm", "pnpm", "npx", "git"]);
+    expect(config.allowedHosts).toEqual(["api.example.com", "localhost:3000"]);
+    expect(config.allowedDatabases).toEqual(["db.example.com:5432", "file"]);
     expect(config.defaultTemplate).toBe("vite-app");
     expect(config.defaultPackageManager).toBe("PNPM");
     expect(config.initializeGitByDefault).toBe(false);

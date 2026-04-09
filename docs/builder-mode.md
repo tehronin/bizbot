@@ -6,6 +6,26 @@ Builder capability taxonomy, policy boundaries, and audit envelopes are defined 
 
 Use that document as the contract layer for new Builder surfaces before adding tools or widening Builder authority.
 
+## Capability Acceptance
+
+A Builder capability is only considered accepted when all of the following are true:
+
+- the capability entry in [docs/builder-capabilities.md](docs/builder-capabilities.md) and [src/lib/builder/capabilities.ts](src/lib/builder/capabilities.ts) reflects the real rollout state,
+- the policy boundary is enforced in code rather than only described in docs,
+- at least one focused test covers the policy boundary or audit behavior,
+- the surface emits a stable audit artifact when the capability contract requires reviewability.
+
+For the current rollout, HTTP and database extension probes write capability audit events into `.builder/reports/capability-audit.jsonl` inside the target Builder project.
+
+## Extension Policy Inputs
+
+Extended Builder capabilities now rely on explicit allowlists:
+
+- `BIZBOT_BUILDER_ALLOWED_HOSTS` for `builder_http_*` tools. Entries may be a hostname, `host:port`, or full origin.
+- `BIZBOT_BUILDER_ALLOWED_DATABASES` for non-local database inspection targets. Entries may be a host, `host:port`, or full origin.
+
+Project-local SQLite `file:` datasources remain read-only and are accepted without a separate remote allowlist entry.
+
 ## Builder MCP Policy Artifact
 
 Builder-owned scaffolds now generate `.builder/mcp-policy.json` at bootstrap time.

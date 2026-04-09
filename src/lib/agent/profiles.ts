@@ -44,6 +44,11 @@ const PROFILE_RULES: Array<{
     reason: "message appears to be about scaffolding, code generation, or building inside an external workspace",
     matchers: [
       /builder mode/i,
+      /builder workspace/i,
+      /builder (?:project|projects|history|status)/i,
+      /status of (?:the )?builder/i,
+      /summari[sz]e (?:the |current )?builder/i,
+      /what(?:'s| is) in (?:the )?builder workspace/i,
       /openclaw/i,
       /\bscaffold\b/i,
       /\bcodegen\b/i,

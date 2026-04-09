@@ -111,6 +111,9 @@ BizBot is set up so feature work can move through a plugin-shaped path instead o
 - `npm run test:mcp` isolates MCP and plugin coverage from the rest of the app.
 - `npm run test:e2e` runs the Playwright browser suite, including the explicit Oracle chat flow against a managed local dev server.
 - `npm run lint:docs` keeps README and contributor docs aligned with the actual developer workflow.
+- `npm run cleanup:junk:dry-run` previews stale generated-artifact cleanup, while `npm run cleanup:junk` removes only allowlisted, git-ignored build/test output older than 24 hours.
+- `npm run cleanup:junk:schedule:install` installs a local Windows Scheduled Task named `BizBot Weekly Junk Cleanup` that runs every Sunday at 04:00, logs a dry-run, then performs the stale cleanup pass.
+- `npm run cleanup:junk:schedule:remove` removes that scheduled cleanup task.
 
 ### Building Features As Plugins
 

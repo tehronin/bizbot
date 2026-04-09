@@ -2,14 +2,9 @@
  * GET    /api/approvals          – list pending approvals
  */
 
-import { db } from "@/lib/db";
-import { ApprovalStatus } from "@prisma/client";
+import { listPendingApprovalSnapshots } from "@/lib/approvals";
 
 export async function GET() {
-  const approvals = await db.postApproval.findMany({
-    where: { status: ApprovalStatus.PENDING },
-    include: { post: { include: { platform: true } } },
-    orderBy: { createdAt: "asc" },
-  });
+  const approvals = await listPendingApprovalSnapshots(50);
   return Response.json({ approvals });
 }

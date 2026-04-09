@@ -3,6 +3,29 @@
 import type { BuilderPackageManager } from "@prisma/client";
 import { loadBuilderProjectContext, syncBuilderProjectProjection } from "@/lib/builder/context";
 import { createBuilderProject, deleteBuilderProject, getBuilderProject, getBuilderRun, listBuilderProjects, listBuilderRuns, updateBuilderProject } from "@/lib/builder/projects";
+import {
+  describeBuilderDatabaseTable,
+  getBuilderDatabaseSchemaSummary,
+  listBuilderDatabaseMigrations,
+  listBuilderDatabaseTables,
+} from "@/lib/builder/database-introspection";
+import {
+  getBuilderEnvSchema,
+  listBuilderRequiredConfig,
+  readBuilderProjectEnvValue,
+  syncBuilderProjectEnvExample,
+  validateBuilderProjectEnv,
+  writeBuilderProjectEnvFileEntry,
+} from "@/lib/builder/environment";
+import { builderHttpRequest } from "@/lib/builder/http";
+import {
+  execBuilderRuntimeServiceCommand,
+  getBuilderRuntimeServiceLogs,
+  listBuilderRuntimeServices,
+  restartBuilderRuntimeService,
+  startBuilderRuntimeService,
+  stopBuilderRuntimeService,
+} from "@/lib/builder/runtime-orchestration";
 import { listBuilderTasks } from "@/lib/builder/tasks";
 import {
   appendBuilderFile,
@@ -227,6 +250,24 @@ interface BuilderRepoBranchArgs extends BuilderRepoArgs {
   checkout?: boolean;
 }
 
+interface BuilderHttpArgs {
+  projectId: string;
+  url: string;
+  headers?: Array<{ name: string; value: string }>;
+  body?: string;
+  contentType?: string;
+  timeoutSeconds?: number;
+  maxBytes?: number;
+  authEnvKey?: string;
+  authHeaderName?: string;
+  authScheme?: string;
+}
+
+interface BuilderDatabaseTableArgs {
+  projectId: string;
+  name: string;
+}
+
 interface BuilderContinueTaskArgs {
   projectId: string;
   request: string;
@@ -255,6 +296,34 @@ interface BuilderWriteProjectInstructionsArgs {
   constraints?: string[];
   commands?: string[];
   instructionNotes?: string;
+}
+
+interface BuilderEnvKeyArgs {
+  projectId: string;
+  key: string;
+}
+
+interface BuilderEnvWriteArgs extends BuilderEnvKeyArgs {
+  value: string;
+  file?: ".env" | ".env.local";
+}
+
+interface BuilderRuntimeServiceLogsArgs extends BuilderProjectArgs {
+  serviceId: string;
+  cursor?: number;
+  maxBytes?: number;
+  tailBytes?: number;
+  followSeconds?: number;
+}
+
+interface BuilderRuntimeServiceControlArgs extends BuilderProjectArgs {
+  serviceId: string;
+}
+
+interface BuilderRuntimeExecArgs extends BuilderRuntimeServiceControlArgs {
+  command: string;
+  commandArgs?: string[];
+  timeoutSeconds?: number;
 }
 
 export const builderPlugin = {
@@ -303,6 +372,118 @@ export const builderPlugin = {
         ...((await loadBuilderOrchestrator()).getBuilderProjectOverview(projectId)),
       }),
     } satisfies ToolDefinition<BuilderProjectArgs, Awaited<ReturnType<typeof getBuilderProjectOverview>>>)),
+    registerTool(defineTool({
+      name: "builder_get_env_schema",
+      description: "Read the declared project env schema from .env.example inside a Builder project.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId }: BuilderProjectArgs) => {
+        const project = await getBuilderProject(projectId);
+        return {
+          projectId,
+          ...getBuilderEnvSchema(project.relativePath),
+        };
+      },
+    } satisfies ToolDefinition<BuilderProjectArgs, { projectId: string; path: ReturnType<typeof getBuilderEnvSchema>["path"]; keys: string[] }>)),
+    registerTool(defineTool({
+      name: "builder_validate_env",
+      description: "Evaluate project-local and execution-time env readiness for a Builder project.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId }: BuilderProjectArgs) => {
+        const project = await getBuilderProject(projectId);
+        return {
+          projectId,
+          readiness: validateBuilderProjectEnv(project.relativePath),
+        };
+      },
+    } satisfies ToolDefinition<BuilderProjectArgs, { projectId: string; readiness: ReturnType<typeof validateBuilderProjectEnv> }>)),
+    registerTool(defineTool({
+      name: "builder_read_env_value",
+      description: "Read a Builder project env value with redaction by default and source attribution.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          key: { type: "string" },
+        },
+        required: ["projectId", "key"],
+      },
+      execute: async ({ projectId, key }: BuilderEnvKeyArgs) => {
+        const project = await getBuilderProject(projectId);
+        return {
+          projectId,
+          ...readBuilderProjectEnvValue(project.relativePath, key),
+        };
+      },
+    } satisfies ToolDefinition<BuilderEnvKeyArgs, { projectId: string } & ReturnType<typeof readBuilderProjectEnvValue>>)),
+    registerTool(defineTool({
+      name: "builder_write_env_file_entry",
+      description: "Safely write or update a project-local env entry in .env or .env.local for a Builder project.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          key: { type: "string" },
+          value: { type: "string" },
+          file: { type: "string", enum: [".env", ".env.local"] },
+        },
+        required: ["projectId", "key", "value"],
+      },
+      execute: async ({ projectId, key, value, file }: BuilderEnvWriteArgs) => {
+        const project = await getBuilderProject(projectId);
+        return {
+          projectId,
+          ...writeBuilderProjectEnvFileEntry(project.relativePath, { key, value, file }),
+        };
+      },
+    } satisfies ToolDefinition<BuilderEnvWriteArgs, { projectId: string } & ReturnType<typeof writeBuilderProjectEnvFileEntry>>)),
+    registerTool(defineTool({
+      name: "builder_sync_env_example",
+      description: "Sync .env.example to include the union of keys currently used in the Builder project's env files.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId }: BuilderProjectArgs) => {
+        const project = await getBuilderProject(projectId);
+        return {
+          projectId,
+          ...syncBuilderProjectEnvExample(project.relativePath),
+        };
+      },
+    } satisfies ToolDefinition<BuilderProjectArgs, { projectId: string } & ReturnType<typeof syncBuilderProjectEnvExample>>)),
+    registerTool(defineTool({
+      name: "builder_list_required_config",
+      description: "List required config keys declared for a Builder project from .env.example.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId }: BuilderProjectArgs) => {
+        const project = await getBuilderProject(projectId);
+        return {
+          projectId,
+          keys: listBuilderRequiredConfig(project.relativePath),
+        };
+      },
+    } satisfies ToolDefinition<BuilderProjectArgs, { projectId: string; keys: string[] }>)),
     registerTool(defineTool({
       name: "builder_plan_project",
       description: "Persist or update a canonical Builder project brief, generate the relational project plan, and sync the staged project overview.",
@@ -737,6 +918,345 @@ export const builderPlugin = {
         ...scaffoldBuilderNodePackage({ projectDir, packageName, description, entrypoint }),
       }),
     } satisfies ToolDefinition<BuilderScaffoldArgs, { scaffolded: boolean; root: string; files: string[] }>)),
+    registerTool(defineTool({
+      name: "builder_http_get",
+      description: "Issue an allowlisted HTTP GET request for a Builder project with bounded responses and an audit trail.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          url: { type: "string" },
+          headers: { type: "array", items: { type: "object", properties: { name: { type: "string" }, value: { type: "string" } }, required: ["name", "value"] } },
+          timeoutSeconds: { type: "number", default: 30 },
+          maxBytes: { type: "number", default: 64000 },
+          authEnvKey: { type: "string" },
+          authHeaderName: { type: "string" },
+          authScheme: { type: "string" },
+        },
+        required: ["projectId", "url"],
+      },
+      execute: async ({ projectId, url, headers, timeoutSeconds, maxBytes, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
+        const project = await getBuilderProject(projectId);
+        return builderHttpRequest({
+          projectId,
+          projectRelativePath: project.relativePath,
+          method: "GET",
+          url,
+          headers,
+          timeoutSeconds,
+          maxBytes,
+          authEnvKey,
+          authHeaderName,
+          authScheme,
+        });
+      },
+    } satisfies ToolDefinition<BuilderHttpArgs, Awaited<ReturnType<typeof builderHttpRequest>>>)),
+    registerTool(defineTool({
+      name: "builder_http_post",
+      description: "Issue an allowlisted HTTP POST request for a Builder project with bounded responses and an audit trail.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          url: { type: "string" },
+          headers: { type: "array", items: { type: "object", properties: { name: { type: "string" }, value: { type: "string" } }, required: ["name", "value"] } },
+          body: { type: "string" },
+          contentType: { type: "string" },
+          timeoutSeconds: { type: "number", default: 30 },
+          maxBytes: { type: "number", default: 64000 },
+          authEnvKey: { type: "string" },
+          authHeaderName: { type: "string" },
+          authScheme: { type: "string" },
+        },
+        required: ["projectId", "url"],
+      },
+      execute: async ({ projectId, url, headers, body, contentType, timeoutSeconds, maxBytes, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
+        const project = await getBuilderProject(projectId);
+        return builderHttpRequest({
+          projectId,
+          projectRelativePath: project.relativePath,
+          method: "POST",
+          url,
+          headers,
+          body,
+          contentType,
+          timeoutSeconds,
+          maxBytes,
+          authEnvKey,
+          authHeaderName,
+          authScheme,
+        });
+      },
+    } satisfies ToolDefinition<BuilderHttpArgs, Awaited<ReturnType<typeof builderHttpRequest>>>)),
+    registerTool(defineTool({
+      name: "builder_http_put",
+      description: "Issue an allowlisted HTTP PUT request for a Builder project with bounded responses and an audit trail.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          url: { type: "string" },
+          headers: { type: "array", items: { type: "object", properties: { name: { type: "string" }, value: { type: "string" } }, required: ["name", "value"] } },
+          body: { type: "string" },
+          contentType: { type: "string" },
+          timeoutSeconds: { type: "number", default: 30 },
+          maxBytes: { type: "number", default: 64000 },
+          authEnvKey: { type: "string" },
+          authHeaderName: { type: "string" },
+          authScheme: { type: "string" },
+        },
+        required: ["projectId", "url"],
+      },
+      execute: async ({ projectId, url, headers, body, contentType, timeoutSeconds, maxBytes, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
+        const project = await getBuilderProject(projectId);
+        return builderHttpRequest({
+          projectId,
+          projectRelativePath: project.relativePath,
+          method: "PUT",
+          url,
+          headers,
+          body,
+          contentType,
+          timeoutSeconds,
+          maxBytes,
+          authEnvKey,
+          authHeaderName,
+          authScheme,
+        });
+      },
+    } satisfies ToolDefinition<BuilderHttpArgs, Awaited<ReturnType<typeof builderHttpRequest>>>)),
+    registerTool(defineTool({
+      name: "builder_http_delete",
+      description: "Issue an allowlisted HTTP DELETE request for a Builder project with bounded responses and an audit trail.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          url: { type: "string" },
+          headers: { type: "array", items: { type: "object", properties: { name: { type: "string" }, value: { type: "string" } }, required: ["name", "value"] } },
+          timeoutSeconds: { type: "number", default: 30 },
+          maxBytes: { type: "number", default: 64000 },
+          authEnvKey: { type: "string" },
+          authHeaderName: { type: "string" },
+          authScheme: { type: "string" },
+        },
+        required: ["projectId", "url"],
+      },
+      execute: async ({ projectId, url, headers, timeoutSeconds, maxBytes, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
+        const project = await getBuilderProject(projectId);
+        return builderHttpRequest({
+          projectId,
+          projectRelativePath: project.relativePath,
+          method: "DELETE",
+          url,
+          headers,
+          timeoutSeconds,
+          maxBytes,
+          authEnvKey,
+          authHeaderName,
+          authScheme,
+        });
+      },
+    } satisfies ToolDefinition<BuilderHttpArgs, Awaited<ReturnType<typeof builderHttpRequest>>>)),
+    registerTool(defineTool({
+      name: "builder_db_schema_summary",
+      description: "Summarize the read-only database contract for a Builder project from Prisma schema and migration artifacts.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId }: BuilderProjectArgs) => {
+        const project = await getBuilderProject(projectId);
+        return getBuilderDatabaseSchemaSummary(projectId, project.relativePath);
+      },
+    } satisfies ToolDefinition<BuilderProjectArgs, ReturnType<typeof getBuilderDatabaseSchemaSummary>>)),
+    registerTool(defineTool({
+      name: "builder_db_list_tables",
+      description: "List read-only database tables for a Builder project from Prisma schema artifacts.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId }: BuilderProjectArgs) => {
+        const project = await getBuilderProject(projectId);
+        return listBuilderDatabaseTables(projectId, project.relativePath);
+      },
+    } satisfies ToolDefinition<BuilderProjectArgs, ReturnType<typeof listBuilderDatabaseTables>>)),
+    registerTool(defineTool({
+      name: "builder_db_describe_table",
+      description: "Describe a read-only database table for a Builder project from Prisma schema artifacts.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          name: { type: "string" },
+        },
+        required: ["projectId", "name"],
+      },
+      execute: async ({ projectId, name }: BuilderDatabaseTableArgs) => {
+        const project = await getBuilderProject(projectId);
+        return describeBuilderDatabaseTable(projectId, project.relativePath, name);
+      },
+    } satisfies ToolDefinition<BuilderDatabaseTableArgs, ReturnType<typeof describeBuilderDatabaseTable>>)),
+    registerTool(defineTool({
+      name: "builder_db_list_migrations",
+      description: "List migration artifacts for a Builder project in a read-only manner.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId }: BuilderProjectArgs) => {
+        const project = await getBuilderProject(projectId);
+        return listBuilderDatabaseMigrations(projectId, project.relativePath);
+      },
+    } satisfies ToolDefinition<BuilderProjectArgs, ReturnType<typeof listBuilderDatabaseMigrations>>)),
+    registerTool(defineTool({
+      name: "builder_list_services",
+      description: "List declared runtime services for a Builder project and correlate them with managed Builder processes when available.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId }: BuilderProjectArgs) => {
+        const project = await getBuilderProject(projectId);
+        return listBuilderRuntimeServices({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+        });
+      },
+    } satisfies ToolDefinition<BuilderProjectArgs, ReturnType<typeof listBuilderRuntimeServices>>)),
+    registerTool(defineTool({
+      name: "builder_service_logs",
+      description: "Read the current managed log buffer for a discovered Builder runtime service.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+          cursor: { type: "number" },
+          maxBytes: { type: "number" },
+          tailBytes: { type: "number" },
+          followSeconds: { type: "number" },
+        },
+        required: ["projectId", "serviceId"],
+      },
+      execute: async ({ projectId, serviceId, cursor, maxBytes, tailBytes, followSeconds }: BuilderRuntimeServiceLogsArgs) => {
+        const project = await getBuilderProject(projectId);
+        return getBuilderRuntimeServiceLogs({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+          cursor,
+          maxBytes,
+          tailBytes,
+          followSeconds,
+        });
+      },
+    } satisfies ToolDefinition<BuilderRuntimeServiceLogsArgs, Awaited<ReturnType<typeof getBuilderRuntimeServiceLogs>>>)),
+    registerTool(defineTool({
+      name: "builder_restart_service",
+      description: "Restart a discovered Builder runtime service using managed process or compose control when supported.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+        },
+        required: ["projectId", "serviceId"],
+      },
+      execute: async ({ projectId, serviceId }: BuilderRuntimeServiceControlArgs) => {
+        const project = await getBuilderProject(projectId);
+        return restartBuilderRuntimeService({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+        });
+      },
+    } satisfies ToolDefinition<BuilderRuntimeServiceControlArgs, Awaited<ReturnType<typeof restartBuilderRuntimeService>>>)),
+    registerTool(defineTool({
+      name: "builder_start_service",
+      description: "Start a discovered Builder runtime service when its managed process or compose service is not running.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+        },
+        required: ["projectId", "serviceId"],
+      },
+      execute: async ({ projectId, serviceId }: BuilderRuntimeServiceControlArgs) => {
+        const project = await getBuilderProject(projectId);
+        return startBuilderRuntimeService({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+        });
+      },
+    } satisfies ToolDefinition<BuilderRuntimeServiceControlArgs, Awaited<ReturnType<typeof startBuilderRuntimeService>>>)),
+    registerTool(defineTool({
+      name: "builder_stop_service",
+      description: "Stop a discovered Builder runtime service when its managed process or compose service is running.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+        },
+        required: ["projectId", "serviceId"],
+      },
+      execute: async ({ projectId, serviceId }: BuilderRuntimeServiceControlArgs) => {
+        const project = await getBuilderProject(projectId);
+        return stopBuilderRuntimeService({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+        });
+      },
+    } satisfies ToolDefinition<BuilderRuntimeServiceControlArgs, Awaited<ReturnType<typeof stopBuilderRuntimeService>>>)),
+    registerTool(defineTool({
+      name: "builder_exec_in_service",
+      description: "Run an allowlisted one-shot command in the working directory or container context of a discovered Builder runtime service.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+          command: { type: "string" },
+          commandArgs: { type: "array", items: { type: "string" } },
+          timeoutSeconds: { type: "number", default: 120 },
+        },
+        required: ["projectId", "serviceId", "command"],
+      },
+      execute: async ({ projectId, serviceId, command, commandArgs, timeoutSeconds }: BuilderRuntimeExecArgs) => {
+        const project = await getBuilderProject(projectId);
+        return execBuilderRuntimeServiceCommand({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+          command,
+          commandArgs,
+          timeoutSeconds,
+        });
+      },
+    } satisfies ToolDefinition<BuilderRuntimeExecArgs, Awaited<ReturnType<typeof execBuilderRuntimeServiceCommand>>>)),
     registerTool(defineTool({
       name: "builder_run_command",
       description: "Run an allowlisted command inside the external Builder Mode workspace without shell expansion.",

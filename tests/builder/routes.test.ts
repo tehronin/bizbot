@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   planBuilderProject: vi.fn(),
   createBuilderProject: vi.fn(),
   listBuilderProjects: vi.fn(),
+  reconcileBuilderWorkspaceProjects: vi.fn(),
   getBuilderProject: vi.fn(),
   getBuilderTask: vi.fn(),
   getBuilderTaskHistory: vi.fn(),
@@ -23,6 +24,21 @@ const mocks = vi.hoisted(() => ({
   recordBuilderGeneratorCommand: vi.fn(),
   cancelBuilderProjectRun: vi.fn(),
   streamBuilderManagedProcessLogs: vi.fn(),
+  getBuilderEnvSchema: vi.fn(),
+  validateBuilderProjectEnv: vi.fn(),
+  writeBuilderProjectEnvFileEntry: vi.fn(),
+  syncBuilderProjectEnvExample: vi.fn(),
+  listBuilderCapabilityAuditEvents: vi.fn(),
+  getBuilderDatabaseInspectionOverview: vi.fn(),
+  probeBuilderDatabaseLiveMetadata: vi.fn(),
+  getBuilderRuntimeInspectionOverview: vi.fn(),
+  previewBuilderRuntimeServiceLogs: vi.fn(),
+  getBuilderRuntimeServiceLogs: vi.fn(),
+  resolveBuilderRuntimeService: vi.fn(),
+  restartBuilderRuntimeService: vi.fn(),
+  startBuilderRuntimeService: vi.fn(),
+  stopBuilderRuntimeService: vi.fn(),
+  execBuilderRuntimeServiceCommand: vi.fn(),
   count: vi.fn(),
 }));
 
@@ -55,6 +71,7 @@ vi.mock("@/lib/builder/analytics", () => ({
 vi.mock("@/lib/builder/projects", () => ({
   createBuilderProject: mocks.createBuilderProject,
   listBuilderProjects: mocks.listBuilderProjects,
+  reconcileBuilderWorkspaceProjects: mocks.reconcileBuilderWorkspaceProjects,
   getBuilderProject: mocks.getBuilderProject,
   listBuilderRuns: mocks.listBuilderRuns,
   updateBuilderProject: mocks.updateBuilderProject,
@@ -83,6 +100,33 @@ vi.mock("@/lib/builder/process-registry", () => ({
   streamBuilderManagedProcessLogs: mocks.streamBuilderManagedProcessLogs,
 }));
 
+vi.mock("@/lib/builder/environment", () => ({
+  getBuilderEnvSchema: mocks.getBuilderEnvSchema,
+  validateBuilderProjectEnv: mocks.validateBuilderProjectEnv,
+  writeBuilderProjectEnvFileEntry: mocks.writeBuilderProjectEnvFileEntry,
+  syncBuilderProjectEnvExample: mocks.syncBuilderProjectEnvExample,
+}));
+
+vi.mock("@/lib/builder/audit", () => ({
+  listBuilderCapabilityAuditEvents: mocks.listBuilderCapabilityAuditEvents,
+}));
+
+vi.mock("@/lib/builder/database-introspection", () => ({
+  getBuilderDatabaseInspectionOverview: mocks.getBuilderDatabaseInspectionOverview,
+  probeBuilderDatabaseLiveMetadata: mocks.probeBuilderDatabaseLiveMetadata,
+}));
+
+vi.mock("@/lib/builder/runtime-orchestration", () => ({
+  getBuilderRuntimeInspectionOverview: mocks.getBuilderRuntimeInspectionOverview,
+  previewBuilderRuntimeServiceLogs: mocks.previewBuilderRuntimeServiceLogs,
+  getBuilderRuntimeServiceLogs: mocks.getBuilderRuntimeServiceLogs,
+  resolveBuilderRuntimeService: mocks.resolveBuilderRuntimeService,
+  restartBuilderRuntimeService: mocks.restartBuilderRuntimeService,
+  startBuilderRuntimeService: mocks.startBuilderRuntimeService,
+  stopBuilderRuntimeService: mocks.stopBuilderRuntimeService,
+  execBuilderRuntimeServiceCommand: mocks.execBuilderRuntimeServiceCommand,
+}));
+
 vi.mock("@/lib/db", () => ({
   db: {
     builderProject: {
@@ -93,10 +137,16 @@ vi.mock("@/lib/db", () => ({
 
 import { GET as getStatus } from "@/app/api/builder/status/route";
 import { GET as getProjects, POST as postProjects } from "@/app/api/builder/projects/route";
+import { POST as postProjectReconcile } from "@/app/api/builder/projects/reconcile/route";
 import { DELETE as deleteProject, GET as getProject, PATCH as patchProject } from "@/app/api/builder/projects/[id]/route";
 import { POST as postBootstrap } from "@/app/api/builder/projects/[id]/bootstrap/route";
 import { POST as postCommand } from "@/app/api/builder/projects/[id]/commands/route";
 import { POST as postPlan } from "@/app/api/builder/projects/[id]/plan/route";
+import { GET as getProjectEnv, POST as postProjectEnv } from "@/app/api/builder/projects/[id]/env/route";
+import { GET as getProjectInspect, POST as postProjectInspect } from "@/app/api/builder/projects/[id]/inspect/route";
+import { POST as postProjectRuntimeControl } from "@/app/api/builder/projects/[id]/runtime/control/route";
+import { GET as getProjectRuntimeLogs } from "@/app/api/builder/projects/[id]/runtime/logs/route";
+import { GET as getProjectRuntimeLogStream } from "@/app/api/builder/projects/[id]/runtime/logs/stream/route";
 import { GET as getProcessStream } from "@/app/api/builder/processes/[processId]/stream/route";
 import { GET as getTasks, POST as postTask } from "@/app/api/builder/projects/[id]/tasks/route";
 import { POST as postCancelRun } from "@/app/api/builder/runs/[runId]/cancel/route";
@@ -131,8 +181,22 @@ describe("builder routes", () => {
     ]);
     mocks.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
     mocks.listBuilderProjects.mockResolvedValue([
-      { id: "project-1", name: "Demo", slug: "demo", relativePath: "projects/demo", template: "node-cli", packageManager: "NPM", gitInitialized: false, lifecycle: "ACTIVE", lastRunStatus: "IDLE" },
+      { id: "project-1", name: "Demo", slug: "demo", relativePath: "projects/demo", template: "node-cli", packageManager: "NPM", gitInitialized: false, lifecycle: "ACTIVE", lastRunStatus: "IDLE", workspaceState: "present" },
     ]);
+    mocks.reconcileBuilderWorkspaceProjects.mockResolvedValue({
+      projects: [
+        { id: "project-1", name: "Demo", slug: "demo", relativePath: "projects/demo", template: "node-cli", packageManager: "NPM", gitInitialized: false, lifecycle: "ACTIVE", lastRunStatus: "IDLE", workspaceState: "present" },
+      ],
+      scanned: 1,
+      verified: 1,
+      relinked: 0,
+      imported: 0,
+      metadataRebound: 0,
+      ignored: 0,
+      entries: [
+        { action: "verified", projectId: "project-1", relativePath: "projects/demo", metadataProjectId: "project-1", summary: "Verified Builder project Demo at projects/demo." },
+      ],
+    });
     mocks.getBuilderProject.mockResolvedValue({
       id: "project-1",
       name: "Demo",
@@ -143,6 +207,250 @@ describe("builder routes", () => {
       gitInitialized: false,
       lifecycle: "ACTIVE",
       lastRunStatus: "IDLE",
+    });
+    mocks.getBuilderEnvSchema.mockReturnValue({ path: ".env.example", keys: ["DATABASE_URL", "API_KEY"] });
+    mocks.validateBuilderProjectEnv.mockReturnValue({
+      schemaPath: ".env.example",
+      schemaAvailable: true,
+      projectReady: false,
+      executionReady: true,
+      totalRequiredKeys: 2,
+      missingProjectKeys: ["DATABASE_URL"],
+      missingExecutionKeys: [],
+      malformedEntries: [],
+      keys: [
+        {
+          key: "DATABASE_URL",
+          required: true,
+          examplePresent: true,
+          projectValuePresent: false,
+          executionValuePresent: true,
+          projectSource: null,
+          executionSource: "host_env",
+          redactedProjectValue: null,
+          redactedExecutionValue: "******rl",
+        },
+        {
+          key: "API_KEY",
+          required: true,
+          examplePresent: true,
+          projectValuePresent: true,
+          executionValuePresent: true,
+          projectSource: ".env.local",
+          executionSource: ".env.local",
+          redactedProjectValue: "******ey",
+          redactedExecutionValue: "******ey",
+        },
+      ],
+      summary: "Execution can rely on host env, but project-local env files are missing: DATABASE_URL.",
+    });
+    mocks.writeBuilderProjectEnvFileEntry.mockReturnValue({ path: ".env.local", key: "DATABASE_URL", redactedValue: "******rl" });
+    mocks.syncBuilderProjectEnvExample.mockReturnValue({ path: ".env.example", addedKeys: ["DATABASE_URL"], totalKeys: 2 });
+    mocks.listBuilderCapabilityAuditEvents.mockReturnValue({
+      auditPath: "projects/demo/.builder/reports/capability-audit.jsonl",
+      totalEvents: 2,
+      capabilityCounts: { network_http: 1, database_introspection: 1 },
+      outcomeCounts: { succeeded: 1, failed: 1 },
+      recentEvents: [
+        {
+          eventId: "event-1",
+          capabilityKey: "database_introspection",
+          eventName: "builder.database.inspect",
+          timestamp: new Date().toISOString(),
+          outcomeStatus: "failed",
+          metadata: { operation: "live_probe" },
+        },
+      ],
+    });
+    mocks.getBuilderDatabaseInspectionOverview.mockReturnValue({
+      artifact: {
+        provider: "sqlite",
+        datasourceName: "db",
+        connectionTarget: "file:dev.db",
+        migrationsPath: "projects/demo/prisma/migrations",
+        migrationsCount: 1,
+        tableCount: 2,
+        tables: [{ modelName: "User", tableName: "users", fieldCount: 2 }],
+        auditPath: "projects/demo/.builder/reports/capability-audit.jsonl",
+      },
+      latestLiveProbe: null,
+      driftSummary: {
+        status: "not_available",
+        summary: "Run a live database probe to compare Prisma artifacts against the current database.",
+        comparedAt: null,
+        artifactTableCount: 2,
+        liveTableCount: 0,
+        missingInLive: [],
+        unexpectedLive: [],
+        fieldCountMismatches: [],
+      },
+    });
+    mocks.probeBuilderDatabaseLiveMetadata.mockReturnValue({
+      status: "succeeded",
+      source: "live",
+      provider: "sqlite",
+      connectionTarget: "file:dev.db",
+      probedAt: new Date().toISOString(),
+      summary: "Live sqlite probe found 2 tables.",
+      tableCount: 2,
+      tables: [{ modelName: "User", tableName: "users", fieldCount: 2 }],
+      auditPath: "projects/demo/.builder/reports/capability-audit.jsonl",
+    });
+    mocks.getBuilderRuntimeInspectionOverview.mockReturnValue({
+      summary: "Runtime services: 2 declared, 1 running, 1 managed.",
+      totalServices: 2,
+      runningServices: 1,
+      failedServices: 0,
+      managedServices: 1,
+      services: [
+        {
+          serviceId: "script:dev",
+          label: "dev",
+          source: "package_script",
+          runner: "npm_script",
+          declaredIn: "projects/demo/package.json",
+          command: "next dev",
+          processId: "proc-1",
+          processStatus: "running",
+          status: "running",
+          startedAt: "2025-01-01T00:00:00.000Z",
+          logPath: ".builder/processes/proc-1.log",
+          auditPath: ".builder/processes/proc-1.audit.jsonl",
+          supportsStart: false,
+          supportsStop: true,
+          supportsRestart: true,
+          supportsExec: true,
+          healthStatus: "healthy",
+          healthReason: "Managed Builder process is running.",
+          containerId: null,
+          publishedPorts: [],
+        },
+        {
+          serviceId: "script:worker",
+          label: "worker",
+          source: "package_script",
+          runner: "npm_script",
+          declaredIn: "projects/demo/package.json",
+          command: "node worker.js",
+          processId: null,
+          processStatus: null,
+          status: "declared",
+          startedAt: null,
+          logPath: null,
+          auditPath: null,
+          supportsStart: true,
+          supportsStop: false,
+          supportsRestart: true,
+          supportsExec: true,
+          healthStatus: "declared",
+          healthReason: "Builder has not started this service yet.",
+          containerId: null,
+          publishedPorts: [],
+        },
+      ],
+    });
+    mocks.previewBuilderRuntimeServiceLogs.mockResolvedValue({
+      service: {
+        serviceId: "script:dev",
+        label: "dev",
+        source: "package_script",
+        runner: "npm_script",
+        declaredIn: "projects/demo/package.json",
+        workingDirectory: "projects/demo",
+        command: "next dev",
+        processId: "proc-1",
+        processStatus: "running",
+        status: "running",
+        startedAt: "2025-01-01T00:00:00.000Z",
+        logPath: ".builder/processes/proc-1.log",
+        auditPath: ".builder/processes/proc-1.audit.jsonl",
+        supportsStart: false,
+        supportsStop: true,
+        supportsRestart: true,
+        supportsExec: true,
+        healthStatus: "healthy",
+        healthReason: "Managed Builder process is running.",
+        containerId: null,
+        publishedPorts: [],
+      },
+      logs: "ready",
+      cursorUsed: 0,
+      nextCursor: 5,
+      truncatedBeforeCursor: false,
+      complete: false,
+      followed: false,
+      followTimedOut: false,
+    });
+    const runtimeService = {
+      serviceId: "script:dev",
+      label: "dev",
+      source: "package_script",
+      runner: "npm_script",
+      declaredIn: "projects/demo/package.json",
+      workingDirectory: "projects/demo",
+      command: "next dev",
+      processId: "proc-1",
+      processStatus: "running",
+      status: "running",
+      startedAt: "2025-01-01T00:00:00.000Z",
+      logPath: ".builder/processes/proc-1.log",
+      auditPath: ".builder/processes/proc-1.audit.jsonl",
+      supportsStart: false,
+      supportsStop: true,
+      supportsRestart: true,
+      supportsExec: true,
+      healthStatus: "healthy",
+      healthReason: "Managed Builder process is running.",
+      containerId: null,
+      publishedPorts: [],
+    };
+    mocks.resolveBuilderRuntimeService.mockReturnValue(runtimeService);
+    mocks.restartBuilderRuntimeService.mockResolvedValue({
+      status: "completed",
+      message: "Restarted service dev.",
+      service: runtimeService,
+      process: {
+        processId: "proc-2",
+        status: "running",
+        logPath: ".builder/processes/proc-2.log",
+        auditPath: ".builder/processes/proc-2.audit.jsonl",
+      },
+    });
+    mocks.startBuilderRuntimeService.mockResolvedValue({
+      status: "completed",
+      message: "Started service dev.",
+      service: runtimeService,
+    });
+    mocks.stopBuilderRuntimeService.mockResolvedValue({
+      status: "completed",
+      message: "Stopped service dev.",
+      service: {
+        ...runtimeService,
+        processId: null,
+        processStatus: null,
+        status: "stopped",
+        supportsStart: true,
+        supportsStop: false,
+        healthStatus: "stopped",
+        healthReason: "Managed Builder process is cancelled.",
+      },
+    });
+    mocks.execBuilderRuntimeServiceCommand.mockResolvedValue({
+      status: "completed",
+      message: "Executed node for service dev.",
+      service: runtimeService,
+      commandResult: {
+        ok: true,
+        command: "node",
+        args: ["--version"],
+        cwd: "projects/demo",
+        exitCode: 0,
+        signal: null,
+        stdout: "v22.0.0",
+        stderr: "",
+        timedOut: false,
+        cancelled: false,
+      },
     });
     mocks.getBuilderTask.mockResolvedValue({
       id: "task-1",
@@ -200,6 +508,7 @@ describe("builder routes", () => {
         gitInitialized: false,
         lifecycle: "ACTIVE",
         lastRunStatus: "IDLE",
+        workspaceState: "present",
         latestSessionSummary: "Validated the initial scaffold.",
       },
       context: {
@@ -243,6 +552,41 @@ describe("builder routes", () => {
         nextSteps: ["Continue the current task."],
         instructionNotes: null,
         updatedAt: "2025-01-01T00:00:00.000Z",
+      },
+      configReadiness: {
+        schemaPath: ".env.example",
+        schemaAvailable: true,
+        projectReady: false,
+        executionReady: true,
+        totalRequiredKeys: 2,
+        missingProjectKeys: ["DATABASE_URL"],
+        missingExecutionKeys: [],
+        malformedEntries: [],
+        keys: [
+          {
+            key: "DATABASE_URL",
+            required: true,
+            examplePresent: true,
+            projectValuePresent: false,
+            executionValuePresent: true,
+            projectSource: null,
+            executionSource: "host_env",
+            redactedProjectValue: null,
+            redactedExecutionValue: "******rl",
+          },
+        ],
+        summary: "Execution can rely on host env, but project-local env files are missing: DATABASE_URL.",
+      },
+      operatorTrust: {
+        generatedAt: "2025-01-01T00:00:00.000Z",
+        overallStatus: "blocked",
+        summary: "Operator trust is blocked because config blocked, runtime blocked, review needs review, approvals needs review.",
+        review: { status: "warning", summary: "Tests failed after implementation.", reviewStatus: "FAILED", validationPassed: false, riskCount: 1, updatedAt: "2025-01-01T00:00:00.000Z" },
+        config: { status: "warning", summary: "Execution can rely on host env, but project-local env files are missing: DATABASE_URL.", schemaAvailable: true, projectReady: false, executionReady: true, missingProjectKeys: ["DATABASE_URL"], missingExecutionKeys: [] },
+        runtime: { status: "blocked", summary: "MCP contract drift is active and must be resolved before trusting runtime state.", activeAlertCount: 1, unresolvedAlertCount: 1, autoFixCount: 0, mcpState: "drifted", driftDetected: true },
+        approvals: { status: "warning", summary: "1 post approval item is waiting in the human queue.", pendingCount: 1, pendingApprovals: [{ id: "approval-1", postId: "post-1", approvalStatus: "PENDING", postStatus: "PENDING_APPROVAL", platform: "Twitter", excerpt: "Queued post excerpt", notes: "Operator note", createdAt: "2025-01-01T00:00:00.000Z" }] },
+        governance: { status: "warning", summary: "Builder capability gates that require explicit approval when invoked: governance_contracts, database_introspection, runtime_orchestration.", approvalRequiredCapabilities: ["governance_contracts", "database_introspection", "runtime_orchestration"] },
+        artifactPaths: { markdown: ".builder/reports/operator-trust.md", json: ".builder/reports/operator-trust.json", latestReview: ".builder/reports/latest-review.md", processArtifacts: ".builder/processes" },
       },
       tasks: [
         { id: "task-1", taskSpecId: "task-spec-1", title: "Implement health check", description: "Add a health check route.", status: "RUNNING", stage: "IMPLEMENTING", summary: null },
@@ -312,6 +656,15 @@ describe("builder routes", () => {
         tests: { passed: false, exitCode: 1, summary: "test failed." },
         lint: { passed: null, exitCode: null, summary: null },
         build: { passed: null, exitCode: null, summary: null },
+        config: {
+          schemaAvailable: true,
+          projectReady: false,
+          executionReady: true,
+          missingProjectKeys: ["DATABASE_URL"],
+          missingExecutionKeys: [],
+          malformedEntries: [],
+          summary: "Execution can rely on host env, but project-local env files are missing: DATABASE_URL.",
+        },
         risks: ["Tests are still failing."],
         nextSteps: ["Fix the failing test."],
         architecture: {
@@ -387,6 +740,29 @@ describe("builder routes", () => {
         nextSteps: ["Advance the first task spec."],
         instructionNotes: null,
         updatedAt: "2025-01-01T00:00:00.000Z",
+      },
+      configReadiness: {
+        schemaPath: null,
+        schemaAvailable: false,
+        projectReady: false,
+        executionReady: false,
+        totalRequiredKeys: 0,
+        missingProjectKeys: [],
+        missingExecutionKeys: [],
+        malformedEntries: [],
+        keys: [],
+        summary: "No .env.example schema is present yet.",
+      },
+      operatorTrust: {
+        generatedAt: "2025-01-01T00:00:00.000Z",
+        overallStatus: "blocked",
+        summary: "Operator trust is blocked because config blocked, review needs review.",
+        review: { status: "warning", summary: "No structured Builder review exists yet.", reviewStatus: null, validationPassed: null, riskCount: 0, updatedAt: null },
+        config: { status: "blocked", summary: "No .env.example schema is present yet.", schemaAvailable: false, projectReady: false, executionReady: false, missingProjectKeys: [], missingExecutionKeys: [] },
+        runtime: { status: "trusted", summary: "Runtime artifacts are aligned; MCP snapshot state is captured.", activeAlertCount: 0, unresolvedAlertCount: 0, autoFixCount: 0, mcpState: "captured", driftDetected: false },
+        approvals: { status: "trusted", summary: "No pending human approvals are waiting in the queue.", pendingCount: 0, pendingApprovals: [] },
+        governance: { status: "warning", summary: "Builder capability gates that require explicit approval when invoked: governance_contracts, database_introspection, runtime_orchestration.", approvalRequiredCapabilities: ["governance_contracts", "database_introspection", "runtime_orchestration"] },
+        artifactPaths: { markdown: ".builder/reports/operator-trust.md", json: ".builder/reports/operator-trust.json", latestReview: ".builder/reports/latest-review.md", processArtifacts: ".builder/processes" },
       },
       brief: {
         id: "brief-1",
@@ -497,6 +873,203 @@ describe("builder routes", () => {
     expect(response.status).toBe(201);
     expect(mocks.createBuilderProject).toHaveBeenCalledWith({ name: "Acme", slug: undefined, relativePath: undefined, template: "vite-app", packageManager: "PNPM", stackPresetKey: "vite-react-tailwind" });
     expect(payload.project.id).toBe("project-2");
+  });
+
+  it("reconciles Builder workspace folders through the explicit collection action", async () => {
+    const response = await postProjectReconcile();
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.reconcileBuilderWorkspaceProjects).toHaveBeenCalledTimes(1);
+    expect(payload.scanned).toBe(1);
+    expect(payload.projects[0]?.workspaceState).toBe("present");
+    expect(payload.summary).toContain("Scanned 1 Builder workspace folders");
+  });
+
+  it("returns Builder env readiness for a project", async () => {
+    const response = await getProjectEnv(new NextRequest("http://localhost/api/builder/projects/project-1/env"), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.schema.keys).toEqual(["DATABASE_URL", "API_KEY"]);
+    expect(payload.readiness.missingProjectKeys).toEqual(["DATABASE_URL"]);
+  });
+
+  it("writes Builder env entries through the project env action route", async () => {
+    const response = await postProjectEnv(new NextRequest("http://localhost/api/builder/projects/project-1/env", {
+      method: "POST",
+      body: JSON.stringify({ action: "write", key: "DATABASE_URL", value: "postgres://demo", file: ".env.local" }),
+      headers: { "Content-Type": "application/json" },
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.writeBuilderProjectEnvFileEntry).toHaveBeenCalledWith("projects/demo", {
+      key: "DATABASE_URL",
+      value: "postgres://demo",
+      file: ".env.local",
+    });
+    expect(payload.result.key).toBe("DATABASE_URL");
+  });
+
+  it("syncs .env.example through the project env action route", async () => {
+    const response = await postProjectEnv(new NextRequest("http://localhost/api/builder/projects/project-1/env", {
+      method: "POST",
+      body: JSON.stringify({ action: "sync_example" }),
+      headers: { "Content-Type": "application/json" },
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.syncBuilderProjectEnvExample).toHaveBeenCalledWith("projects/demo");
+    expect(payload.result.addedKeys).toEqual(["DATABASE_URL"]);
+  });
+
+  it("returns inspection details and triggers a live database probe", async () => {
+    const getResponse = await getProjectInspect(new Request("http://localhost/api/builder/projects/project-1/inspect"), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const getPayload = await getResponse.json();
+
+    expect(getResponse.status).toBe(200);
+    expect(getPayload.capabilityAudit.totalEvents).toBe(2);
+    expect(getPayload.databaseInspection.artifact.provider).toBe("sqlite");
+    expect(getPayload.runtimeInspection.totalServices).toBe(2);
+
+    const postResponse = await postProjectInspect(new NextRequest("http://localhost/api/builder/projects/project-1/inspect", {
+      method: "POST",
+      body: JSON.stringify({ action: "probe_live_database" }),
+      headers: { "Content-Type": "application/json" },
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const postPayload = await postResponse.json();
+
+    expect(postResponse.status).toBe(200);
+    expect(postPayload.status).toBe("completed");
+    expect(mocks.probeBuilderDatabaseLiveMetadata).toHaveBeenCalledWith("project-1", "projects/demo");
+  });
+
+  it("returns runtime service log previews for a discovered service", async () => {
+    const response = await getProjectRuntimeLogs(new NextRequest("http://localhost/api/builder/projects/project-1/runtime/logs?serviceId=script%3Adev"), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.service.serviceId).toBe("script:dev");
+    expect(payload.logs).toBe("ready");
+    expect(mocks.previewBuilderRuntimeServiceLogs).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      serviceId: "script:dev",
+    }));
+  });
+
+  it("executes runtime restart and exec control actions", async () => {
+    const restartResponse = await postProjectRuntimeControl(new NextRequest("http://localhost/api/builder/projects/project-1/runtime/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "restart_service", serviceId: "script:dev" }),
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const restartPayload = await restartResponse.json();
+
+    expect(restartResponse.status).toBe(200);
+    expect(restartPayload.status).toBe("completed");
+    expect(mocks.restartBuilderRuntimeService).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1", serviceId: "script:dev" }));
+
+    const execResponse = await postProjectRuntimeControl(new NextRequest("http://localhost/api/builder/projects/project-1/runtime/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "exec_in_service", serviceId: "script:dev", command: "node", commandArgs: ["--version"] }),
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const execPayload = await execResponse.json();
+
+    expect(execResponse.status).toBe(200);
+    expect(execPayload.commandResult.stdout).toContain("v22");
+    expect(mocks.execBuilderRuntimeServiceCommand).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1", serviceId: "script:dev", command: "node" }));
+  });
+
+  it("executes runtime start and stop control actions", async () => {
+    const startResponse = await postProjectRuntimeControl(new NextRequest("http://localhost/api/builder/projects/project-1/runtime/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "start_service", serviceId: "script:dev" }),
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const startPayload = await startResponse.json();
+
+    const stopResponse = await postProjectRuntimeControl(new NextRequest("http://localhost/api/builder/projects/project-1/runtime/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "stop_service", serviceId: "script:dev" }),
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const stopPayload = await stopResponse.json();
+
+    expect(startResponse.status).toBe(200);
+    expect(stopResponse.status).toBe(200);
+    expect(startPayload.status).toBe("completed");
+    expect(stopPayload.status).toBe("completed");
+    expect(mocks.startBuilderRuntimeService).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1", serviceId: "script:dev" }));
+    expect(mocks.stopBuilderRuntimeService).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1", serviceId: "script:dev" }));
+  });
+
+  it("streams runtime service logs through the runtime stream route", async () => {
+    mocks.getBuilderRuntimeServiceLogs.mockResolvedValueOnce({
+      service: {
+        serviceId: "script:dev",
+        label: "dev",
+        source: "package_script",
+        runner: "npm_script",
+        declaredIn: "projects/demo/package.json",
+        workingDirectory: "projects/demo",
+        command: "next dev",
+        processId: "proc-1",
+        processStatus: "running",
+        status: "running",
+        startedAt: "2025-01-01T00:00:00.000Z",
+        logPath: ".builder/processes/proc-1.log",
+        auditPath: ".builder/processes/proc-1.audit.jsonl",
+        supportsStart: false,
+        supportsStop: true,
+        supportsRestart: true,
+        supportsExec: true,
+        healthStatus: "healthy",
+        healthReason: "Managed Builder process is running.",
+        containerId: null,
+        publishedPorts: [],
+      },
+      cursorUsed: 0,
+      nextCursor: 5,
+      logs: "ready",
+      truncatedBeforeCursor: false,
+      complete: true,
+      followed: true,
+      followTimedOut: false,
+    });
+
+    const response = await getProjectRuntimeLogStream(new NextRequest("http://localhost/api/builder/projects/project-1/runtime/logs/stream?serviceId=script%3Adev"), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain("event: open");
+    expect(body).toContain("event: log");
+    expect(body).toContain("event: complete");
   });
 
   it("returns project details and recent runs", async () => {

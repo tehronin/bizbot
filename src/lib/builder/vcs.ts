@@ -170,6 +170,12 @@ export function commitBuilderRepo(args: { message: string; subdir?: string; allo
   if (!message) {
     throw new Error("Builder VCS commit requires a non-empty message.");
   }
+  if (!args.allowEmpty) {
+    const stagedCheck = runGit(["diff", "--cached", "--name-only"], args.subdir ?? ".");
+    if (!stagedCheck.stdout.trim()) {
+      throw new Error("Builder VCS commit rejects empty commits by default. Stage changes first or set allowEmpty.");
+    }
+  }
   const gitArgs = ["commit", "-m", message];
   if (args.allowEmpty) {
     gitArgs.push("--allow-empty");

@@ -64,9 +64,112 @@ interface BuilderProject {
   gitInitialized: boolean;
   lifecycle: "DRAFT" | "PLANNED" | "ACTIVE" | "BLOCKED" | "COMPLETE";
   lastRunStatus: "IDLE" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
+  workspaceState: "present" | "missing" | "unavailable";
   latestSessionSummary?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface BuilderConfigMalformedEntry {
+  path: ".env" | ".env.local" | ".env.example";
+  line: number;
+  content: string;
+  reason: string;
+}
+
+interface BuilderProjectConfigReadiness {
+  schemaPath: ".env.example" | null;
+  schemaAvailable: boolean;
+  projectReady: boolean;
+  executionReady: boolean;
+  totalRequiredKeys: number;
+  missingProjectKeys: string[];
+  missingExecutionKeys: string[];
+  malformedEntries: BuilderConfigMalformedEntry[];
+  keys: Array<{
+    key: string;
+    required: boolean;
+    examplePresent: boolean;
+    projectValuePresent: boolean;
+    executionValuePresent: boolean;
+    projectSource: ".env" | ".env.local" | ".env.example" | null;
+    executionSource: ".env" | ".env.local" | ".env.example" | "host_env" | "missing";
+    redactedProjectValue: string | null;
+    redactedExecutionValue: string | null;
+  }>;
+  summary: string;
+}
+
+interface BuilderOperatorTrustApprovalItem {
+  id: string;
+  postId: string;
+  approvalStatus: string;
+  postStatus: string;
+  platform: string;
+  excerpt: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+interface BuilderOperatorTrustState {
+  generatedAt: string;
+  overallStatus: "trusted" | "warning" | "blocked";
+  summary: string;
+  review: {
+    status: "trusted" | "warning" | "blocked";
+    summary: string;
+    reviewStatus: string | null;
+    validationPassed: boolean | null;
+    riskCount: number;
+    updatedAt: string | null;
+  };
+  config: {
+    status: "trusted" | "warning" | "blocked";
+    summary: string;
+    schemaAvailable: boolean;
+    projectReady: boolean;
+    executionReady: boolean;
+    missingProjectKeys: string[];
+    missingExecutionKeys: string[];
+  };
+  runtime: {
+    status: "trusted" | "warning" | "blocked";
+    summary: string;
+    activeAlertCount: number;
+    unresolvedAlertCount: number;
+    autoFixCount: number;
+    mcpState: string;
+    driftDetected: boolean;
+  };
+  approvals: {
+    status: "trusted" | "warning" | "blocked";
+    summary: string;
+    pendingCount: number;
+    pendingApprovals: BuilderOperatorTrustApprovalItem[];
+  };
+  governance: {
+    status: "trusted" | "warning" | "blocked";
+    summary: string;
+    approvalRequiredCapabilities: string[];
+  };
+  artifactPaths: {
+    markdown: string;
+    json: string;
+    latestReview: string;
+    processArtifacts: string;
+  };
+}
+
+interface BuilderWorkspaceReconcileResponse {
+  projects: BuilderProject[];
+  scanned: number;
+  verified: number;
+  relinked: number;
+  imported: number;
+  metadataRebound: number;
+  ignored: number;
+  summary: string;
+  error?: string;
 }
 
 interface BuilderProjectBrief {
@@ -421,6 +524,8 @@ interface BuilderProjectsResponse {
 interface BuilderProjectDetailResponse {
   project: BuilderProject;
   context: BuilderProjectContext;
+  configReadiness: BuilderProjectConfigReadiness;
+  operatorTrust: BuilderOperatorTrustState;
   brief: BuilderProjectBrief | null;
   milestones: BuilderMilestone[];
   currentMilestone: BuilderMilestone | null;
@@ -438,10 +543,178 @@ interface BuilderProjectDetailResponse {
   error?: string;
 }
 
+interface BuilderCapabilityAuditEvent {
+  eventId: string;
+  capabilityKey: string;
+  eventName: string;
+  timestamp: string;
+  outcomeStatus: "succeeded" | "failed" | "blocked" | "cancelled" | "timed_out";
+  metadata?: Record<string, unknown>;
+}
+
+interface BuilderCapabilityAuditOverview {
+  auditPath: string;
+  totalEvents: number;
+  capabilityCounts: Record<string, number>;
+  outcomeCounts: Record<string, number>;
+  recentEvents: BuilderCapabilityAuditEvent[];
+}
+
+interface BuilderDatabaseLiveProbe {
+  status: "succeeded" | "failed";
+  source: "live";
+  provider: string | null;
+  connectionTarget: string | null;
+  probedAt: string;
+  summary: string;
+  tableCount: number;
+  tables: Array<{ modelName: string; tableName: string; fieldCount: number }>;
+  auditPath: string;
+  error?: string;
+}
+
+interface BuilderDatabaseInspectionOverview {
+  artifact: {
+    provider: string | null;
+    datasourceName: string | null;
+    connectionTarget: string | null;
+    migrationsPath: string | null;
+    migrationsCount: number;
+    tableCount: number;
+    tables: Array<{ modelName: string; tableName: string; fieldCount: number }>;
+    auditPath: string;
+  };
+  latestLiveProbe: BuilderDatabaseLiveProbe | null;
+  driftSummary: {
+    status: "not_available" | "probe_failed" | "in_sync" | "drifted";
+    summary: string;
+    comparedAt: string | null;
+    artifactTableCount: number;
+    liveTableCount: number;
+    missingInLive: string[];
+    unexpectedLive: string[];
+    fieldCountMismatches: Array<{
+      tableName: string;
+      artifactFieldCount: number;
+      liveFieldCount: number;
+    }>;
+  };
+}
+
+interface BuilderInspectionResponse {
+  capabilityAudit: BuilderCapabilityAuditOverview;
+  databaseInspection: BuilderDatabaseInspectionOverview;
+  runtimeInspection: BuilderRuntimeInspectionOverview;
+  error?: string;
+  status?: string;
+  message?: string;
+}
+
+interface BuilderRuntimeServiceSummary {
+  serviceId: string;
+  label: string;
+  source: "package_script" | "workspace_package" | "compose_file" | "procfile";
+  runner: "npm_script" | "compose_service" | "procfile_process";
+  declaredIn: string;
+  workingDirectory: string;
+  command: string | null;
+  processId: string | null;
+  processStatus: "running" | "exited" | "failed" | "cancelled" | "timed_out" | null;
+  status: "running" | "failed" | "stopped" | "declared";
+  startedAt: string | null;
+  logPath: string | null;
+  auditPath: string | null;
+  supportsRestart: boolean;
+  supportsExec: boolean;
+  supportsStart: boolean;
+  supportsStop: boolean;
+  healthStatus: "healthy" | "unhealthy" | "starting" | "stopped" | "declared" | "unknown";
+  healthReason: string | null;
+  containerId: string | null;
+  publishedPorts: string[];
+}
+
+interface BuilderRuntimeInspectionOverview {
+  summary: string;
+  totalServices: number;
+  runningServices: number;
+  failedServices: number;
+  managedServices: number;
+  services: BuilderRuntimeServiceSummary[];
+}
+
+interface BuilderRuntimeServiceLogPreview {
+  service: BuilderRuntimeServiceSummary;
+  logs: string;
+  cursorUsed: number;
+  nextCursor: number;
+  truncatedBeforeCursor: boolean;
+  complete: boolean;
+  followed: boolean;
+  followTimedOut: boolean;
+  error?: string;
+}
+
+interface BuilderRuntimeControlResponse {
+  status: "completed" | "blocked";
+  message: string;
+  service: BuilderRuntimeServiceSummary;
+  process?: {
+    processId: string;
+    status: "running" | "exited" | "failed" | "cancelled" | "timed_out";
+    logPath: string;
+    auditPath: string;
+  };
+  previousProcess?: {
+    processId: string;
+    status: "running" | "exited" | "failed" | "cancelled" | "timed_out";
+  } | null;
+  commandResult?: {
+    ok: boolean;
+    command: string;
+    args: string[];
+    cwd: string;
+    exitCode: number | null;
+    signal: string | null;
+    stdout: string;
+    stderr: string;
+    timedOut: boolean;
+    cancelled: boolean;
+  };
+  runtimeInspection: BuilderRuntimeInspectionOverview;
+  auditPath?: string;
+  error?: string;
+}
+
 interface BuilderBriefDraft {
   title: string;
   summary: string;
   notes: string;
+}
+
+interface BuilderEnvDraft {
+  key: string;
+  value: string;
+  file: ".env" | ".env.local";
+}
+
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const payloadText = await response.text();
+  if (!payloadText.trim()) {
+    return {} as T;
+  }
+
+  try {
+    return JSON.parse(payloadText) as T;
+  } catch (error) {
+    if (!response.ok) {
+      return { error: `Request failed with status ${response.status}.` } as T;
+    }
+
+    throw error instanceof Error
+      ? error
+      : new Error(`Invalid JSON response from ${response.url || "request"}.`);
+  }
 }
 
 type BuilderShortcutAction = "retry-last-failed-task" | "open-current-task-logs" | "cancel-running-task";
@@ -586,6 +859,101 @@ function buildHealthAlerts(metrics: BuilderHealthMetrics | null | undefined): Ar
   return alerts;
 }
 
+function selectPreferredProjectId(projects: BuilderProject[], currentProjectId?: string | null): string | null {
+  if (currentProjectId) {
+    const currentProject = projects.find((project) => project.id === currentProjectId) ?? null;
+    if (currentProject && (currentProject.workspaceState === "present" || !projects.some((project) => project.workspaceState === "present"))) {
+      return currentProjectId;
+    }
+  }
+
+  return projects.find((project) =>
+    project.workspaceState === "present"
+    && (
+      project.lastRunStatus !== "IDLE"
+      || project.lifecycle === "ACTIVE"
+      || project.lifecycle === "BLOCKED"
+      || project.lifecycle === "COMPLETE"
+    )
+  )?.id
+    ?? projects.find((project) => project.workspaceState === "present")?.id
+    ?? projects.find((project) =>
+      project.lastRunStatus !== "IDLE"
+      || project.lifecycle === "ACTIVE"
+      || project.lifecycle === "BLOCKED"
+      || project.lifecycle === "COMPLETE"
+    )?.id
+    ?? projects[0]?.id
+    ?? null;
+}
+
+function getWorkspaceStateLabel(state: BuilderProject["workspaceState"]): string {
+  switch (state) {
+    case "present":
+      return "workspace present";
+    case "missing":
+      return "workspace missing";
+    default:
+      return "workspace unavailable";
+  }
+}
+
+function getWorkspaceStateColor(state: BuilderProject["workspaceState"]): string {
+  switch (state) {
+    case "present":
+      return "var(--success)";
+    case "missing":
+      return "var(--warning)";
+    default:
+      return "var(--text-dim)";
+  }
+}
+
+function getConfigStatusLabel(config: BuilderProjectConfigReadiness | null | undefined): string {
+  if (!config?.schemaAvailable) {
+    return "schema missing";
+  }
+  if (!config.executionReady) {
+    return "execution blocked";
+  }
+  if (!config.projectReady) {
+    return "host-backed only";
+  }
+  return "ready";
+}
+
+function getConfigStatusColor(config: BuilderProjectConfigReadiness | null | undefined): string {
+  if (!config?.schemaAvailable || !config.executionReady) {
+    return "var(--danger)";
+  }
+  if (!config.projectReady) {
+    return "var(--warning)";
+  }
+  return "var(--success)";
+}
+
+function getOperatorTrustColor(status: BuilderOperatorTrustState["overallStatus"] | BuilderOperatorTrustState["review"]["status"] | undefined): string {
+  switch (status) {
+    case "blocked":
+      return "var(--danger)";
+    case "warning":
+      return "var(--warning)";
+    default:
+      return "var(--success)";
+  }
+}
+
+function formatOperatorTrustLabel(status: BuilderOperatorTrustState["overallStatus"] | BuilderOperatorTrustState["review"]["status"] | undefined): string {
+  switch (status) {
+    case "blocked":
+      return "blocked";
+    case "warning":
+      return "needs review";
+    default:
+      return "trusted";
+  }
+}
+
 function getRunLoopMetadata(metadata: Record<string, unknown> | null | undefined): BuilderRunLoopMetadata | null {
   if (!metadata || typeof metadata !== "object") {
     return null;
@@ -612,12 +980,27 @@ const EMPTY_BRIEF_DRAFT: BuilderBriefDraft = {
   notes: "",
 };
 
+const EMPTY_ENV_DRAFT: BuilderEnvDraft = {
+  key: "",
+  value: "",
+  file: ".env.local",
+};
+
 export default function BuilderPage() {
   const [status, setStatus] = useState<BuilderStatusResponse | null>(null);
   const [projects, setProjects] = useState<BuilderProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [projectDetail, setProjectDetail] = useState<BuilderProjectDetailResponse | null>(null);
+  const [projectInspection, setProjectInspection] = useState<BuilderInspectionResponse | null>(null);
+  const [selectedRuntimeServiceId, setSelectedRuntimeServiceId] = useState<string | null>(null);
+  const [runtimeServiceLogs, setRuntimeServiceLogs] = useState<BuilderRuntimeServiceLogPreview | null>(null);
+  const [runtimeLogLive, setRuntimeLogLive] = useState(false);
+  const [runtimeLogState, setRuntimeLogState] = useState<"idle" | "connecting" | "live" | "complete">("idle");
+  const [runtimeExecCommand, setRuntimeExecCommand] = useState("");
+  const [runtimeExecArgs, setRuntimeExecArgs] = useState("");
+  const [runtimeExecResult, setRuntimeExecResult] = useState<BuilderRuntimeControlResponse["commandResult"] | null>(null);
+  const [runtimeActionServiceId, setRuntimeActionServiceId] = useState<string | null>(null);
   const [taskHistory, setTaskHistory] = useState<BuilderTaskHistoryEntry[]>([]);
   const [builderStats, setBuilderStats] = useState<BuilderStats | null>(null);
   const [createDraft, setCreateDraft] = useState(EMPTY_CREATE_PROJECT);
@@ -629,6 +1012,7 @@ export default function BuilderPage() {
   const [agenticModel, setAgenticModel] = useState("");
   const [bootstrapOptions, setBootstrapOptions] = useState({ initializeGit: true, installDependencies: false });
   const [briefDraft, setBriefDraft] = useState<BuilderBriefDraft>(EMPTY_BRIEF_DRAFT);
+  const [envDraft, setEnvDraft] = useState<BuilderEnvDraft>(EMPTY_ENV_DRAFT);
   const [saving, setSaving] = useState(false);
   const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
   const [highlightedRunId, setHighlightedRunId] = useState<string | null>(null);
@@ -636,10 +1020,11 @@ export default function BuilderPage() {
   const [error, setError] = useState<string | null>(null);
   const [resultNotice, setResultNotice] = useState<string | null>(null);
   const recentRunsRef = useRef<HTMLElement | null>(null);
+  const runtimeLogStreamRef = useRef<EventSource | null>(null);
 
   async function loadStatus(): Promise<BuilderStatusResponse> {
     const response = await fetch("/api/builder/status");
-    const payload = (await response.json()) as BuilderStatusResponse & { error?: string };
+    const payload = await readJsonResponse<BuilderStatusResponse & { error?: string }>(response);
     if (!response.ok) {
       throw new Error(payload.error ?? "Failed to load builder status.");
     }
@@ -653,20 +1038,20 @@ export default function BuilderPage() {
 
   async function loadProjects(nextSelectedProjectId?: string | null): Promise<BuilderProject[]> {
     const response = await fetch("/api/builder/projects");
-    const payload = (await response.json()) as BuilderProjectsResponse;
+    const payload = await readJsonResponse<BuilderProjectsResponse>(response);
     if (!response.ok) {
       throw new Error(payload.error ?? "Failed to load builder projects.");
     }
     setProjects(payload.projects);
 
-    const desiredProjectId = nextSelectedProjectId ?? selectedProjectId ?? payload.projects[0]?.id ?? null;
+    const desiredProjectId = selectPreferredProjectId(payload.projects, nextSelectedProjectId ?? selectedProjectId);
     setSelectedProjectId(desiredProjectId);
     return payload.projects;
   }
 
   async function loadProjectDetail(projectId: string): Promise<void> {
     const response = await fetch(`/api/builder/projects/${projectId}`);
-    const payload = (await response.json()) as BuilderProjectDetailResponse;
+    const payload = await readJsonResponse<BuilderProjectDetailResponse>(response);
     if (!response.ok) {
       throw new Error(payload.error ?? "Failed to load builder project details.");
     }
@@ -676,6 +1061,15 @@ export default function BuilderPage() {
       summary: payload.brief?.summary ?? "",
       notes: payload.brief?.notes ?? "",
     });
+    setEnvDraft((current) => ({
+      key: current.key && payload.configReadiness.keys.some((entry) => entry.key === current.key)
+        ? current.key
+        : payload.configReadiness.missingProjectKeys[0]
+          ?? payload.configReadiness.keys[0]?.key
+          ?? "",
+      value: "",
+      file: current.file,
+    }));
     setSelectedTaskId((current) => {
       if (current && payload.tasks.some((task) => task.id === current)) {
         return current;
@@ -687,16 +1081,215 @@ export default function BuilderPage() {
 
   async function loadBuilderStats(projectId: string): Promise<void> {
     const response = await fetch(`/api/analytics/builder-stats?projectId=${encodeURIComponent(projectId)}`);
-    const payload = (await response.json()) as BuilderStats & { error?: string };
+    const payload = await readJsonResponse<BuilderStats & { error?: string }>(response);
     if (!response.ok) {
       throw new Error(payload.error ?? "Failed to load builder stats.");
     }
     setBuilderStats(payload);
   }
 
+  async function loadProjectInspection(projectId: string): Promise<void> {
+    const response = await fetch(`/api/builder/projects/${projectId}/inspect`);
+    const payload = await readJsonResponse<BuilderInspectionResponse>(response);
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load builder inspection details.");
+    }
+    setProjectInspection(payload);
+  }
+
+  async function loadRuntimeServiceLogs(projectId: string, serviceId: string): Promise<void> {
+    const response = await fetch(`/api/builder/projects/${projectId}/runtime/logs?serviceId=${encodeURIComponent(serviceId)}`);
+    const payload = await readJsonResponse<BuilderRuntimeServiceLogPreview>(response);
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load runtime service logs.");
+    }
+    setRuntimeServiceLogs(payload);
+  }
+
+  function stopRuntimeLogStream(): void {
+    runtimeLogStreamRef.current?.close();
+    runtimeLogStreamRef.current = null;
+    setRuntimeLogLive(false);
+    setRuntimeLogState("idle");
+  }
+
+  function startRuntimeLogStream(projectId: string, serviceId: string): void {
+    stopRuntimeLogStream();
+    setRuntimeLogLive(true);
+    setRuntimeLogState("connecting");
+    const eventSource = new EventSource(`/api/builder/projects/${projectId}/runtime/logs/stream?serviceId=${encodeURIComponent(serviceId)}`);
+    runtimeLogStreamRef.current = eventSource;
+
+    eventSource.addEventListener("open", () => {
+      setRuntimeLogState("connecting");
+      setRuntimeServiceLogs((current) => current && current.service.serviceId === serviceId ? { ...current, logs: "", cursorUsed: 0, nextCursor: 0, complete: false, followed: false, followTimedOut: false, error: undefined } : current);
+    });
+
+    eventSource.addEventListener("state", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { service?: BuilderRuntimeServiceSummary; process?: { status?: BuilderRuntimeServiceSummary["processStatus"] } };
+      if (!payload.service) {
+        return;
+      }
+      const nextService = payload.service;
+      setRuntimeServiceLogs((current) => current ? { ...current, service: nextService, error: undefined } : {
+        service: nextService,
+        logs: "",
+        cursorUsed: 0,
+        nextCursor: 0,
+        truncatedBeforeCursor: false,
+        complete: false,
+        followed: false,
+        followTimedOut: false,
+      });
+      setRuntimeLogState(payload.process?.status === "running" ? "live" : "connecting");
+    });
+
+    eventSource.addEventListener("log", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { logs: string; cursorUsed: number; nextCursor: number; truncatedBeforeCursor: boolean };
+      setRuntimeLogState("live");
+      setRuntimeServiceLogs((current) => current ? {
+        ...current,
+        logs: `${current.logs}${payload.logs}`,
+        cursorUsed: payload.cursorUsed,
+        nextCursor: payload.nextCursor,
+        truncatedBeforeCursor: current.truncatedBeforeCursor || payload.truncatedBeforeCursor,
+        followed: true,
+        followTimedOut: false,
+        error: undefined,
+      } : current);
+    });
+
+    eventSource.addEventListener("heartbeat", () => {
+      setRuntimeLogState("live");
+      setRuntimeServiceLogs((current) => current ? { ...current, followed: true, followTimedOut: true } : current);
+    });
+
+    eventSource.addEventListener("complete", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { nextCursor: number };
+      setRuntimeLogState("complete");
+      setRuntimeServiceLogs((current) => current ? { ...current, nextCursor: payload.nextCursor, complete: true, followed: true, followTimedOut: false } : current);
+      eventSource.close();
+      runtimeLogStreamRef.current = null;
+      setRuntimeLogLive(false);
+    });
+
+    eventSource.addEventListener("error", (event) => {
+      const payload = event instanceof MessageEvent && typeof event.data === "string" && event.data ? JSON.parse(event.data) as { error?: string } : {};
+      setRuntimeServiceLogs((current) => current ? { ...current, error: payload.error ?? "Runtime log stream disconnected." } : current);
+      setRuntimeLogState("idle");
+      setRuntimeLogLive(false);
+      eventSource.close();
+      runtimeLogStreamRef.current = null;
+    });
+  }
+
+  async function restartRuntimeService(): Promise<void> {
+    if (!selectedProjectId || !selectedRuntimeServiceId) {
+      return;
+    }
+    setSaving(true);
+    setRuntimeActionServiceId(selectedRuntimeServiceId);
+    setResultNotice(null);
+    setError(null);
+    setRuntimeExecResult(null);
+    try {
+      const response = await fetch(`/api/builder/projects/${selectedProjectId}/runtime/control`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "restart_service", serviceId: selectedRuntimeServiceId }),
+      });
+      const payload = await readJsonResponse<BuilderRuntimeControlResponse>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to restart runtime service.");
+      }
+      setProjectInspection((current) => current ? { ...current, runtimeInspection: payload.runtimeInspection } : current);
+      setResultNotice(payload.message);
+      await loadRuntimeServiceLogs(selectedProjectId, selectedRuntimeServiceId);
+      if (runtimeLogLive) {
+        startRuntimeLogStream(selectedProjectId, selectedRuntimeServiceId);
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to restart runtime service.");
+    } finally {
+      setRuntimeActionServiceId(null);
+      setSaving(false);
+    }
+  }
+
+  async function mutateRuntimeService(action: "start_service" | "stop_service"): Promise<void> {
+    if (!selectedProjectId || !selectedRuntimeServiceId) {
+      return;
+    }
+    setSaving(true);
+    setRuntimeActionServiceId(selectedRuntimeServiceId);
+    setResultNotice(null);
+    setError(null);
+    setRuntimeExecResult(null);
+    try {
+      const response = await fetch(`/api/builder/projects/${selectedProjectId}/runtime/control`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, serviceId: selectedRuntimeServiceId }),
+      });
+      const payload = await readJsonResponse<BuilderRuntimeControlResponse>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? `Failed to ${action === "start_service" ? "start" : "stop"} runtime service.`);
+      }
+      setProjectInspection((current) => current ? { ...current, runtimeInspection: payload.runtimeInspection } : current);
+      setResultNotice(payload.message);
+      await loadRuntimeServiceLogs(selectedProjectId, selectedRuntimeServiceId);
+      if (runtimeLogLive && action === "start_service") {
+        startRuntimeLogStream(selectedProjectId, selectedRuntimeServiceId);
+      }
+      if (runtimeLogLive && action === "stop_service") {
+        stopRuntimeLogStream();
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : `Failed to ${action === "start_service" ? "start" : "stop"} runtime service.`);
+    } finally {
+      setRuntimeActionServiceId(null);
+      setSaving(false);
+    }
+  }
+
+  async function execRuntimeServiceCommand(): Promise<void> {
+    if (!selectedProjectId || !selectedRuntimeServiceId || !runtimeExecCommand.trim()) {
+      return;
+    }
+    setSaving(true);
+    setRuntimeActionServiceId(selectedRuntimeServiceId);
+    setResultNotice(null);
+    setError(null);
+    try {
+      const response = await fetch(`/api/builder/projects/${selectedProjectId}/runtime/control`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "exec_in_service",
+          serviceId: selectedRuntimeServiceId,
+          command: runtimeExecCommand.trim(),
+          commandArgs: runtimeExecArgs.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean),
+        }),
+      });
+      const payload = await readJsonResponse<BuilderRuntimeControlResponse>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to execute runtime service command.");
+      }
+      setProjectInspection((current) => current ? { ...current, runtimeInspection: payload.runtimeInspection } : current);
+      setRuntimeExecResult(payload.commandResult ?? null);
+      setResultNotice(payload.message);
+      await loadRuntimeServiceLogs(selectedProjectId, selectedRuntimeServiceId);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to execute runtime service command.");
+    } finally {
+      setRuntimeActionServiceId(null);
+      setSaving(false);
+    }
+  }
+
   async function loadTaskHistory(taskId: string): Promise<void> {
     const response = await fetch(`/api/builder/tasks/${taskId}/history`);
-    const payload = (await response.json()) as BuilderTaskHistoryResponse;
+    const payload = await readJsonResponse<BuilderTaskHistoryResponse>(response);
     if (!response.ok) {
       throw new Error(payload.error ?? "Failed to load task history.");
     }
@@ -705,13 +1298,45 @@ export default function BuilderPage() {
 
   async function refresh(nextSelectedProjectId?: string | null): Promise<void> {
     setError(null);
-    await loadStatus();
-    const loadedProjects = await loadProjects(nextSelectedProjectId);
-    const projectId = nextSelectedProjectId ?? selectedProjectId ?? loadedProjects[0]?.id ?? null;
-    if (projectId) {
-      await loadProjectDetail(projectId);
-    } else {
-      setProjectDetail(null);
+    try {
+      await loadStatus();
+      const loadedProjects = await loadProjects(nextSelectedProjectId);
+      const projectId = selectPreferredProjectId(loadedProjects, nextSelectedProjectId ?? selectedProjectId);
+      if (projectId) {
+        await loadProjectDetail(projectId);
+        try {
+          await loadProjectInspection(projectId);
+        } catch {
+          setProjectInspection(null);
+        }
+      } else {
+        setProjectDetail(null);
+        setProjectInspection(null);
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to refresh Builder state.");
+    }
+  }
+
+  async function reconcileWorkspaceProjects(): Promise<void> {
+    setSaving(true);
+    setError(null);
+    setResultNotice(null);
+    try {
+      const response = await fetch("/api/builder/projects/reconcile", {
+        method: "POST",
+      });
+      const payload = await readJsonResponse<BuilderWorkspaceReconcileResponse>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to reconcile Builder workspace projects.");
+      }
+      setProjects(payload.projects);
+      setResultNotice(payload.summary);
+      await refresh(selectPreferredProjectId(payload.projects, selectedProjectId));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to reconcile Builder workspace projects.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -729,6 +1354,9 @@ export default function BuilderPage() {
     if (selectedProjectId && projectDetail?.project.id !== selectedProjectId) {
       void loadProjectDetail(selectedProjectId).catch((nextError) => {
         setError(nextError instanceof Error ? nextError.message : "Failed to load builder project details.");
+      });
+      void loadProjectInspection(selectedProjectId).catch(() => {
+        setProjectInspection(null);
       });
     }
   }, [projectDetail?.project.id, selectedProjectId]);
@@ -754,6 +1382,55 @@ export default function BuilderPage() {
       setError(nextError instanceof Error ? nextError.message : "Failed to load task history.");
     });
   }, [selectedTaskId]);
+
+  useEffect(() => {
+    const services = projectInspection?.runtimeInspection.services ?? [];
+    if (services.length === 0) {
+      stopRuntimeLogStream();
+      setSelectedRuntimeServiceId(null);
+      setRuntimeServiceLogs(null);
+      return;
+    }
+
+    setSelectedRuntimeServiceId((current) => services.some((service) => service.serviceId === current) ? current : services[0]?.serviceId ?? null);
+  }, [projectInspection]);
+
+  useEffect(() => {
+    if (!selectedProjectId || !selectedRuntimeServiceId) {
+      stopRuntimeLogStream();
+      return;
+    }
+
+    setRuntimeExecResult(null);
+
+    if (runtimeLogLive) {
+      startRuntimeLogStream(selectedProjectId, selectedRuntimeServiceId);
+      return;
+    }
+
+    void loadRuntimeServiceLogs(selectedProjectId, selectedRuntimeServiceId).catch((nextError) => {
+      const fallbackService = projectInspection?.runtimeInspection.services.find((service) => service.serviceId === selectedRuntimeServiceId);
+      if (!fallbackService) {
+        setRuntimeServiceLogs(null);
+        return;
+      }
+      setRuntimeServiceLogs({
+        service: fallbackService,
+        logs: "",
+        cursorUsed: 0,
+        nextCursor: 0,
+        truncatedBeforeCursor: false,
+        complete: true,
+        followed: false,
+        followTimedOut: false,
+        error: nextError instanceof Error ? nextError.message : "Failed to load runtime service logs.",
+      });
+    });
+  }, [projectInspection, runtimeLogLive, selectedProjectId, selectedRuntimeServiceId]);
+
+  useEffect(() => () => {
+    runtimeLogStreamRef.current?.close();
+  }, []);
 
   const enabledAgentProfiles = useMemo(
     () => (status?.cliProfiles ?? []).filter((profile) => profile.enabled && profile.metadata?.ready === true),
@@ -805,7 +1482,7 @@ export default function BuilderPage() {
           stackPresetKey: createDraft.stackPresetKey || undefined,
         }),
       });
-      const payload = (await response.json()) as { project?: BuilderProject; error?: string };
+      const payload = await readJsonResponse<{ project?: BuilderProject; error?: string }>(response);
       if (!response.ok || !payload.project) {
         throw new Error(payload.error ?? "Failed to create builder project.");
       }
@@ -839,7 +1516,7 @@ export default function BuilderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body ?? {}),
       });
-      const payload = (await response.json()) as { error?: string; runId?: string; status?: string; result?: { ok?: boolean } };
+      const payload = await readJsonResponse<{ error?: string; runId?: string; status?: string; result?: { ok?: boolean } }>(response);
       if (!response.ok) {
         throw new Error(payload.error ?? "Builder action failed.");
       }
@@ -882,7 +1559,7 @@ export default function BuilderPage() {
           regenerate: true,
         }),
       });
-      const payload = (await response.json()) as BuilderProjectDetailResponse;
+      const payload = await readJsonResponse<BuilderProjectDetailResponse>(response);
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to plan Builder project.");
       }
@@ -891,6 +1568,67 @@ export default function BuilderPage() {
       await refresh(selectedProjectId);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to plan Builder project.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function mutateProjectEnv(action: { action: "write"; key: string; value: string; file: ".env" | ".env.local" } | { action: "sync_example" }): Promise<void> {
+    if (!selectedProjectId) {
+      setError("Select a project first.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setResultNotice(null);
+    try {
+      const response = await fetch(`/api/builder/projects/${selectedProjectId}/env`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action),
+      });
+      const payload = await readJsonResponse<{ error?: string; result?: { key?: string; path?: string; addedKeys?: string[] } }>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to update project env state.");
+      }
+      setResultNotice(action.action === "sync_example"
+        ? `Synced .env.example${payload.result?.addedKeys?.length ? ` and added ${payload.result.addedKeys.join(", ")}.` : "."}`
+        : `Updated ${payload.result?.key ?? action.key} in ${payload.result?.path ?? action.file}.`);
+      if (action.action === "write") {
+        setEnvDraft((current) => ({ ...current, value: "" }));
+      }
+      await loadProjectDetail(selectedProjectId);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to update project env state.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function probeLiveDatabase(): Promise<void> {
+    if (!selectedProjectId) {
+      setError("Select a project first.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setResultNotice(null);
+    try {
+      const response = await fetch(`/api/builder/projects/${selectedProjectId}/inspect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "probe_live_database" }),
+      });
+      const payload = await readJsonResponse<BuilderInspectionResponse>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to run live database probe.");
+      }
+      setProjectInspection(payload);
+      setResultNotice(payload.message ?? "Live database probe completed.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to run live database probe.");
     } finally {
       setSaving(false);
     }
@@ -906,7 +1644,7 @@ export default function BuilderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(options ?? {}),
       });
-      const payload = (await response.json()) as { error?: string; runId?: string; taskId?: string; status?: string };
+      const payload = await readJsonResponse<{ error?: string; runId?: string; taskId?: string; status?: string }>(response);
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to resume builder task.");
       }
@@ -929,7 +1667,7 @@ export default function BuilderPage() {
       const response = await fetch(`/api/builder/runs/${runId}/cancel`, {
         method: "POST",
       });
-      const payload = (await response.json()) as { error?: string; status?: string; runId?: string };
+      const payload = await readJsonResponse<{ error?: string; status?: string; runId?: string }>(response);
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to cancel builder run.");
       }
@@ -1055,9 +1793,14 @@ export default function BuilderPage() {
                 Safe project creation, preset bootstrapping, and typed package actions are the primary supported Builder path. Agentic CLI adapters stay opt-in and blocked unless they are explicitly ready.
               </div>
             </div>
-            <button onClick={() => void refresh(selectedProjectId)} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-              refresh
-            </button>
+            <div className="flex items-center gap-2">
+              <button disabled={saving || !status?.config.safe} onClick={() => void reconcileWorkspaceProjects()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                reconcile/import workspace
+              </button>
+              <button onClick={() => void refresh(selectedProjectId)} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                refresh
+              </button>
+            </div>
           </div>
           {error ? <div className="text-sm mb-3" style={{ color: "var(--danger)" }}>{error}</div> : null}
           {resultNotice ? <div className="text-sm mb-3" style={{ color: "var(--success)" }}>{resultNotice}</div> : null}
@@ -1178,6 +1921,7 @@ export default function BuilderPage() {
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.relativePath}</div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.template} · {project.packageManager} · last run {project.lastRunStatus.toLowerCase()}</div>
+                <div className="text-xs leading-6" style={{ color: getWorkspaceStateColor(project.workspaceState) }}>{getWorkspaceStateLabel(project.workspaceState)}</div>
                 {projectDetail?.project.id === project.id && projectDetail.context.plannedStack ? (
                   <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail.context.plannedStack.label} · {projectDetail.context.plannedStack.tags.join(", ")}</div>
                 ) : null}
@@ -1209,6 +1953,98 @@ export default function BuilderPage() {
                 <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>lifecycle</div>
                   <div data-testid="builder-selected-project-lifecycle" className="text-sm">{selectedProject.lifecycle.toLowerCase()}</div>
+                </div>
+                <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>workspace</div>
+                  <div className="text-sm" style={{ color: getWorkspaceStateColor(selectedProject.workspaceState) }}>{getWorkspaceStateLabel(selectedProject.workspaceState)}</div>
+                </div>
+                <div className="border p-3 sm:col-span-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>config</div>
+                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: getConfigStatusColor(projectDetail?.configReadiness) }}>
+                      {getConfigStatusLabel(projectDetail?.configReadiness)}
+                    </div>
+                  </div>
+                  <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+                    {projectDetail?.configReadiness.summary ?? "Config readiness has not been evaluated yet."}
+                  </div>
+                  {projectDetail?.configReadiness.totalRequiredKeys ? (
+                    <div className="mt-2 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Required keys: {projectDetail.configReadiness.totalRequiredKeys}
+                    </div>
+                  ) : null}
+                  {projectDetail?.configReadiness.missingProjectKeys.length ? (
+                    <div className="mt-2 text-xs leading-6" style={{ color: "var(--warning)" }}>
+                      Missing project-local keys: {projectDetail.configReadiness.missingProjectKeys.join(", ")}
+                    </div>
+                  ) : null}
+                  {projectDetail?.configReadiness.missingExecutionKeys.length ? (
+                    <div className="mt-1 text-xs leading-6" style={{ color: "var(--danger)" }}>
+                      Missing execution keys: {projectDetail.configReadiness.missingExecutionKeys.join(", ")}
+                    </div>
+                  ) : null}
+                  {projectDetail?.configReadiness.malformedEntries.length ? (
+                    <div className="mt-1 text-xs leading-6" style={{ color: "var(--danger)" }}>
+                      Malformed env entries: {projectDetail.configReadiness.malformedEntries.map((entry) => `${entry.path}:${entry.line}`).join(", ")}
+                    </div>
+                  ) : null}
+                  <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(260px,0.7fr)]">
+                    <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>required config keys</div>
+                      {projectDetail?.configReadiness.keys.length ? projectDetail.configReadiness.keys.map((entry) => (
+                        <button
+                          key={entry.key}
+                          onClick={() => setEnvDraft((current) => ({ ...current, key: entry.key }))}
+                          className="w-full border p-2 text-left"
+                          style={{ borderColor: envDraft.key === entry.key ? "var(--accent)" : "var(--border)", background: envDraft.key === entry.key ? "var(--accent-glow)" : "var(--bg-raised)" }}
+                        >
+                          <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.14em]">
+                            <span>{entry.key}</span>
+                            <span style={{ color: !entry.executionValuePresent ? "var(--danger)" : !entry.projectValuePresent ? "var(--warning)" : "var(--success)" }}>
+                              {!entry.executionValuePresent ? "missing" : !entry.projectValuePresent ? "host-backed" : "project-local"}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                            project {entry.projectSource ?? "missing"}: {entry.redactedProjectValue ?? "missing"}
+                          </div>
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                            execution {entry.executionSource}: {entry.redactedExecutionValue ?? "missing"}
+                          </div>
+                        </button>
+                      )) : <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No declared config keys yet. Sync .env.example after writing project-local values.</div>}
+                    </div>
+                    <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>env actions</div>
+                        <button disabled={saving} onClick={() => void mutateProjectEnv({ action: "sync_example" })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                          sync .env.example
+                        </button>
+                      </div>
+                      <div>
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Key</label>
+                        <input value={envDraft.key} onChange={(event) => setEnvDraft((current) => ({ ...current, key: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} placeholder="DATABASE_URL" />
+                      </div>
+                      <div>
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Value</label>
+                        <input value={envDraft.value} onChange={(event) => setEnvDraft((current) => ({ ...current, value: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} placeholder="Project-local value" />
+                      </div>
+                      <div>
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Target file</label>
+                        <select value={envDraft.file} onChange={(event) => setEnvDraft((current) => ({ ...current, file: event.target.value as ".env" | ".env.local" }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                          <option value=".env.local">.env.local</option>
+                          <option value=".env">.env</option>
+                        </select>
+                      </div>
+                      <button
+                        disabled={saving || !envDraft.key.trim()}
+                        onClick={() => void mutateProjectEnv({ action: "write", key: envDraft.key, value: envDraft.value, file: envDraft.file })}
+                        className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50"
+                        style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                      >
+                        write env entry
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div className="border p-3 sm:col-span-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>objective</div>
@@ -1616,6 +2452,66 @@ export default function BuilderPage() {
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                 <div className="flex items-center justify-between gap-4">
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>operator trust</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: getOperatorTrustColor(projectDetail?.operatorTrust.overallStatus) }}>
+                    {formatOperatorTrustLabel(projectDetail?.operatorTrust.overallStatus)}
+                  </div>
+                </div>
+                <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+                  {projectDetail?.operatorTrust.summary ?? "No operator trust artifact has been generated yet."}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { label: "review", value: formatOperatorTrustLabel(projectDetail?.operatorTrust.review.status), tone: getOperatorTrustColor(projectDetail?.operatorTrust.review.status) },
+                    { label: "config", value: formatOperatorTrustLabel(projectDetail?.operatorTrust.config.status), tone: getOperatorTrustColor(projectDetail?.operatorTrust.config.status) },
+                    { label: "runtime", value: formatOperatorTrustLabel(projectDetail?.operatorTrust.runtime.status), tone: getOperatorTrustColor(projectDetail?.operatorTrust.runtime.status) },
+                    { label: "approvals", value: `${projectDetail?.operatorTrust.approvals.pendingCount ?? 0} pending`, tone: getOperatorTrustColor(projectDetail?.operatorTrust.approvals.status) },
+                  ].map((card) => (
+                    <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                      <div className="text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+                      <div className="text-sm" style={{ color: card.tone }}>{card.value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>runtime trust</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.runtime.summary}</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Active alerts {projectDetail?.operatorTrust.runtime.activeAlertCount ?? 0}; unresolved {projectDetail?.operatorTrust.runtime.unresolvedAlertCount ?? 0}; auto-fixes {projectDetail?.operatorTrust.runtime.autoFixCount ?? 0}; MCP {projectDetail?.operatorTrust.runtime.mcpState.replaceAll("_", " ") ?? "unknown"}.
+                    </div>
+                  </div>
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>approval queue</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.approvals.summary}</div>
+                    {(projectDetail?.operatorTrust.approvals.pendingApprovals ?? []).slice(0, 3).map((approval) => (
+                      <div key={approval.id} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        {approval.platform} · {approval.postStatus.toLowerCase()} · {approval.excerpt}
+                      </div>
+                    ))}
+                    {(projectDetail?.operatorTrust.approvals.pendingApprovals ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No queue items are waiting right now.</div> : null}
+                  </div>
+                </div>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>review + config trust</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.review.summary}</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.config.summary}</div>
+                  </div>
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>artifact paths</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.artifactPaths.markdown}</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.artifactPaths.json}</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.artifactPaths.processArtifacts}</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Approval-required capability gates: {projectDetail?.operatorTrust.governance.approvalRequiredCapabilities.join(", ") || "none"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="flex items-center justify-between gap-4">
                   <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>recent tasks</div>
                   {selectedTask ? <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>history target: {selectedTask.title}</div> : null}
                 </div>
@@ -1730,6 +2626,194 @@ export default function BuilderPage() {
                 <button disabled={saving || !agenticPrompt.trim() || !agenticProfile} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "run_agentic_task", profile: agenticProfile, prompt: agenticPrompt, model: agenticModel || undefined })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
                   run raw agentic prompt
                 </button>
+              </div>
+
+              <div className="border p-3 space-y-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>extension inspection</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Capability audit activity plus current database inspection state for Builder extension surfaces.
+                    </div>
+                  </div>
+                  <button disabled={saving} onClick={() => void probeLiveDatabase()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                    run live db probe
+                  </button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>capability audit</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      {projectInspection?.capabilityAudit.totalEvents ?? 0} events · outcomes {Object.entries(projectInspection?.capabilityAudit.outcomeCounts ?? {}).map(([key, value]) => `${key}:${value}`).join(" ") || "none"}
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      {Object.entries(projectInspection?.capabilityAudit.capabilityCounts ?? {}).map(([key, value]) => `${key.replaceAll("_", " ")}:${value}`).join(" · ") || "No extension audit events recorded yet."}
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      {projectInspection?.capabilityAudit.auditPath ?? "No audit log path available yet."}
+                    </div>
+                    <div className="space-y-2">
+                      {(projectInspection?.capabilityAudit.recentEvents ?? []).slice(0, 4).map((event) => (
+                        <div key={event.eventId} className="border p-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                          <div className="flex items-center justify-between gap-3 text-xs">
+                            <span>{event.capabilityKey.replaceAll("_", " ")}</span>
+                            <span style={{ color: event.outcomeStatus === "succeeded" ? "var(--success)" : event.outcomeStatus === "failed" || event.outcomeStatus === "blocked" ? "var(--danger)" : "var(--warning)" }}>{event.outcomeStatus.replaceAll("_", " ")}</span>
+                          </div>
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{new Date(event.timestamp).toLocaleString()}</div>
+                          {typeof event.metadata?.operation === "string" ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>operation {event.metadata.operation}</div> : null}
+                        </div>
+                      ))}
+                      {(projectInspection?.capabilityAudit.recentEvents ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No extension audit events recorded yet.</div> : null}
+                    </div>
+                  </div>
+                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>database inspection</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Artifact provider {projectInspection?.databaseInspection.artifact.provider ?? "unknown"}; target {projectInspection?.databaseInspection.artifact.connectionTarget ?? "unresolved"}
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Artifact tables {projectInspection?.databaseInspection.artifact.tableCount ?? 0}; migrations {projectInspection?.databaseInspection.artifact.migrationsCount ?? 0}
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      {projectInspection?.databaseInspection.artifact.auditPath ?? "No database artifact audit path recorded yet."}
+                    </div>
+                    <div className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span>drift summary</span>
+                        <span style={{ color: projectInspection?.databaseInspection.driftSummary.status === "in_sync" ? "var(--success)" : projectInspection?.databaseInspection.driftSummary.status === "drifted" || projectInspection?.databaseInspection.driftSummary.status === "probe_failed" ? "var(--warning)" : "var(--text-dim)" }}>
+                          {projectInspection?.databaseInspection.driftSummary.status.replaceAll("_", " ") ?? "not available"}
+                        </span>
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        {projectInspection?.databaseInspection.driftSummary.summary ?? "Run a live probe to compare live metadata against Prisma artifacts."}
+                      </div>
+                      {projectInspection?.databaseInspection.driftSummary.comparedAt ? (
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                          Compared {new Date(projectInspection.databaseInspection.driftSummary.comparedAt).toLocaleString()} · artifact {projectInspection.databaseInspection.driftSummary.artifactTableCount} tables · live {projectInspection.databaseInspection.driftSummary.liveTableCount} tables
+                        </div>
+                      ) : null}
+                      {projectInspection?.databaseInspection.driftSummary.missingInLive.length ? <div className="text-xs leading-6" style={{ color: "var(--warning)" }}>Missing in live: {projectInspection.databaseInspection.driftSummary.missingInLive.join(", ")}</div> : null}
+                      {projectInspection?.databaseInspection.driftSummary.unexpectedLive.length ? <div className="text-xs leading-6" style={{ color: "var(--warning)" }}>Unexpected live: {projectInspection.databaseInspection.driftSummary.unexpectedLive.join(", ")}</div> : null}
+                      {projectInspection?.databaseInspection.driftSummary.fieldCountMismatches.length ? (
+                        <div className="text-xs leading-6" style={{ color: "var(--warning)" }}>
+                          Field-count mismatches: {projectInspection.databaseInspection.driftSummary.fieldCountMismatches.map((entry) => `${entry.tableName} ${entry.artifactFieldCount}->${entry.liveFieldCount}`).join(", ")}
+                        </div>
+                      ) : null}
+                    </div>
+                    {projectInspection?.databaseInspection.latestLiveProbe ? (
+                      <div className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                          <span>live probe</span>
+                          <span style={{ color: projectInspection.databaseInspection.latestLiveProbe.status === "succeeded" ? "var(--success)" : "var(--danger)" }}>
+                            {projectInspection.databaseInspection.latestLiveProbe.status}
+                          </span>
+                        </div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectInspection.databaseInspection.latestLiveProbe.summary}</div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                          {new Date(projectInspection.databaseInspection.latestLiveProbe.probedAt).toLocaleString()} · {projectInspection.databaseInspection.latestLiveProbe.tableCount} tables
+                        </div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectInspection.databaseInspection.latestLiveProbe.auditPath}</div>
+                        {projectInspection.databaseInspection.latestLiveProbe.error ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{projectInspection.databaseInspection.latestLiveProbe.error}</div> : null}
+                      </div>
+                    ) : <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No live database probe has been recorded yet.</div>}
+                  </div>
+                </div>
+                <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>runtime services</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      {projectInspection?.runtimeInspection.summary ?? "No runtime services discovered yet."}
+                    </div>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                    <div className="space-y-2">
+                      {(projectInspection?.runtimeInspection.services ?? []).map((service) => (
+                        <button key={service.serviceId} onClick={() => setSelectedRuntimeServiceId(service.serviceId)} className="w-full border p-2 text-left" style={{ borderColor: service.serviceId === selectedRuntimeServiceId ? "var(--accent)" : "var(--border-sub)", background: service.serviceId === selectedRuntimeServiceId ? "var(--accent-glow)" : "var(--bg-raised)" }}>
+                          <div className="flex items-center justify-between gap-3 text-xs">
+                            <span>{service.label}</span>
+                            <span style={{ color: service.status === "running" ? "var(--success)" : service.status === "failed" ? "var(--danger)" : "var(--text-dim)" }}>{service.status}</span>
+                          </div>
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{service.source.replaceAll("_", " ")} · {service.declaredIn}</div>
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{service.workingDirectory}</div>
+                          <div className="text-xs leading-6" style={{ color: service.healthStatus === "healthy" ? "var(--success)" : service.healthStatus === "unhealthy" ? "var(--danger)" : service.healthStatus === "starting" ? "var(--warning)" : "var(--text-dim)" }}>
+                            health {service.healthStatus}{service.healthReason ? ` · ${service.healthReason}` : ""}
+                          </div>
+                          {service.publishedPorts.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>ports {service.publishedPorts.join(", ")}</div> : null}
+                          {service.command ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{service.command}</div> : null}
+                        </button>
+                      ))}
+                      {(projectInspection?.runtimeInspection.services ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No package-script or compose services were detected.</div> : null}
+                    </div>
+                    <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>service logs and controls</div>
+                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: runtimeLogState === "live" ? "var(--success)" : "var(--text-muted)" }}>{runtimeLogState}</div>
+                      </div>
+                      {runtimeServiceLogs ? (
+                        <>
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                            {runtimeServiceLogs.service.label} · {runtimeServiceLogs.service.status}{runtimeServiceLogs.service.logPath ? ` · ${runtimeServiceLogs.service.logPath}` : ""}
+                          </div>
+                          <div className="text-xs leading-6" style={{ color: runtimeServiceLogs.service.healthStatus === "healthy" ? "var(--success)" : runtimeServiceLogs.service.healthStatus === "unhealthy" ? "var(--danger)" : runtimeServiceLogs.service.healthStatus === "starting" ? "var(--warning)" : "var(--text-dim)" }}>
+                            health {runtimeServiceLogs.service.healthStatus}{runtimeServiceLogs.service.healthReason ? ` · ${runtimeServiceLogs.service.healthReason}` : ""}
+                          </div>
+                          {runtimeServiceLogs.service.containerId ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>container {runtimeServiceLogs.service.containerId}</div> : null}
+                          {runtimeServiceLogs.service.publishedPorts.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>ports {runtimeServiceLogs.service.publishedPorts.join(", ")}</div> : null}
+                          <div className="flex flex-wrap gap-2">
+                            <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeServiceLogs.service.supportsStart} onClick={() => void mutateRuntimeService("start_service")} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-main)" }}>
+                              start service
+                            </button>
+                            <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeServiceLogs.service.supportsStop} onClick={() => void mutateRuntimeService("stop_service")} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-main)" }}>
+                              stop service
+                            </button>
+                            <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeServiceLogs.service.supportsRestart} onClick={() => void restartRuntimeService()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                              restart service
+                            </button>
+                            <button disabled={saving || (runtimeServiceLogs.service.status !== "running" && !runtimeServiceLogs.service.processId && !runtimeServiceLogs.service.containerId)} onClick={() => {
+                              if (!selectedProjectId || !selectedRuntimeServiceId) {
+                                return;
+                              }
+                              if (runtimeLogLive) {
+                                stopRuntimeLogStream();
+                                void loadRuntimeServiceLogs(selectedProjectId, selectedRuntimeServiceId).catch((nextError) => {
+                                  setError(nextError instanceof Error ? nextError.message : "Failed to refresh runtime service logs.");
+                                });
+                                return;
+                              }
+                              startRuntimeLogStream(selectedProjectId, selectedRuntimeServiceId);
+                            }} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-main)" }}>
+                              {runtimeLogLive ? "stop live follow" : "start live follow"}
+                            </button>
+                          </div>
+                          {runtimeServiceLogs.error ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{runtimeServiceLogs.error}</div> : null}
+                          {!runtimeServiceLogs.error && runtimeServiceLogs.service.status === "declared" ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>This service is declared but not currently active, so no logs are available yet.</div> : null}
+                          {runtimeServiceLogs.logs ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-6 p-2 border" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-dim)" }}>{runtimeServiceLogs.logs}</pre> : null}
+                          {!runtimeServiceLogs.logs && runtimeServiceLogs.service.status === "running" && !runtimeServiceLogs.error ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No buffered logs are available for this service yet.</div> : null}
+                          <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>exec in service</div>
+                            <input value={runtimeExecCommand} onChange={(event) => setRuntimeExecCommand(event.target.value)} placeholder="command" className="w-full border px-3 py-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--bg-raised)", color: "var(--text-main)" }} />
+                            <textarea value={runtimeExecArgs} onChange={(event) => setRuntimeExecArgs(event.target.value)} placeholder="one argument per line" rows={3} className="w-full border px-3 py-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--bg-raised)", color: "var(--text-main)" }} />
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Commands remain subject to the Builder command allowlist.</div>
+                              <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeExecCommand.trim() || !runtimeServiceLogs.service.supportsExec} onClick={() => void execRuntimeServiceCommand()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                                run command
+                              </button>
+                            </div>
+                            {runtimeExecResult ? (
+                              <div className="space-y-2">
+                                <div className="text-xs leading-6" style={{ color: runtimeExecResult.ok ? "var(--success)" : "var(--warning)" }}>
+                                  {runtimeExecResult.command} {runtimeExecResult.args.join(" ")} · exit {runtimeExecResult.exitCode ?? "unknown"}
+                                </div>
+                                {runtimeExecResult.stdout ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-6 p-2 border" style={{ borderColor: "var(--border)", background: "var(--bg-raised)", color: "var(--text-dim)" }}>{runtimeExecResult.stdout}</pre> : null}
+                                {runtimeExecResult.stderr ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-6 p-2 border" style={{ borderColor: "var(--border)", background: "var(--bg-raised)", color: "var(--danger)" }}>{runtimeExecResult.stderr}</pre> : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        </>
+                      ) : <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Select a service to inspect its current Builder-managed log buffer.</div>}
+                    </div>
+                  </div>
+                </div>
               </div>
             </>
           )}

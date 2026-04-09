@@ -6,6 +6,44 @@ import { assertBuilderWorkspaceSafe, resolveBuilderWorkspacePath } from "@/lib/b
 import { getBuilderStackPreset } from "@/lib/builder/stacks";
 import { defaultBuilderProjectContext } from "@/lib/builder/types";
 
+const BUILDER_PROJECT_METADATA_VERSION = 1;
+
+export type BuilderProjectWorkspaceState = "present" | "missing" | "unavailable";
+
+export interface BuilderProjectRecord extends BuilderProject {
+  workspaceState: BuilderProjectWorkspaceState;
+}
+
+export interface BuilderProjectMetadata {
+  version: number;
+  projectId: string;
+  slug: string;
+  name: string;
+  relativePath: string;
+  template: string;
+  packageManager: BuilderPackageManager;
+  recordedAt: string;
+}
+
+export interface BuilderWorkspaceReconcileEntry {
+  action: "verified" | "relinked" | "imported" | "metadata_rebound" | "ignored";
+  projectId: string | null;
+  relativePath: string;
+  metadataProjectId: string | null;
+  summary: string;
+}
+
+export interface BuilderWorkspaceReconcileResult {
+  projects: BuilderProjectRecord[];
+  scanned: number;
+  verified: number;
+  relinked: number;
+  imported: number;
+  metadataRebound: number;
+  ignored: number;
+  entries: BuilderWorkspaceReconcileEntry[];
+}
+
 export interface CreateBuilderProjectInput {
   name: string;
   slug?: string;
@@ -35,6 +73,12 @@ export interface CreateBuilderRunInput {
   metadata?: unknown;
 }
 
+interface ScannedBuilderWorkspaceProject {
+  relativePath: string;
+  absolutePath: string;
+  metadata: BuilderProjectMetadata;
+}
+
 function slugifySegment(value: string): string {
   const slug = value
     .trim()
@@ -53,6 +97,138 @@ function normalizeRelativeProjectPath(relativePath: string | undefined, slug: st
   }
 
   return normalized.startsWith("projects/") ? normalized : path.posix.join("projects", normalized);
+}
+
+function toBuilderMetadataPath(relativePath: string): string {
+  return path.posix.join(relativePath, ".builder", "project.json");
+}
+
+function buildBuilderProjectMetadata(project: Pick<BuilderProject, "id" | "slug" | "name" | "relativePath" | "template" | "packageManager">): BuilderProjectMetadata {
+  return {
+    version: BUILDER_PROJECT_METADATA_VERSION,
+    projectId: project.id,
+    slug: project.slug,
+    name: project.name,
+    relativePath: project.relativePath,
+    template: project.template,
+    packageManager: project.packageManager,
+    recordedAt: new Date().toISOString(),
+  };
+}
+
+function writeBuilderProjectMetadata(project: Pick<BuilderProject, "id" | "slug" | "name" | "relativePath" | "template" | "packageManager">): void {
+  const projectRoot = resolveBuilderWorkspacePath(project.relativePath);
+  if (!fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) {
+    return;
+  }
+
+  const metadataPath = resolveBuilderWorkspacePath(toBuilderMetadataPath(project.relativePath));
+  fs.mkdirSync(path.dirname(metadataPath), { recursive: true });
+  fs.writeFileSync(metadataPath, `${JSON.stringify(buildBuilderProjectMetadata(project), null, 2)}\n`, "utf-8");
+}
+
+function readBuilderProjectMetadata(absoluteMetadataPath: string): BuilderProjectMetadata | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(absoluteMetadataPath, "utf-8")) as Record<string, unknown>;
+    if (
+      typeof parsed.projectId !== "string"
+      || typeof parsed.slug !== "string"
+      || typeof parsed.name !== "string"
+      || typeof parsed.relativePath !== "string"
+      || typeof parsed.template !== "string"
+      || (parsed.packageManager !== "NPM" && parsed.packageManager !== "PNPM")
+    ) {
+      return null;
+    }
+
+    return {
+      version: typeof parsed.version === "number" ? parsed.version : BUILDER_PROJECT_METADATA_VERSION,
+      projectId: parsed.projectId,
+      slug: parsed.slug,
+      name: parsed.name,
+      relativePath: parsed.relativePath.replace(/\\/g, "/"),
+      template: parsed.template,
+      packageManager: parsed.packageManager,
+      recordedAt: typeof parsed.recordedAt === "string" ? parsed.recordedAt : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getBuilderProjectWorkspaceState(project: Pick<BuilderProject, "relativePath">): BuilderProjectWorkspaceState {
+  try {
+    const absolutePath = resolveBuilderWorkspacePath(project.relativePath);
+    return fs.existsSync(absolutePath) && fs.statSync(absolutePath).isDirectory() ? "present" : "missing";
+  } catch {
+    return "unavailable";
+  }
+}
+
+function toBuilderProjectRecord(project: BuilderProject): BuilderProjectRecord {
+  return {
+    ...project,
+    workspaceState: getBuilderProjectWorkspaceState(project),
+  };
+}
+
+function scanBuilderWorkspaceProjects(): ScannedBuilderWorkspaceProject[] {
+  const config = assertBuilderWorkspaceSafe();
+  if (!fs.existsSync(config.projectsRoot)) {
+    return [];
+  }
+
+  const results: ScannedBuilderWorkspaceProject[] = [];
+  const queue = [config.projectsRoot];
+  while (queue.length > 0) {
+    const currentPath = queue.shift()!;
+    const metadataPath = path.join(currentPath, ".builder", "project.json");
+    if (fs.existsSync(metadataPath) && fs.statSync(metadataPath).isFile()) {
+      const metadata = readBuilderProjectMetadata(metadataPath);
+      if (metadata) {
+        const relativePath = path.relative(config.workspaceRoot, currentPath).replace(/\\/g, "/");
+        results.push({
+          relativePath,
+          absolutePath: currentPath,
+          metadata,
+        });
+      }
+      continue;
+    }
+
+    for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      if (entry.name === ".git" || entry.name === "node_modules" || entry.name === ".builder") {
+        continue;
+      }
+      queue.push(path.join(currentPath, entry.name));
+    }
+  }
+
+  return results;
+}
+
+async function resolveUniqueImportedSlug(baseValue: string): Promise<string> {
+  const baseSlug = slugifySegment(baseValue);
+  let attempt = 0;
+
+  while (attempt < 100) {
+    const suffix = attempt === 0 ? "" : `-${attempt + 1}`;
+    const candidateSlug = `${baseSlug}${suffix}`;
+    const existing = await db.builderProject.findFirst({
+      where: {
+        OR: [{ slug: candidateSlug }],
+      },
+    });
+    if (!existing) {
+      return candidateSlug;
+    }
+    attempt += 1;
+  }
+
+  throw new Error("Unable to allocate an imported Builder project slug.");
 }
 
 function ensureDirectoryAvailable(absolutePath: string): void {
@@ -99,8 +275,9 @@ async function resolveUniqueProjectPlacement(input: CreateBuilderProjectInput): 
   throw new Error("Unable to allocate a unique builder project path.");
 }
 
-export async function listBuilderProjects(): Promise<BuilderProject[]> {
-  return db.builderProject.findMany({ orderBy: { updatedAt: "desc" } });
+export async function listBuilderProjects(): Promise<BuilderProjectRecord[]> {
+  const projects = await db.builderProject.findMany({ orderBy: { updatedAt: "desc" } });
+  return projects.map(toBuilderProjectRecord);
 }
 
 export async function getBuilderProject(projectId: string): Promise<BuilderProject> {
@@ -110,6 +287,10 @@ export async function getBuilderProject(projectId: string): Promise<BuilderProje
   }
 
   return project;
+}
+
+export async function getBuilderProjectRecord(projectId: string): Promise<BuilderProjectRecord> {
+  return toBuilderProjectRecord(await getBuilderProject(projectId));
 }
 
 export async function createBuilderProject(input: CreateBuilderProjectInput): Promise<BuilderProject> {
@@ -148,7 +329,7 @@ export async function createBuilderProject(input: CreateBuilderProjectInput): Pr
       }
     : undefined;
 
-  return db.builderProject.create({
+  const project = await db.builderProject.create({
     data: {
       name,
       slug: placement.slug,
@@ -158,12 +339,15 @@ export async function createBuilderProject(input: CreateBuilderProjectInput): Pr
       ...(context ? { context: context as never } : {}),
     },
   });
+
+  writeBuilderProjectMetadata(project);
+  return project;
 }
 
 export async function updateBuilderProject(projectId: string, input: UpdateBuilderProjectInput): Promise<BuilderProject> {
   await getBuilderProject(projectId);
 
-  return db.builderProject.update({
+  const project = await db.builderProject.update({
     where: { id: projectId },
     data: {
       ...(input.name !== undefined ? { name: input.name.trim() || undefined } : {}),
@@ -175,6 +359,131 @@ export async function updateBuilderProject(projectId: string, input: UpdateBuild
       ...(input.latestSessionSummary !== undefined ? { latestSessionSummary: input.latestSessionSummary } : {}),
     },
   });
+
+  try {
+    writeBuilderProjectMetadata(project);
+  } catch {
+    // Preserve the DB update even if the external workspace projection is currently unavailable.
+  }
+
+  return project;
+}
+
+export function syncBuilderProjectMetadata(project: Pick<BuilderProject, "id" | "slug" | "name" | "relativePath" | "template" | "packageManager">): void {
+  writeBuilderProjectMetadata(project);
+}
+
+export async function reconcileBuilderWorkspaceProjects(): Promise<BuilderWorkspaceReconcileResult> {
+  const scannedProjects = scanBuilderWorkspaceProjects();
+  const existingProjects = await db.builderProject.findMany({ orderBy: { updatedAt: "desc" } });
+  const existingById = new Map(existingProjects.map((project) => [project.id, project]));
+  const existingByRelativePath = new Map(existingProjects.map((project) => [project.relativePath, project]));
+  const entries: BuilderWorkspaceReconcileEntry[] = [];
+  let verified = 0;
+  let relinked = 0;
+  let imported = 0;
+  let metadataRebound = 0;
+  let ignored = 0;
+
+  for (const scanned of scannedProjects) {
+    const byId = existingById.get(scanned.metadata.projectId) ?? null;
+    if (byId) {
+      if (byId.relativePath !== scanned.relativePath) {
+        const updated = await db.builderProject.update({
+          where: { id: byId.id },
+          data: { relativePath: scanned.relativePath },
+        });
+        existingById.set(updated.id, updated);
+        existingByRelativePath.delete(byId.relativePath);
+        existingByRelativePath.set(updated.relativePath, updated);
+        writeBuilderProjectMetadata(updated);
+        relinked += 1;
+        entries.push({
+          action: "relinked",
+          projectId: updated.id,
+          relativePath: scanned.relativePath,
+          metadataProjectId: scanned.metadata.projectId,
+          summary: `Relinked Builder project ${updated.name} to ${scanned.relativePath}.`,
+        });
+      } else {
+        writeBuilderProjectMetadata(byId);
+        verified += 1;
+        entries.push({
+          action: "verified",
+          projectId: byId.id,
+          relativePath: scanned.relativePath,
+          metadataProjectId: scanned.metadata.projectId,
+          summary: `Verified Builder project ${byId.name} at ${scanned.relativePath}.`,
+        });
+      }
+      continue;
+    }
+
+    const byPath = existingByRelativePath.get(scanned.relativePath) ?? null;
+    if (byPath) {
+      writeBuilderProjectMetadata(byPath);
+      metadataRebound += 1;
+      entries.push({
+        action: "metadata_rebound",
+        projectId: byPath.id,
+        relativePath: scanned.relativePath,
+        metadataProjectId: scanned.metadata.projectId,
+        summary: `Rebound workspace metadata at ${scanned.relativePath} to Builder project ${byPath.name}.`,
+      });
+      continue;
+    }
+
+    const conflictingRelativePath = await db.builderProject.findFirst({
+      where: {
+        OR: [{ relativePath: scanned.relativePath }],
+      },
+    });
+    if (conflictingRelativePath) {
+      ignored += 1;
+      entries.push({
+        action: "ignored",
+        projectId: conflictingRelativePath.id,
+        relativePath: scanned.relativePath,
+        metadataProjectId: scanned.metadata.projectId,
+        summary: `Ignored ${scanned.relativePath} because the relative path is already claimed by ${conflictingRelativePath.name}.`,
+      });
+      continue;
+    }
+
+    const importedProject = await db.builderProject.create({
+      data: {
+        id: scanned.metadata.projectId,
+        name: scanned.metadata.name,
+        slug: await resolveUniqueImportedSlug(scanned.metadata.slug || path.posix.basename(scanned.relativePath)),
+        relativePath: scanned.relativePath,
+        template: scanned.metadata.template,
+        packageManager: scanned.metadata.packageManager,
+        gitInitialized: fs.existsSync(path.join(scanned.absolutePath, ".git")),
+      },
+    });
+    existingById.set(importedProject.id, importedProject);
+    existingByRelativePath.set(importedProject.relativePath, importedProject);
+    writeBuilderProjectMetadata(importedProject);
+    imported += 1;
+    entries.push({
+      action: "imported",
+      projectId: importedProject.id,
+      relativePath: scanned.relativePath,
+      metadataProjectId: scanned.metadata.projectId,
+      summary: `Imported workspace folder ${scanned.relativePath} as Builder project ${importedProject.name}.`,
+    });
+  }
+
+  return {
+    projects: await listBuilderProjects(),
+    scanned: scannedProjects.length,
+    verified,
+    relinked,
+    imported,
+    metadataRebound,
+    ignored,
+    entries,
+  };
 }
 
 export async function deleteBuilderProject(projectId: string, options?: { deleteFiles?: boolean }): Promise<{ project: BuilderProject; deletedFiles: boolean }> {

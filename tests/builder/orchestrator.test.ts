@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getBuilderProject: vi.fn(),
+  getBuilderProjectRecord: vi.fn(),
   getBuilderProjectBrief: vi.fn(),
   getBuilderPlanningSnapshot: vi.fn(),
   upsertBuilderProjectBrief: vi.fn(),
@@ -13,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   updateBuilderProject: vi.fn(),
   readBuilderFile: vi.fn(),
   writeBuilderFile: vi.fn(),
+  validateBuilderProjectEnv: vi.fn(),
+  buildBuilderOperatorTrustState: vi.fn(),
 }));
 
 vi.mock("@/lib/builder/mcp-snapshots", () => ({
@@ -27,6 +30,7 @@ vi.mock("@/lib/mcp/client", () => ({
 
 vi.mock("@/lib/builder/projects", () => ({
   getBuilderProject: mocks.getBuilderProject,
+  getBuilderProjectRecord: mocks.getBuilderProjectRecord,
   updateBuilderProject: mocks.updateBuilderProject,
   listBuilderRuns: mocks.listBuilderRuns,
 }));
@@ -66,6 +70,14 @@ vi.mock("@/lib/builder/review", () => ({
   buildBuilderStructuredReview: vi.fn(),
 }));
 
+vi.mock("@/lib/builder/environment", () => ({
+  validateBuilderProjectEnv: mocks.validateBuilderProjectEnv,
+}));
+
+vi.mock("@/lib/builder/operator-trust", () => ({
+  buildBuilderOperatorTrustState: mocks.buildBuilderOperatorTrustState,
+}));
+
 vi.mock("@/lib/db", () => ({
   db: {},
 }));
@@ -86,6 +98,19 @@ describe("builder orchestrator planning", () => {
       lifecycle: "DRAFT",
       lastRunStatus: "IDLE",
       context: {},
+    });
+    mocks.getBuilderProjectRecord.mockResolvedValue({
+      id: "project-1",
+      name: "Demo",
+      slug: "demo",
+      relativePath: "projects/demo",
+      template: "node-cli",
+      packageManager: "NPM",
+      gitInitialized: false,
+      lifecycle: "PLANNED",
+      lastRunStatus: "IDLE",
+      workspaceState: "present",
+      latestSessionSummary: null,
     });
     mocks.getBuilderProjectBrief.mockResolvedValue(null);
     mocks.upsertBuilderProjectBrief.mockResolvedValue({
@@ -187,6 +212,29 @@ describe("builder orchestrator planning", () => {
       currentMilestone: null,
       currentTaskSpec: null,
     });
+    mocks.validateBuilderProjectEnv.mockReturnValue({
+      schemaPath: ".env.example",
+      schemaAvailable: true,
+      projectReady: true,
+      executionReady: true,
+      totalRequiredKeys: 2,
+      missingProjectKeys: [],
+      missingExecutionKeys: [],
+      malformedEntries: [],
+      keys: [],
+      summary: "Config ready with 2 required env keys.",
+    });
+    mocks.buildBuilderOperatorTrustState.mockResolvedValue({
+      generatedAt: "2025-01-01T00:00:00.000Z",
+      overallStatus: "trusted",
+      summary: "Operator trust is trusted across config, runtime, review, and approval surfaces.",
+      review: { status: "trusted", summary: "complete", reviewStatus: "SUCCEEDED", validationPassed: true, riskCount: 0, updatedAt: "2025-01-01T00:00:00.000Z" },
+      config: { status: "trusted", summary: "Config ready", schemaAvailable: true, projectReady: true, executionReady: true, missingProjectKeys: [], missingExecutionKeys: [] },
+      runtime: { status: "trusted", summary: "Runtime artifacts are aligned.", activeAlertCount: 0, unresolvedAlertCount: 0, autoFixCount: 0, mcpState: "captured", driftDetected: false },
+      approvals: { status: "trusted", summary: "No pending human approvals are waiting in the queue.", pendingCount: 0, pendingApprovals: [] },
+      governance: { status: "warning", summary: "Approval gates exist.", approvalRequiredCapabilities: ["governance_contracts"] },
+      artifactPaths: { markdown: ".builder/reports/operator-trust.md", json: ".builder/reports/operator-trust.json", latestReview: ".builder/reports/latest-review.md", processArtifacts: ".builder/processes" },
+    });
   });
 
   it("keeps planBuilderProject as the single planning entrypoint and delegates to the hardened planner service", async () => {
@@ -207,5 +255,7 @@ describe("builder orchestrator planning", () => {
         }),
       }),
     }));
+    expect(mocks.validateBuilderProjectEnv).toHaveBeenCalledWith("projects/demo");
+    expect(mocks.buildBuilderOperatorTrustState).toHaveBeenCalled();
   });
 });

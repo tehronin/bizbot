@@ -17,6 +17,8 @@ export interface BuilderConfig {
   safe: boolean;
   reason?: string;
   allowedCommands: string[];
+  allowedHosts: string[];
+  allowedDatabases: string[];
   defaultTemplate: string;
   defaultPackageManager: "NPM" | "PNPM";
   initializeGitByDefault: boolean;
@@ -96,6 +98,22 @@ export function getBuilderAllowedCommands(): string[] {
   return Array.from(new Set(raw.split(",").map((value) => value.trim()).filter(Boolean)));
 }
 
+function parseCsvEnv(raw: string | undefined): string[] {
+  if (!raw?.trim()) {
+    return [];
+  }
+
+  return Array.from(new Set(raw.split(",").map((value) => value.trim()).filter(Boolean)));
+}
+
+export function getBuilderAllowedHosts(): string[] {
+  return parseCsvEnv(process.env.BIZBOT_BUILDER_ALLOWED_HOSTS);
+}
+
+export function getBuilderAllowedDatabases(): string[] {
+  return parseCsvEnv(process.env.BIZBOT_BUILDER_ALLOWED_DATABASES);
+}
+
 export function getBuilderConfig(): BuilderConfig {
   const { workspaceRoot, configuredByEnv } = resolveBuilderWorkspaceRoot();
   const repositoryRoot = getBuilderRepositoryRoot();
@@ -111,6 +129,8 @@ export function getBuilderConfig(): BuilderConfig {
       ? "Builder workspace overlaps the BizBot repository. Configure BIZBOT_BUILDER_WORKSPACE_PATH to an external directory."
       : undefined,
     allowedCommands: getBuilderAllowedCommands(),
+    allowedHosts: getBuilderAllowedHosts(),
+    allowedDatabases: getBuilderAllowedDatabases(),
     defaultTemplate: process.env.BIZBOT_BUILDER_DEFAULT_TEMPLATE?.trim() || DEFAULT_TEMPLATE,
     defaultPackageManager: process.env.BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER === "PNPM" ? "PNPM" : DEFAULT_PACKAGE_MANAGER,
     initializeGitByDefault: parseBoolean(process.env.BIZBOT_BUILDER_INIT_GIT, true),

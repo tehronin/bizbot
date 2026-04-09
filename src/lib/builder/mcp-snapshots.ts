@@ -923,11 +923,11 @@ export async function searchBuilderMcpSnapshotHistory(args: {
   query: string;
   limit?: number;
 }): Promise<BuilderMcpSemanticSearchMatchState[]> {
-  const embedding = await embed(args.query, "query");
-  const embeddingStr = formatEmbedding(embedding);
-  const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 5), 20));
-
   try {
+    const embedding = await embed(args.query, "query");
+    const embeddingStr = formatEmbedding(embedding);
+    const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 5), 20));
+
     return (await db.$queryRawUnsafe(
       `SELECT
          id AS "snapshotId",
@@ -945,7 +945,8 @@ export async function searchBuilderMcpSnapshotHistory(args: {
       args.projectId,
       limit,
     )) as BuilderMcpSemanticSearchMatchState[];
-  } catch {
+  } catch (error) {
+    console.warn("[builder mcp] semantic snapshot history unavailable:", error);
     return [];
   }
 }

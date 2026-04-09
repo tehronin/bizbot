@@ -318,8 +318,8 @@ export const BUILDER_CAPABILITY_CATALOG: BuilderCapabilityDefinition[] = [
     title: "Environment Configuration",
     domain: "configuration",
     tier: "core",
-    status: "partial",
-    summary: "Builder host config exists today; project-local env inspection and mutation remain to be formalized.",
+    status: "available",
+    summary: "Builder host config and project-local env inspection and mutation are formalized with redacted reads and safe writes.",
     tools: [
       "builder_get_env_schema",
       "builder_validate_env",
@@ -361,8 +361,8 @@ export const BUILDER_CAPABILITY_CATALOG: BuilderCapabilityDefinition[] = [
     title: "Network HTTP",
     domain: "network",
     tier: "extended",
-    status: "planned",
-    summary: "Allowlisted HTTP probing and integration validation with bounded request and response handling.",
+    status: "partial",
+    summary: "Allowlisted HTTP probing and integration validation with bounded request and response handling plus persisted capability audit events.",
     tools: ["builder_http_get", "builder_http_post", "builder_http_put", "builder_http_delete"],
     policy: {
       scope: "project",
@@ -394,14 +394,13 @@ export const BUILDER_CAPABILITY_CATALOG: BuilderCapabilityDefinition[] = [
     title: "Database Introspection",
     domain: "database",
     tier: "extended",
-    status: "planned",
-    summary: "Read-only schema and migration inspection for Builder-managed project databases.",
+    status: "partial",
+    summary: "Read-only schema and migration inspection for Builder-managed project databases with project-bound datasource policy and audit trails.",
     tools: [
       "builder_db_list_tables",
       "builder_db_describe_table",
       "builder_db_schema_summary",
       "builder_db_list_migrations",
-      "builder_db_run_sql",
     ],
     policy: {
       scope: "project",
@@ -415,7 +414,7 @@ export const BUILDER_CAPABILITY_CATALOG: BuilderCapabilityDefinition[] = [
       requiresExplicitApproval: true,
       notes: [
         "The initial rollout should remain read-only and bound to project-local connection policy.",
-        "Destructive SQL is outside the MVP and should require a separate policy elevation if ever added.",
+        "Live SQL execution remains out of scope for the initial rollout; schema and migration inspection must stay read-only.",
       ],
     },
     audit: {
@@ -433,11 +432,13 @@ export const BUILDER_CAPABILITY_CATALOG: BuilderCapabilityDefinition[] = [
     title: "Runtime Orchestration",
     domain: "runtime",
     tier: "experimental",
-    status: "planned",
-    summary: "Optional service, container, and local runtime lifecycle control for multi-service Builder projects.",
+    status: "partial",
+    summary: "Optional service discovery across package manifests, Procfiles, and compose files with runtime reconciliation, guarded log follow, start or stop or restart controls, and allowlisted exec.",
     tools: [
       "builder_list_services",
       "builder_service_logs",
+      "builder_start_service",
+      "builder_stop_service",
       "builder_restart_service",
       "builder_exec_in_service",
     ],

@@ -67,7 +67,11 @@ function appendAuditEntry(metadata: unknown, entry: BuilderReconciliationAuditEn
   };
 }
 
-function collectAuditEntries(runs: BuilderRun[]): BuilderReconciliationAuditEntry[] {
+function collectAuditEntries(runs: BuilderRun[] | undefined): BuilderReconciliationAuditEntry[] {
+  if (!Array.isArray(runs) || runs.length === 0) {
+    return [];
+  }
+
   return runs.flatMap((run) => {
     const metadata = readObject(run.metadata);
     const entries = Array.isArray(metadata?.reconciliationAudit) ? metadata.reconciliationAudit : [];
@@ -150,11 +154,13 @@ export function inspectBuilderOperationalState(args: {
   now?: Date;
 }): BuilderOperationalStateSummary {
   const now = args.now ?? new Date();
-  const corrections = collectAuditEntries(args.runs);
+  const runs = Array.isArray(args.runs) ? args.runs : [];
+  const tasks = Array.isArray(args.tasks) ? args.tasks : [];
+  const corrections = collectAuditEntries(runs);
   const alerts: BuilderOperationalAlert[] = [];
-  const taskById = new Map<string, (typeof args.tasks)[number]>(args.tasks.map((task) => [task.id, task]));
+  const taskById = new Map<string, BuilderTask>(tasks.map((task) => [task.id, task]));
 
-  for (const run of args.runs) {
+  for (const run of runs) {
     const task = run.taskId ? taskById.get(run.taskId) ?? null : null;
     const taskMetadata = task ? normalizeBuilderTaskMetadata(task.metadata) : null;
     const ageMs = now.getTime() - run.startedAt.getTime();
@@ -198,7 +204,7 @@ export function inspectBuilderOperationalState(args: {
   }
 
   const runsByTask = new Map<string, BuilderRun[]>();
-  for (const run of args.runs) {
+  for (const run of runs) {
     if (!run.taskId || run.status !== "FAILED") {
       continue;
     }

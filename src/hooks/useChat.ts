@@ -322,7 +322,30 @@ function mapConversationMessages(messages: ChatConversationMessage[]): ChatEntry
 }
 
 async function readJson<T>(response: Response): Promise<T> {
-  return response.json() as Promise<T>;
+  if (typeof response.text !== "function") {
+    if (typeof response.json === "function") {
+      return response.json() as Promise<T>;
+    }
+
+    return {} as T;
+  }
+
+  const payloadText = await response.text();
+  if (!payloadText.trim()) {
+    return {} as T;
+  }
+
+  try {
+    return JSON.parse(payloadText) as T;
+  } catch (error) {
+    if (!response.ok) {
+      return { error: `Request failed with status ${response.status}.` } as T;
+    }
+
+    throw error instanceof Error
+      ? error
+      : new Error(`Invalid JSON response from ${response.url || "request"}.`);
+  }
 }
 
 export function useChat(): UseChatResult {
@@ -454,6 +477,11 @@ export function useChat(): UseChatResult {
           selectedConversationId: getStoredSelectedConversationId(),
           replaceCurrent: true,
         });
+      } catch (error) {
+        console.error("[chat bootstrap]", error);
+        setMessages([
+          createEntry("assistant", `Chat bootstrap failed: ${error instanceof Error ? error.message : "Unknown error."}`),
+        ]);
       } finally {
         setIsBootstrapping(false);
       }
@@ -645,7 +673,7 @@ export function useChat(): UseChatResult {
           let nextConversationId = conversationId;
 
           if (!res.ok || !res.body) {
-            const payload = await (res.json() as Promise<Partial<AgentResponse> & { error?: string }>);
+            const payload = await readJson<Partial<AgentResponse> & { error?: string }>(res);
             throw new Error(payload.error ?? "Request failed");
           }
 

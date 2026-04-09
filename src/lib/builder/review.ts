@@ -1,5 +1,6 @@
 import type { BuilderTask, BuilderTaskStage, BuilderTaskStatus } from "@prisma/client";
 import type { BuilderAgenticLoopMetadata } from "@/lib/builder/agentic";
+import type { BuilderConfigReadinessState } from "@/lib/builder/environment";
 import type { BuilderArchitectureReconciliationState, BuilderStructuredCheckSummary, BuilderStructuredReview, BuilderStructuredValidationSummary } from "@/lib/builder/types";
 
 function summarizeScript(loop: BuilderAgenticLoopMetadata, scriptName: "build" | "test" | "lint"): BuilderStructuredCheckSummary {
@@ -48,6 +49,7 @@ export function buildBuilderStructuredReview(args: {
   status: BuilderTaskStatus | string;
   stage: BuilderTaskStage | string;
   loop: BuilderAgenticLoopMetadata;
+  config?: BuilderConfigReadinessState;
   architecture?: BuilderArchitectureReconciliationState;
 }): BuilderStructuredReview {
   const filesChanged = collectFilesChanged(args.loop);
@@ -74,6 +76,15 @@ export function buildBuilderStructuredReview(args: {
     tests,
     lint,
     build,
+    config: args.config ? {
+      schemaAvailable: args.config.schemaAvailable,
+      projectReady: args.config.projectReady,
+      executionReady: args.config.executionReady,
+      missingProjectKeys: [...args.config.missingProjectKeys],
+      missingExecutionKeys: [...args.config.missingExecutionKeys],
+      malformedEntries: [...args.config.malformedEntries],
+      summary: args.config.summary,
+    } : undefined,
     risks,
     nextSteps,
     architecture: args.architecture,
@@ -101,6 +112,20 @@ export function renderBuilderReviewMarkdown(review: BuilderStructuredReview): st
     `- Skipped: ${review.validation.skipped}`,
     `- Scripts: ${review.validation.scripts.join(", ") || "none"}`,
     `- Summary: ${review.validation.summary}`,
+    "",
+    `## Configuration`,
+    "",
+    ...(review.config
+      ? [
+          `- Schema available: ${review.config.schemaAvailable}`,
+          `- Project ready: ${review.config.projectReady}`,
+          `- Execution ready: ${review.config.executionReady}`,
+          `- Missing project keys: ${review.config.missingProjectKeys.join(", ") || "none"}`,
+          `- Missing execution keys: ${review.config.missingExecutionKeys.join(", ") || "none"}`,
+          `- Malformed entries: ${review.config.malformedEntries.length}`,
+          `- Summary: ${review.config.summary}`,
+        ]
+      : ["- none"]),
     "",
     `## Files Changed`,
     "",

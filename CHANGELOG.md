@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-04-09
+
+- Added Builder runtime orchestration surfaces for service health, logs, start/stop/restart control, command execution, workspace reconciliation/import, project env mutation, runtime inspection, HTTP probing, DB inspection, and operator-trust reporting across the dashboard, API routes, plugin tools, and test coverage.
+- Hardened chat and Builder bootstrap flows so failed API responses return JSON consistently, client fetch helpers no longer crash on empty bodies, missing external Builder workspaces degrade to non-fatal inspection state, and the recovered Builder workspace root can be persisted locally for future restarts.
+- Fixed Builder chat routing so Builder workspace status and history prompts resolve to the Builder Operator instead of the Research Operator, and added focused regression coverage for that routing behavior.
+- Added repo-level markdownlint configuration and wired `npm run lint:docs` to the shipped markdown surfaces so the docs gate runs deterministically in local pre-push validation.
+
 ## 2026-04-08
 
 - Added the Builder file-topology ADR lane with deterministic structural snapshots, planner and task placement guidance, `.builder/file-topology.md` projection output, drift preflight blocking, bootstrap baselines, and explicit approve or reject reconciliation commands.

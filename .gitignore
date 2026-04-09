@@ -2,5 +2,7 @@ node_modules
 .next/
 test-results/
 tsconfig.tsbuildinfo
+.env.local
+.env.*.local
 src-tauri/resources/
 workspace/

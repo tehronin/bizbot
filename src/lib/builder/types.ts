@@ -8,6 +8,7 @@ import type {
   BuilderTaskStage,
   BuilderTaskStatus,
 } from "@prisma/client";
+import type { BuilderConfigReadinessState, BuilderConfigMalformedEntryState } from "@/lib/builder/environment";
 import type {
   BizBotContractDriftSectionState,
   BizBotPlatformContractImpactState,
@@ -575,6 +576,90 @@ export interface BuilderStructuredCheckSummary {
   summary: string | null;
 }
 
+export interface BuilderConfigReviewState {
+  schemaAvailable: boolean;
+  projectReady: boolean;
+  executionReady: boolean;
+  missingProjectKeys: string[];
+  missingExecutionKeys: string[];
+  malformedEntries: BuilderConfigMalformedEntryState[];
+  summary: string;
+}
+
+export type BuilderOperatorTrustStatus = "trusted" | "warning" | "blocked";
+
+export interface BuilderOperatorTrustReviewState {
+  status: BuilderOperatorTrustStatus;
+  summary: string;
+  reviewStatus: BuilderTaskStatus | string | null;
+  validationPassed: boolean | null;
+  riskCount: number;
+  updatedAt: string | null;
+}
+
+export interface BuilderOperatorTrustConfigState {
+  status: BuilderOperatorTrustStatus;
+  summary: string;
+  schemaAvailable: boolean;
+  projectReady: boolean;
+  executionReady: boolean;
+  missingProjectKeys: string[];
+  missingExecutionKeys: string[];
+}
+
+export interface BuilderOperatorTrustRuntimeState {
+  status: BuilderOperatorTrustStatus;
+  summary: string;
+  activeAlertCount: number;
+  unresolvedAlertCount: number;
+  autoFixCount: number;
+  mcpState: string;
+  driftDetected: boolean;
+}
+
+export interface BuilderOperatorTrustApprovalItem {
+  id: string;
+  postId: string;
+  approvalStatus: string;
+  postStatus: string;
+  platform: string;
+  excerpt: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface BuilderOperatorTrustApprovalState {
+  status: BuilderOperatorTrustStatus;
+  summary: string;
+  pendingCount: number;
+  pendingApprovals: BuilderOperatorTrustApprovalItem[];
+}
+
+export interface BuilderOperatorTrustGovernanceState {
+  status: BuilderOperatorTrustStatus;
+  summary: string;
+  approvalRequiredCapabilities: string[];
+}
+
+export interface BuilderOperatorTrustArtifactPaths {
+  markdown: string;
+  json: string;
+  latestReview: string;
+  processArtifacts: string;
+}
+
+export interface BuilderOperatorTrustState {
+  generatedAt: string;
+  overallStatus: BuilderOperatorTrustStatus;
+  summary: string;
+  review: BuilderOperatorTrustReviewState;
+  config: BuilderOperatorTrustConfigState;
+  runtime: BuilderOperatorTrustRuntimeState;
+  approvals: BuilderOperatorTrustApprovalState;
+  governance: BuilderOperatorTrustGovernanceState;
+  artifactPaths: BuilderOperatorTrustArtifactPaths;
+}
+
 export interface BuilderStructuredReview {
   taskId: string;
   projectId: string;
@@ -587,11 +672,14 @@ export interface BuilderStructuredReview {
   tests: BuilderStructuredCheckSummary;
   lint: BuilderStructuredCheckSummary;
   build: BuilderStructuredCheckSummary;
+  config?: BuilderConfigReviewState;
   risks: string[];
   nextSteps: string[];
   architecture?: BuilderArchitectureReconciliationState;
   updatedAt: string;
 }
+
+export type BuilderProjectConfigState = BuilderConfigReadinessState;
 
 export function defaultBuilderArchitectureContext(): BuilderArchitectureContextState {
   return {

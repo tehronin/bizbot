@@ -2,6 +2,8 @@ import path from "path";
 import type { BuilderProject, BuilderTask } from "@prisma/client";
 import { getBuilderFileTopologyPlanningContext } from "@/lib/builder/file-topology-snapshots";
 import { renderBuilderFileTopologyProjectionMarkdown } from "@/lib/builder/file-topology-render";
+import { renderBuilderOperatorTrustMarkdown } from "@/lib/builder/operator-trust";
+import { syncBuilderProjectMetadata } from "@/lib/builder/projects";
 import { renderBuilderReviewMarkdown } from "@/lib/builder/review";
 import { readBuilderFile, writeBuilderFile } from "@/lib/builder/workspace";
 import {
@@ -11,6 +13,7 @@ import {
   type BuilderPlanningSnapshot,
   normalizeBuilderTaskMetadata,
   type BuilderInstructionFragment,
+  type BuilderOperatorTrustState,
   type BuilderPlanStep,
   type BuilderProjectContextState,
   type BuilderStructuredReview,
@@ -385,6 +388,7 @@ export function syncBuilderProjectProjection(args: {
   planning?: BuilderPlanningSnapshot;
   currentTask?: BuilderTask | null;
   latestReview?: BuilderStructuredReview | null;
+  latestOperatorTrust?: BuilderOperatorTrustState | null;
 }): void {
   const context = normalizeContextForWrite(args.context);
   const currentTaskMetadata = args.currentTask ? normalizeBuilderTaskMetadata(args.currentTask.metadata) : null;
@@ -409,8 +413,13 @@ export function syncBuilderProjectProjection(args: {
   writeBuilderFile(path.posix.join(baseDir, "current-plan.md"), renderPlanMarkdown(args.currentTask ?? null, planSteps));
   writeBuilderFile(path.posix.join(baseDir, "session-summary.md"), renderSessionSummaryMarkdown(context));
   writeBuilderFile(path.posix.join(baseDir, "state.json"), `${JSON.stringify(context, null, 2)}\n`);
+  syncBuilderProjectMetadata(args.project);
   if (args.latestReview) {
     writeBuilderFile(path.posix.join(baseDir, "reports/latest-review.md"), renderBuilderReviewMarkdown(args.latestReview));
+  }
+  if (args.latestOperatorTrust) {
+    writeBuilderFile(path.posix.join(baseDir, "reports/operator-trust.md"), renderBuilderOperatorTrustMarkdown(args.latestOperatorTrust));
+    writeBuilderFile(path.posix.join(baseDir, "reports/operator-trust.json"), `${JSON.stringify(args.latestOperatorTrust, null, 2)}\n`);
   }
 }
 

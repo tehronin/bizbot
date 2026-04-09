@@ -12,27 +12,31 @@ function parsePositiveInt(value: string | null, fallback: number): number {
 }
 
 export async function GET(req: NextRequest) {
-  const selectedConversationId = req.nextUrl.searchParams.get("selectedId");
-  const userId = req.nextUrl.searchParams.get("userId") ?? undefined;
-  const recentPage = parsePositiveInt(req.nextUrl.searchParams.get("recentPage"), 1);
-  const archivedPage = parsePositiveInt(req.nextUrl.searchParams.get("archivedPage"), 1);
-  const pageSize = parsePositiveInt(req.nextUrl.searchParams.get("historyPageSize"), DEFAULT_CHAT_HISTORY_PAGE_SIZE);
-  const historySearch = req.nextUrl.searchParams.get("historySearch") ?? "";
-  const historyFrom = req.nextUrl.searchParams.get("historyFrom");
-  const historyTo = req.nextUrl.searchParams.get("historyTo");
+  try {
+    const selectedConversationId = req.nextUrl.searchParams.get("selectedId");
+    const userId = req.nextUrl.searchParams.get("userId") ?? undefined;
+    const recentPage = parsePositiveInt(req.nextUrl.searchParams.get("recentPage"), 1);
+    const archivedPage = parsePositiveInt(req.nextUrl.searchParams.get("archivedPage"), 1);
+    const pageSize = parsePositiveInt(req.nextUrl.searchParams.get("historyPageSize"), DEFAULT_CHAT_HISTORY_PAGE_SIZE);
+    const historySearch = req.nextUrl.searchParams.get("historySearch") ?? "";
+    const historyFrom = req.nextUrl.searchParams.get("historyFrom");
+    const historyTo = req.nextUrl.searchParams.get("historyTo");
 
-  const result = await resolveChatBootstrap({
-    userId,
-    selectedConversationId,
-    recentPage,
-    archivedPage,
-    pageSize,
-    historyFilters: {
-      search: historySearch,
-      from: historyFrom,
-      to: historyTo,
-    },
-  });
+    const result = await resolveChatBootstrap({
+      userId,
+      selectedConversationId,
+      recentPage,
+      archivedPage,
+      pageSize,
+      historyFilters: {
+        search: historySearch,
+        from: historyFrom,
+        to: historyTo,
+      },
+    });
 
-  return Response.json(result);
+    return Response.json(result);
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
 }
