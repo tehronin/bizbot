@@ -5,6 +5,7 @@
 - Added Builder runtime orchestration surfaces for service health, logs, start/stop/restart control, command execution, workspace reconciliation/import, project env mutation, runtime inspection, HTTP probing, DB inspection, and operator-trust reporting across the dashboard, API routes, plugin tools, and test coverage.
 - Hardened chat and Builder bootstrap flows so failed API responses return JSON consistently, client fetch helpers no longer crash on empty bodies, missing external Builder workspaces degrade to non-fatal inspection state, and the recovered Builder workspace root can be persisted locally for future restarts.
 - Fixed Builder chat routing so Builder workspace status and history prompts resolve to the Builder Operator instead of the Research Operator, and added focused regression coverage for that routing behavior.
+- Added canonical BizBot capability summaries and lane-aware runtime tool-visibility summaries so generic capability or plugin-inspection prompts can describe Builder and other surfaces from current prompt context and visible tool access instead of relying on incidental lane phrasing.
 - Added repo-level markdownlint configuration and wired `npm run lint:docs` to the shipped markdown surfaces so the docs gate runs deterministically in local pre-push validation.
 
 ## 2026-04-08

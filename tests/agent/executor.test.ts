@@ -217,6 +217,73 @@ describe("agent executor explicit memory", () => {
     expect(systemPrompt).toContain("Context:\nEarlier conversation summary:\n- User: asked for a launch post.\n\nRecent conversation:\nUSER: hi");
   });
 
+  it("injects a canonical BizBot capabilities block for self-description prompts", async () => {
+    await executeAgentConversation({
+      message: "What are your core features, especially Builder?",
+      forcedProfile: "general_operator",
+    });
+
+    const systemPrompt = kernelMocks.chatComplete.mock.calls[0][0][0].content as string;
+    expect(systemPrompt).toContain("[BizBot Capabilities]");
+    expect(systemPrompt).toContain("Builder Mode for dedicated external-workspace project creation");
+    expect(systemPrompt).toContain("present Builder as a first-class product surface");
+    expect(runJournalMocks.recordAgentRunPromptAssembly).toHaveBeenCalledWith("run-1", expect.objectContaining({
+      promptAssembly: expect.objectContaining({
+        capabilitySummaryChars: expect.any(Number),
+      }),
+    }));
+  });
+
+  it("does not inject the BizBot capabilities block for ordinary task prompts", async () => {
+    await executeAgentConversation({
+      message: "Draft a reply",
+      forcedProfile: "general_operator",
+    });
+
+    const systemPrompt = kernelMocks.chatComplete.mock.calls[0][0][0].content as string;
+    expect(systemPrompt).not.toContain("[BizBot Capabilities]");
+  });
+
+  it("injects a runtime tool visibility block for plugin inspection prompts", async () => {
+    pluginMocks.getAllToolDefinitions.mockReturnValue([
+      { name: "crm_list_contacts", description: "", parameters: { type: "object", properties: {} } },
+      { name: "memory_get_facts", description: "", parameters: { type: "object", properties: {} } },
+      { name: "social_create_post", description: "", parameters: { type: "object", properties: {} } },
+    ]);
+
+    await executeAgentConversation({
+      message: "What tools do you have available right now?",
+      forcedProfile: "general_operator",
+    });
+
+    const systemPrompt = kernelMocks.chatComplete.mock.calls[0][0][0].content as string;
+    expect(systemPrompt).toContain("[Runtime Tool Visibility]");
+    expect(systemPrompt).toContain("Current lane: general_operator");
+    expect(systemPrompt).toContain("crm: 1 visible tool");
+    expect(systemPrompt).toContain("memory: 1 visible tool");
+    expect(systemPrompt).toContain("social: 1 visible tool");
+    expect(systemPrompt).toContain("builder workspace: not directly visible in this lane; reachable through delegation to builder_operator");
+    expect(runJournalMocks.recordAgentRunPromptAssembly).toHaveBeenCalledWith("run-1", expect.objectContaining({
+      promptAssembly: expect.objectContaining({
+        runtimeToolVisibilityChars: expect.any(Number),
+      }),
+    }));
+  });
+
+  it("does not inject the runtime tool visibility block for ordinary prompts", async () => {
+    pluginMocks.getAllToolDefinitions.mockReturnValue([
+      { name: "crm_list_contacts", description: "", parameters: { type: "object", properties: {} } },
+    ]);
+
+    await executeAgentConversation({
+      message: "Draft a reply",
+      forcedProfile: "general_operator",
+    });
+
+    const systemPrompt = kernelMocks.chatComplete.mock.calls[0][0][0].content as string;
+    expect(systemPrompt).not.toContain("[Runtime Tool Visibility]");
+  });
+
   it("injects a bounded ontology block separately from explicit user memory", async () => {
     ontologyMocks.buildOntologyPromptBlock.mockResolvedValue({
       block: [

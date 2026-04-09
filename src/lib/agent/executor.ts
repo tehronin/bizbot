@@ -1,4 +1,10 @@
 import { buildContextForPrompt, getOrCreateConversation, saveMessage } from "@/lib/agent/memory";
+import {
+  buildBizBotCapabilitySummary,
+  buildRuntimeToolVisibilitySummary,
+  shouldInjectBizBotCapabilitySummary,
+  shouldInjectRuntimeToolVisibilitySummary,
+} from "@/lib/agent/capabilities";
 import { formatMemoryFactsForPrompt, getRelevantMemoryFacts } from "@/lib/agent/memory/service";
 import { chatComplete, getModelForProvider, type ChatRequestOptions, type LLMProvider } from "@/lib/agent/kernel";
 import { executeTool, getAllToolDefinitions } from "@/lib/agent/plugins";
@@ -241,7 +247,17 @@ export async function executeAgentConversation(
   const explicitMemoryBlock = formatMemoryFactsForPrompt(explicitMemoryFacts);
   const ontologyBlock = ontologyPrompt.omitted ? "" : ontologyPrompt.block;
   const contextBlock = contextResult.text;
+  const capabilitySummaryBlock = shouldInjectBizBotCapabilitySummary(message)
+    ? buildBizBotCapabilitySummary()
+    : "";
   const tools = getAllToolDefinitions(runtimeConfig, { agentProfile: profileDecision.profile });
+  const runtimeToolVisibilityBlock = shouldInjectRuntimeToolVisibilitySummary(message)
+    ? buildRuntimeToolVisibilitySummary({
+        profile: profileDecision.profile,
+        tools,
+        delegationTargets: profileDescriptor.delegationTargets,
+      })
+    : "";
   const maxToolRounds = profileDecision.profile === "builder_operator"
     ? Math.max(runtimeConfig.toolMaxRounds, 16)
     : runtimeConfig.toolMaxRounds;
@@ -267,17 +283,21 @@ export async function executeAgentConversation(
   );
 
   const systemPrompt =
-    "You are BizBot, a local desktop social media agent. Use tools when they improve correctness, prefer deterministic tool outputs over guessing, and keep responses operational."
+    "You are BizBot, a local-first desktop agent platform. Use tools when they improve correctness, prefer deterministic tool outputs over guessing, and keep responses operational."
     + ` ${buildAutonomySystemPrompt(runtimeConfig)}`
     + ` ${profilePrompt.systemInstruction}`
     + " Explicit user memory policy: use memory_get_facts when stable user preferences, identity, workflows, constraints, or operator settings are relevant. Use memory_set_fact only when the user explicitly asks BizBot to remember a stable fact or an approved onboarding/system flow requires it. Use memory_forget_fact only when the user explicitly asks BizBot to forget a stored fact. Never store secrets, credentials, tokens, payment details, ephemeral chat noise, or speculative inferences as stable memory."
     + ` Delegation options: ${profileDescriptor.delegationTargets.join(", ") || "none"}.`
+    + (capabilitySummaryBlock ? `\n\n${capabilitySummaryBlock}` : "")
+    + (runtimeToolVisibilityBlock ? `\n\n${runtimeToolVisibilityBlock}` : "")
     + (explicitMemoryBlock ? `\n\n${explicitMemoryBlock}` : "")
     + (ontologyBlock ? `\n\n${ontologyBlock}` : "")
     + (contextBlock ? `\n\nContext:\n${contextBlock}` : "");
 
   recordAgentRunPromptAssembly(run.runId, {
     promptAssembly: {
+      capabilitySummaryChars: capabilitySummaryBlock.length,
+      runtimeToolVisibilityChars: runtimeToolVisibilityBlock.length,
       explicitMemoryChars: explicitMemoryBlock.length,
       ontologyChars: ontologyBlock.length,
       conversationSummaryChars: contextResult.blocks.conversationSummary.length,
