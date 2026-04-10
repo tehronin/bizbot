@@ -4,7 +4,7 @@
  * External MCP server tools are merged in when MCP clients are connected.
  */
 
-import type { JsonObject, RegisteredToolDefinition, ToolDescriptor, ToolExecutionResult } from "@/lib/agent/tools";
+import type { JsonObject, McpSamplingSession, RegisteredToolDefinition, ToolDescriptor, ToolExecutionResult } from "@/lib/agent/tools";
 import type { AgentRuntimeConfig } from "@/lib/agent/runtime";
 import type { AgentProfile } from "@/lib/agent/profiles";
 import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
@@ -24,6 +24,7 @@ export interface ToolAccessContext {
   userId?: string;
   provider?: string;
   signal?: AbortSignal;
+  mcpSamplingSession?: McpSamplingSession;
   builderContext?: {
     projectId: string;
     builderRunId: string;
@@ -99,6 +100,7 @@ export async function executeTool(
     agentProfile: options?.access?.agentProfile,
     provider: options?.access?.provider,
     signal: options?.access?.signal,
+    mcpSamplingSession: options?.access?.mcpSamplingSession,
   });
 
   if (options?.access?.builderContext?.builderRunId) {

@@ -1,5 +1,5 @@
 import type { RegisteredToolDefinition } from "@/lib/agent/tools";
-import type { BizBotPlugin } from "@/lib/agent/plugins/contracts";
+import type { BizBotPlugin, BizBotPluginModule } from "@/lib/agent/plugins/contracts";
 import { wrapBuiltinPlugin } from "@/lib/agent/plugins/contracts";
 import { approvalPlugin } from "./ApprovalPlugin";
 import { builderPlugin } from "./BuilderPlugin";
@@ -21,29 +21,50 @@ import { BUILTIN_PLUGIN_TOGGLES, getBuiltinPluginToggle, isBuiltinPluginEnabled 
 import { socialPlugin } from "./SocialPlugin";
 import { sidecarTools } from "@/lib/sidecar/tools";
 
-const builtinPluginModules = {
-  social: socialPlugin,
-  commerce: commercePlugin,
-  content: contentPlugin,
-  crm: crmPlugin,
-  builder: builderPlugin,
-  delegation: delegationPlugin,
-  developer: developerPlugin,
-  memory: memoryPlugin,
-  files: filePlugin,
-  graph: graphPlugin,
-  "local-business": localBusinessPlugin,
-  schedule: schedulePlugin,
-  approval: approvalPlugin,
-  browser: browserPlugin,
-  competitor: competitorPlugin,
-  oracle: oraclePlugin,
-  "conversation-bridge": conversationBridgePlugin,
-} as const;
+function resolveBuiltinPluginModule(id: string): BizBotPluginModule | null {
+  switch (id) {
+    case "social":
+      return socialPlugin;
+    case "commerce":
+      return commercePlugin;
+    case "content":
+      return contentPlugin;
+    case "crm":
+      return crmPlugin;
+    case "builder":
+      return builderPlugin;
+    case "delegation":
+      return delegationPlugin;
+    case "developer":
+      return developerPlugin;
+    case "memory":
+      return memoryPlugin;
+    case "files":
+      return filePlugin;
+    case "graph":
+      return graphPlugin;
+    case "local-business":
+      return localBusinessPlugin;
+    case "schedule":
+      return schedulePlugin;
+    case "approval":
+      return approvalPlugin;
+    case "browser":
+      return browserPlugin;
+    case "competitor":
+      return competitorPlugin;
+    case "oracle":
+      return oraclePlugin;
+    case "conversation-bridge":
+      return conversationBridgePlugin;
+    default:
+      return null;
+  }
+}
 
 function listBuiltinPlugins(): BizBotPlugin[] {
   return BUILTIN_PLUGIN_TOGGLES.map((plugin) => {
-    const pluginModule = builtinPluginModules[plugin.id as keyof typeof builtinPluginModules];
+    const pluginModule = resolveBuiltinPluginModule(plugin.id);
     if (!pluginModule) {
       throw new Error(`Missing builtin plugin module: ${plugin.id}`);
     }

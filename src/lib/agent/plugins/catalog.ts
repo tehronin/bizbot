@@ -1,3 +1,4 @@
+import type { RegisteredToolDefinition } from "@/lib/agent/tools";
 import { db } from "@/lib/db";
 import { readEnv, writeEnv } from "@/lib/env";
 import {
@@ -160,7 +161,7 @@ export async function getPluginCatalog(): Promise<PluginCatalog> {
         removable: false,
         removalLabel: "source-managed",
         managementSummary: enabled ? "Enabled and exposed to the agent." : "Disabled and hidden from the live tool catalog.",
-        toolNames: plugin.tools.map((tool) => tool.name).sort((left, right) => left.localeCompare(right)),
+        toolNames: plugin.tools.map((tool: RegisteredToolDefinition) => tool.name).sort((left, right) => left.localeCompare(right)),
         tags: plugin.metadata.tags ?? [],
         version: plugin.metadata.version,
         envKey: toggle?.envKey,

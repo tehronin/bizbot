@@ -47,6 +47,7 @@ describe("builder vcs", () => {
 
     expect(committed.commitSha).toMatch(/^[0-9a-f]{40}$/);
     expect(committed.summary).toContain("empty commit");
+    expect(fs.existsSync(path.join(workspaceRoot, committed.auditPath))).toBe(true);
   });
 
   it("blocks repository access when the builder workspace overlaps the BizBot repo", () => {
@@ -66,5 +67,6 @@ describe("builder vcs", () => {
     });
 
     expect(status.currentBranch).toBe("feature/direct-vcs-test");
+    expect(fs.existsSync(path.join(workspaceRoot, status.auditPath))).toBe(true);
   });
 });

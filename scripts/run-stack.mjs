@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
+import { loadLocalEnv } from "./load-local-env.mjs";
 
 const mode = process.argv[2] ?? "dev";
+const baseEnv = loadLocalEnv({ env: { ...process.env } });
 
 const modeMap = {
   dev: {
@@ -125,7 +127,7 @@ function startEntry(entry) {
   const child = spawn(process.execPath, [npmExecPath, "run", entry.script], {
     cwd: process.cwd(),
     stdio: ["inherit", "pipe", "pipe"],
-    env: process.env,
+    env: baseEnv,
   });
 
   record.process = child;

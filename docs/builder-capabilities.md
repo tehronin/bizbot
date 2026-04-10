@@ -43,8 +43,8 @@ The initial capability catalog is defined in [src/lib/builder/capabilities.ts](s
 | `process_execution` | process | core | available | Builder now exposes allowlisted one-shot command execution plus persisted managed processes with lifecycle inspection, project or task or run filters, audit artifacts, automatic retention cleanup, live SSE log following, wait, and stop controls. |
 | `version_control` | version control | core | available | Builder now exposes typed repo status, diff, stage, unstage, commit, branch-create, and branch-switch operations for managed repos inside the Builder workspace. |
 | `environment_configuration` | configuration | core | available | Builder exposes env schema inspection, validation, redacted reads, safe project-local writes, and `.env.example` synchronization. |
-| `network_http` | network | extended | partial | Builder exposes allowlisted HTTP GET/POST/PUT/DELETE probes with bounded responses and capability audit logs; richer auth policies remain future work. |
-| `database_introspection` | database | extended | partial | Builder exposes read-only Prisma schema, table, and migration inspection with datasource allowlist enforcement and capability audit logs; live SQL remains out of scope. |
+| `network_http` | network | extended | available | Builder exposes allowlisted HTTP GET/POST/PUT/DELETE probes with bounded request and response handling, explicit retry policy, env-backed auth references, and capability audit logs. |
+| `database_introspection` | database | extended | available | Builder exposes read-only Prisma schema, table, migration, and live-probe drift inspection with datasource allowlist enforcement and capability audit logs; live SQL remains out of scope. |
 | `runtime_orchestration` | runtime | experimental | partial | Builder exposes declared service discovery from package manifests, Procfiles, and compose files, passive and live managed log inspection, plus guarded restart and exec controls. Full container lifecycle control remains future work. |
 
 ## Policy Model
@@ -182,14 +182,13 @@ Experimental capabilities should stay opt-in and clearly separated from Builder 
 
 ## Immediate Rollout Order
 
-The recommended implementation order remains:
+The current repo has already shipped filesystem, VCS, process execution, env/config, HTTP, and DB inspection surfaces. The next recommended order is:
 
-1. complete the filesystem layer
-2. add first-class version control
-3. harden process execution
-4. add env/config management
-5. expand review and reporting with the new audit surfaces
-6. add HTTP and DB only after the core operator surfaces are stable
+1. reconcile capability docs and catalog with the real shipped tool surface
+2. expand run review and operator-trust summaries across VCS, process, config, audit, DB, and runtime inspection
+3. close audit-contract gaps on core workspace, env, and VCS operations
+4. harden contract-style tests for core process, VCS, and workspace behavior
+5. keep runtime orchestration experimental unless real Builder workflows prove it deserves graduation
 
 ## Acceptance Notes for Phase 0
 

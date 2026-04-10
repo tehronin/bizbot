@@ -9,6 +9,7 @@
     "dev:web:webpack": "node ./node_modules/next/dist/bin/next dev --webpack",
     "worker": "node scripts/run-worker.mjs",
     "mcp:stdio": "tsx scripts/mcp-stdio.mjs",
+    "mcp:stdio:smoke": "tsx scripts/mcp-stdio-sampling-smoke.mjs",
     "plugin:new": "node scripts/new-plugin.mjs",
     "build:web": "next build && node scripts/prepare-standalone.mjs",
     "build": "next build && node scripts/prepare-standalone.mjs",
@@ -25,7 +26,9 @@
     "test:app": "node ./node_modules/vitest/vitest.mjs run --exclude tests/mcp/** --exclude tests/plugins/** --passWithNoTests",
     "test:watch": "node ./node_modules/vitest/vitest.mjs",
     "test:mcp": "node ./node_modules/vitest/vitest.mjs run tests/mcp tests/plugins",
+    "test:mcp:sampling": "node ./node_modules/vitest/vitest.mjs run tests/mcp/sampling.test.ts tests/mcp/stdio-sampling-e2e.test.ts tests/mcp/server.test.ts tests/mcp/http-route.test.ts tests/mcp/stdio-env.test.ts tests/mcp/sampling-policy-resource.test.ts",
     "test:e2e": "playwright test",
+    "test:e2e:builder": "playwright test tests/e2e/builder.spec.ts",
     "tauri:prepare-resources": "node scripts/prepare-tauri-resources.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

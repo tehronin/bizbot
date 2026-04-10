@@ -97,6 +97,10 @@ describe("builder plugin", () => {
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_list_processes");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_http_get");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_db_schema_summary");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_reconcile_mcp_policy");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_resolve_mcp_contract_drift");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_resolve_dependency_contract_drift");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_resolve_file_topology_contract_drift");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_list_services");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_service_logs");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_start_service");
@@ -342,6 +346,26 @@ describe("builder plugin", () => {
     expect(filtered.processes.map((entry) => entry.processId)).toEqual(["process-recent"]);
   });
 
+  it("requires explicit approval payloads before governance tools can run", async () => {
+    await expect(() => executeTool("builder_reconcile_mcp_policy", {
+      projectId: "project-1",
+      confirmed: false,
+      reason: "Policy drift is expected.",
+    }, {
+      access: { agentProfile: "builder_operator" },
+    })).rejects.toThrow("requires explicit operator confirmation");
+
+    await expect(() => executeTool("builder_resolve_dependency_contract_drift", {
+      projectId: "project-1",
+      runId: "run-1",
+      decision: "approve",
+      confirmed: true,
+      reason: "   ",
+    }, {
+      access: { agentProfile: "builder_operator" },
+    })).rejects.toThrow("requires a non-empty approval reason");
+  });
+
   it("enforces lane gating for builder tools and exposes them to the MCP lane", () => {
     expect(canProfileUseTool("builder_operator", "builder_get_status")).toBe(true);
     expect(canProfileUseTool("builder_operator", "builder_continue_task")).toBe(false);
@@ -357,6 +381,10 @@ describe("builder plugin", () => {
     expect(mcpTools).toContain("builder_start_process");
     expect(mcpTools).toContain("builder_list_processes");
     expect(mcpTools).toContain("builder_http_get");
+    expect(mcpTools).toContain("builder_reconcile_mcp_policy");
+    expect(mcpTools).toContain("builder_resolve_mcp_contract_drift");
+    expect(mcpTools).toContain("builder_resolve_dependency_contract_drift");
+    expect(mcpTools).toContain("builder_resolve_file_topology_contract_drift");
     expect(mcpTools).toContain("builder_db_schema_summary");
     expect(mcpTools).toContain("builder_list_services");
     expect(mcpTools).toContain("builder_service_logs");

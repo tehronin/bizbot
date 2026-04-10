@@ -48,6 +48,7 @@ describe("MCP HTTP route", () => {
       resources: expect.any(Object),
       prompts: expect.any(Object),
     });
+    expect(result.body.result.capabilities.sampling).toBeUndefined();
   });
 
   it("lists exposed tools and keeps blocked tools hidden", async () => {
@@ -59,6 +60,7 @@ describe("MCP HTTP route", () => {
       expect.objectContaining({ name: "developer_inspect_ontology_schema" }),
       expect.objectContaining({ name: "developer_preview_ontology_context" }),
       expect.objectContaining({ name: "developer_list_agent_runs" }),
+      expect.objectContaining({ name: "developer_vscode_loop_assist" }),
       expect.objectContaining({ name: "crm_list_contacts" }),
       expect.objectContaining({ name: "local_business_get_status" }),
     ]));

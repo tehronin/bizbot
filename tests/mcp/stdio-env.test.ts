@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getPrismaLogLevels } from "@/lib/db";
-import { configureStdioMcpEnvironment } from "@/lib/mcp/stdio";
+import { configureStdioMcpEnvironment, getStdioMcpServerOptions } from "@/lib/mcp/stdio";
 
 describe("stdio MCP environment", () => {
   it("forces stdio-safe environment flags", () => {
@@ -9,7 +9,16 @@ describe("stdio MCP environment", () => {
     configureStdioMcpEnvironment(env);
 
     expect(env.BIZBOT_MCP_STDIO).toBe("true");
+    expect(env.BIZBOT_MCP_TRANSPORT).toBe("stdio");
+    expect(env.BIZBOT_MCP_SAMPLING_ENABLED).toBe("true");
     expect(env.BIZBOT_DISABLE_QUERY_LOGS).toBe("true");
+  });
+
+  it("returns stdio server options with sampling enabled", () => {
+    expect(getStdioMcpServerOptions()).toEqual({
+      transportKind: "stdio",
+      enableSampling: true,
+    });
   });
 
   it("disables query logs when stdio MCP flags are enabled", () => {

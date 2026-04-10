@@ -18,6 +18,7 @@ import {
   getDelegationChain,
   recordAgentRunPromptAssembly,
   recordAgentRunRoundUsage,
+  recordAgentRunSwarm,
   recordAgentRunToolCall,
   recordAgentRunToolResult,
   startAgentRun,
@@ -33,6 +34,11 @@ import { getOraclePredictionIntent } from "@/lib/oracle/intent";
 import { syncActiveSidecarPanel } from "@/lib/sidecar/state";
 import { buildSidecarStreamEvent, isSidecarToolResult } from "@/lib/sidecar/validation";
 import type { SidecarStreamEvent } from "@/lib/sidecar/types";
+import { aggregateChatSwarmFindings, buildChatSwarmPlan, classifyChatSwarmRequest, collectChatSwarmSources } from "@/lib/agent/swarm-chat";
+import { auditChatSwarmDraft, buildChatSwarmSynthesisPacket, executeChatSwarmWorkItem } from "@/lib/agent/swarm-workers";
+import { executeSwarmPlan } from "@/lib/swarm/runtime";
+import { summarizeSwarmExecution, summarizeSwarmPlan, summarizeSwarmWorkerResults } from "@/lib/swarm/telemetry";
+import { validateSwarmResults } from "@/lib/swarm/validation";
 
 export type AgentExecutionEvent =
   | {
@@ -58,6 +64,45 @@ export type AgentExecutionEvent =
   | { type: "status"; message: string; round?: number }
   | { type: "tool_call"; round: number; toolCallId: string; name: string; args: object }
   | { type: "tool_result"; round: number; toolCallId: string; name: string; result: string }
+  | {
+      type: "swarm_plan";
+      runId: string;
+      mode: string;
+      reason: string;
+      workerCount: number;
+      plannerConfidence: number;
+    }
+  | {
+      type: "swarm_worker_start";
+      runId: string;
+      workItemId: string;
+      sourceId: string;
+      sourceKind: string;
+      operation: string;
+    }
+  | {
+      type: "swarm_worker_result";
+      runId: string;
+      workItemId: string;
+      status: string;
+      diagnostics: string[];
+      durationMs: number;
+    }
+  | {
+      type: "swarm_validation";
+      runId: string;
+      valid: boolean;
+      issues: string[];
+    }
+  | {
+      type: "swarm_audit";
+      runId: string;
+      passed: boolean;
+      summary: string;
+      unsupportedSentenceCount: number;
+      contradictionReminderMissing: boolean;
+      evidenceCoverage: number;
+    }
   | SidecarStreamEvent
   | { type: "assistant_message"; content: string }
   | { type: "done"; conversationId: string; reply: string }
@@ -122,6 +167,40 @@ async function emitStatus(
   round?: number,
 ): Promise<void> {
   await emit(onEvent, { type: "status", message, ...(round !== undefined ? { round } : {}) });
+}
+
+async function recordAndEmitUsage(args: {
+  runId: string;
+  conversationId: string;
+  round: number;
+  response: Awaited<ReturnType<typeof chatComplete>>;
+  onEvent?: AgentExecutionParams["onEvent"];
+}): Promise<void> {
+  if (!args.response.usage) {
+    return;
+  }
+
+  const updatedRun = recordAgentRunRoundUsage(args.runId, {
+    round: args.round,
+    provider: args.response.provider,
+    model: args.response.model,
+    promptTokens: args.response.usage.promptTokens ?? 0,
+    completionTokens: args.response.usage.completionTokens ?? 0,
+    totalTokens: args.response.usage.totalTokens ?? 0,
+    cachedPromptTokens: args.response.usage.cachedPromptTokens ?? 0,
+  });
+
+  await emit(args.onEvent, {
+    type: "usage",
+    runId: args.runId,
+    conversationId: args.conversationId,
+    round: args.round,
+    promptTokens: updatedRun.usage.promptTokens,
+    completionTokens: updatedRun.usage.completionTokens,
+    totalTokens: updatedRun.usage.totalTokens,
+    cachedPromptTokens: updatedRun.usage.cachedPromptTokens,
+    requestCount: updatedRun.usage.rounds.length,
+  });
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -359,36 +438,6 @@ export async function executeAgentConversation(
         });
       }
 
-      const recordAndEmitUsage = async (
-        response: Awaited<ReturnType<typeof chatComplete>>,
-      ): Promise<void> => {
-        if (!response.usage) {
-          return;
-        }
-
-        const updatedRun = recordAgentRunRoundUsage(run.runId, {
-          round,
-          provider: response.provider,
-          model: response.model,
-          promptTokens: response.usage.promptTokens ?? 0,
-          completionTokens: response.usage.completionTokens ?? 0,
-          totalTokens: response.usage.totalTokens ?? 0,
-          cachedPromptTokens: response.usage.cachedPromptTokens ?? 0,
-        });
-
-        await emit(onEvent, {
-          type: "usage",
-          runId: run.runId,
-          conversationId: resolvedConversationId,
-          round,
-          promptTokens: updatedRun.usage.promptTokens,
-          completionTokens: updatedRun.usage.completionTokens,
-          totalTokens: updatedRun.usage.totalTokens,
-          cachedPromptTokens: updatedRun.usage.cachedPromptTokens,
-          requestCount: updatedRun.usage.rounds.length,
-        });
-      };
-
       const executeOracleTool = async (toolName: string, args: JsonObject): Promise<ToolExecutionResult> => {
         round += 1;
         const toolCallId = `oracle-${round}-${toolName}`;
@@ -507,7 +556,13 @@ export async function executeAgentConversation(
       });
       throwIfAborted(signal);
 
-      await recordAndEmitUsage(oracleResponse);
+      await recordAndEmitUsage({
+        runId: run.runId,
+        conversationId: resolvedConversationId,
+        round,
+        response: oracleResponse,
+        onEvent,
+      });
 
       const finalReply = oracleResponse.content.trim() || analysisResult.fallbackReply;
 
@@ -527,6 +582,265 @@ export async function executeAgentConversation(
           oracleEvidenceMode: analysisResult.evidenceMode,
           oracleImpliedProbability: analysisResult.impliedProbability,
         },
+      });
+    }
+
+    const swarmSources = collectChatSwarmSources({ message, context: contextResult });
+    const swarmClassification = classifyChatSwarmRequest({
+      message,
+      profile: profileDecision.profile,
+      context: contextResult,
+    });
+    const shouldRunSwarm = swarmClassification.activate && swarmClassification.plannerConfidence >= 0.7;
+
+    if (shouldRunSwarm) {
+      const swarmPlan = buildChatSwarmPlan({
+        message,
+        classification: swarmClassification,
+        sources: swarmSources,
+      });
+      const summarizedPlan = summarizeSwarmPlan(swarmPlan);
+
+      recordAgentRunSwarm(run.runId, {
+        activated: true,
+        mode: swarmPlan.mode,
+        reason: swarmClassification.reason,
+        plannerConfidence: swarmClassification.plannerConfidence,
+        sources: swarmSources.map((source) => ({
+          id: source.id,
+          sourceKind: source.sourceKind,
+          title: source.title,
+          chars: source.text.length,
+        })),
+        plan: summarizedPlan,
+      });
+
+      await emitStatus(onEvent, `Activating core chat swarm across ${swarmSources.length} source units.`);
+      await emit(onEvent, {
+        type: "swarm_plan",
+        runId: run.runId,
+        mode: swarmPlan.mode,
+        reason: swarmPlan.reason,
+        workerCount: swarmPlan.workItems.length,
+        plannerConfidence: swarmPlan.plannerConfidence,
+      });
+
+      for (const workItem of swarmPlan.workItems) {
+        await emit(onEvent, {
+          type: "swarm_worker_start",
+          runId: run.runId,
+          workItemId: workItem.id,
+          sourceId: workItem.sourceId,
+          sourceKind: workItem.sourceKind,
+          operation: workItem.operation,
+        });
+      }
+
+      const { results: swarmResults, trace } = await executeSwarmPlan(swarmPlan, executeChatSwarmWorkItem);
+      const swarmValidation = validateSwarmResults(swarmPlan, swarmResults);
+      const swarmFindings = aggregateChatSwarmFindings({
+        sources: swarmSources,
+        results: swarmResults,
+      });
+      const swarmPacket = buildChatSwarmSynthesisPacket(swarmFindings, swarmClassification.auditRequested);
+
+      recordAgentRunSwarm(run.runId, {
+        ...summarizeSwarmExecution({
+          plan: swarmPlan,
+          trace,
+          validation: swarmValidation,
+          results: swarmResults,
+        }),
+        activated: true,
+        mode: swarmPlan.mode,
+        reason: swarmClassification.reason,
+        plannerConfidence: swarmClassification.plannerConfidence,
+        synthesis: {
+          sourceCoverage: swarmPacket.sourceCoverage,
+          contradictionCount: swarmPacket.contradictions.length,
+          evidenceRefCount: swarmPacket.evidenceRefs.length,
+          gapCount: swarmPacket.gaps.length,
+          auditNeeded: swarmPacket.auditNeeded,
+        },
+      });
+
+      for (const result of summarizeSwarmWorkerResults(swarmResults)) {
+        await emit(onEvent, {
+          type: "swarm_worker_result",
+          runId: run.runId,
+          workItemId: result.workItemId,
+          status: result.status,
+          diagnostics: result.diagnostics,
+          durationMs: result.durationMs,
+        });
+      }
+
+      await emit(onEvent, {
+        type: "swarm_validation",
+        runId: run.runId,
+        valid: swarmValidation.valid,
+        issues: swarmValidation.issues,
+      });
+
+      if (!swarmValidation.valid) {
+        await emitStatus(onEvent, "Swarm validation failed. Falling back to the standard chat loop.");
+      } else {
+        round += 1;
+        await emitStatus(onEvent, "Synthesizing a grounded reply from swarm evidence.", round);
+
+        let synthesisResponse = await chatComplete([
+          {
+            role: "system",
+            content: `${systemPrompt}\n\nYou are in core chat swarm synthesis mode. The internal workers already extracted source findings. Do not call tools. Ground every substantive claim in the provided evidence refs. If the sources disagree, say so plainly.`,
+          },
+          {
+            role: "user",
+            content: [
+              `Original request:\n${message}`,
+              `Swarm evidence packet:\n${JSON.stringify(swarmPacket, null, 2)}`,
+            ].join("\n\n"),
+          },
+        ], resolvedProvider, undefined, {
+          agentProfile: profileDecision.profile,
+          signal,
+        });
+        throwIfAborted(signal);
+
+        await recordAndEmitUsage({
+          runId: run.runId,
+          conversationId: resolvedConversationId,
+          round,
+          response: synthesisResponse,
+          onEvent,
+        });
+
+        let finalReply = synthesisResponse.content.trim();
+        let finalProvider = synthesisResponse.provider;
+        let finalModel = synthesisResponse.model;
+        let finalMetadata = synthesisResponse.metadata;
+
+        if (swarmPacket.auditNeeded) {
+          let auditResult = auditChatSwarmDraft({
+            draft: finalReply,
+            findings: swarmFindings,
+            contradictions: swarmPacket.contradictions,
+          });
+
+          recordAgentRunSwarm(run.runId, {
+            activated: true,
+            audit: auditResult,
+          });
+          await emit(onEvent, {
+            type: "swarm_audit",
+            runId: run.runId,
+            passed: auditResult.passed,
+            summary: auditResult.summary,
+            unsupportedSentenceCount: auditResult.unsupportedSentences.length,
+            contradictionReminderMissing: auditResult.contradictionReminderMissing,
+            evidenceCoverage: auditResult.evidenceCoverage,
+          });
+
+          if (!auditResult.passed) {
+            round += 1;
+            await emitStatus(onEvent, "Revising the reply after swarm audit.", round);
+
+            synthesisResponse = await chatComplete([
+              {
+                role: "system",
+                content: `${systemPrompt}\n\nRevise the draft using only the supplied swarm evidence. Remove unsupported claims and mention contradictions when present. Do not call tools.`,
+              },
+              {
+                role: "user",
+                content: [
+                  `Original request:\n${message}`,
+                  `Current draft:\n${finalReply}`,
+                  `Audit issues:\n${JSON.stringify(auditResult, null, 2)}`,
+                  `Swarm evidence packet:\n${JSON.stringify(swarmPacket, null, 2)}`,
+                ].join("\n\n"),
+              },
+            ], resolvedProvider, undefined, {
+              agentProfile: profileDecision.profile,
+              signal,
+            });
+            throwIfAborted(signal);
+
+            await recordAndEmitUsage({
+              runId: run.runId,
+              conversationId: resolvedConversationId,
+              round,
+              response: synthesisResponse,
+              onEvent,
+            });
+
+            finalReply = synthesisResponse.content.trim() || finalReply;
+            finalProvider = synthesisResponse.provider;
+            finalModel = synthesisResponse.model;
+            finalMetadata = synthesisResponse.metadata;
+
+            auditResult = auditChatSwarmDraft({
+              draft: finalReply,
+              findings: swarmFindings,
+              contradictions: swarmPacket.contradictions,
+            });
+            recordAgentRunSwarm(run.runId, {
+              activated: true,
+              audit: auditResult,
+            });
+            await emit(onEvent, {
+              type: "swarm_audit",
+              runId: run.runId,
+              passed: auditResult.passed,
+              summary: auditResult.summary,
+              unsupportedSentenceCount: auditResult.unsupportedSentences.length,
+              contradictionReminderMissing: auditResult.contradictionReminderMissing,
+              evidenceCoverage: auditResult.evidenceCoverage,
+            });
+          }
+        }
+
+        if (finalReply) {
+          return finalizeAssistantReply({
+            reply: finalReply,
+            round,
+            resolvedConversationId,
+            resolvedUserId,
+            runId: run.runId,
+            profile: profileDecision.profile,
+            provider: finalProvider,
+            model: finalModel,
+            onEvent,
+            metadata: {
+              userId: resolvedUserId,
+              toolRoundCount: round,
+              agentRunId: run.runId,
+              agentProfile: profileDecision.profile,
+              llmProvider: finalProvider,
+              llmModel: finalModel,
+              swarm: {
+                activated: true,
+                planId: swarmPlan.id,
+                sourceCount: swarmSources.length,
+                contradictionCount: swarmPacket.contradictions.length,
+                evidenceRefCount: swarmPacket.evidenceRefs.length,
+              },
+              ...(finalMetadata ? { llmMetadata: finalMetadata } : {}),
+            },
+          });
+        }
+
+        await emitStatus(onEvent, "Swarm synthesis returned no reply. Falling back to the standard chat loop.");
+      }
+    } else {
+      recordAgentRunSwarm(run.runId, {
+        activated: false,
+        reason: swarmClassification.reason,
+        plannerConfidence: swarmClassification.plannerConfidence,
+        sources: swarmSources.map((source) => ({
+          id: source.id,
+          sourceKind: source.sourceKind,
+          title: source.title,
+          chars: source.text.length,
+        })),
       });
     }
 
@@ -551,29 +865,13 @@ export async function executeAgentConversation(
       const response = await chatComplete(messages, resolvedProvider, tools, requestOptions);
       throwIfAborted(signal);
 
-      if (response.usage) {
-        const updatedRun = recordAgentRunRoundUsage(run.runId, {
-          round,
-          provider: response.provider,
-          model: response.model,
-          promptTokens: response.usage.promptTokens ?? 0,
-          completionTokens: response.usage.completionTokens ?? 0,
-          totalTokens: response.usage.totalTokens ?? 0,
-          cachedPromptTokens: response.usage.cachedPromptTokens ?? 0,
-        });
-
-        await emit(onEvent, {
-          type: "usage",
-          runId: run.runId,
-          conversationId: resolvedConversationId,
-          round,
-          promptTokens: updatedRun.usage.promptTokens,
-          completionTokens: updatedRun.usage.completionTokens,
-          totalTokens: updatedRun.usage.totalTokens,
-          cachedPromptTokens: updatedRun.usage.cachedPromptTokens,
-          requestCount: updatedRun.usage.rounds.length,
-        });
-      }
+      await recordAndEmitUsage({
+        runId: run.runId,
+        conversationId: resolvedConversationId,
+        round,
+        response,
+        onEvent,
+      });
 
       if (response.metadata?.googleSearchQueries) {
         await emit(onEvent, {

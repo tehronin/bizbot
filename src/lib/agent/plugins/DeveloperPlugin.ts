@@ -15,6 +15,8 @@ import {
   listRecentConversations,
 } from "@/lib/agent/memory";
 import { getMcpClientToolCatalog } from "@/lib/mcp/client";
+import { buildCurrentBuilderDevLoopContext } from "@/lib/mcp/devloop-context";
+import { requestDevLoopSampling } from "@/lib/mcp/sampling";
 import { buildOntologyPromptBlock } from "@/lib/ontology/prompt";
 import { resolveOntologyAlias, searchOntologyEntities } from "@/lib/ontology/search";
 import { getOntologySchemaSummary, validateOntologyRelationInput } from "@/lib/ontology/service";
@@ -85,6 +87,8 @@ interface AgentRunsArgs {
 interface AgentRunArgs {
   runId: string;
 }
+
+type DeveloperLoopAssistArgs = Record<string, never>;
 
 interface PluginLocatorArgs {
   pluginId?: string;
@@ -428,6 +432,102 @@ export const developerPlugin = {
         runs: listRecentAgentRuns(limit ?? 20),
       }),
     } satisfies ToolDefinition<AgentRunsArgs, { runs: ReturnType<typeof listRecentAgentRuns> }>)),
+    registerTool(defineTool({
+      name: "developer_vscode_loop_assist",
+      description: "Sample the connected MCP client for a Builder dev-loop diagnosis using deterministic BizBot context.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      execute: async (_args: DeveloperLoopAssistArgs, context) => {
+        const devLoopContext = await buildCurrentBuilderDevLoopContext();
+        if (!devLoopContext) {
+          return {
+            sampling: {
+              available: false,
+              reason: "No current Builder project overview is available.",
+              transportKind: context.mcpSamplingSession?.transportKind ?? "http",
+            },
+            result: {
+              diagnosisSource: "deterministic_fallback",
+              summary: "No current Builder project overview is available.",
+              status: "unavailable",
+              tripletHealth: {
+                overall: "unknown",
+                mcpSnapshot: "unknown",
+                dependencyContract: "unknown",
+                fileTopologyContract: "unknown",
+              },
+              latestFailure: null,
+              likelyRootCause: null,
+              suggestedFix: null,
+              smallestNextFix: null,
+              recommendedNextProbe: null,
+              evidenceUsed: [],
+              nextSteps: [],
+              confidence: "low",
+            },
+          };
+        }
+
+        const result = await requestDevLoopSampling(context.mcpSamplingSession, devLoopContext);
+
+        return {
+          sampling: {
+            available: result.availability.available,
+            reason: result.availability.reason,
+            transportKind: result.availability.transportKind,
+            clientSupportsSampling: result.availability.clientSupportsSampling,
+            clientSupportsSamplingTools: result.availability.clientSupportsSamplingTools,
+            nestedFlowBlocked: result.availability.nestedFlowBlocked,
+          },
+          context: devLoopContext,
+          result: {
+            diagnosisSource: result.diagnosisSource,
+            summary: result.summary,
+            status: result.status,
+            tripletHealth: result.tripletHealth,
+            latestFailure: result.latestFailure,
+            likelyRootCause: result.likelyRootCause,
+            suggestedFix: result.suggestedFix,
+            smallestNextFix: result.smallestNextFix,
+            recommendedNextProbe: result.recommendedNextProbe,
+            evidenceUsed: result.evidenceUsed,
+            nextSteps: result.nextSteps,
+            confidence: result.confidence,
+            model: result.model,
+            stopReason: result.stopReason,
+          },
+        };
+      },
+    } satisfies ToolDefinition<DeveloperLoopAssistArgs, {
+      sampling: {
+        available: boolean;
+        reason: string | null;
+        transportKind: string;
+        clientSupportsSampling?: boolean;
+        clientSupportsSamplingTools?: boolean;
+        nestedFlowBlocked?: boolean;
+      };
+      context?: Awaited<ReturnType<typeof buildCurrentBuilderDevLoopContext>>;
+      result: {
+        diagnosisSource: string;
+        summary: string;
+        status: string;
+        tripletHealth: { overall: string; mcpSnapshot: string; dependencyContract: string; fileTopologyContract: string };
+        latestFailure: string | null;
+        likelyRootCause: string | null;
+        suggestedFix: string | null;
+        smallestNextFix: string | null;
+        recommendedNextProbe: string | null;
+        evidenceUsed: string[];
+        nextSteps: string[];
+        confidence: string;
+        model?: string | null;
+        stopReason?: string | null;
+      };
+    }>)),
     registerTool(defineTool({
       name: "developer_search_mcp_snapshot_history",
       description: "Search Builder MCP snapshot history semantically within a single project.",

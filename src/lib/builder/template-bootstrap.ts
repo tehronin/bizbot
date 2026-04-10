@@ -89,8 +89,7 @@ async function bootstrapPluginPackage(project: BuilderProject): Promise<BuilderT
 
 async function bootstrapViteApp(project: BuilderProject): Promise<BuilderTemplateScaffoldResult> {
   const { runNpmCreatePackage } = await import("@/lib/builder/adapters/npx");
-  createBuilderDirectory(project.relativePath);
-  await runNpmCreatePackage(project.relativePath, "vite@latest", ["--template", "react-ts"]);
+  await runNpmCreatePackage(path.posix.dirname(project.relativePath), "vite@latest", path.posix.basename(project.relativePath), ["--template", "react-ts", "--no-interactive"]);
   return {
     template: project.template,
     root: project.relativePath,
@@ -100,8 +99,7 @@ async function bootstrapViteApp(project: BuilderProject): Promise<BuilderTemplat
 
 async function bootstrapNextApp(project: BuilderProject): Promise<BuilderTemplateScaffoldResult> {
   const { runNpmCreatePackage } = await import("@/lib/builder/adapters/npx");
-  createBuilderDirectory(project.relativePath);
-  await runNpmCreatePackage(project.relativePath, "next-app@latest", [
+  await runNpmCreatePackage(path.posix.dirname(project.relativePath), "next-app@latest", path.posix.basename(project.relativePath), [
     "--ts",
     "--eslint",
     "--app",

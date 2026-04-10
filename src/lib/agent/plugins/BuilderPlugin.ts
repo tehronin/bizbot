@@ -258,6 +258,8 @@ interface BuilderHttpArgs {
   contentType?: string;
   timeoutSeconds?: number;
   maxBytes?: number;
+  maxRequestBytes?: number;
+  retryCount?: number;
   authEnvKey?: string;
   authHeaderName?: string;
   authScheme?: string;
@@ -308,6 +310,16 @@ interface BuilderEnvWriteArgs extends BuilderEnvKeyArgs {
   file?: ".env" | ".env.local";
 }
 
+interface BuilderGovernanceApprovalArgs extends BuilderProjectArgs {
+  confirmed: boolean;
+  reason: string;
+}
+
+interface BuilderGovernanceDriftArgs extends BuilderGovernanceApprovalArgs {
+  runId: string;
+  decision: "approve" | "reject";
+}
+
 interface BuilderRuntimeServiceLogsArgs extends BuilderProjectArgs {
   serviceId: string;
   cursor?: number;
@@ -324,6 +336,19 @@ interface BuilderRuntimeExecArgs extends BuilderRuntimeServiceControlArgs {
   command: string;
   commandArgs?: string[];
   timeoutSeconds?: number;
+}
+
+function assertExplicitGovernanceApproval(args: { confirmed: boolean; reason: string }, actionLabel: string): string {
+  if (!args.confirmed) {
+    throw new Error(`${actionLabel} requires explicit operator confirmation.`);
+  }
+
+  const reason = args.reason.trim();
+  if (!reason) {
+    throw new Error(`${actionLabel} requires a non-empty approval reason.`);
+  }
+
+  return reason;
 }
 
 export const builderPlugin = {
@@ -386,7 +411,7 @@ export const builderPlugin = {
         const project = await getBuilderProject(projectId);
         return {
           projectId,
-          ...getBuilderEnvSchema(project.relativePath),
+          ...getBuilderEnvSchema(project.relativePath, { projectId, projectRelativePath: project.relativePath }),
         };
       },
     } satisfies ToolDefinition<BuilderProjectArgs, { projectId: string; path: ReturnType<typeof getBuilderEnvSchema>["path"]; keys: string[] }>)),
@@ -404,7 +429,7 @@ export const builderPlugin = {
         const project = await getBuilderProject(projectId);
         return {
           projectId,
-          readiness: validateBuilderProjectEnv(project.relativePath),
+          readiness: validateBuilderProjectEnv(project.relativePath, { projectId, projectRelativePath: project.relativePath }),
         };
       },
     } satisfies ToolDefinition<BuilderProjectArgs, { projectId: string; readiness: ReturnType<typeof validateBuilderProjectEnv> }>)),
@@ -423,7 +448,7 @@ export const builderPlugin = {
         const project = await getBuilderProject(projectId);
         return {
           projectId,
-          ...readBuilderProjectEnvValue(project.relativePath, key),
+          ...readBuilderProjectEnvValue(project.relativePath, key, undefined, { projectId, projectRelativePath: project.relativePath }),
         };
       },
     } satisfies ToolDefinition<BuilderEnvKeyArgs, { projectId: string } & ReturnType<typeof readBuilderProjectEnvValue>>)),
@@ -444,7 +469,7 @@ export const builderPlugin = {
         const project = await getBuilderProject(projectId);
         return {
           projectId,
-          ...writeBuilderProjectEnvFileEntry(project.relativePath, { key, value, file }),
+          ...writeBuilderProjectEnvFileEntry(project.relativePath, { key, value, file }, { projectId, projectRelativePath: project.relativePath }),
         };
       },
     } satisfies ToolDefinition<BuilderEnvWriteArgs, { projectId: string } & ReturnType<typeof writeBuilderProjectEnvFileEntry>>)),
@@ -480,10 +505,110 @@ export const builderPlugin = {
         const project = await getBuilderProject(projectId);
         return {
           projectId,
-          keys: listBuilderRequiredConfig(project.relativePath),
+          ...listBuilderRequiredConfig(project.relativePath, { projectId, projectRelativePath: project.relativePath }),
         };
       },
     } satisfies ToolDefinition<BuilderProjectArgs, { projectId: string; keys: string[] }>)),
+    registerTool(defineTool({
+      name: "builder_reconcile_mcp_policy",
+      description: "Rebuild the Builder MCP policy baseline for a project after an operator explicitly confirms the governance change.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["projectId", "confirmed", "reason"],
+      },
+      execute: async ({ projectId, confirmed, reason }: BuilderGovernanceApprovalArgs) => {
+        const approvalReason = assertExplicitGovernanceApproval({ confirmed, reason }, "Builder MCP policy reconciliation");
+        const project = await getBuilderProject(projectId);
+        return (await loadBuilderCommands()).recordBuilderProjectCommand(project, {
+          action: "reconcile_mcp_policy",
+          confirmed: true,
+          reason: approvalReason,
+        });
+      },
+    } satisfies ToolDefinition<BuilderGovernanceApprovalArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
+    registerTool(defineTool({
+      name: "builder_resolve_mcp_contract_drift",
+      description: "Approve or reject Builder MCP contract drift after explicit operator confirmation.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          runId: { type: "string" },
+          decision: { type: "string", enum: ["approve", "reject"] },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["projectId", "runId", "decision", "confirmed", "reason"],
+      },
+      execute: async ({ projectId, runId, decision, confirmed, reason }: BuilderGovernanceDriftArgs) => {
+        const approvalReason = assertExplicitGovernanceApproval({ confirmed, reason }, "Builder MCP contract drift resolution");
+        const project = await getBuilderProject(projectId);
+        return (await loadBuilderCommands()).recordBuilderProjectCommand(project, {
+          action: "resolve_mcp_contract_drift",
+          runId,
+          decision,
+          confirmed: true,
+          reason: approvalReason,
+        });
+      },
+    } satisfies ToolDefinition<BuilderGovernanceDriftArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
+    registerTool(defineTool({
+      name: "builder_resolve_dependency_contract_drift",
+      description: "Approve or reject Builder dependency contract drift after explicit operator confirmation.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          runId: { type: "string" },
+          decision: { type: "string", enum: ["approve", "reject"] },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["projectId", "runId", "decision", "confirmed", "reason"],
+      },
+      execute: async ({ projectId, runId, decision, confirmed, reason }: BuilderGovernanceDriftArgs) => {
+        const approvalReason = assertExplicitGovernanceApproval({ confirmed, reason }, "Builder dependency contract drift resolution");
+        const project = await getBuilderProject(projectId);
+        return (await loadBuilderCommands()).recordBuilderProjectCommand(project, {
+          action: "resolve_dependency_contract_drift",
+          runId,
+          decision,
+          confirmed: true,
+          reason: approvalReason,
+        });
+      },
+    } satisfies ToolDefinition<BuilderGovernanceDriftArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
+    registerTool(defineTool({
+      name: "builder_resolve_file_topology_contract_drift",
+      description: "Approve or reject Builder file topology contract drift after explicit operator confirmation.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          runId: { type: "string" },
+          decision: { type: "string", enum: ["approve", "reject"] },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["projectId", "runId", "decision", "confirmed", "reason"],
+      },
+      execute: async ({ projectId, runId, decision, confirmed, reason }: BuilderGovernanceDriftArgs) => {
+        const approvalReason = assertExplicitGovernanceApproval({ confirmed, reason }, "Builder file topology contract drift resolution");
+        const project = await getBuilderProject(projectId);
+        return (await loadBuilderCommands()).recordBuilderProjectCommand(project, {
+          action: "resolve_file_topology_contract_drift",
+          runId,
+          decision,
+          confirmed: true,
+          reason: approvalReason,
+        });
+      },
+    } satisfies ToolDefinition<BuilderGovernanceDriftArgs, Awaited<ReturnType<typeof recordBuilderProjectCommand>>>)),
     registerTool(defineTool({
       name: "builder_plan_project",
       description: "Persist or update a canonical Builder project brief, generate the relational project plan, and sync the staged project overview.",
@@ -929,13 +1054,15 @@ export const builderPlugin = {
           headers: { type: "array", items: { type: "object", properties: { name: { type: "string" }, value: { type: "string" } }, required: ["name", "value"] } },
           timeoutSeconds: { type: "number", default: 30 },
           maxBytes: { type: "number", default: 64000 },
+          maxRequestBytes: { type: "number", default: 16000 },
+          retryCount: { type: "number", default: 1 },
           authEnvKey: { type: "string" },
           authHeaderName: { type: "string" },
           authScheme: { type: "string" },
         },
         required: ["projectId", "url"],
       },
-      execute: async ({ projectId, url, headers, timeoutSeconds, maxBytes, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
+      execute: async ({ projectId, url, headers, timeoutSeconds, maxBytes, maxRequestBytes, retryCount, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
         const project = await getBuilderProject(projectId);
         return builderHttpRequest({
           projectId,
@@ -945,6 +1072,8 @@ export const builderPlugin = {
           headers,
           timeoutSeconds,
           maxBytes,
+          maxRequestBytes,
+          retryCount,
           authEnvKey,
           authHeaderName,
           authScheme,
@@ -964,13 +1093,15 @@ export const builderPlugin = {
           contentType: { type: "string" },
           timeoutSeconds: { type: "number", default: 30 },
           maxBytes: { type: "number", default: 64000 },
+          maxRequestBytes: { type: "number", default: 16000 },
+          retryCount: { type: "number", default: 1 },
           authEnvKey: { type: "string" },
           authHeaderName: { type: "string" },
           authScheme: { type: "string" },
         },
         required: ["projectId", "url"],
       },
-      execute: async ({ projectId, url, headers, body, contentType, timeoutSeconds, maxBytes, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
+      execute: async ({ projectId, url, headers, body, contentType, timeoutSeconds, maxBytes, maxRequestBytes, retryCount, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
         const project = await getBuilderProject(projectId);
         return builderHttpRequest({
           projectId,
@@ -982,6 +1113,8 @@ export const builderPlugin = {
           contentType,
           timeoutSeconds,
           maxBytes,
+          maxRequestBytes,
+          retryCount,
           authEnvKey,
           authHeaderName,
           authScheme,
@@ -1001,13 +1134,15 @@ export const builderPlugin = {
           contentType: { type: "string" },
           timeoutSeconds: { type: "number", default: 30 },
           maxBytes: { type: "number", default: 64000 },
+          maxRequestBytes: { type: "number", default: 16000 },
+          retryCount: { type: "number", default: 1 },
           authEnvKey: { type: "string" },
           authHeaderName: { type: "string" },
           authScheme: { type: "string" },
         },
         required: ["projectId", "url"],
       },
-      execute: async ({ projectId, url, headers, body, contentType, timeoutSeconds, maxBytes, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
+      execute: async ({ projectId, url, headers, body, contentType, timeoutSeconds, maxBytes, maxRequestBytes, retryCount, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
         const project = await getBuilderProject(projectId);
         return builderHttpRequest({
           projectId,
@@ -1019,6 +1154,8 @@ export const builderPlugin = {
           contentType,
           timeoutSeconds,
           maxBytes,
+          maxRequestBytes,
+          retryCount,
           authEnvKey,
           authHeaderName,
           authScheme,
@@ -1036,13 +1173,15 @@ export const builderPlugin = {
           headers: { type: "array", items: { type: "object", properties: { name: { type: "string" }, value: { type: "string" } }, required: ["name", "value"] } },
           timeoutSeconds: { type: "number", default: 30 },
           maxBytes: { type: "number", default: 64000 },
+          maxRequestBytes: { type: "number", default: 16000 },
+          retryCount: { type: "number", default: 1 },
           authEnvKey: { type: "string" },
           authHeaderName: { type: "string" },
           authScheme: { type: "string" },
         },
         required: ["projectId", "url"],
       },
-      execute: async ({ projectId, url, headers, timeoutSeconds, maxBytes, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
+      execute: async ({ projectId, url, headers, timeoutSeconds, maxBytes, maxRequestBytes, retryCount, authEnvKey, authHeaderName, authScheme }: BuilderHttpArgs) => {
         const project = await getBuilderProject(projectId);
         return builderHttpRequest({
           projectId,
@@ -1052,6 +1191,8 @@ export const builderPlugin = {
           headers,
           timeoutSeconds,
           maxBytes,
+          maxRequestBytes,
+          retryCount,
           authEnvKey,
           authHeaderName,
           authScheme,

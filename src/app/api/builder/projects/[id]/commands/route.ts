@@ -2,6 +2,19 @@ import { NextRequest } from "next/server";
 import type { BuilderProjectCommandInput } from "@/lib/builder/command-types";
 import { getBuilderProject } from "@/lib/builder/projects";
 
+function parseGovernanceApproval(candidate: Record<string, unknown>, actionLabel: string): { confirmed: true; reason: string } {
+  if (candidate.confirmed !== true) {
+    throw new Error(`${actionLabel} requires explicit operator confirmation.`);
+  }
+
+  const reason = typeof candidate.reason === "string" ? candidate.reason.trim() : "";
+  if (!reason) {
+    throw new Error(`${actionLabel} requires a non-empty approval reason.`);
+  }
+
+  return { confirmed: true, reason };
+}
+
 function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
   if (!value || Array.isArray(value)) {
     throw new Error("Invalid builder command payload.");
@@ -12,7 +25,12 @@ function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
     return { action: "initialize_git" };
   }
   if (candidate.action === "reconcile_mcp_policy") {
-    return { action: "reconcile_mcp_policy" };
+    const approval = parseGovernanceApproval(candidate, "Builder MCP policy reconciliation");
+    return {
+      action: "reconcile_mcp_policy",
+      confirmed: approval.confirmed,
+      reason: approval.reason,
+    };
   }
   if (candidate.action === "reconcile_operational_state") {
     return { action: "reconcile_operational_state" };
@@ -25,11 +43,14 @@ function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
       throw new Error("Builder MCP contract drift resolution requires decision=approve|reject.");
     }
 
+    const approval = parseGovernanceApproval(candidate, "Builder MCP contract drift resolution");
+
     return {
       action: "resolve_mcp_contract_drift",
       runId: candidate.runId,
       decision,
-      reason: typeof candidate.reason === "string" ? candidate.reason : undefined,
+      confirmed: approval.confirmed,
+      reason: approval.reason,
     };
   }
   if (candidate.action === "resolve_dependency_contract_drift" && typeof candidate.runId === "string") {
@@ -40,11 +61,14 @@ function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
       throw new Error("Builder dependency contract drift resolution requires decision=approve|reject.");
     }
 
+    const approval = parseGovernanceApproval(candidate, "Builder dependency contract drift resolution");
+
     return {
       action: "resolve_dependency_contract_drift",
       runId: candidate.runId,
       decision,
-      reason: typeof candidate.reason === "string" ? candidate.reason : undefined,
+      confirmed: approval.confirmed,
+      reason: approval.reason,
     };
   }
   if (candidate.action === "resolve_file_topology_contract_drift" && typeof candidate.runId === "string") {
@@ -55,11 +79,14 @@ function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
       throw new Error("Builder file topology contract drift resolution requires decision=approve|reject.");
     }
 
+    const approval = parseGovernanceApproval(candidate, "Builder file topology contract drift resolution");
+
     return {
       action: "resolve_file_topology_contract_drift",
       runId: candidate.runId,
       decision,
-      reason: typeof candidate.reason === "string" ? candidate.reason : undefined,
+      confirmed: approval.confirmed,
+      reason: approval.reason,
     };
   }
   if (candidate.action === "install_dependencies") {

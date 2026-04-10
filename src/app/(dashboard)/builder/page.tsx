@@ -437,6 +437,77 @@ interface BuilderMcpSnapshotOverview {
   } | null;
 }
 
+interface BuilderDependencyContractOverview {
+  runId: string | null;
+  currentHash: string | null;
+  state: "not_available" | "pending_capture" | "captured" | "aligned" | "drifted";
+  baseline: {
+    expectedHash: string;
+    decisionKeys: string[];
+    updatedAt: string;
+  } | null;
+  planning: {
+    baselineHash: string | null;
+    currentHash: string;
+    driftDetected: boolean;
+    packageManager: "npm" | "pnpm";
+    relatedArchitectureDecisionKeys: string[];
+    highlightedPackages: string[];
+    recommendations: string[];
+    summary: string;
+  } | null;
+  drift: {
+    changed: boolean;
+    previousHash: string | null;
+    currentHash: string;
+    packages: {
+      added: string[];
+      removed: string[];
+      changed: string[];
+      reclassified: string[];
+    };
+    scripts: {
+      added: string[];
+      removed: string[];
+      changed: string[];
+    };
+    lockfileChanged: boolean;
+    packageManagerChanged: boolean;
+  } | null;
+}
+
+interface BuilderFileTopologyContractOverview {
+  runId: string | null;
+  currentHash: string | null;
+  state: "pending_capture" | "captured" | "aligned" | "drifted";
+  baseline: {
+    expectedHash: string;
+    decisionKeys: string[];
+    updatedAt: string;
+  } | null;
+  planning: {
+    baselineHash: string | null;
+    currentHash: string;
+    driftDetected: boolean;
+    relatedArchitectureDecisionKeys: string[];
+    anchors: Record<string, string | null>;
+    topLevel: string[];
+    placementGuidance: string[];
+    recommendations: string[];
+    summary: string;
+  } | null;
+  drift: {
+    changed: boolean;
+    previousHash: string | null;
+    currentHash: string;
+    directories: { added: string[]; removed: string[] };
+    importantFiles: { added: string[]; removed: string[] };
+    anchorsChanged: string[];
+    classificationsChanged: string[];
+    rulesChanged: string[];
+  } | null;
+}
+
 interface BuilderReview {
   taskId: string;
   projectId: string;
@@ -445,6 +516,36 @@ interface BuilderReview {
   summary: string;
   filesChanged: string[];
   commandsExecuted: string[];
+  vcs?: {
+    summary: string;
+    currentBranch: string | null;
+    stagedCount: number;
+    unstagedCount: number;
+    untrackedCount: number;
+    auditPath?: string | null;
+  };
+  process?: {
+    summary: string;
+    managedCount: number;
+    runningCount: number;
+    failedCount: number;
+  };
+  audit?: {
+    summary: string;
+    auditPath: string | null;
+    totalEvents: number;
+  };
+  database?: {
+    status: "not_available" | "probe_failed" | "in_sync" | "drifted";
+    summary: string;
+    latestProbeAt: string | null;
+  };
+  runtime?: {
+    summary: string;
+    totalServices: number;
+    runningServices: number;
+    failedServices: number;
+  };
   risks: string[];
   nextSteps: string[];
 }
@@ -539,6 +640,8 @@ interface BuilderProjectDetailResponse {
   telemetry: BuilderTelemetrySummary;
   reconciliation: BuilderOperationalStateSummary;
   mcpSnapshot: BuilderMcpSnapshotOverview;
+  dependencyContract: BuilderDependencyContractOverview;
+  fileTopologyContract: BuilderFileTopologyContractOverview;
   nextRecommendedStep: string | null;
   error?: string;
 }
@@ -986,6 +1089,17 @@ const EMPTY_ENV_DRAFT: BuilderEnvDraft = {
   file: ".env.local",
 };
 
+type BuilderToastTone = "success" | "warning" | "danger";
+
+interface BuilderDashboardToast {
+  id: string;
+  tone: BuilderToastTone;
+  title: string;
+  message: string;
+}
+
+type BuilderGovernanceCommandAction = "reconcile_mcp_policy" | "resolve_mcp_contract_drift" | "resolve_dependency_contract_drift" | "resolve_file_topology_contract_drift";
+
 export default function BuilderPage() {
   const [status, setStatus] = useState<BuilderStatusResponse | null>(null);
   const [projects, setProjects] = useState<BuilderProject[]>([]);
@@ -1019,8 +1133,20 @@ export default function BuilderPage() {
   const [pendingShortcutAction, setPendingShortcutAction] = useState<BuilderShortcutAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resultNotice, setResultNotice] = useState<string | null>(null);
+  const [dashboardToast, setDashboardToast] = useState<BuilderDashboardToast | null>(null);
+  const [governanceReason, setGovernanceReason] = useState("");
+  const [governanceConfirmed, setGovernanceConfirmed] = useState(false);
+  const [governanceAction, setGovernanceAction] = useState<BuilderGovernanceCommandAction | null>(null);
   const recentRunsRef = useRef<HTMLElement | null>(null);
   const runtimeLogStreamRef = useRef<EventSource | null>(null);
+  const seenGovernanceToastKeysRef = useRef<Set<string>>(new Set());
+
+  function showDashboardToast(toast: Omit<BuilderDashboardToast, "id">): void {
+    setDashboardToast({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ...toast,
+    });
+  }
 
   async function loadStatus(): Promise<BuilderStatusResponse> {
     const response = await fetch("/api/builder/status");
@@ -1432,6 +1558,18 @@ export default function BuilderPage() {
     runtimeLogStreamRef.current?.close();
   }, []);
 
+  useEffect(() => {
+    if (!dashboardToast) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setDashboardToast((current) => current?.id === dashboardToast.id ? null : current);
+    }, 5000);
+
+    return () => window.clearTimeout(timeout);
+  }, [dashboardToast]);
+
   const enabledAgentProfiles = useMemo(
     () => (status?.cliProfiles ?? []).filter((profile) => profile.enabled && profile.metadata?.ready === true),
     [status],
@@ -1773,6 +1911,26 @@ export default function BuilderPage() {
     handleDesktopShortcut(pendingShortcutAction);
   }, [pendingShortcutAction]);
 
+  useEffect(() => {
+    const activeRunId = projectDetail?.mcpSnapshot.activeRunId;
+    const currentHash = projectDetail?.mcpSnapshot.currentHash ?? "unknown";
+    if (!projectDetail?.mcpSnapshot.drift || !activeRunId || !projectDetail?.project.id) {
+      return;
+    }
+
+    const toastKey = `${projectDetail.project.id}:${activeRunId}:${currentHash}`;
+    if (seenGovernanceToastKeysRef.current.has(toastKey)) {
+      return;
+    }
+
+    seenGovernanceToastKeysRef.current.add(toastKey);
+    showDashboardToast({
+      tone: "warning",
+      title: "Governance review required",
+      message: "Builder MCP contract drift is waiting for explicit operator approval in the dashboard.",
+    });
+  }, [projectDetail?.mcpSnapshot.activeRunId, projectDetail?.mcpSnapshot.currentHash, projectDetail?.mcpSnapshot.drift, projectDetail?.project.id]);
+
   const selectedProject = projectDetail?.project ?? projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedTask = projectDetail?.tasks.find((task) => task.id === selectedTaskId) ?? projectDetail?.currentTask ?? null;
   const projectsPagination = usePagination(projects, 15);
@@ -1781,9 +1939,96 @@ export default function BuilderPage() {
   const efficiencyTone = getEfficiencyTone(projectDetail?.metrics?.efficiency);
   const promotionTone = getPromotionTone(projectDetail?.metrics?.promotion);
   const architectureTone = getArchitectureTone(projectDetail?.metrics?.architecture);
+  const governanceCapabilityGates = projectDetail?.operatorTrust.governance.approvalRequiredCapabilities ?? [];
+  const hasMcpGovernanceDrift = Boolean(projectDetail?.mcpSnapshot.drift && projectDetail?.mcpSnapshot.activeRunId);
+  const dependencyGovernanceState = projectDetail?.dependencyContract.state ?? "not_available";
+  const fileTopologyGovernanceState = projectDetail?.fileTopologyContract.state ?? "pending_capture";
+  const dependencyGovernanceNeedsReview = dependencyGovernanceState === "drifted" || dependencyGovernanceState === "pending_capture";
+  const fileTopologyGovernanceNeedsReview = fileTopologyGovernanceState === "drifted" || fileTopologyGovernanceState === "pending_capture";
+
+  function consumeGovernanceReason(actionLabel: string): string | null {
+    if (!governanceConfirmed) {
+      const message = `${actionLabel} requires explicit confirmation.`;
+      setError(message);
+      showDashboardToast({ tone: "warning", title: "Confirmation required", message });
+      return null;
+    }
+
+    const reason = governanceReason.trim();
+    if (!reason) {
+      const message = `${actionLabel} requires a written review reason.`;
+      setError(message);
+      showDashboardToast({ tone: "warning", title: "Reason required", message });
+      return null;
+    }
+
+    return reason;
+  }
+
+  async function runGovernanceAction(action: BuilderGovernanceCommandAction, body: Record<string, unknown>, successMessage: string): Promise<void> {
+    if (!selectedProjectId) {
+      setError("Select a project first.");
+      return;
+    }
+
+    setSaving(true);
+    setGovernanceAction(action);
+    setError(null);
+    setResultNotice(null);
+
+    try {
+      const response = await fetch(`/api/builder/projects/${selectedProjectId}/commands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await readJsonResponse<{ error?: string }>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Governance action failed.");
+      }
+
+      setResultNotice(successMessage);
+      setGovernanceReason("");
+      setGovernanceConfirmed(false);
+      showDashboardToast({ tone: "success", title: "Governance action recorded", message: successMessage });
+      await refresh(selectedProjectId);
+    } catch (nextError) {
+      const message = nextError instanceof Error ? nextError.message : "Governance action failed.";
+      setError(message);
+      showDashboardToast({ tone: "danger", title: "Governance action failed", message });
+    } finally {
+      setGovernanceAction(null);
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
+      {dashboardToast ? (
+        <div
+          data-testid="builder-governance-toast"
+          className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2rem))] border p-3 shadow-xl"
+          style={{
+            borderColor: dashboardToast.tone === "success" ? "var(--success)" : dashboardToast.tone === "warning" ? "var(--warning)" : "var(--danger)",
+            background: dashboardToast.tone === "success"
+              ? "color-mix(in srgb, var(--success) 16%, var(--bg-surface))"
+              : dashboardToast.tone === "warning"
+                ? "color-mix(in srgb, var(--warning) 16%, var(--bg-surface))"
+                : "color-mix(in srgb, var(--danger) 16%, var(--bg-surface))",
+            color: "var(--text-primary)",
+          }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{dashboardToast.title}</div>
+              <div className="mt-1 text-sm">{dashboardToast.message}</div>
+            </div>
+            <button onClick={() => setDashboardToast(null)} className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>
+              dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
       <section className="space-y-5">
         <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="flex items-center justify-between gap-4 mb-4">
@@ -2339,13 +2584,8 @@ export default function BuilderPage() {
                     <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
                       Tools +{projectDetail.mcpSnapshot.drift.tools.added.length} / -{projectDetail.mcpSnapshot.drift.tools.removed.length} / ~{projectDetail.mcpSnapshot.drift.tools.changed.length}; prompts +{projectDetail.mcpSnapshot.drift.prompts.added.length} / -{projectDetail.mcpSnapshot.drift.prompts.removed.length} / ~{projectDetail.mcpSnapshot.drift.prompts.changed.length}; resources +{projectDetail.mcpSnapshot.drift.resources.added.length} / -{projectDetail.mcpSnapshot.drift.resources.removed.length} / ~{projectDetail.mcpSnapshot.drift.resources.changed.length}.
                     </div>
-                    <div className="flex flex-wrap gap-3">
-                      <button disabled={saving || !projectDetail.mcpSnapshot.activeRunId} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "resolve_mcp_contract_drift", runId: projectDetail.mcpSnapshot.activeRunId, decision: "approve", reason: "Approved from Builder dashboard." })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>
-                        approve rollover
-                      </button>
-                      <button disabled={saving || !projectDetail.mcpSnapshot.activeRunId} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "resolve_mcp_contract_drift", runId: projectDetail.mcpSnapshot.activeRunId, decision: "reject", reason: "Rejected from Builder dashboard." })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
-                        reject drift
-                      </button>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Resolve this through the governance review panel so the decision is confirmed and annotated.
                     </div>
                   </div>
                 ) : null}
@@ -2391,6 +2631,294 @@ export default function BuilderPage() {
                       </div>
                     ))}
                     {(projectDetail?.mcpSnapshot.semanticMatches ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No semantic neighbors available yet.</div> : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>governance review</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: getOperatorTrustColor(projectDetail?.operatorTrust.governance.status) }}>
+                    {formatOperatorTrustLabel(projectDetail?.operatorTrust.governance.status)}
+                  </div>
+                </div>
+                <div data-testid="builder-governance-panel" className="space-y-3">
+                  <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+                    {projectDetail?.operatorTrust.governance.summary ?? "Governance actions are not available until a Builder project is loaded."}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {governanceCapabilityGates.length > 0 ? governanceCapabilityGates.map((capabilityKey) => (
+                      <div key={capabilityKey} className="border px-2 py-1 text-[11px] uppercase tracking-[0.14em]" style={{ borderColor: "var(--warning)", background: "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))", color: "var(--warning)" }}>
+                        {capabilityKey.replaceAll("_", " ")}
+                      </div>
+                    )) : (
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No approval-gated governance capabilities are currently advertised.</div>
+                    )}
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-[minmax(280px,0.92fr)_minmax(0,1.08fr)]">
+                    <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>operator approval</div>
+                      <div>
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Review reason</label>
+                        <textarea
+                          data-testid="builder-governance-reason"
+                          value={governanceReason}
+                          onChange={(event) => setGovernanceReason(event.target.value)}
+                          rows={5}
+                          className="w-full bg-transparent border px-3 py-2 text-sm"
+                          style={{ borderColor: "var(--border)" }}
+                          placeholder="Explain why this governance change is intentional and safe."
+                        />
+                      </div>
+                      <label className="flex items-start gap-3 border p-3 text-xs leading-6" style={{ borderColor: governanceConfirmed ? "var(--accent)" : "var(--border)", background: governanceConfirmed ? "var(--accent-glow)" : "var(--bg-raised)" }}>
+                        <input
+                          data-testid="builder-governance-confirmed"
+                          type="checkbox"
+                          checked={governanceConfirmed}
+                          onChange={(event) => setGovernanceConfirmed(event.target.checked)}
+                        />
+                        <span>I reviewed the drift and I want Builder to record an explicit governance decision with the reason above.</span>
+                      </label>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        Governance actions are durable and reviewable. The dashboard requires the same explicit confirmation model as the medium-authority Builder tools.
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div data-testid="builder-governance-mcp-review" className="border p-3 space-y-3" style={{ borderColor: hasMcpGovernanceDrift ? "var(--danger)" : "var(--border)", background: hasMcpGovernanceDrift ? "color-mix(in srgb, var(--danger) 10%, var(--bg-surface))" : "var(--bg-surface)" }}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: hasMcpGovernanceDrift ? "var(--danger)" : "var(--text-muted)" }}>mcp contract drift</div>
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: hasMcpGovernanceDrift ? "var(--danger)" : "var(--text-dim)" }}>
+                            {hasMcpGovernanceDrift ? "approval required" : "aligned"}
+                          </div>
+                        </div>
+                        {hasMcpGovernanceDrift && projectDetail?.mcpSnapshot.drift ? (
+                          <>
+                            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                              Tools +{projectDetail.mcpSnapshot.drift.tools.added.length} / -{projectDetail.mcpSnapshot.drift.tools.removed.length} / ~{projectDetail.mcpSnapshot.drift.tools.changed.length}; prompts +{projectDetail.mcpSnapshot.drift.prompts.added.length} / -{projectDetail.mcpSnapshot.drift.prompts.removed.length} / ~{projectDetail.mcpSnapshot.drift.prompts.changed.length}; resources +{projectDetail.mcpSnapshot.drift.resources.added.length} / -{projectDetail.mcpSnapshot.drift.resources.removed.length} / ~{projectDetail.mcpSnapshot.drift.resources.changed.length}.
+                            </div>
+                            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                              Active run: {projectDetail.mcpSnapshot.activeRunId}
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                              <button
+                                data-testid="builder-governance-approve-mcp-drift"
+                                disabled={saving || governanceAction !== null || !projectDetail.mcpSnapshot.activeRunId}
+                                onClick={() => {
+                                  const reason = consumeGovernanceReason("Approving MCP contract drift");
+                                  if (!reason || !projectDetail.mcpSnapshot.activeRunId) {
+                                    return;
+                                  }
+                                  void runGovernanceAction("resolve_mcp_contract_drift", {
+                                    action: "resolve_mcp_contract_drift",
+                                    runId: projectDetail.mcpSnapshot.activeRunId,
+                                    decision: "approve",
+                                    confirmed: true,
+                                    reason,
+                                  }, "Approved the Builder MCP contract rollover from the dashboard.");
+                                }}
+                                className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                                style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                              >
+                                approve rollover
+                              </button>
+                              <button
+                                data-testid="builder-governance-reject-mcp-drift"
+                                disabled={saving || governanceAction !== null || !projectDetail.mcpSnapshot.activeRunId}
+                                onClick={() => {
+                                  const reason = consumeGovernanceReason("Rejecting MCP contract drift");
+                                  if (!reason || !projectDetail.mcpSnapshot.activeRunId) {
+                                    return;
+                                  }
+                                  void runGovernanceAction("resolve_mcp_contract_drift", {
+                                    action: "resolve_mcp_contract_drift",
+                                    runId: projectDetail.mcpSnapshot.activeRunId,
+                                    decision: "reject",
+                                    confirmed: true,
+                                    reason,
+                                  }, "Rejected the Builder MCP contract rollover from the dashboard.");
+                                }}
+                                className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                              >
+                                reject drift
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                            No active MCP contract drift is waiting for a decision.
+                          </div>
+                        )}
+                      </div>
+                      <div data-testid="builder-governance-policy-review" className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>mcp policy baseline</div>
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>manual reconcile</div>
+                        </div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                          Use this only when the current Builder MCP contract is intentionally changing and you want to promote the reviewed state into the accepted policy baseline.
+                        </div>
+                        <button
+                          data-testid="builder-governance-reconcile-policy"
+                          disabled={saving || governanceAction !== null}
+                          onClick={() => {
+                            const reason = consumeGovernanceReason("Reconciling Builder MCP policy");
+                            if (!reason) {
+                              return;
+                            }
+                            void runGovernanceAction("reconcile_mcp_policy", {
+                              action: "reconcile_mcp_policy",
+                              confirmed: true,
+                              reason,
+                            }, "Reconciled the Builder MCP policy baseline from the dashboard.");
+                          }}
+                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                          style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                        >
+                          reconcile baseline
+                        </button>
+                      </div>
+                      <div data-testid="builder-governance-dependency-review" className="border p-3 space-y-3" style={{ borderColor: dependencyGovernanceNeedsReview ? "var(--warning)" : "var(--border)", background: dependencyGovernanceNeedsReview ? "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))" : "var(--bg-surface)" }}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: dependencyGovernanceNeedsReview ? "var(--warning)" : "var(--text-muted)" }}>dependency contract</div>
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: dependencyGovernanceNeedsReview ? "var(--warning)" : "var(--text-dim)" }}>
+                            {dependencyGovernanceNeedsReview ? "approval required" : dependencyGovernanceState.replaceAll("_", " ")}
+                          </div>
+                        </div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                          {projectDetail?.dependencyContract.planning?.summary ?? "No dependency contract data is available for this project yet."}
+                        </div>
+                        {projectDetail?.dependencyContract.drift ? (
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                            Packages +{projectDetail.dependencyContract.drift.packages.added.length} / -{projectDetail.dependencyContract.drift.packages.removed.length} / ~{projectDetail.dependencyContract.drift.packages.changed.length} / reclass {projectDetail.dependencyContract.drift.packages.reclassified.length}; scripts +{projectDetail.dependencyContract.drift.scripts.added.length} / -{projectDetail.dependencyContract.drift.scripts.removed.length} / ~{projectDetail.dependencyContract.drift.scripts.changed.length}; lockfile changed {projectDetail.dependencyContract.drift.lockfileChanged ? "yes" : "no"}; package manager changed {projectDetail.dependencyContract.drift.packageManagerChanged ? "yes" : "no"}.
+                          </div>
+                        ) : null}
+                        {projectDetail?.dependencyContract.planning?.highlightedPackages.length ? (
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                            Highlighted packages: {projectDetail.dependencyContract.planning.highlightedPackages.join(", ")}
+                          </div>
+                        ) : null}
+                        {(projectDetail?.dependencyContract.planning?.recommendations ?? []).slice(0, 2).map((recommendation) => (
+                          <div key={recommendation} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{recommendation}</div>
+                        ))}
+                        {dependencyGovernanceNeedsReview && projectDetail?.dependencyContract.runId ? (
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              data-testid="builder-governance-approve-dependency-drift"
+                              disabled={saving || governanceAction !== null}
+                              onClick={() => {
+                                const reason = consumeGovernanceReason("Approving dependency contract drift");
+                                if (!reason) {
+                                  return;
+                                }
+                                void runGovernanceAction("resolve_dependency_contract_drift", {
+                                  action: "resolve_dependency_contract_drift",
+                                  runId: projectDetail.dependencyContract.runId,
+                                  decision: "approve",
+                                  confirmed: true,
+                                  reason,
+                                }, "Approved the Builder dependency contract rollover from the dashboard.");
+                              }}
+                              className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                              style={{ borderColor: "var(--warning)", color: "var(--warning)" }}
+                            >
+                              approve dependency rollover
+                            </button>
+                            <button
+                              data-testid="builder-governance-reject-dependency-drift"
+                              disabled={saving || governanceAction !== null}
+                              onClick={() => {
+                                const reason = consumeGovernanceReason("Rejecting dependency contract drift");
+                                if (!reason) {
+                                  return;
+                                }
+                                void runGovernanceAction("resolve_dependency_contract_drift", {
+                                  action: "resolve_dependency_contract_drift",
+                                  runId: projectDetail.dependencyContract.runId,
+                                  decision: "reject",
+                                  confirmed: true,
+                                  reason,
+                                }, "Rejected the Builder dependency contract rollover from the dashboard.");
+                              }}
+                              className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                            >
+                              reject dependency drift
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div data-testid="builder-governance-file-topology-review" className="border p-3 space-y-3" style={{ borderColor: fileTopologyGovernanceNeedsReview ? "var(--warning)" : "var(--border)", background: fileTopologyGovernanceNeedsReview ? "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))" : "var(--bg-surface)" }}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: fileTopologyGovernanceNeedsReview ? "var(--warning)" : "var(--text-muted)" }}>file topology contract</div>
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: fileTopologyGovernanceNeedsReview ? "var(--warning)" : "var(--text-dim)" }}>
+                            {fileTopologyGovernanceNeedsReview ? "approval required" : fileTopologyGovernanceState.replaceAll("_", " ")}
+                          </div>
+                        </div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                          {projectDetail?.fileTopologyContract.planning?.summary ?? "No file topology contract data is available for this project yet."}
+                        </div>
+                        {projectDetail?.fileTopologyContract.drift ? (
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                            Directories +{projectDetail.fileTopologyContract.drift.directories.added.length} / -{projectDetail.fileTopologyContract.drift.directories.removed.length}; important files +{projectDetail.fileTopologyContract.drift.importantFiles.added.length} / -{projectDetail.fileTopologyContract.drift.importantFiles.removed.length}; anchors changed {projectDetail.fileTopologyContract.drift.anchorsChanged.length}; classifications changed {projectDetail.fileTopologyContract.drift.classificationsChanged.length}; rules changed {projectDetail.fileTopologyContract.drift.rulesChanged.length}.
+                          </div>
+                        ) : null}
+                        {projectDetail?.fileTopologyContract.planning?.topLevel.length ? (
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                            Top-level entries: {projectDetail.fileTopologyContract.planning.topLevel.slice(0, 8).join(", ")}
+                          </div>
+                        ) : null}
+                        {(projectDetail?.fileTopologyContract.planning?.recommendations ?? []).slice(0, 2).map((recommendation) => (
+                          <div key={recommendation} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{recommendation}</div>
+                        ))}
+                        {fileTopologyGovernanceNeedsReview && projectDetail?.fileTopologyContract.runId ? (
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              data-testid="builder-governance-approve-file-topology-drift"
+                              disabled={saving || governanceAction !== null}
+                              onClick={() => {
+                                const reason = consumeGovernanceReason("Approving file topology contract drift");
+                                if (!reason) {
+                                  return;
+                                }
+                                void runGovernanceAction("resolve_file_topology_contract_drift", {
+                                  action: "resolve_file_topology_contract_drift",
+                                  runId: projectDetail.fileTopologyContract.runId,
+                                  decision: "approve",
+                                  confirmed: true,
+                                  reason,
+                                }, "Approved the Builder file topology contract rollover from the dashboard.");
+                              }}
+                              className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                              style={{ borderColor: "var(--warning)", color: "var(--warning)" }}
+                            >
+                              approve topology rollover
+                            </button>
+                            <button
+                              data-testid="builder-governance-reject-file-topology-drift"
+                              disabled={saving || governanceAction !== null}
+                              onClick={() => {
+                                const reason = consumeGovernanceReason("Rejecting file topology contract drift");
+                                if (!reason) {
+                                  return;
+                                }
+                                void runGovernanceAction("resolve_file_topology_contract_drift", {
+                                  action: "resolve_file_topology_contract_drift",
+                                  runId: projectDetail.fileTopologyContract.runId,
+                                  decision: "reject",
+                                  confirmed: true,
+                                  reason,
+                                }, "Rejected the Builder file topology contract rollover from the dashboard.");
+                              }}
+                              className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                            >
+                              reject topology drift
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2443,6 +2971,11 @@ export default function BuilderPage() {
                   {projectDetail?.latestReview ? (
                     <>
                       <div className="text-sm">{projectDetail.latestReview.summary}</div>
+                      {projectDetail.latestReview.vcs ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>VCS: {projectDetail.latestReview.vcs.summary}</div> : null}
+                      {projectDetail.latestReview.process ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Processes: {projectDetail.latestReview.process.summary}</div> : null}
+                      {projectDetail.latestReview.audit ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Audit: {projectDetail.latestReview.audit.summary}</div> : null}
+                      {projectDetail.latestReview.database ? <div className="text-xs leading-6" style={{ color: projectDetail.latestReview.database.status === "drifted" || projectDetail.latestReview.database.status === "probe_failed" ? "var(--warning)" : "var(--text-dim)" }}>DB: {projectDetail.latestReview.database.summary}</div> : null}
+                      {projectDetail.latestReview.runtime ? <div className="text-xs leading-6" style={{ color: projectDetail.latestReview.runtime.failedServices > 0 ? "var(--warning)" : "var(--text-dim)" }}>Runtime: {projectDetail.latestReview.runtime.summary}</div> : null}
                       {projectDetail.latestReview.risks.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>Risks: {projectDetail.latestReview.risks.join("; ")}</div> : null}
                       {projectDetail.latestReview.nextSteps.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Next: {projectDetail.latestReview.nextSteps.join("; ")}</div> : null}
                     </>

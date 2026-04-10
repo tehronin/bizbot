@@ -60,4 +60,44 @@ describe("builder http", () => {
       url: "https://forbidden.example.com/status",
     })).rejects.toThrow("Builder HTTP host is not allowlisted");
   });
+
+  it("blocks oversized request bodies before issuing the request", async () => {
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_ALLOWED_HOSTS = "api.example.com";
+
+    await expect(builderHttpRequest({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      method: "POST",
+      url: "https://api.example.com/status",
+      body: "x".repeat(2048),
+      maxRequestBytes: 1024,
+    })).rejects.toThrow("request body exceeds the configured limit");
+  });
+
+  it("retries transient GET failures and succeeds on a later attempt", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    process.env.BIZBOT_BUILDER_ALLOWED_HOSTS = "api.example.com";
+
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error("socket hang up"))
+      .mockResolvedValueOnce(new Response('{"ok":true}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await builderHttpRequest({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      method: "GET",
+      url: "https://api.example.com/retry",
+      retryCount: 1,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fs.readFileSync(path.join(workspaceRoot, result.auditPath), "utf-8")).toContain('"attempts":2');
+  });
 });

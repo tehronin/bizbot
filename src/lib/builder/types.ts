@@ -340,7 +340,17 @@ export interface BuilderFileTopologyPlanningContextState {
   drift: BuilderFileTopologyContractDriftState | null;
 }
 
+export interface BuilderDependencySnapshotOverviewState {
+  runId: string | null;
+  currentHash: string | null;
+  state: "not_available" | "pending_capture" | "captured" | "aligned" | "drifted";
+  baseline: BuilderDependencyContractBaselineState | null;
+  planning: BuilderDependencyPlanningContextState | null;
+  drift: BuilderDependencyContractDriftState | null;
+}
+
 export interface BuilderFileTopologySnapshotOverviewState {
+  runId: string | null;
   currentHash: string | null;
   state: "pending_capture" | "captured" | "aligned" | "drifted";
   baseline: BuilderFileTopologyContractBaselineState | null;
@@ -586,6 +596,64 @@ export interface BuilderConfigReviewState {
   summary: string;
 }
 
+export interface BuilderReviewVcsState {
+  available: boolean;
+  repoRoot: string | null;
+  currentBranch: string | null;
+  ahead: number;
+  behind: number;
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+  summary: string;
+  auditPath?: string | null;
+  error?: string | null;
+}
+
+export interface BuilderReviewProcessState {
+  managedCount: number;
+  runningCount: number;
+  failedCount: number;
+  timedOutCount: number;
+  cancelledCount: number;
+  recentProcessIds: string[];
+  summary: string;
+}
+
+export interface BuilderReviewAuditState {
+  auditPath: string | null;
+  totalEvents: number;
+  recentCount: number;
+  capabilityCounts: Record<string, number>;
+  notableEvents: Array<{
+    capabilityKey: string;
+    eventName: string;
+    outcomeStatus: string;
+    timestamp: string;
+  }>;
+  summary: string;
+}
+
+export interface BuilderReviewDatabaseState {
+  status: "not_available" | "probe_failed" | "in_sync" | "drifted";
+  summary: string;
+  provider: string | null;
+  connectionTarget: string | null;
+  artifactTableCount: number;
+  liveTableCount: number;
+  latestProbeAt: string | null;
+  auditPath: string | null;
+}
+
+export interface BuilderReviewRuntimeState {
+  totalServices: number;
+  runningServices: number;
+  failedServices: number;
+  managedServices: number;
+  prominentServiceIds: string[];
+  summary: string;
+}
+
 export type BuilderOperatorTrustStatus = "trusted" | "warning" | "blocked";
 
 export interface BuilderOperatorTrustReviewState {
@@ -673,6 +741,11 @@ export interface BuilderStructuredReview {
   lint: BuilderStructuredCheckSummary;
   build: BuilderStructuredCheckSummary;
   config?: BuilderConfigReviewState;
+  vcs?: BuilderReviewVcsState;
+  process?: BuilderReviewProcessState;
+  audit?: BuilderReviewAuditState;
+  database?: BuilderReviewDatabaseState;
+  runtime?: BuilderReviewRuntimeState;
   risks: string[];
   nextSteps: string[];
   architecture?: BuilderArchitectureReconciliationState;

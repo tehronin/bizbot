@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { parse as parseDotenv } from "dotenv";
+import { appendBuilderCapabilityAuditEvent, type BuilderCapabilityAuditContext } from "@/lib/builder/audit";
 import { resolveBuilderWorkspacePath } from "@/lib/builder/config";
 
 export type BuilderEnvFilePath = ".env" | ".env.local" | ".env.example";
@@ -144,20 +145,63 @@ function summarizeConfigReadiness(args: {
   return `Config ready with ${args.totalRequiredKeys} required env key${args.totalRequiredKeys === 1 ? "" : "s"}.`;
 }
 
-export function getBuilderEnvSchema(projectRelativePath: string): { path: BuilderEnvFilePath | null; keys: string[] } {
+function appendEnvironmentAuditEvent(args: BuilderCapabilityAuditContext & {
+  projectRelativePath: string;
+  outcomeStatus: "succeeded" | "failed" | "blocked";
+  targets: Array<{ identifier: string; metadata?: Record<string, unknown> }>;
+  metadata?: Record<string, unknown>;
+}): string {
+  return appendBuilderCapabilityAuditEvent({
+    capabilityKey: "environment_configuration",
+    projectRelativePath: args.projectRelativePath,
+    projectId: args.projectId,
+    taskId: args.taskId,
+    runId: args.runId,
+    outcomeStatus: args.outcomeStatus,
+    targets: args.targets.map((target) => ({ kind: "environment", identifier: target.identifier, metadata: target.metadata })),
+    metadata: args.metadata,
+  }).auditPath;
+}
+
+function throwEnvironmentMutationBlocked(args: BuilderCapabilityAuditContext & {
+  projectRelativePath: string;
+  message: string;
+  targets: Array<{ identifier: string; metadata?: Record<string, unknown> }>;
+  metadata?: Record<string, unknown>;
+}): never {
+  const auditPath = appendEnvironmentAuditEvent({
+    ...args,
+    outcomeStatus: "blocked",
+  });
+  throw new Error(`${args.message} Audit: ${auditPath}`);
+}
+
+export function getBuilderEnvSchema(projectRelativePath: string, auditContext?: BuilderCapabilityAuditContext): { path: BuilderEnvFilePath | null; keys: string[]; auditPath: string } {
   const { schema } = collectProjectEnvFiles(projectRelativePath);
   const keys = Object.keys(schema.values).sort();
+  const auditPath = appendEnvironmentAuditEvent({
+    ...auditContext,
+    projectRelativePath,
+    outcomeStatus: "succeeded",
+    targets: [{ identifier: BUILDER_ENV_SCHEMA_FILE }],
+    metadata: { operation: "get_env_schema", totalKeys: keys.length, schemaAvailable: schema.exists },
+  });
   return {
     path: schema.exists ? BUILDER_ENV_SCHEMA_FILE : null,
     keys,
+    auditPath,
   };
 }
 
-export function listBuilderRequiredConfig(projectRelativePath: string): string[] {
-  return getBuilderEnvSchema(projectRelativePath).keys;
+export function listBuilderRequiredConfig(projectRelativePath: string, auditContext?: BuilderCapabilityAuditContext): { keys: string[]; auditPath: string } {
+  const schema = getBuilderEnvSchema(projectRelativePath, auditContext);
+  return {
+    keys: schema.keys,
+    auditPath: schema.auditPath,
+  };
 }
 
-export function validateBuilderProjectEnv(projectRelativePath: string): BuilderConfigReadinessState {
+export function validateBuilderProjectEnv(projectRelativePath: string, auditContext?: BuilderCapabilityAuditContext): BuilderConfigReadinessState & { auditPath: string } {
   const { schema, projectFiles } = collectProjectEnvFiles(projectRelativePath);
   const requiredKeys = Object.keys(schema.values).sort();
   const malformedEntries = [schema, ...projectFiles].flatMap((file) => file.malformedEntries);
@@ -189,6 +233,24 @@ export function validateBuilderProjectEnv(projectRelativePath: string): BuilderC
 
   const missingProjectKeys = keys.filter((entry) => !entry.projectValuePresent).map((entry) => entry.key);
   const missingExecutionKeys = keys.filter((entry) => !entry.executionValuePresent).map((entry) => entry.key);
+  const auditPath = appendEnvironmentAuditEvent({
+    ...auditContext,
+    projectRelativePath,
+    outcomeStatus: "succeeded",
+    targets: [
+      { identifier: BUILDER_ENV_SCHEMA_FILE },
+      { identifier: ".env" },
+      { identifier: ".env.local" },
+    ],
+    metadata: {
+      operation: "validate_env",
+      schemaAvailable: schema.exists,
+      totalRequiredKeys: requiredKeys.length,
+      missingProjectKeys,
+      missingExecutionKeys,
+      malformedEntryCount: malformedEntries.length,
+    },
+  });
 
   return {
     schemaPath: schema.exists ? BUILDER_ENV_SCHEMA_FILE : null,
@@ -200,6 +262,7 @@ export function validateBuilderProjectEnv(projectRelativePath: string): BuilderC
     missingExecutionKeys,
     malformedEntries,
     keys,
+    auditPath,
     summary: summarizeConfigReadiness({
       totalRequiredKeys: requiredKeys.length,
       missingProjectKeys,
@@ -210,7 +273,7 @@ export function validateBuilderProjectEnv(projectRelativePath: string): BuilderC
   };
 }
 
-export function readBuilderProjectEnvValue(projectRelativePath: string, key: string, options?: { reveal?: boolean }): BuilderEnvReadResult {
+export function readBuilderProjectEnvValue(projectRelativePath: string, key: string, options?: { reveal?: boolean }, auditContext?: BuilderCapabilityAuditContext): BuilderEnvReadResult & { auditPath: string } {
   const normalizedKey = key.trim();
   if (!normalizedKey) {
     throw new Error("Environment key is required.");
@@ -226,12 +289,20 @@ export function readBuilderProjectEnvValue(projectRelativePath: string, key: str
     : typeof hostValue === "string"
       ? "host_env"
       : "missing";
+  const auditPath = appendEnvironmentAuditEvent({
+    ...auditContext,
+    projectRelativePath,
+    outcomeStatus: "succeeded",
+    targets: [{ identifier: normalizedKey }],
+    metadata: { operation: "read_env_value", source, present: resolvedValue !== null, revealed: Boolean(options?.reveal) },
+  });
 
   return {
     key: normalizedKey,
     source,
     present: resolvedValue !== null,
     redactedValue: redactEnvValue(resolvedValue),
+    auditPath,
     ...(options?.reveal ? { value: resolvedValue } : {}),
   };
 }
@@ -246,10 +317,16 @@ export function writeBuilderProjectEnvFileEntry(projectRelativePath: string, arg
   key: string;
   value: string;
   file?: Extract<BuilderEnvFilePath, ".env" | ".env.local">;
-}): { path: BuilderEnvFilePath; key: string; redactedValue: string } {
+}, auditContext?: BuilderCapabilityAuditContext): { path: BuilderEnvFilePath; key: string; redactedValue: string; auditPath: string } {
   const key = args.key.trim();
   if (!key || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
-    throw new Error("Environment key must be a valid shell identifier.");
+    throwEnvironmentMutationBlocked({
+      ...auditContext,
+      projectRelativePath,
+      message: "Environment key must be a valid shell identifier.",
+      targets: [{ identifier: args.file ?? ".env.local" }, { identifier: key || "<empty>" }],
+      metadata: { operation: "write_env_file_entry", reason: "invalid_key", attemptedKey: args.key },
+    });
   }
 
   const targetFile = args.file ?? ".env.local";
@@ -278,10 +355,18 @@ export function writeBuilderProjectEnvFileEntry(projectRelativePath: string, arg
 
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
   fs.writeFileSync(absolutePath, `${nextLines.filter((line, index, source) => !(index === source.length - 1 && line === "")).join("\n")}\n`, "utf-8");
+  const auditPath = appendEnvironmentAuditEvent({
+    ...auditContext,
+    projectRelativePath,
+    outcomeStatus: "succeeded",
+    targets: [{ identifier: targetFile }, { identifier: key }],
+    metadata: { operation: "write_env_file_entry", file: targetFile, key },
+  });
   return {
     path: targetFile,
     key,
     redactedValue: redactEnvValue(args.value) ?? "",
+    auditPath,
   };
 }
 
@@ -289,6 +374,7 @@ export function syncBuilderProjectEnvExample(projectRelativePath: string): {
   path: BuilderEnvFilePath;
   addedKeys: string[];
   totalKeys: number;
+  auditPath: string;
 } {
   const { schema, projectFiles } = collectProjectEnvFiles(projectRelativePath);
   const allKeys = new Set<string>(Object.keys(schema.values));
@@ -305,9 +391,16 @@ export function syncBuilderProjectEnvExample(projectRelativePath: string): {
   const lines = sortedKeys.map((key) => `${key}=`);
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
   fs.writeFileSync(absolutePath, `${lines.join("\n")}\n`, "utf-8");
+  const auditPath = appendEnvironmentAuditEvent({
+    projectRelativePath,
+    outcomeStatus: "succeeded",
+    targets: [{ identifier: BUILDER_ENV_SCHEMA_FILE }],
+    metadata: { operation: "sync_env_example", addedKeys, totalKeys: sortedKeys.length },
+  });
   return {
     path: BUILDER_ENV_SCHEMA_FILE,
     addedKeys,
     totalKeys: sortedKeys.length,
+    auditPath,
   };
 }

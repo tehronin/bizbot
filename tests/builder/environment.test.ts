@@ -40,6 +40,7 @@ describe("builder environment", () => {
     expect(readiness.schemaAvailable).toBe(true);
     expect(readiness.projectReady).toBe(false);
     expect(readiness.executionReady).toBe(true);
+    expect(fs.existsSync(path.join(workspaceRoot, readiness.auditPath))).toBe(true);
     expect(readiness.missingProjectKeys).toEqual(["DATABASE_URL"]);
     expect(readiness.missingExecutionKeys).toEqual([]);
     expect(readiness.keys).toEqual(expect.arrayContaining([
@@ -58,6 +59,7 @@ describe("builder environment", () => {
     expect(result.present).toBe(true);
     expect(result.source).toBe("host_env");
     expect(result.redactedValue).not.toBe("super-secret-token");
+    expect(fs.existsSync(path.join(workspaceRoot, result.auditPath))).toBe(true);
     expect(result).not.toHaveProperty("value");
   });
 
@@ -77,6 +79,7 @@ describe("builder environment", () => {
     const after = validateBuilderProjectEnv("projects/demo");
 
     expect(writeResult.path).toBe(".env.local");
+    expect(fs.existsSync(path.join(workspaceRoot, writeResult.auditPath))).toBe(true);
     expect(after.projectReady).toBe(true);
     expect(after.executionReady).toBe(true);
     expect(fs.readFileSync(path.join(workspaceRoot, "projects/demo/.env.local"), "utf-8")).toContain("DATABASE_URL=postgres://project-local");
@@ -97,7 +100,31 @@ describe("builder environment", () => {
       expect.objectContaining({ path: ".env.local", line: 2 }),
     ]);
     expect(syncResult.addedKeys).toEqual(["NEW_SECRET"]);
+    expect(fs.existsSync(path.join(workspaceRoot, syncResult.auditPath))).toBe(true);
     expect(syncedExample).toContain("API_KEY=");
     expect(syncedExample).toContain("NEW_SECRET=");
+  });
+
+  it("emits a blocked audit event when env writes are rejected", () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    expect(() => writeBuilderProjectEnvFileEntry("projects/demo", {
+      key: "NOT VALID",
+      value: "secret",
+    })).toThrow("Environment key must be a valid shell identifier");
+
+    const auditPath = path.join(workspaceRoot, "projects/demo/.builder/reports/capability-audit.jsonl");
+    expect(fs.existsSync(auditPath)).toBe(true);
+    const auditLines = fs.readFileSync(auditPath, "utf-8").trim().split(/\r?\n/).map((line) => JSON.parse(line) as {
+      outcomeStatus: string;
+      metadata?: { operation?: string; reason?: string };
+    });
+    expect(auditLines).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        outcomeStatus: "blocked",
+        metadata: expect.objectContaining({ operation: "write_env_file_entry", reason: "invalid_key" }),
+      }),
+    ]));
   });
 });

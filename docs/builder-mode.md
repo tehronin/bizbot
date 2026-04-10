@@ -15,7 +15,7 @@ A Builder capability is only considered accepted when all of the following are t
 - at least one focused test covers the policy boundary or audit behavior,
 - the surface emits a stable audit artifact when the capability contract requires reviewability.
 
-For the current rollout, HTTP and database extension probes write capability audit events into `.builder/reports/capability-audit.jsonl` inside the target Builder project.
+For the current rollout, HTTP and database extension probes write capability audit events into `.builder/reports/capability-audit.jsonl` inside the target Builder project, and core workspace, VCS, and environment actions are expected to follow the same review model.
 
 ## Extension Policy Inputs
 
@@ -25,6 +25,20 @@ Extended Builder capabilities now rely on explicit allowlists:
 - `BIZBOT_BUILDER_ALLOWED_DATABASES` for non-local database inspection targets. Entries may be a host, `host:port`, or full origin.
 
 Project-local SQLite `file:` datasources remain read-only and are accepted without a separate remote allowlist entry.
+
+## Current Capability Reality
+
+Builder Mode in this repo already ships these surfaces as real code paths, not design placeholders:
+
+- workspace mutation and patching inside the external Builder workspace
+- typed repo status, diff, staging, commit, and branch operations
+- allowlisted one-shot commands plus managed long-running processes
+- project-local env schema inspection, readiness validation, redacted reads, writes, and `.env.example` sync
+- allowlisted HTTP GET/POST/PUT/DELETE probes
+- read-only database artifact inspection plus live probe drift comparison
+- experimental runtime/service discovery and guarded control actions
+
+The next Builder phase is therefore a truth-and-trust phase: reconcile docs with shipped behavior, make review and operator-trust surfaces summarize all of it coherently, and close any remaining audit or test gaps before widening authority further.
 
 ## Builder MCP Policy Artifact
 
@@ -63,13 +77,13 @@ At execution preflight, Builder:
 
 ## Reconciliation Path
 
-When policy changes are legitimate, use the Builder `reconcile_mcp_policy` command to rebuild `.builder/mcp-policy.json` and update the persisted expected hash together.
+When policy changes are legitimate, use the Builder `builder_reconcile_mcp_policy` tool with explicit operator confirmation to rebuild `.builder/mcp-policy.json` and update the persisted expected hash together.
 
 ## Operator Expectations
 
 - Treat `.builder/mcp-policy.json` as Builder-managed state.
 - Do not hand-edit the file during normal task work.
-- If control-plane policy legitimately changes, use `reconcile_mcp_policy` so the Builder-managed baseline and artifact move together.
+- If control-plane policy legitimately changes, use `builder_reconcile_mcp_policy` with explicit operator confirmation so the Builder-managed baseline and artifact move together.
 
 ## Builder Dependency Contract
 

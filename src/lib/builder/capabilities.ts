@@ -188,9 +188,10 @@ export const BUILDER_CAPABILITY_CATALOG: BuilderCapabilityDefinition[] = [
     status: "available",
     summary: "Deterministic MCP policy, dependency contract, and file-topology contract enforcement.",
     tools: [
-      "reconcile_mcp_policy",
-      "resolve_dependency_contract_drift",
-      "resolve_file_topology_contract_drift",
+      "builder_reconcile_mcp_policy",
+      "builder_resolve_mcp_contract_drift",
+      "builder_resolve_dependency_contract_drift",
+      "builder_resolve_file_topology_contract_drift",
     ],
     policy: {
       scope: "project",
@@ -361,8 +362,8 @@ export const BUILDER_CAPABILITY_CATALOG: BuilderCapabilityDefinition[] = [
     title: "Network HTTP",
     domain: "network",
     tier: "extended",
-    status: "partial",
-    summary: "Allowlisted HTTP probing and integration validation with bounded request and response handling plus persisted capability audit events.",
+    status: "available",
+    summary: "Allowlisted HTTP probing and integration validation with bounded request and response handling, explicit retry policy, auth-reference controls, and persisted capability audit events.",
     tools: ["builder_http_get", "builder_http_post", "builder_http_put", "builder_http_delete"],
     policy: {
       scope: "project",
@@ -394,8 +395,8 @@ export const BUILDER_CAPABILITY_CATALOG: BuilderCapabilityDefinition[] = [
     title: "Database Introspection",
     domain: "database",
     tier: "extended",
-    status: "partial",
-    summary: "Read-only schema and migration inspection for Builder-managed project databases with project-bound datasource policy and audit trails.",
+    status: "available",
+    summary: "Read-only schema, migration, and live-probe drift inspection for Builder-managed project databases with project-bound datasource policy and audit trails.",
     tools: [
       "builder_db_list_tables",
       "builder_db_describe_table",

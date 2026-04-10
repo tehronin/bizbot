@@ -2,7 +2,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
-import { listBuilderScaffoldBlockingEntries, scaffoldBuilderNodePackage } from "@/lib/builder/workspace";
+import { appendBuilderFile, deleteBuilderPath, listBuilderScaffoldBlockingEntries, moveBuilderPath, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
 
 function createTempBuilderWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-builder-workspace-"));
@@ -87,5 +87,55 @@ describe("builder workspace scaffold guards", () => {
       "projects/plugin-demo/src/plugin.ts",
     ]));
     expect(packageJson.scripts.start).toBe("node dist/plugin.js");
+  });
+
+  it("emits workspace audit artifacts for file mutations and keeps protected paths blocked", () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const writeResult = writeBuilderFile("projects/demo/notes.txt", "hello\n");
+    const appendResult = appendBuilderFile("projects/demo/notes.txt", "world\n");
+    const moveResult = moveBuilderPath("projects/demo/notes.txt", "projects/demo/archive/notes.txt");
+    const deleteResult = deleteBuilderPath("projects/demo/archive/notes.txt");
+
+    expect(fs.existsSync(path.join(workspaceRoot, writeResult.auditPath))).toBe(true);
+    expect(fs.existsSync(path.join(workspaceRoot, appendResult.auditPath))).toBe(true);
+    expect(fs.existsSync(path.join(workspaceRoot, moveResult.auditPath))).toBe(true);
+    expect(fs.existsSync(path.join(workspaceRoot, deleteResult.auditPath))).toBe(true);
+    expect(() => writeBuilderFile("projects/demo/node_modules/blocked.txt", "nope"))
+      .toThrow("protected builder segment");
+
+    const auditPath = path.join(workspaceRoot, "projects/demo/.builder/reports/capability-audit.jsonl");
+    const auditLines = fs.readFileSync(auditPath, "utf-8").trim().split(/\r?\n/).map((line) => JSON.parse(line) as {
+      outcomeStatus: string;
+      metadata?: { operation?: string; reason?: string };
+    });
+    expect(auditLines).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        outcomeStatus: "blocked",
+        metadata: expect.objectContaining({ operation: "write_file", reason: "protected_segment" }),
+      }),
+    ]));
+  });
+
+  it("emits failed audit artifacts when workspace moves are rejected", () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    expect(() => moveBuilderPath("projects/demo/missing.txt", "projects/demo/archive/missing.txt"))
+      .toThrow("Path not found");
+
+    const auditPath = path.join(workspaceRoot, "projects/demo/.builder/reports/capability-audit.jsonl");
+    expect(fs.existsSync(auditPath)).toBe(true);
+    const auditLines = fs.readFileSync(auditPath, "utf-8").trim().split(/\r?\n/).map((line) => JSON.parse(line) as {
+      outcomeStatus: string;
+      metadata?: { operation?: string; reason?: string };
+    });
+    expect(auditLines).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        outcomeStatus: "failed",
+        metadata: expect.objectContaining({ operation: "move_path", reason: "source_missing" }),
+      }),
+    ]));
   });
 });

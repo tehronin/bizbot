@@ -713,6 +713,66 @@ describe("builder routes", () => {
         history: [{ id: "snapshot-1", snapshotSequence: 1, versionHash: "hash-1", appliedAt: "2025-01-01T00:00:00.000Z" }],
         drift: null,
       },
+      dependencyContract: {
+        runId: "run-1",
+        currentHash: "dep-hash-1",
+        state: "drifted",
+        baseline: {
+          expectedHash: "dep-hash-0",
+          decisionKeys: ["dependency_policy"],
+          updatedAt: "2025-01-01T00:00:00.000Z",
+        },
+        planning: {
+          baselineHash: "dep-hash-0",
+          currentHash: "dep-hash-1",
+          driftDetected: true,
+          packageManager: "npm",
+          relatedArchitectureDecisionKeys: ["dependency_policy"],
+          highlightedPackages: ["next", "prisma"],
+          recommendations: ["Review package.json and the active lockfile together before approval."],
+          summary: "Dependency contract drift detected: packages(+1/-0/~1/reclass 0), scripts(+0/-0/~1), lockfileChanged=true, packageManagerChanged=false.",
+        },
+        drift: {
+          previousHash: "dep-hash-0",
+          currentHash: "dep-hash-1",
+          changed: true,
+          packages: { added: ["zod"], removed: [], changed: ["next"], reclassified: [] },
+          scripts: { added: [], removed: [], changed: ["build"] },
+          lockfileChanged: true,
+          packageManagerChanged: false,
+        },
+      },
+      fileTopologyContract: {
+        runId: "run-1",
+        currentHash: "topo-hash-1",
+        state: "drifted",
+        baseline: {
+          expectedHash: "topo-hash-0",
+          decisionKeys: ["topology_policy"],
+          updatedAt: "2025-01-01T00:00:00.000Z",
+        },
+        planning: {
+          baselineHash: "topo-hash-0",
+          currentHash: "topo-hash-1",
+          driftDetected: true,
+          relatedArchitectureDecisionKeys: ["topology_policy"],
+          anchors: { appRoot: "src/app", libRoot: "src/lib", componentsRoot: "src/components", testsRoot: "tests", scriptsRoot: "scripts", prismaRoot: "prisma", tauriRoot: "src-tauri", builderProjectionRoot: ".builder" },
+          topLevel: ["src", "tests", "scripts"],
+          placementGuidance: ["Keep Builder-managed projection paths under .builder."],
+          recommendations: ["Review structural changes as placement policy before approving the new topology baseline."],
+          summary: "File topology drift detected: directories(+1/-0), importantFiles(+0/-0), anchorsChanged=1, classificationsChanged=0, rulesChanged=0.",
+        },
+        drift: {
+          previousHash: "topo-hash-0",
+          currentHash: "topo-hash-1",
+          changed: true,
+          directories: { added: ["src/features"], removed: [] },
+          importantFiles: { added: [], removed: [] },
+          anchorsChanged: ["componentsRoot"],
+          classificationsChanged: [],
+          rulesChanged: [],
+        },
+      },
       nextRecommendedStep: "Continue the current task.",
     });
     mocks.planBuilderProject.mockResolvedValue({
@@ -808,6 +868,32 @@ describe("builder routes", () => {
           latestNewDecisionCount: 0,
           latestRetiredDecisionCount: 0,
         },
+      },
+      dependencyContract: {
+        runId: null,
+        currentHash: null,
+        state: "not_available",
+        baseline: null,
+        planning: null,
+        drift: null,
+      },
+      fileTopologyContract: {
+        runId: null,
+        currentHash: "topo-hash-1",
+        state: "pending_capture",
+        baseline: null,
+        planning: {
+          baselineHash: null,
+          currentHash: "topo-hash-1",
+          driftDetected: true,
+          relatedArchitectureDecisionKeys: ["topology_policy"],
+          anchors: { appRoot: "src/app", libRoot: "src/lib", componentsRoot: "src/components", testsRoot: "tests", scriptsRoot: "scripts", prismaRoot: "prisma", tauriRoot: "src-tauri", builderProjectionRoot: ".builder" },
+          topLevel: ["src", "tests", "scripts"],
+          placementGuidance: ["Keep Builder-managed projection paths under .builder."],
+          recommendations: ["Capture the current filesystem shape as the accepted file topology contract before broad structural work."],
+          summary: "No accepted file topology contract baseline exists yet.",
+        },
+        drift: null,
       },
       nextRecommendedStep: "Advance the first task spec.",
     });
@@ -1085,6 +1171,8 @@ describe("builder routes", () => {
     expect(payload.runs).toHaveLength(1);
     expect(payload.metrics.architecture.activeDecisionCount).toBe(1);
     expect(payload.mcpSnapshot.currentSequence).toBe(1);
+    expect(payload.dependencyContract.state).toBe("drifted");
+    expect(payload.fileTopologyContract.state).toBe("drifted");
   });
 
   it("plans a project through the dedicated planning route", async () => {
@@ -1222,6 +1310,7 @@ describe("builder routes", () => {
         action: "resolve_mcp_contract_drift",
         runId: "run-1",
         decision: "approve",
+        confirmed: true,
         reason: "Accept the new contract for this task.",
       }),
     }), {
@@ -1234,6 +1323,7 @@ describe("builder routes", () => {
       action: "resolve_mcp_contract_drift",
       runId: "run-1",
       decision: "approve",
+      confirmed: true,
       reason: "Accept the new contract for this task.",
     });
     expect(payload.runId).toBe("run-1");
@@ -1247,6 +1337,7 @@ describe("builder routes", () => {
         action: "resolve_dependency_contract_drift",
         runId: "run-1",
         decision: "approve",
+        confirmed: true,
         reason: "Accept the package.json and lockfile rollover.",
       }),
     }), {
@@ -1259,6 +1350,7 @@ describe("builder routes", () => {
       action: "resolve_dependency_contract_drift",
       runId: "run-1",
       decision: "approve",
+      confirmed: true,
       reason: "Accept the package.json and lockfile rollover.",
     });
     expect(payload.runId).toBe("run-1");
@@ -1272,6 +1364,7 @@ describe("builder routes", () => {
         action: "resolve_file_topology_contract_drift",
         runId: "run-1",
         decision: "approve",
+        confirmed: true,
         reason: "Accept the structural rollover.",
       }),
     }), {
@@ -1284,9 +1377,29 @@ describe("builder routes", () => {
       action: "resolve_file_topology_contract_drift",
       runId: "run-1",
       decision: "approve",
+      confirmed: true,
       reason: "Accept the structural rollover.",
     });
     expect(payload.runId).toBe("run-1");
+  });
+
+  it("rejects governance commands without explicit confirmation", async () => {
+    const response = await postCommand(new NextRequest("http://localhost/api/builder/projects/project-1/commands", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "resolve_mcp_contract_drift",
+        runId: "run-1",
+        decision: "approve",
+        reason: "Accept the new contract for this task.",
+      }),
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(String(payload.error)).toContain("requires explicit operator confirmation");
   });
 
   it("cancels a running builder run", async () => {

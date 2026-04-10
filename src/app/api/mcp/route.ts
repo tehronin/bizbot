@@ -36,7 +36,7 @@ async function checkAuth(req: Request): Promise<Response | null> {
  * Stateless mode: no session tracking, each request is independent.
  */
 async function handleMcpRequest(req: Request): Promise<Response> {
-  const server = createBizBotMcpServer();
+  const server = createBizBotMcpServer({ transportKind: "http", enableSampling: false });
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // stateless

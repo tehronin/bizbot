@@ -36,6 +36,13 @@ export interface BuilderCapabilityAuditOverview {
   recentEvents: BuilderCapabilityAuditEventRecord[];
 }
 
+export interface BuilderCapabilityAuditContext {
+  projectRelativePath?: string | null;
+  projectId?: string | null;
+  taskId?: string | null;
+  runId?: string | null;
+}
+
 function resolveCapabilityAuditRelativePath(projectRelativePath?: string | null): string {
   if (projectRelativePath && projectRelativePath.trim()) {
     return path.posix.join(projectRelativePath, ".builder", "reports", "capability-audit.jsonl");

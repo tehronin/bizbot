@@ -1,5 +1,6 @@
 import { spawnSync } from "child_process";
 import path from "path";
+import { appendBuilderCapabilityAuditEvent, type BuilderCapabilityAuditContext } from "@/lib/builder/audit";
 import { getBuilderRepositoryRoot, isPathInside, resolveBuilderWorkspacePath } from "@/lib/builder/config";
 
 export interface BuilderRepoStatusEntry {
@@ -34,6 +35,24 @@ interface GitResult {
   stdout: string;
   stderr: string;
   status: number;
+}
+
+function appendVcsAuditEvent(args: BuilderCapabilityAuditContext & {
+  projectRelativePath: string;
+  outcomeStatus: "succeeded" | "failed" | "blocked";
+  targets: Array<{ kind: "repository" | "file"; identifier: string; metadata?: Record<string, unknown> }>;
+  metadata?: Record<string, unknown>;
+}): string {
+  return appendBuilderCapabilityAuditEvent({
+    capabilityKey: "version_control",
+    projectRelativePath: args.projectRelativePath,
+    projectId: args.projectId,
+    taskId: args.taskId,
+    runId: args.runId,
+    outcomeStatus: args.outcomeStatus,
+    targets: args.targets,
+    metadata: args.metadata,
+  }).auditPath;
 }
 
 function safeRepoRoot(subdir = "."): { absolute: string; relative: string } {
@@ -89,7 +108,7 @@ function parseAheadBehind(stdout: string): { ahead: number; behind: number } {
   };
 }
 
-export function getBuilderRepoStatus(subdir = "."): BuilderRepoStatus {
+export function getBuilderRepoStatus(subdir = ".", auditContext?: BuilderCapabilityAuditContext): BuilderRepoStatus & { auditPath: string } {
   const branch = runGit(["branch", "--show-current"], subdir);
   const statusResult = runGit(["status", "--porcelain"], subdir);
   const repo = safeRepoRoot(subdir);
@@ -122,6 +141,20 @@ export function getBuilderRepoStatus(subdir = "."): BuilderRepoStatus {
     }
   }
 
+  const auditPath = appendVcsAuditEvent({
+    ...auditContext,
+    projectRelativePath: repo.relative,
+    outcomeStatus: "succeeded",
+    targets: [{ kind: "repository", identifier: repo.relative }],
+    metadata: {
+      operation: "repo_status",
+      currentBranch: branch.stdout.trim() || null,
+      stagedCount: staged.length,
+      unstagedCount: unstaged.length,
+      untrackedCount: untracked.length,
+    },
+  });
+
   return {
     repoRoot: branch.repoRoot,
     currentBranch: branch.stdout.trim() || null,
@@ -130,10 +163,11 @@ export function getBuilderRepoStatus(subdir = "."): BuilderRepoStatus {
     staged,
     unstaged,
     untracked,
+    auditPath,
   };
 }
 
-export function getBuilderRepoDiff(args: { subdir?: string; staged?: boolean; paths?: string[] } = {}): BuilderRepoDiff {
+export function getBuilderRepoDiff(args: { subdir?: string; staged?: boolean; paths?: string[]; audit?: BuilderCapabilityAuditContext } = {}): BuilderRepoDiff & { auditPath: string } {
   const gitArgs = ["diff"];
   if (args.staged) {
     gitArgs.push("--cached");
@@ -142,30 +176,57 @@ export function getBuilderRepoDiff(args: { subdir?: string; staged?: boolean; pa
     gitArgs.push("--", ...args.paths);
   }
   const result = runGit(gitArgs, args.subdir ?? ".");
+  const auditPath = appendVcsAuditEvent({
+    ...(args.audit ?? {}),
+    projectRelativePath: result.repoRoot,
+    outcomeStatus: "succeeded",
+    targets: [
+      { kind: "repository", identifier: result.repoRoot },
+      ...((args.paths ?? []).map((entry) => ({ kind: "file" as const, identifier: entry.replace(/\\/g, "/") }))),
+    ],
+    metadata: { operation: "diff", scope: args.staged ? "staged" : "unstaged" },
+  });
   return {
     repoRoot: result.repoRoot,
     scope: args.staged ? "staged" : "unstaged",
     patch: result.stdout,
+    auditPath,
   };
 }
 
-export function stageBuilderRepoPaths(paths: string[], subdir = "."): BuilderRepoStatus {
+export function stageBuilderRepoPaths(paths: string[], subdir = ".", auditContext?: BuilderCapabilityAuditContext): BuilderRepoStatus & { auditPath: string } {
   if (paths.length === 0) {
     throw new Error("Builder VCS stage requires at least one path.");
   }
   runGit(["add", "--", ...paths], subdir);
-  return getBuilderRepoStatus(subdir);
+  const status = getBuilderRepoStatus(subdir, auditContext);
+  appendVcsAuditEvent({
+    ...auditContext,
+    projectRelativePath: status.repoRoot,
+    outcomeStatus: "succeeded",
+    targets: [{ kind: "repository", identifier: status.repoRoot }, ...paths.map((entry) => ({ kind: "file" as const, identifier: entry.replace(/\\/g, "/") }))],
+    metadata: { operation: "stage_paths", pathCount: paths.length },
+  });
+  return status;
 }
 
-export function unstageBuilderRepoPaths(paths: string[], subdir = "."): BuilderRepoStatus {
+export function unstageBuilderRepoPaths(paths: string[], subdir = ".", auditContext?: BuilderCapabilityAuditContext): BuilderRepoStatus & { auditPath: string } {
   if (paths.length === 0) {
     throw new Error("Builder VCS unstage requires at least one path.");
   }
   runGit(["reset", "HEAD", "--", ...paths], subdir);
-  return getBuilderRepoStatus(subdir);
+  const status = getBuilderRepoStatus(subdir, auditContext);
+  appendVcsAuditEvent({
+    ...auditContext,
+    projectRelativePath: status.repoRoot,
+    outcomeStatus: "succeeded",
+    targets: [{ kind: "repository", identifier: status.repoRoot }, ...paths.map((entry) => ({ kind: "file" as const, identifier: entry.replace(/\\/g, "/") }))],
+    metadata: { operation: "unstage_paths", pathCount: paths.length },
+  });
+  return status;
 }
 
-export function commitBuilderRepo(args: { message: string; subdir?: string; allowEmpty?: boolean }): BuilderCommitResult {
+export function commitBuilderRepo(args: { message: string; subdir?: string; allowEmpty?: boolean; audit?: BuilderCapabilityAuditContext }): BuilderCommitResult & { auditPath: string } {
   const message = args.message.trim();
   if (!message) {
     throw new Error("Builder VCS commit requires a non-empty message.");
@@ -182,27 +243,51 @@ export function commitBuilderRepo(args: { message: string; subdir?: string; allo
   }
   const commitResult = runGit(gitArgs, args.subdir ?? ".");
   const shaResult = runGit(["rev-parse", "HEAD"], args.subdir ?? ".");
+  const auditPath = appendVcsAuditEvent({
+    ...(args.audit ?? {}),
+    projectRelativePath: commitResult.repoRoot,
+    outcomeStatus: "succeeded",
+    targets: [{ kind: "repository", identifier: commitResult.repoRoot }],
+    metadata: { operation: "commit", allowEmpty: Boolean(args.allowEmpty), commitSha: shaResult.stdout.trim() },
+  });
   return {
     repoRoot: commitResult.repoRoot,
     commitSha: shaResult.stdout.trim(),
     summary: commitResult.stdout.trim(),
+    auditPath,
   };
 }
 
-export function createBuilderRepoBranch(args: { name: string; subdir?: string; checkout?: boolean }): BuilderRepoStatus {
+export function createBuilderRepoBranch(args: { name: string; subdir?: string; checkout?: boolean; audit?: BuilderCapabilityAuditContext }): BuilderRepoStatus & { auditPath: string } {
   const branchName = args.name.trim();
   if (!branchName) {
     throw new Error("Builder VCS branch name is required.");
   }
   runGit(args.checkout ? ["checkout", "-b", branchName] : ["branch", branchName], args.subdir ?? ".");
-  return getBuilderRepoStatus(args.subdir ?? ".");
+  const status = getBuilderRepoStatus(args.subdir ?? ".", args.audit);
+  appendVcsAuditEvent({
+    ...(args.audit ?? {}),
+    projectRelativePath: status.repoRoot,
+    outcomeStatus: "succeeded",
+    targets: [{ kind: "repository", identifier: status.repoRoot }],
+    metadata: { operation: "create_branch", branchName, checkout: Boolean(args.checkout) },
+  });
+  return status;
 }
 
-export function switchBuilderRepoBranch(args: { name: string; subdir?: string }): BuilderRepoStatus {
+export function switchBuilderRepoBranch(args: { name: string; subdir?: string; audit?: BuilderCapabilityAuditContext }): BuilderRepoStatus & { auditPath: string } {
   const branchName = args.name.trim();
   if (!branchName) {
     throw new Error("Builder VCS branch name is required.");
   }
   runGit(["checkout", branchName], args.subdir ?? ".");
-  return getBuilderRepoStatus(args.subdir ?? ".");
+  const status = getBuilderRepoStatus(args.subdir ?? ".", args.audit);
+  appendVcsAuditEvent({
+    ...(args.audit ?? {}),
+    projectRelativePath: status.repoRoot,
+    outcomeStatus: "succeeded",
+    targets: [{ kind: "repository", identifier: status.repoRoot }],
+    metadata: { operation: "switch_branch", branchName },
+  });
+  return status;
 }

@@ -452,6 +452,22 @@ The MCP surface now doubles as a plugin authoring lab for power users:
 - Exposes Builder Mode tools for bounded project scaffolding and build-lane automation
 - Conformance coverage now exercises tools, resources, prompts, auth handling, and negative-path transport behavior
 
+#### MCP Sampling v1
+
+- Sampling is currently enabled only on the stdio MCP transport.
+- The HTTP MCP route stays stateless and does not advertise sampling.
+- BizBot uses sampling only for one bounded intent today: Builder dev-loop diagnosis through `developer_vscode_loop_assist`.
+- Sampling requests are analysis-only: BizBot does not allow tool execution inside the sampled model turn.
+- Nested sampling is blocked by policy.
+- The current sampling policy is inspectable through `bizbot://debug/mcp-sampling-policy`.
+
+Current verification commands:
+
+- `npm run test:mcp:sampling`: Run the focused MCP sampling validation slice.
+- `npm run mcp:stdio:smoke`: Run a real stdio smoke test with a sampling-capable SDK client against the local BizBot MCP server.
+
+The stdio smoke command will reuse the current Builder project overview when one exists and will seed a temporary Builder project only when the local database has no active overview to sample against.
+
 #### Sidecar Event Contract
 
 In-app chat execution can emit a dedicated `sidecar` SSE event which the dashboard bridges into the browser-level `bizbot:sidecar` CustomEvent.
@@ -721,7 +737,7 @@ bizbot/
 docker compose up -d
 ```
 
-This starts PostgreSQL, Redis, and Memgraph.
+This starts PostgreSQL, Redis, and Memgraph from the checked-in [compose.yaml](compose.yaml).
 
 ### 2. Install Dependencies and Set Up the Database
 
@@ -731,6 +747,12 @@ cp .env.example .env
 npx prisma generate
 npx prisma db push
 ```
+
+The checked-in `.env.example` matches the local Compose defaults:
+
+- `DATABASE_URL=postgresql://bizbot:bizbot@127.0.0.1:5432/bizbot?schema=public`
+- `REDIS_URL=redis://127.0.0.1:6379`
+- `MEMGRAPH_URI=bolt://127.0.0.1:7687`
 
 ### 3. Run the App
 
@@ -772,11 +794,13 @@ Copy `.env.example` and fill in only the providers you actually intend to use.
 
 ### Core Services
 
-| Variable       | Purpose                                   |
-| -------------- | ----------------------------------------- |
-| `DATABASE_URL` | PostgreSQL connection string              |
-| `MEMGRAPH_URI` | Memgraph connection string                |
-| `REDIS_URL`    | Optional Redis connection string override |
+| Variable             | Purpose                                   |
+| -------------------- | ----------------------------------------- |
+| `DATABASE_URL`       | PostgreSQL connection string              |
+| `MEMGRAPH_URI`       | Memgraph connection string                |
+| `MEMGRAPH_USER`      | Optional Memgraph username                |
+| `MEMGRAPH_PASSWORD`  | Optional Memgraph password                |
+| `REDIS_URL`          | Optional Redis connection string override |
 
 ### LLM and Agent Runtime
 
@@ -841,10 +865,13 @@ The intended production split is Google for embeddings and MiniMax M2.7 for the 
 - `npm run dev:web:webpack`: Start only the Next.js webpack dev server
 - `npm run worker`: Start only the worker. On Windows this automatically uses `PRISMA_CLIENT_ENGINE_TYPE=binary` unless you explicitly override it.
 - `npm run mcp:stdio`: Start BizBot as a stdio MCP server
+- `npm run mcp:stdio:smoke`: Run the manual stdio MCP sampling smoke test against the local server
 - `npm run plugin:new -- <name>`: Scaffold a plugin file and matching starter test
 - `npm run test:app`: Run non-MCP Vitest coverage
 - `npm run test:mcp`: Run MCP transport, contract, and plugin integration tests
-- `npm run test:e2e`: Run Playwright browser end-to-end coverage
+- `npm run test:mcp:sampling`: Run the focused MCP sampling bridge, transport-policy, and stdio round-trip tests
+- `npm run test:e2e`: Run the full Playwright browser end-to-end suite
+- `npm run test:e2e:builder`: Run the Builder dashboard Playwright smoke flow against the local Compose-backed stack
 - `npm run lint:docs`: Lint README and contributor markdown
 - `npm run build`: Production build plus standalone asset preparation
 - `npm run start:web`: Start the standalone packaged Next.js server

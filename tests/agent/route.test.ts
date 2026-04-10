@@ -65,6 +65,49 @@ describe("agent route sidecar stream", () => {
     expect(text).toContain('"name":"sidecar_open"');
   });
 
+  it("forwards swarm SSE events to the client stream", async () => {
+    executorMocks.executeAgentConversation.mockImplementation(async ({ onEvent }) => {
+      await onEvent?.({
+        type: "swarm_plan",
+        runId: "run-3",
+        mode: "core_chat_swarm",
+        reason: "multi-source synthesis",
+        workerCount: 6,
+        plannerConfidence: 0.82,
+      });
+      await onEvent?.({
+        type: "swarm_validation",
+        runId: "run-3",
+        valid: true,
+        issues: [],
+      });
+      await onEvent?.({
+        type: "done",
+        conversationId: "conversation-3",
+        reply: "grounded summary",
+      });
+      return {
+        reply: "grounded summary",
+        runId: "run-3",
+        conversationId: "conversation-3",
+        profile: "content_operator",
+        provider: "ollama",
+        model: "model-1",
+      };
+    });
+
+    const response = await POST(new Request("http://localhost:3000/api/agent", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "Summarize sources", stream: true }),
+    }) as never);
+
+    const text = await response.text();
+    expect(text).toContain("event: swarm_plan");
+    expect(text).toContain("event: swarm_validation");
+    expect(text).toContain('"workerCount":6');
+  });
+
   it("forwards explicit oracle prediction requests into the executor", async () => {
     executorMocks.executeAgentConversation.mockResolvedValue({
       reply: "oracle reply",

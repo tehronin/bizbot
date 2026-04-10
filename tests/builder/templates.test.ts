@@ -87,6 +87,7 @@ function makeProject(template: "node-cli" | "plugin-package" | "vite-app" | "nex
 
 afterEach(() => {
   delete process.env.BIZBOT_BUILDER_WORKSPACE_PATH;
+  vi.clearAllMocks();
 });
 
 describe("builder template bootstraps", () => {
@@ -145,7 +146,7 @@ describe("builder template bootstraps", () => {
     const project = makeProject("next-app", "next-app-test");
     await bootstrapBuilderProject(project);
 
-    expect(vi.mocked(runNpmCreatePackage)).toHaveBeenCalledWith("projects/next-app-test", "next-app@latest", [
+    expect(vi.mocked(runNpmCreatePackage)).toHaveBeenCalledWith("projects", "next-app@latest", "next-app-test", [
       "--ts",
       "--eslint",
       "--app",
@@ -167,9 +168,10 @@ describe("builder template bootstraps", () => {
     const project = makeProject("vite-app", "vite-app-test");
     await bootstrapBuilderProject(project);
 
-    expect(vi.mocked(runNpmCreatePackage)).toHaveBeenCalledWith("projects/vite-app-test", "vite@latest", [
+    expect(vi.mocked(runNpmCreatePackage)).toHaveBeenCalledWith("projects", "vite@latest", "vite-app-test", [
       "--template",
       "react-ts",
+      "--no-interactive",
     ]);
     expect(BUILDER_TEMPLATE_VERIFICATION_CONTRACTS["vite-app"]).toEqual(expect.objectContaining({
       requiredFiles: expect.arrayContaining([".builder/mcp-policy.json"]),

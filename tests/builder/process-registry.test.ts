@@ -27,7 +27,9 @@ vi.mock("@/lib/builder/tasks", async () => {
 });
 
 import {
+  cleanupBuilderManagedProcesses,
   startBuilderManagedProcess,
+  stopBuilderManagedProcess,
   waitForBuilderManagedProcess,
 } from "@/lib/builder/process-registry";
 
@@ -84,5 +86,58 @@ describe("builder process registry", () => {
     expect(fs.existsSync(path.join(workspaceRoot, started.process.metadataPath))).toBe(true);
     expect(finished.completed).toBe(true);
     expect(["exited", "failed"]).toContain(finished.process.status);
+  });
+
+  it("marks managed processes as timed out when they exceed the configured runtime", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS = "node";
+
+    const started = await startBuilderManagedProcess({
+      command: "node",
+      args: ["-e", "setTimeout(() => {}, 2000)"],
+      timeoutSeconds: 1,
+    });
+    const finished = await waitForBuilderManagedProcess({
+      processId: started.process.processId,
+      timeoutSeconds: 5,
+    });
+
+    expect(finished.completed).toBe(true);
+    expect(finished.process.status).toBe("timed_out");
+    expect(fs.readFileSync(path.join(workspaceRoot, finished.process.auditPath), "utf-8")).toContain('"action":"completed"');
+  });
+
+  it("persists cancellation state and cleanup removes stale completed artifacts", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS = "node";
+
+    const started = await startBuilderManagedProcess({
+      command: "node",
+      args: ["-e", "setTimeout(() => {}, 5000)"],
+      timeoutSeconds: 30,
+    });
+    stopBuilderManagedProcess(started.process.processId);
+    const finished = await waitForBuilderManagedProcess({ processId: started.process.processId, timeoutSeconds: 5 });
+
+    expect(finished.completed).toBe(true);
+    expect(["cancelled", "failed", "timed_out"]).toContain(finished.process.status);
+
+    const metadataPath = path.join(workspaceRoot, finished.process.metadataPath);
+    const logPath = path.join(workspaceRoot, finished.process.logPath);
+    const auditPath = path.join(workspaceRoot, finished.process.auditPath);
+    const staleMetadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as { startedAt: string; updatedAt: string; exitedAt: string | null; status: string };
+    staleMetadata.startedAt = "2000-01-01T00:00:00.000Z";
+    staleMetadata.updatedAt = "2000-01-01T00:00:00.000Z";
+    staleMetadata.exitedAt = "2000-01-01T00:00:00.000Z";
+    fs.writeFileSync(metadataPath, JSON.stringify(staleMetadata, null, 2), "utf-8");
+
+    const cleanup = cleanupBuilderManagedProcesses();
+
+    expect(cleanup.deletedProcessIds).toContain(finished.process.processId);
+    expect(fs.existsSync(metadataPath)).toBe(false);
+    expect(fs.existsSync(logPath)).toBe(false);
+    expect(fs.existsSync(auditPath)).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { spawn, spawnSync } from "child_process";
+import { appendBuilderCapabilityAuditEvent, type BuilderCapabilityAuditContext } from "@/lib/builder/audit";
 import { 
   assertBuilderWorkspaceSafe as assertBuilderConfigSafe,
   getBuilderAllowedCommands,
@@ -17,6 +18,10 @@ const MAX_COMMAND_TIMEOUT_SECONDS = 600;
 const MAX_CAPTURED_OUTPUT_CHARS = 24_000;
 const BUILDER_MANAGED_PROJECT_ROOT_ENTRIES = new Set([".builder", "AGENTS.md"]);
 const BUILDER_PROTECTED_MUTATION_SEGMENTS = new Set([".git", "node_modules"]);
+
+interface BuilderWorkspaceMutationAuditContext extends BuilderCapabilityAuditContext {
+  projectRelativePath?: string | null;
+}
 
 export interface BuilderPathStat {
   path: string;
@@ -98,13 +103,80 @@ function safeBuilderPath(relativePath: string): string {
   return resolved;
 }
 
-function assertBuilderMutationPathAllowed(relativePath: string): void {
+function inferProjectRelativePath(relativePath: string): string | null {
   const normalizedPath = relativePath.replace(/\\/g, "/").replace(/^\.\//, "");
+  const segments = normalizedPath.split("/").filter(Boolean);
+  if (segments[0] !== "projects" || !segments[1]) {
+    return null;
+  }
+  return `projects/${segments[1]}`;
+}
+
+function appendWorkspaceMutationAuditEvent(args: BuilderWorkspaceMutationAuditContext & {
+  outcomeStatus: "succeeded" | "failed" | "blocked";
+  targets: Array<{ kind: "file" | "directory"; identifier: string; metadata?: Record<string, unknown> }>;
+  metadata?: Record<string, unknown>;
+}): string {
+  return appendBuilderCapabilityAuditEvent({
+    capabilityKey: "workspace_manipulation",
+    projectRelativePath: args.projectRelativePath ?? inferProjectRelativePath(args.targets[0]?.identifier ?? ""),
+    projectId: args.projectId,
+    taskId: args.taskId,
+    runId: args.runId,
+    outcomeStatus: args.outcomeStatus,
+    targets: args.targets,
+    metadata: args.metadata,
+  }).auditPath;
+}
+
+function normalizeWorkspaceMutationPath(relativePath: string): string {
+  return relativePath.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function assertBuilderMutationPathAllowed(
+  relativePath: string,
+  auditContext?: BuilderWorkspaceMutationAuditContext,
+  kind: "file" | "directory" = "file",
+  operation?: string,
+): void {
+  const normalizedPath = normalizeWorkspaceMutationPath(relativePath);
   const segments = normalizedPath.split("/").filter(Boolean);
   for (const segment of segments) {
     if (BUILDER_PROTECTED_MUTATION_SEGMENTS.has(segment)) {
-      throw new Error(`Access denied: mutation path targets protected builder segment '${segment}'.`);
+      const auditPath = appendWorkspaceMutationAuditEvent({
+        ...auditContext,
+        projectRelativePath: auditContext?.projectRelativePath ?? inferProjectRelativePath(normalizedPath),
+        outcomeStatus: "blocked",
+        targets: [{ kind, identifier: normalizedPath }],
+        metadata: { operation, reason: "protected_segment", segment },
+      });
+      throw new Error(`Access denied: mutation path targets protected builder segment '${segment}'. Audit: ${auditPath}`);
     }
+  }
+}
+
+function resolveWorkspaceMutationPath(
+  relativePath: string,
+  auditContext?: BuilderWorkspaceMutationAuditContext,
+  kind: "file" | "directory" = "file",
+  operation?: string,
+): string {
+  const normalizedPath = normalizeWorkspaceMutationPath(relativePath);
+  assertBuilderMutationPathAllowed(relativePath, auditContext, kind, operation);
+  try {
+    return safeBuilderPath(relativePath);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("path escapes builder workspace root")) {
+      const auditPath = appendWorkspaceMutationAuditEvent({
+        ...auditContext,
+        projectRelativePath: auditContext?.projectRelativePath ?? inferProjectRelativePath(normalizedPath),
+        outcomeStatus: "blocked",
+        targets: [{ kind, identifier: normalizedPath }],
+        metadata: { operation, reason: "path_escape" },
+      });
+      throw new Error(`${error.message}. Audit: ${auditPath}`);
+    }
+    throw error;
   }
 }
 
@@ -199,48 +271,99 @@ export function readBuilderFile(relativePath: string): string {
   return fs.readFileSync(absolutePath, "utf-8");
 }
 
-export function writeBuilderFile(relativePath: string, content: string): void {
-  assertBuilderMutationPathAllowed(relativePath);
-  const absolutePath = safeBuilderPath(relativePath);
+export function writeBuilderFile(relativePath: string, content: string, auditContext?: BuilderWorkspaceMutationAuditContext): { auditPath: string } {
+  const normalizedPath = normalizeWorkspaceMutationPath(relativePath);
+  const absolutePath = resolveWorkspaceMutationPath(relativePath, auditContext, "file", "write_file");
   writeFileAtomic(absolutePath, content);
+  return {
+    auditPath: appendWorkspaceMutationAuditEvent({
+      ...auditContext,
+      outcomeStatus: "succeeded",
+      targets: [{ kind: "file", identifier: normalizedPath }],
+      metadata: { operation: "write_file", bytesWritten: Buffer.byteLength(content, "utf-8") },
+    }),
+  };
 }
 
-export function createBuilderDirectory(relativePath: string): void {
-  assertBuilderMutationPathAllowed(relativePath);
-  const absolutePath = safeBuilderPath(relativePath);
+export function createBuilderDirectory(relativePath: string, auditContext?: BuilderWorkspaceMutationAuditContext): { auditPath: string } {
+  const normalizedPath = normalizeWorkspaceMutationPath(relativePath);
+  const absolutePath = resolveWorkspaceMutationPath(relativePath, auditContext, "directory", "create_directory");
   fs.mkdirSync(absolutePath, { recursive: true });
+  return {
+    auditPath: appendWorkspaceMutationAuditEvent({
+      ...auditContext,
+      outcomeStatus: "succeeded",
+      targets: [{ kind: "directory", identifier: normalizedPath }],
+      metadata: { operation: "create_directory" },
+    }),
+  };
 }
 
-export function ensureBuilderDirectory(relativePath: string): void {
-  createBuilderDirectory(relativePath);
+export function ensureBuilderDirectory(relativePath: string, auditContext?: BuilderWorkspaceMutationAuditContext): { auditPath: string } {
+  return createBuilderDirectory(relativePath, auditContext);
 }
 
-export function appendBuilderFile(relativePath: string, content: string): void {
-  assertBuilderMutationPathAllowed(relativePath);
-  const absolutePath = safeBuilderPath(relativePath);
+export function appendBuilderFile(relativePath: string, content: string, auditContext?: BuilderWorkspaceMutationAuditContext): { auditPath: string } {
+  const normalizedPath = normalizeWorkspaceMutationPath(relativePath);
+  const absolutePath = resolveWorkspaceMutationPath(relativePath, auditContext, "file", "append_file");
   const existing = fs.existsSync(absolutePath) ? fs.readFileSync(absolutePath, "utf-8") : "";
   writeFileAtomic(absolutePath, `${existing}${content}`);
+  return {
+    auditPath: appendWorkspaceMutationAuditEvent({
+      ...auditContext,
+      outcomeStatus: "succeeded",
+      targets: [{ kind: "file", identifier: normalizedPath }],
+      metadata: { operation: "append_file", bytesAppended: Buffer.byteLength(content, "utf-8") },
+    }),
+  };
 }
 
-export function deleteBuilderPath(relativePath: string): void {
-  assertBuilderMutationPathAllowed(relativePath);
-  const absolutePath = safeBuilderPath(relativePath);
-  if (!fs.existsSync(absolutePath)) {
-    return;
+export function deleteBuilderPath(relativePath: string, auditContext?: BuilderWorkspaceMutationAuditContext): { auditPath: string } {
+  const normalizedPath = normalizeWorkspaceMutationPath(relativePath);
+  const absolutePath = resolveWorkspaceMutationPath(relativePath, auditContext, "file", "delete_path");
+  const kind = fs.existsSync(absolutePath) && fs.statSync(absolutePath).isDirectory() ? "directory" : "file";
+  if (fs.existsSync(absolutePath)) {
+    fs.rmSync(absolutePath, { recursive: true, force: true });
   }
-  fs.rmSync(absolutePath, { recursive: true, force: true });
+  return {
+    auditPath: appendWorkspaceMutationAuditEvent({
+      ...auditContext,
+      outcomeStatus: "succeeded",
+      targets: [{ kind, identifier: normalizedPath }],
+      metadata: { operation: "delete_path" },
+    }),
+  };
 }
 
-export function moveBuilderPath(fromRelativePath: string, toRelativePath: string): void {
-  assertBuilderMutationPathAllowed(fromRelativePath);
-  assertBuilderMutationPathAllowed(toRelativePath);
-  const fromAbsolutePath = safeBuilderPath(fromRelativePath);
-  const toAbsolutePath = safeBuilderPath(toRelativePath);
+export function moveBuilderPath(fromRelativePath: string, toRelativePath: string, auditContext?: BuilderWorkspaceMutationAuditContext): { auditPath: string } {
+  const normalizedFromPath = normalizeWorkspaceMutationPath(fromRelativePath);
+  const normalizedToPath = normalizeWorkspaceMutationPath(toRelativePath);
+  const fromAbsolutePath = resolveWorkspaceMutationPath(fromRelativePath, auditContext, "file", "move_path");
+  const toAbsolutePath = resolveWorkspaceMutationPath(toRelativePath, auditContext, "file", "move_path");
   if (!fs.existsSync(fromAbsolutePath)) {
-    throw new Error(`Path not found: ${fromRelativePath}`);
+    const auditPath = appendWorkspaceMutationAuditEvent({
+      ...auditContext,
+      projectRelativePath: auditContext?.projectRelativePath ?? inferProjectRelativePath(normalizedFromPath) ?? inferProjectRelativePath(normalizedToPath),
+      outcomeStatus: "failed",
+      targets: [{ kind: "file", identifier: normalizedFromPath }, { kind: "file", identifier: normalizedToPath }],
+      metadata: { operation: "move_path", reason: "source_missing" },
+    });
+    throw new Error(`Path not found: ${fromRelativePath}. Audit: ${auditPath}`);
   }
+  const kind = fs.statSync(fromAbsolutePath).isDirectory() ? "directory" : "file";
   fs.mkdirSync(path.dirname(toAbsolutePath), { recursive: true });
   fs.renameSync(fromAbsolutePath, toAbsolutePath);
+  return {
+    auditPath: appendWorkspaceMutationAuditEvent({
+      ...auditContext,
+      outcomeStatus: "succeeded",
+      targets: [
+        { kind, identifier: normalizedFromPath },
+        { kind, identifier: normalizedToPath },
+      ],
+      metadata: { operation: "move_path" },
+    }),
+  };
 }
 
 export function builderPathExists(relativePath: string): boolean {
@@ -273,15 +396,21 @@ export function statBuilderPath(relativePath: string): BuilderPathStat {
   };
 }
 
-export async function applyBuilderPatch(patch: string, cwd = "."): Promise<BuilderPatchResult> {
+export async function applyBuilderPatch(patch: string, cwd = ".", auditContext?: BuilderWorkspaceMutationAuditContext): Promise<BuilderPatchResult & { auditPath: string }> {
   const touchedPaths = collectPatchTargetPaths(patch);
   if (touchedPaths.length === 0) {
-    throw new Error("Builder patch does not reference any target files.");
+    const auditPath = appendWorkspaceMutationAuditEvent({
+      ...auditContext,
+      projectRelativePath: auditContext?.projectRelativePath ?? inferProjectRelativePath(cwd),
+      outcomeStatus: "failed",
+      targets: [{ kind: "file", identifier: normalizeWorkspaceMutationPath(cwd) }],
+      metadata: { operation: "apply_patch", reason: "no_target_files" },
+    });
+    throw new Error(`Builder patch does not reference any target files. Audit: ${auditPath}`);
   }
 
   for (const targetPath of touchedPaths) {
-    assertBuilderMutationPathAllowed(targetPath);
-    safeBuilderPath(targetPath);
+    resolveWorkspaceMutationPath(targetPath, auditContext, "file", "apply_patch");
   }
 
   const patchCwd = safeBuilderPath(cwd);
@@ -318,6 +447,17 @@ export async function applyBuilderPatch(patch: string, cwd = "."): Promise<Build
       applied: true,
       cwd: toWorkspaceRelativePath(assertBuilderWorkspaceSafe(), patchCwd),
       touchedPaths,
+      auditPath: appendWorkspaceMutationAuditEvent({
+        ...auditContext,
+        projectRelativePath: auditContext?.projectRelativePath ?? inferProjectRelativePath(cwd) ?? inferProjectRelativePath(touchedPaths[0] ?? ""),
+        outcomeStatus: "succeeded",
+        targets: touchedPaths.map((targetPath) => ({ kind: "file" as const, identifier: targetPath })),
+        metadata: {
+          operation: "apply_patch",
+          cwd: toWorkspaceRelativePath(assertBuilderWorkspaceSafe(), patchCwd),
+          touchedPathCount: touchedPaths.length,
+        },
+      }),
     };
   } finally {
     if (fs.existsSync(patchFilePath)) {

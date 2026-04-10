@@ -1,3 +1,11 @@
+import type {
+  ClientCapabilities,
+  CreateMessageRequest,
+  CreateMessageResult,
+  CreateMessageResultWithTools,
+} from "@modelcontextprotocol/sdk/types.js";
+import type { McpTransportKind } from "@/lib/mcp/policy";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 
@@ -43,6 +51,13 @@ export interface ToolExecutionContext {
   agentProfile?: string;
   provider?: string;
   signal?: AbortSignal;
+  mcpSamplingSession?: McpSamplingSession;
+}
+
+export interface McpSamplingSession {
+  transportKind: McpTransportKind;
+  createMessage: (params: CreateMessageRequest["params"]) => Promise<CreateMessageResult | CreateMessageResultWithTools>;
+  getClientCapabilities: () => ClientCapabilities | undefined;
 }
 
 export interface ToolDefinition<TArgs extends object, TResult extends ToolExecutionResult> {

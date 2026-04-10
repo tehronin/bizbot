@@ -6,6 +6,10 @@ const DEFAULT_HTTP_TIMEOUT_SECONDS = 30;
 const MAX_HTTP_TIMEOUT_SECONDS = 120;
 const DEFAULT_HTTP_MAX_BYTES = 64_000;
 const MAX_HTTP_MAX_BYTES = 256_000;
+const DEFAULT_HTTP_MAX_REQUEST_BYTES = 16_000;
+const MAX_HTTP_MAX_REQUEST_BYTES = 64_000;
+const DEFAULT_HTTP_RETRY_COUNT = 1;
+const MAX_HTTP_RETRY_COUNT = 2;
 const SENSITIVE_HEADER_NAMES = new Set(["authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key"]);
 
 export interface BuilderHttpRequestArgs {
@@ -21,6 +25,8 @@ export interface BuilderHttpRequestArgs {
   authEnvKey?: string;
   authHeaderName?: string;
   authScheme?: string;
+  maxRequestBytes?: number;
+  retryCount?: number;
 }
 
 export interface BuilderHttpResponse {
@@ -44,6 +50,16 @@ function clampHttpTimeoutSeconds(raw: number | undefined): number {
 function clampHttpMaxBytes(raw: number | undefined): number {
   const candidate = Math.trunc(raw ?? DEFAULT_HTTP_MAX_BYTES);
   return Math.min(MAX_HTTP_MAX_BYTES, Math.max(256, candidate));
+}
+
+function clampHttpMaxRequestBytes(raw: number | undefined): number {
+  const candidate = Math.trunc(raw ?? DEFAULT_HTTP_MAX_REQUEST_BYTES);
+  return Math.min(MAX_HTTP_MAX_REQUEST_BYTES, Math.max(256, candidate));
+}
+
+function clampHttpRetryCount(raw: number | undefined): number {
+  const candidate = Math.trunc(raw ?? DEFAULT_HTTP_RETRY_COUNT);
+  return Math.min(MAX_HTTP_RETRY_COUNT, Math.max(0, candidate));
 }
 
 function normalizeHostEntry(entry: string): string {
@@ -137,10 +153,17 @@ function resolveAuthHeader(projectRelativePath: string, authEnvKey: string | und
   };
 }
 
+function getRequestBodyBytes(body: string | undefined): number {
+  return body ? Buffer.byteLength(body, "utf-8") : 0;
+}
+
 export async function builderHttpRequest(args: BuilderHttpRequestArgs): Promise<BuilderHttpResponse> {
   const timeoutSeconds = clampHttpTimeoutSeconds(args.timeoutSeconds);
   const maxBytes = clampHttpMaxBytes(args.maxBytes);
+  const maxRequestBytes = clampHttpMaxRequestBytes(args.maxRequestBytes);
+  const retryCount = clampHttpRetryCount(args.retryCount);
   const parsed = new URL(args.url);
+  const requestBytes = getRequestBodyBytes(args.body);
   if (!["http:", "https:"].includes(parsed.protocol)) {
     const audit = appendBuilderCapabilityAuditEvent({
       capabilityKey: "network_http",
@@ -166,65 +189,97 @@ export async function builderHttpRequest(args: BuilderHttpRequestArgs): Promise<
     throw new Error(`Builder HTTP host is not allowlisted: ${parsed.origin}. Audit: ${audit.auditPath}`);
   }
 
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
-  try {
-    const response = await fetch(parsed, {
-      method: args.method,
-      headers: {
-        ...assertSafeHeaders(args.headers),
-        ...(args.contentType?.trim() ? { "Content-Type": args.contentType.trim() } : {}),
-        ...resolveAuthHeader(args.projectRelativePath, args.authEnvKey, args.authHeaderName, args.authScheme),
-      },
-      body: args.method === "GET" || args.method === "DELETE" ? undefined : args.body,
-      signal: controller.signal,
-    });
-    const body = await readResponseBody(response, maxBytes);
+  if (requestBytes > maxRequestBytes) {
     const audit = appendBuilderCapabilityAuditEvent({
       capabilityKey: "network_http",
       projectRelativePath: args.projectRelativePath,
       projectId: args.projectId,
-      outcomeStatus: response.ok ? "succeeded" : "failed",
+      outcomeStatus: "blocked",
       targets: [{ kind: "host", identifier: parsed.origin }],
-      metadata: {
+      metadata: { method: args.method, reason: "request_too_large", requestBytes, maxRequestBytes },
+    });
+    throw new Error(`Builder HTTP request body exceeds the configured limit (${requestBytes} > ${maxRequestBytes}). Audit: ${audit.auditPath}`);
+  }
+
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
+    try {
+      const response = await fetch(parsed, {
         method: args.method,
-        path: parsed.pathname,
+        headers: {
+          ...assertSafeHeaders(args.headers),
+          ...(args.contentType?.trim() ? { "Content-Type": args.contentType.trim() } : {}),
+          ...resolveAuthHeader(args.projectRelativePath, args.authEnvKey, args.authHeaderName, args.authScheme),
+        },
+        body: args.method === "GET" || args.method === "DELETE" ? undefined : args.body,
+        signal: controller.signal,
+      });
+      const body = await readResponseBody(response, maxBytes);
+      if (!response.ok && response.status >= 500 && attempt < retryCount) {
+        continue;
+      }
+      const audit = appendBuilderCapabilityAuditEvent({
+        capabilityKey: "network_http",
+        projectRelativePath: args.projectRelativePath,
+        projectId: args.projectId,
+        outcomeStatus: response.ok ? "succeeded" : "failed",
+        targets: [{ kind: "host", identifier: parsed.origin }],
+        metadata: {
+          method: args.method,
+          path: parsed.pathname,
+          status: response.status,
+          contentType: response.headers.get("content-type"),
+          requestBytes,
+          maxRequestBytes,
+          responseBytes: body.responseBytes,
+          truncated: body.truncated,
+          timeoutSeconds,
+          attempts: attempt + 1,
+          retryCount,
+          authSource: args.authEnvKey ? "env_reference" : "none",
+        },
+      });
+      return {
+        ok: response.ok,
         status: response.status,
+        statusText: response.statusText,
+        url: parsed.toString(),
+        method: args.method,
         contentType: response.headers.get("content-type"),
+        body: body.body,
         responseBytes: body.responseBytes,
         truncated: body.truncated,
-        timeoutSeconds,
-      },
-    });
-    return {
-      ok: response.ok,
-      status: response.status,
-      statusText: response.statusText,
-      url: parsed.toString(),
-      method: args.method,
-      contentType: response.headers.get("content-type"),
-      body: body.body,
-      responseBytes: body.responseBytes,
-      truncated: body.truncated,
-      auditPath: audit.auditPath,
-    };
-  } catch (error) {
-    const timedOut = error instanceof Error && error.name === "AbortError";
-    const audit = appendBuilderCapabilityAuditEvent({
-      capabilityKey: "network_http",
-      projectRelativePath: args.projectRelativePath,
-      projectId: args.projectId,
-      outcomeStatus: timedOut ? "timed_out" : "failed",
-      targets: [{ kind: "host", identifier: parsed.origin }],
-      metadata: {
-        method: args.method,
-        path: parsed.pathname,
-        timeoutSeconds,
-        error: error instanceof Error ? error.message : String(error),
-      },
-    });
-    throw new Error(`${timedOut ? "Builder HTTP request timed out" : "Builder HTTP request failed"}: ${error instanceof Error ? error.message : String(error)}. Audit: ${audit.auditPath}`);
-  } finally {
-    clearTimeout(timeoutHandle);
+        auditPath: audit.auditPath,
+      };
+    } catch (error) {
+      const timedOut = error instanceof Error && error.name === "AbortError";
+      const shouldRetry = attempt < retryCount && (timedOut || args.method === "GET" || args.method === "DELETE");
+      if (shouldRetry) {
+        continue;
+      }
+      const audit = appendBuilderCapabilityAuditEvent({
+        capabilityKey: "network_http",
+        projectRelativePath: args.projectRelativePath,
+        projectId: args.projectId,
+        outcomeStatus: timedOut ? "timed_out" : "failed",
+        targets: [{ kind: "host", identifier: parsed.origin }],
+        metadata: {
+          method: args.method,
+          path: parsed.pathname,
+          timeoutSeconds,
+          attempts: attempt + 1,
+          retryCount,
+          requestBytes,
+          maxRequestBytes,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw new Error(`${timedOut ? "Builder HTTP request timed out" : "Builder HTTP request failed"}: ${error instanceof Error ? error.message : String(error)}. Audit: ${audit.auditPath}`);
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
   }
+
+  throw new Error("Builder HTTP request failed after exhausting retry attempts.");
 }

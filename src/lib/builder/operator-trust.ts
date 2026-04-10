@@ -52,13 +52,23 @@ function buildReviewState(review: BuilderStructuredReview | null): BuilderOperat
     };
   }
 
-  const status: BuilderOperatorTrustStatus = review.status === "SUCCEEDED" && review.risks.length === 0 && review.validation.passed
+  const databaseConcern = review.database?.status === "drifted" || review.database?.status === "probe_failed";
+  const auditConcern = (review.audit?.notableEvents.length ?? 0) > 0;
+  const runtimeConcern = (review.runtime?.failedServices ?? 0) > 0;
+  const status: BuilderOperatorTrustStatus = review.status === "SUCCEEDED" && review.risks.length === 0 && review.validation.passed && !databaseConcern && !auditConcern && !runtimeConcern
     ? "trusted"
     : "warning";
+  const reviewSummary = [
+    review.summary,
+    review.vcs ? `VCS: ${review.vcs.summary}` : null,
+    review.database ? `DB: ${review.database.summary}` : null,
+    review.runtime ? `Runtime: ${review.runtime.summary}` : null,
+    review.audit ? `Audit: ${review.audit.summary}` : null,
+  ].filter(Boolean).join(" ");
 
   return {
     status,
-    summary: review.summary,
+    summary: reviewSummary,
     reviewStatus: review.status,
     validationPassed: review.validation.passed,
     riskCount: review.risks.length,
@@ -85,13 +95,17 @@ function buildConfigState(configReadiness: BuilderConfigReadinessState): Builder
 }
 
 function buildRuntimeState(args: {
+  review: BuilderStructuredReview | null;
   reconciliation: BuilderOperationalStateSummary;
   mcpSnapshot: BuilderMcpSnapshotOverviewState;
 }): BuilderOperatorTrustRuntimeState {
   const driftDetected = Boolean(args.mcpSnapshot.drift);
-  const status: BuilderOperatorTrustStatus = driftDetected || args.reconciliation.activeAlertCount > 0
+  const databaseBlocked = args.review?.database?.status === "drifted" || args.review?.database?.status === "probe_failed";
+  const runtimeFailures = (args.review?.runtime?.failedServices ?? 0) > 0;
+  const auditBlocked = (args.review?.audit?.notableEvents.length ?? 0) > 0;
+  const status: BuilderOperatorTrustStatus = driftDetected || args.reconciliation.activeAlertCount > 0 || databaseBlocked
     ? "blocked"
-    : args.reconciliation.unresolvedAlertCount > 0 || args.mcpSnapshot.state !== "captured"
+    : args.reconciliation.unresolvedAlertCount > 0 || args.mcpSnapshot.state !== "captured" || runtimeFailures || auditBlocked
       ? "warning"
       : "trusted";
 
@@ -99,8 +113,14 @@ function buildRuntimeState(args: {
     ? "MCP contract drift is active and must be resolved before trusting runtime state."
     : args.reconciliation.activeAlertCount > 0
       ? `Runtime surfaced ${args.reconciliation.activeAlertCount} active operational alert(s).`
+      : databaseBlocked
+        ? args.review?.database?.summary ?? "Database inspection surfaced drift or a failed probe."
       : args.reconciliation.unresolvedAlertCount > 0
         ? `Runtime still has ${args.reconciliation.unresolvedAlertCount} unresolved operational alert(s).`
+        : runtimeFailures
+          ? args.review?.runtime?.summary ?? "Runtime inspection found failed services."
+          : auditBlocked
+            ? args.review?.audit?.summary ?? "Capability audit contains notable blocked or failed events."
         : `Runtime artifacts are aligned; MCP snapshot state is ${args.mcpSnapshot.state.replaceAll("_", " ")}.`;
 
   return {
@@ -150,6 +170,7 @@ export function composeBuilderOperatorTrustState(args: {
   const review = buildReviewState(args.review);
   const config = buildConfigState(args.configReadiness);
   const runtime = buildRuntimeState({
+    review: args.review,
     reconciliation: args.reconciliation,
     mcpSnapshot: args.mcpSnapshot,
   });

@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { loadLocalEnv } from "./load-local-env.mjs";
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const scriptsDir = dirname(currentFilePath);
 const workspaceDir = dirname(scriptsDir);
 
-const env = { ...process.env };
+const env = loadLocalEnv({ workspaceRoot: workspaceDir, env: { ...process.env } });
 if (process.platform === "win32" && !env.PRISMA_CLIENT_ENGINE_TYPE) {
   env.PRISMA_CLIENT_ENGINE_TYPE = "binary";
 }

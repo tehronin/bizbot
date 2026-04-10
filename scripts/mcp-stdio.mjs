@@ -19,19 +19,18 @@
  */
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { loadLocalEnv } from "./load-local-env.mjs";
 
-// Load env from .env file if present
-import { config } from "dotenv";
-config({ quiet: true });
+loadLocalEnv();
 
-const { configureStdioMcpEnvironment } = await import("../src/lib/mcp/stdio.ts");
+const { configureStdioMcpEnvironment, getStdioMcpServerOptions } = await import("../src/lib/mcp/stdio.ts");
 configureStdioMcpEnvironment(process.env);
 
 // We need to dynamically import the server factory because it depends on
 // Prisma and other app modules that need env vars loaded first.
 const { createBizBotMcpServer } = await import("../src/lib/mcp/server.ts");
 
-const server = createBizBotMcpServer();
+const server = createBizBotMcpServer(getStdioMcpServerOptions());
 const transport = new StdioServerTransport();
 
 await server.connect(transport);

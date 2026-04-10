@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,6 +10,9 @@ import {
   getBuilderCapability,
   listBuilderCapabilities,
 } from "@/lib/builder/capabilities";
+
+const builderPluginSource = fs.readFileSync(path.join(process.cwd(), "src/lib/agent/plugins/BuilderPlugin.ts"), "utf-8");
+const builderCommandsRouteSource = fs.readFileSync(path.join(process.cwd(), "src/app/api/builder/projects/[id]/commands/route.ts"), "utf-8");
 
 describe("builder capability catalog", () => {
   it("keeps capability keys unique and typed", () => {
@@ -30,5 +35,23 @@ describe("builder capability catalog", () => {
     const workspaceCapability = getBuilderCapability("workspace_manipulation");
     expect(workspaceCapability?.tools).not.toContain("builder_fake_tool");
     expect(getBuilderCapability("missing_capability")).toBeNull();
+  });
+
+  it("keeps capability tool catalogs aligned with the Builder plugin tool surface", () => {
+    for (const capability of BUILDER_CAPABILITY_CATALOG) {
+      for (const toolName of capability.tools) {
+        expect(
+          builderPluginSource.includes(`name: "${toolName}"`) || builderCommandsRouteSource.includes(`"${toolName}"`),
+          `Expected ${toolName} to be exposed through the Builder plugin or Builder command route.`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("marks shipped extension surfaces as available and keeps runtime orchestration experimental", () => {
+    expect(getBuilderCapability("network_http")?.status).toBe("available");
+    expect(getBuilderCapability("database_introspection")?.status).toBe("available");
+    expect(getBuilderCapability("runtime_orchestration")?.tier).toBe("experimental");
+    expect(getBuilderCapability("runtime_orchestration")?.status).toBe("partial");
   });
 });

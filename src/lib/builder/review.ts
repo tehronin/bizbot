@@ -50,6 +50,11 @@ export function buildBuilderStructuredReview(args: {
   stage: BuilderTaskStage | string;
   loop: BuilderAgenticLoopMetadata;
   config?: BuilderConfigReadinessState;
+  vcs?: BuilderStructuredReview["vcs"];
+  process?: BuilderStructuredReview["process"];
+  audit?: BuilderStructuredReview["audit"];
+  database?: BuilderStructuredReview["database"];
+  runtime?: BuilderStructuredReview["runtime"];
   architecture?: BuilderArchitectureReconciliationState;
 }): BuilderStructuredReview {
   const filesChanged = collectFilesChanged(args.loop);
@@ -85,6 +90,11 @@ export function buildBuilderStructuredReview(args: {
       malformedEntries: [...args.config.malformedEntries],
       summary: args.config.summary,
     } : undefined,
+    vcs: args.vcs,
+    process: args.process,
+    audit: args.audit,
+    database: args.database,
+    runtime: args.runtime,
     risks,
     nextSteps,
     architecture: args.architecture,
@@ -124,6 +134,71 @@ export function renderBuilderReviewMarkdown(review: BuilderStructuredReview): st
           `- Missing execution keys: ${review.config.missingExecutionKeys.join(", ") || "none"}`,
           `- Malformed entries: ${review.config.malformedEntries.length}`,
           `- Summary: ${review.config.summary}`,
+        ]
+      : ["- none"]),
+    "",
+    `## Version Control`,
+    "",
+    ...(review.vcs
+      ? [
+          `- Summary: ${review.vcs.summary}`,
+          `- Branch: ${review.vcs.currentBranch ?? "none"}`,
+          `- Ahead/behind: ${review.vcs.ahead}/${review.vcs.behind}`,
+          `- Staged: ${review.vcs.stagedCount}`,
+          `- Unstaged: ${review.vcs.unstagedCount}`,
+          `- Untracked: ${review.vcs.untrackedCount}`,
+          `- Audit: ${review.vcs.auditPath ?? "none"}`,
+        ]
+      : ["- none"]),
+    "",
+    `## Process Lifecycle`,
+    "",
+    ...(review.process
+      ? [
+          `- Summary: ${review.process.summary}`,
+          `- Managed processes: ${review.process.managedCount}`,
+          `- Running: ${review.process.runningCount}`,
+          `- Failed: ${review.process.failedCount}`,
+          `- Timed out: ${review.process.timedOutCount}`,
+          `- Cancelled: ${review.process.cancelledCount}`,
+          `- Recent process ids: ${review.process.recentProcessIds.join(", ") || "none"}`,
+        ]
+      : ["- none"]),
+    "",
+    `## Capability Audit`,
+    "",
+    ...(review.audit
+      ? [
+          `- Summary: ${review.audit.summary}`,
+          `- Audit path: ${review.audit.auditPath ?? "none"}`,
+          `- Total events: ${review.audit.totalEvents}`,
+          `- Notable events: ${review.audit.notableEvents.map((entry) => `${entry.capabilityKey}:${entry.outcomeStatus}`).join(", ") || "none"}`,
+        ]
+      : ["- none"]),
+    "",
+    `## Database Inspection`,
+    "",
+    ...(review.database
+      ? [
+          `- Summary: ${review.database.summary}`,
+          `- Status: ${review.database.status}`,
+          `- Provider: ${review.database.provider ?? "none"}`,
+          `- Artifact/live tables: ${review.database.artifactTableCount}/${review.database.liveTableCount}`,
+          `- Latest live probe: ${review.database.latestProbeAt ?? "none"}`,
+          `- Audit: ${review.database.auditPath ?? "none"}`,
+        ]
+      : ["- none"]),
+    "",
+    `## Runtime Inspection`,
+    "",
+    ...(review.runtime
+      ? [
+          `- Summary: ${review.runtime.summary}`,
+          `- Total services: ${review.runtime.totalServices}`,
+          `- Running: ${review.runtime.runningServices}`,
+          `- Failed: ${review.runtime.failedServices}`,
+          `- Managed: ${review.runtime.managedServices}`,
+          `- Prominent services: ${review.runtime.prominentServiceIds.join(", ") || "none"}`,
         ]
       : ["- none"]),
     "",

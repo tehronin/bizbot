@@ -36,6 +36,7 @@ const runJournalMocks = vi.hoisted(() => ({
   completeAgentRun: vi.fn(),
   recordAgentRunPromptAssembly: vi.fn(),
   recordAgentRunRoundUsage: vi.fn(),
+  recordAgentRunSwarm: vi.fn(),
   recordAgentRunToolCall: vi.fn(),
   recordAgentRunToolResult: vi.fn(),
   countDelegationDepth: vi.fn(),
@@ -81,6 +82,7 @@ vi.mock("@/lib/agent/run-journal", () => ({
   completeAgentRun: runJournalMocks.completeAgentRun,
   recordAgentRunPromptAssembly: runJournalMocks.recordAgentRunPromptAssembly,
   recordAgentRunRoundUsage: runJournalMocks.recordAgentRunRoundUsage,
+  recordAgentRunSwarm: runJournalMocks.recordAgentRunSwarm,
   recordAgentRunToolCall: runJournalMocks.recordAgentRunToolCall,
   recordAgentRunToolResult: runJournalMocks.recordAgentRunToolResult,
   countDelegationDepth: runJournalMocks.countDelegationDepth,
@@ -161,6 +163,7 @@ describe("agent executor explicit memory", () => {
     });
     ontologyMocks.buildOntologyPromptBlock.mockResolvedValue({ block: "", lines: [], omitted: true, reason: "empty" });
     runJournalMocks.startAgentRun.mockReturnValue({ runId: "run-1" });
+    runJournalMocks.recordAgentRunSwarm.mockReturnValue({ runId: "run-1", swarm: { activated: true } });
     runJournalMocks.recordAgentRunRoundUsage.mockImplementation((_runId, params) => ({
       usage: {
         promptTokens: params.promptTokens,
@@ -242,6 +245,50 @@ describe("agent executor explicit memory", () => {
 
     const systemPrompt = kernelMocks.chatComplete.mock.calls[0][0][0].content as string;
     expect(systemPrompt).not.toContain("[BizBot Capabilities]");
+  });
+
+  it("activates the internal swarm path for multi-source synthesis requests", async () => {
+    memoryMocks.buildContextForPrompt.mockResolvedValue({
+      text: [
+        "Earlier conversation summary:\n- User shared launch notes.",
+        "Recent conversation:\nUSER: summarize these materials.",
+        "Semantic recall:\n- Audience prefers concise launch announcements.",
+        "Knowledge documents:\n- Product launch happens next Tuesday.",
+      ].join("\n\n"),
+      blocks: {
+        conversationSummary: "Earlier conversation summary:\n- User shared launch notes.",
+        recentConversation: "USER: summarize these materials.",
+        semanticRecall: "- Audience prefers concise launch announcements.",
+        graph: "",
+        knowledgeDocs: "- Product launch happens next Tuesday.",
+      },
+      retrieval: {
+        conversationSummary: { included: true, reason: "continuation", resultCount: 1, chars: 55 },
+        recentConversation: { included: true, reason: "recent", resultCount: 1, chars: 31 },
+        semanticRecall: { included: true, reason: "relevant", resultCount: 1, chars: 48 },
+        graph: { included: false, reason: "not needed", resultCount: 0, chars: 0 },
+        knowledgeDocs: { included: true, reason: "relevant", resultCount: 1, chars: 39 },
+      },
+    });
+
+    const events: Array<{ type: string }> = [];
+
+    await executeAgentConversation({
+      message: "Summarize these sources into one grounded launch brief.",
+      forcedProfile: "content_operator",
+      onEvent: async (event) => {
+        events.push({ type: event.type });
+      },
+    });
+
+    expect(runJournalMocks.recordAgentRunSwarm).toHaveBeenCalledWith("run-1", expect.objectContaining({
+      activated: true,
+      mode: "core_chat_swarm",
+    }));
+    expect(pluginMocks.executeTool).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === "swarm_plan")).toBe(true);
+    expect(events.some((event) => event.type === "swarm_validation")).toBe(true);
+    expect(kernelMocks.chatComplete).toHaveBeenCalledTimes(1);
   });
 
   it("injects a runtime tool visibility block for plugin inspection prompts", async () => {

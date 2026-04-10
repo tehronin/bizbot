@@ -2,9 +2,21 @@ import type { BuilderProject, BuilderRun, BuilderTask, BuilderTaskStage, Builder
 import { db } from "@/lib/db";
 import type { BuilderAgenticProgressEvent, BuilderAgenticTaskOptions } from "@/lib/builder/agentic";
 import { summarizeBuilderProjectMetrics, type BuilderHealthMetrics } from "@/lib/builder/analytics";
+import { listBuilderCapabilityAuditEvents } from "@/lib/builder/audit";
+import { getBuilderDatabaseInspectionOverview } from "@/lib/builder/database-introspection";
 import { validateBuilderProjectEnv, type BuilderConfigReadinessState } from "@/lib/builder/environment";
-import { ensureBuilderRunDependencyContractPreflight, selectRelevantBuilderDependencyContext } from "@/lib/builder/dependency-contract";
-import { ensureBuilderRunFileTopologySnapshotPreflight, selectRelevantBuilderFileTopologyContext } from "@/lib/builder/file-topology-snapshots";
+import {
+  buildCurrentBuilderDependencyContractSnapshot,
+  ensureBuilderRunDependencyContractPreflight,
+  getBuilderDependencyPlanningContext,
+  selectRelevantBuilderDependencyContext,
+} from "@/lib/builder/dependency-contract";
+import {
+  buildCurrentBuilderFileTopologyContractSnapshot,
+  ensureBuilderRunFileTopologySnapshotPreflight,
+  getBuilderFileTopologyPlanningContext,
+  selectRelevantBuilderFileTopologyContext,
+} from "@/lib/builder/file-topology-snapshots";
 import {
   ensureBuilderRunMcpSnapshotPreflight,
   getBuilderMcpSnapshotOverview,
@@ -15,7 +27,10 @@ import {
 import { loadBuilderProjectContext, selectRelevantInstructionFragments, syncBuilderProjectProjection } from "@/lib/builder/context";
 import { executeNativeBuilderTask } from "@/lib/builder/native-agent";
 import { buildBuilderOperatorTrustState } from "@/lib/builder/operator-trust";
+import { listBuilderManagedProcesses } from "@/lib/builder/process-registry";
 import { inspectBuilderOperationalState, type BuilderOperationalStateSummary } from "@/lib/builder/reconciliation";
+import { getBuilderRuntimeInspectionOverview } from "@/lib/builder/runtime-orchestration";
+import { getBuilderRepoStatus } from "@/lib/builder/vcs";
 import {
   findExecutionTaskForTaskSpec,
   generateBuilderProjectPlan,
@@ -38,6 +53,8 @@ import { createBuilderTask, getBuilderTask, listBuilderTasks, reconcileBuilderRu
 import { ensureMcpClientsInitialized } from "@/lib/mcp/client";
 import {
   defaultBuilderProjectContext,
+  type BuilderDependencySnapshotOverviewState,
+  type BuilderFileTopologySnapshotOverviewState,
   normalizeBuilderProjectContext,
   normalizeBuilderTaskMetadata,
   trimReviewSummary,
@@ -82,6 +99,8 @@ export interface BuilderProjectOverview {
   telemetry: BuilderTelemetrySummary;
   reconciliation: BuilderOperationalStateSummary;
   mcpSnapshot: BuilderMcpSnapshotOverviewState;
+  dependencyContract: BuilderDependencySnapshotOverviewState;
+  fileTopologyContract: BuilderFileTopologySnapshotOverviewState;
   nextRecommendedStep: string | null;
 }
 
@@ -99,6 +118,78 @@ function normalizeRequest(request: string): string {
     throw new Error("Builder task request is required.");
   }
   return normalized;
+}
+
+function buildBuilderDependencySnapshotOverview(args: {
+  projectRelativePath: string;
+  packageManager: BuilderProject["packageManager"];
+  context: BuilderProjectContextState;
+  runId: string | null;
+}): BuilderDependencySnapshotOverviewState {
+  const snapshot = buildCurrentBuilderDependencyContractSnapshot({
+    projectRelativePath: args.projectRelativePath,
+    packageManager: args.packageManager,
+  });
+  const baseline = args.context.dependencyContract ?? null;
+  const planning = snapshot
+    ? getBuilderDependencyPlanningContext({
+        projectRelativePath: args.projectRelativePath,
+        packageManager: args.packageManager,
+        context: args.context,
+      })
+    : null;
+
+  if (!snapshot) {
+    return {
+      runId: args.runId,
+      currentHash: null,
+      state: "not_available",
+      baseline,
+      planning: null,
+      drift: null,
+    };
+  }
+
+  return {
+    runId: args.runId,
+    currentHash: planning?.currentHash ?? null,
+    state: !baseline
+      ? "pending_capture"
+      : planning?.drift?.changed
+        ? "drifted"
+        : "aligned",
+    baseline,
+    planning,
+    drift: planning?.drift ?? null,
+  };
+}
+
+function buildBuilderFileTopologySnapshotOverview(args: {
+  projectRelativePath: string;
+  context: BuilderProjectContextState;
+  runId: string | null;
+}): BuilderFileTopologySnapshotOverviewState {
+  const snapshot = buildCurrentBuilderFileTopologyContractSnapshot({
+    projectRelativePath: args.projectRelativePath,
+  });
+  const baseline = args.context.fileTopologyContract ?? null;
+  const planning = getBuilderFileTopologyPlanningContext({
+    projectRelativePath: args.projectRelativePath,
+    context: args.context,
+  });
+
+  return {
+    runId: args.runId,
+    currentHash: planning.currentHash,
+    state: !baseline
+      ? "pending_capture"
+      : planning.drift?.changed
+        ? "drifted"
+        : "aligned",
+    baseline,
+    drift: planning.drift,
+    planning,
+  };
 }
 
 function buildExecutionPlanSteps(taskSpec: BuilderTaskSpecState, status: BuilderTaskStatus): BuilderPlanStep[] {
@@ -671,6 +762,74 @@ export async function orchestrateBuilderTask(
   const taskStage = taskStatus === "SUCCEEDED" ? "DONE" : deriveFailureStage(loopResult.loop.phase ?? "reviewing");
   const architectureContext = loadBuilderProjectContext(project).context.architecture;
   const configReadiness = validateBuilderProjectEnv(project.relativePath);
+  const vcs = (() => {
+    try {
+      const status = getBuilderRepoStatus(project.relativePath);
+      return {
+        available: true,
+        repoRoot: status.repoRoot,
+        currentBranch: status.currentBranch,
+        ahead: status.ahead,
+        behind: status.behind,
+        stagedCount: status.staged.length,
+        unstagedCount: status.unstaged.length,
+        untrackedCount: status.untracked.length,
+        auditPath: status.auditPath,
+        summary: `Git ${status.currentBranch ?? "detached"}; staged ${status.staged.length}, unstaged ${status.unstaged.length}, untracked ${status.untracked.length}.`,
+      };
+    } catch (error) {
+      return {
+        available: false,
+        repoRoot: null,
+        currentBranch: null,
+        ahead: 0,
+        behind: 0,
+        stagedCount: 0,
+        unstagedCount: 0,
+        untrackedCount: 0,
+        auditPath: null,
+        summary: error instanceof Error ? error.message : String(error),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  })();
+  const managedProcesses = listBuilderManagedProcesses({ projectId, includeFinished: true, limit: 50 }).processes;
+  const processSummary = {
+    managedCount: managedProcesses.length,
+    runningCount: managedProcesses.filter((entry) => entry.status === "running").length,
+    failedCount: managedProcesses.filter((entry) => entry.status === "failed").length,
+    timedOutCount: managedProcesses.filter((entry) => entry.status === "timed_out").length,
+    cancelledCount: managedProcesses.filter((entry) => entry.status === "cancelled").length,
+    recentProcessIds: managedProcesses.slice(0, 5).map((entry) => entry.processId),
+    summary: managedProcesses.length > 0
+      ? `${managedProcesses.length} managed process artifact${managedProcesses.length === 1 ? "" : "s"}; ${managedProcesses.filter((entry) => entry.status === "running").length} running.`
+      : "No managed Builder processes were recorded for this project.",
+  };
+  const capabilityAudit = listBuilderCapabilityAuditEvents(project.relativePath, { limit: 8 });
+  const auditSummary = {
+    auditPath: capabilityAudit.auditPath,
+    totalEvents: capabilityAudit.totalEvents,
+    recentCount: capabilityAudit.recentEvents.length,
+    capabilityCounts: capabilityAudit.capabilityCounts,
+    notableEvents: capabilityAudit.recentEvents
+      .filter((entry) => entry.outcomeStatus !== "succeeded")
+      .slice(0, 5)
+      .map((entry) => ({
+        capabilityKey: entry.capabilityKey,
+        eventName: entry.eventName,
+        outcomeStatus: entry.outcomeStatus,
+        timestamp: entry.timestamp,
+      })),
+    summary: capabilityAudit.totalEvents > 0
+      ? `${capabilityAudit.totalEvents} capability audit event${capabilityAudit.totalEvents === 1 ? "" : "s"} recorded.`
+      : "No capability audit events recorded yet.",
+  };
+  const databaseInspection = getBuilderDatabaseInspectionOverview(projectId, project.relativePath);
+  const runtimeInspection = getBuilderRuntimeInspectionOverview({
+    projectId,
+    projectRelativePath: project.relativePath,
+    packageManager: project.packageManager,
+  });
   const review = buildBuilderStructuredReview({
     task: implementingTask,
     projectId,
@@ -678,6 +837,27 @@ export async function orchestrateBuilderTask(
     stage: taskStage,
     loop: loopResult.loop,
     config: configReadiness,
+    vcs,
+    process: processSummary,
+    audit: auditSummary,
+    database: {
+      status: databaseInspection.driftSummary.status,
+      summary: databaseInspection.driftSummary.summary,
+      provider: databaseInspection.artifact.provider,
+      connectionTarget: databaseInspection.artifact.connectionTarget,
+      artifactTableCount: databaseInspection.artifact.tableCount,
+      liveTableCount: databaseInspection.driftSummary.liveTableCount,
+      latestProbeAt: databaseInspection.latestLiveProbe?.probedAt ?? null,
+      auditPath: databaseInspection.latestLiveProbe?.auditPath ?? databaseInspection.artifact.auditPath,
+    },
+    runtime: {
+      totalServices: runtimeInspection.totalServices,
+      runningServices: runtimeInspection.runningServices,
+      failedServices: runtimeInspection.failedServices,
+      managedServices: runtimeInspection.managedServices,
+      prominentServiceIds: runtimeInspection.services.slice(0, 5).map((entry) => entry.serviceId),
+      summary: runtimeInspection.summary,
+    },
     architecture: architectureContext
       ? {
           activeKeys: architectureContext.active.map((item) => item.key),
@@ -937,6 +1117,17 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
     projectId,
     runId: activeRun?.id ?? null,
   });
+  const dependencyContract = buildBuilderDependencySnapshotOverview({
+    projectRelativePath: project.relativePath,
+    packageManager: project.packageManager,
+    context,
+    runId: activeRun?.id ?? null,
+  });
+  const fileTopologyContract = buildBuilderFileTopologySnapshotOverview({
+    projectRelativePath: project.relativePath,
+    context,
+    runId: activeRun?.id ?? null,
+  });
   const operatorTrust = await buildBuilderOperatorTrustState({
     review: structuredReview,
     configReadiness,
@@ -962,6 +1153,8 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
     telemetry,
     reconciliation,
     mcpSnapshot,
+    dependencyContract,
+    fileTopologyContract,
     nextRecommendedStep: buildNextRecommendedStep(planning, context),
   };
 }

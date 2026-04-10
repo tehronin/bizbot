@@ -10,6 +10,7 @@ import { getAllToolDefinitions, executeTool } from "@/lib/agent/plugins";
 import { getActiveProvider } from "@/lib/agent/kernel";
 import { getAgentRuntimeConfig, getAutonomyDescription } from "@/lib/agent/runtime";
 import type { JsonObject, ToolParametersSchema, ToolPropertySchema } from "@/lib/agent/tools";
+import { buildBizBotMcpCapabilities, resolveBizBotMcpServerOptions, type BizBotMcpServerOptions } from "@/lib/mcp/policy";
 import { listBizBotPromptDefinitions, listBizBotResourceDefinitions } from "@/lib/mcp/preview-catalog";
 import { BIZBOT_PLATFORM_CONTRACT_VERSION } from "@/lib/platform/contract";
 import { getToolAnnotations, getToolDescription, getToolTitle, MCP_AGENT_PROFILE, MCP_BLOCKED_TOOLS } from "@/lib/mcp/tool-presentation";
@@ -110,18 +111,14 @@ function buildToolResponse(result: unknown) {
  * Creates a fresh McpServer with all BizBot tools, resources, and prompts
  * registered. Returns a new instance each time (needed for stateless HTTP).
  */
-export function createBizBotMcpServer(): McpServer {
+export function createBizBotMcpServer(options?: BizBotMcpServerOptions): McpServer {
+  const resolvedOptions = resolveBizBotMcpServerOptions(options);
   const config = getAgentRuntimeConfig();
 
   const server = new McpServer(
     { name: "bizbot", version: "0.1.0" },
     {
-      capabilities: {
-        tools: {},
-        resources: {},
-        prompts: {},
-        logging: {},
-      },
+      capabilities: buildBizBotMcpCapabilities(resolvedOptions),
       instructions: [
         "BizBot is a local-first social media agent.",
         `Platform contract: ${BIZBOT_PLATFORM_CONTRACT_VERSION}.`,
@@ -158,6 +155,11 @@ export function createBizBotMcpServer(): McpServer {
               agentProfile: MCP_AGENT_PROFILE,
               userId: DEFAULT_AGENT_USER_ID,
               provider: getActiveProvider(),
+              mcpSamplingSession: {
+                transportKind: resolvedOptions.transportKind,
+                createMessage: server.server.createMessage.bind(server.server),
+                getClientCapabilities: server.server.getClientCapabilities.bind(server.server),
+              },
             },
           });
           return buildToolResponse(result);

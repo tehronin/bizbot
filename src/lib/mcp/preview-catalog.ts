@@ -18,6 +18,7 @@ import { getCurrentBuilderProjectOverview } from "@/lib/builder/orchestrator";
 import { listBuilderProjects } from "@/lib/builder/projects";
 import { getMcpClientStatus, getMcpClientToolCatalog, getMcpClientTools } from "@/lib/mcp/client";
 import { inspectPluginRegistry } from "@/lib/agent/plugins/inspection";
+import { getMcpSamplingPolicy, listMcpSamplingIntents, listSamplingEnabledTransports } from "@/lib/mcp/policy";
 import { getToolAnnotations, getToolDescription, getToolTitle, MCP_AGENT_PROFILE, MCP_BLOCKED_TOOLS } from "@/lib/mcp/tool-presentation";
 import {
   ONTOLOGY_ENTITY_TYPES,
@@ -170,6 +171,48 @@ async function buildDebugSystemStatus() {
       importedServers: mcpClients,
       httpEndpoint: "/api/mcp",
       workspaceConfigPath: ".vscode/mcp.json",
+    },
+  };
+}
+
+async function buildDebugMcpSamplingPolicy() {
+  const samplingIntent = "developer_devloop_status" as const;
+  const httpPolicy = getMcpSamplingPolicy(samplingIntent, "http", false);
+  const stdioPolicy = getMcpSamplingPolicy(samplingIntent, "stdio", true);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    intentCatalog: listMcpSamplingIntents(),
+    samplingEnabledTransports: listSamplingEnabledTransports(),
+    policies: {
+      http: {
+        transportKind: "http",
+        advertiseSampling: httpPolicy.advertiseSampling,
+        allowTools: httpPolicy.allowTools,
+        maxDepth: httpPolicy.maxDepth,
+        maxContextChars: httpPolicy.maxContextChars,
+        blockNestedSampling: httpPolicy.blockNestedSampling,
+      },
+      stdio: {
+        transportKind: "stdio",
+        advertiseSampling: stdioPolicy.advertiseSampling,
+        allowTools: stdioPolicy.allowTools,
+        maxDepth: stdioPolicy.maxDepth,
+        maxContextChars: stdioPolicy.maxContextChars,
+        blockNestedSampling: stdioPolicy.blockNestedSampling,
+      },
+    },
+    runtime: {
+      env: {
+        BIZBOT_MCP_STDIO: process.env.BIZBOT_MCP_STDIO ?? null,
+        BIZBOT_MCP_TRANSPORT: process.env.BIZBOT_MCP_TRANSPORT ?? null,
+        BIZBOT_MCP_SAMPLING_ENABLED: process.env.BIZBOT_MCP_SAMPLING_ENABLED ?? null,
+      },
+      notes: [
+        "Sampling is stdio-only in v1.",
+        "Sampling requests are analysis-only and do not allow BizBot tool execution.",
+        "Nested sampling is blocked by policy.",
+      ],
     },
   };
 }
@@ -516,7 +559,18 @@ export function listBizBotPromptDefinitions(): BizBotPromptDefinition[] {
       group: "developer",
       arguments: [{ name: "symptom", required: false, description: "Optional symptom summary." }],
       render: ({ symptom }) => ({
-        messages: [{ role: "user", text: ["Diagnose the VS Code to BizBot MCP dev loop.", symptom ? `Symptom: ${symptom}.` : "", "First inspect bizbot://debug/system-status and confirm the workspace MCP config at .vscode/mcp.json.", "Check whether the stdio server starts, whether tools/resources/prompts are exposed, and whether authorization or trust configuration could block discovery.", "Return findings ordered by severity with the smallest fix first."].filter(Boolean).join(" ") }],
+        messages: [{ role: "user", text: ["Diagnose the VS Code to BizBot MCP dev loop.", symptom ? `Symptom: ${symptom}.` : "", "First inspect bizbot://debug/system-status and confirm the workspace MCP config at .vscode/mcp.json.", "If the connected client supports MCP sampling, call developer_vscode_loop_assist first and use its structured output as the primary diagnosis input.", "Then check whether the stdio server starts, whether tools/resources/prompts are exposed, and whether authorization or trust configuration could block discovery.", "Return findings ordered by severity with the smallest fix first."].filter(Boolean).join(" ") }],
+      }),
+    },
+    {
+      name: "repair-builder-devloop",
+      title: "Repair Builder Dev Loop",
+      description: "Use the Builder dev-loop diagnosis flow to identify the smallest next fix and next probe target",
+      ownerId: "developer",
+      group: "developer",
+      arguments: [{ name: "symptom", required: false, description: "Optional Builder or MCP symptom summary." }],
+      render: ({ symptom }) => ({
+        messages: [{ role: "user", text: ["Repair the current Builder development loop.", symptom ? `Symptom: ${symptom}.` : "", "First call developer_vscode_loop_assist if MCP sampling is available and treat its structured output as the primary diagnosis packet.", "Then inspect only the smallest missing artifact needed to confirm the diagnosis.", "Return: likely root cause, smallest next fix, recommended next probe, and the exact evidence used."].filter(Boolean).join(" ") }],
       }),
     },
     {
@@ -609,6 +663,7 @@ export function listBizBotResourceDefinitions(): BizBotResourceDefinition[] {
     { name: "builder-current-review", uri: "bizbot://builder/current-review", title: "Current Builder Review", description: "Latest structured Builder review for the active Builder project", mimeType: "application/json", ownerId: "builder", group: "builder", read: buildCurrentBuilderReviewResource },
     { name: "crm-pipeline-summary", uri: "bizbot://crm/pipeline-summary", title: "CRM Pipeline Summary", description: "Inbox-backed CRM pipeline state, provider readiness, and recent contacts", mimeType: "application/json", ownerId: "crm", group: "crm", read: buildCrmPipelineSummary },
     { name: "debug-system-status", uri: "bizbot://debug/system-status", title: "Debug System Status", description: "Runtime, LLM, worker, knowledge, inbox, and MCP state for debugging BizBot", mimeType: "application/json", ownerId: "developer", group: "debug", read: buildDebugSystemStatus },
+    { name: "debug-mcp-sampling-policy", uri: "bizbot://debug/mcp-sampling-policy", title: "Debug MCP Sampling Policy", description: "Transport-aware MCP sampling policy, guardrails, and current runtime flags", mimeType: "application/json", ownerId: "developer", group: "debug", read: buildDebugMcpSamplingPolicy },
     { name: "debug-database-summary", uri: "bizbot://debug/database-summary", title: "Debug Database Summary", description: "High-level row counts for core BizBot tables", mimeType: "application/json", ownerId: "developer", group: "debug", read: buildDebugDatabaseSummary },
     { name: "debug-recent-heartbeat", uri: "bizbot://debug/recent-heartbeat", title: "Debug Recent Heartbeat", description: "Recent heartbeat and worker timestamps plus the last summary payload", mimeType: "application/json", ownerId: "developer", group: "debug", read: buildDebugRecentHeartbeat },
     { name: "debug-recent-inbox", uri: "bizbot://debug/recent-inbox", title: "Debug Recent Inbox", description: "Recent inbox items with status, sender, and lead metadata for triage", mimeType: "application/json", ownerId: "developer", group: "debug", read: buildDebugRecentInbox },

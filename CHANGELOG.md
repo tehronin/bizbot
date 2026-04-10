@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-04-10
+
+- Added Core Chat swarm MVP support with internal source collection, worker planning and execution, grounded synthesis, audit passes, SSE swarm events, run-journal telemetry, and focused regression coverage for classifier, runtime, synthesis, audit, executor, and route behavior.
+- Added MCP Sampling v1 as a stdio-only capability with transport-aware server policy, Builder dev-loop diagnosis via `developer_vscode_loop_assist`, the `bizbot://debug/mcp-sampling-policy` resource, a manual stdio smoke command, and focused contract, policy, and end-to-end test coverage.
+- Expanded Builder governance and operator-trust flows with explicit approval requirements, dependency and file-topology contract overview panels, broader review summaries, capability audit surfacing, runtime and database inspection rollups, and updated Builder plugin and command-route enforcement.
+- Hardened Builder scaffolding and local execution by making `next-app` and `vite-app` bootstraps run through deterministic parent-directory `npm create` calls, adding non-interactive Vite generation, standardizing repo-local env loading for script entrypoints, and fixing Builder workspace path resolution so local runs stay in the intended external workspace.
+- Added local development infrastructure defaults through checked-in `compose.yaml` and `.env.example`, documented the matching local setup and verification commands in the README, and kept the production build plus current-tree `test:app` and `test:mcp` validation green after the final typing and template-test fixes.
+
 ## 2026-04-09
 
 - Added Builder runtime orchestration surfaces for service health, logs, start/stop/restart control, command execution, workspace reconciliation/import, project env mutation, runtime inspection, HTTP probing, DB inspection, and operator-trust reporting across the dashboard, API routes, plugin tools, and test coverage.

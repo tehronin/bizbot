@@ -185,6 +185,7 @@ export async function executeBuilderProjectCommand(
         result,
         summary: `Rebuilt ${written.baseline.artifactPath} and updated the persisted Builder MCP policy baseline.`,
         metadata: {
+          approvalReason: input.reason?.trim() || null,
           baseline: written.baseline,
         },
       };

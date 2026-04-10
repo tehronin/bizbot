@@ -65,6 +65,71 @@ export interface AgentRunUsageTotals {
   rounds: AgentRunRoundUsage[];
 }
 
+export interface AgentRunSwarmSourceSummary {
+  id: string;
+  sourceKind: string;
+  title: string;
+  chars: number;
+}
+
+export interface AgentRunSwarmPlanSummary {
+  id: string;
+  mode: string;
+  reason: string;
+  taskSummary: string;
+  workerCount: number;
+  aggregationStrategy: string;
+  failurePolicy: string;
+  plannerConfidence: number;
+  createdAt: string;
+}
+
+export interface AgentRunSwarmWorkerSummary {
+  workItemId: string;
+  status: string;
+  diagnostics: string[];
+  durationMs: number;
+}
+
+export interface AgentRunSwarmRecord {
+  activated: boolean;
+  mode?: string;
+  reason?: string;
+  plannerConfidence?: number;
+  sources?: AgentRunSwarmSourceSummary[];
+  plan?: AgentRunSwarmPlanSummary;
+  trace?: {
+    planId: string;
+    mode: string;
+    workerCount: number;
+    startedAt: string;
+    finishedAt: string;
+    durationMs: number;
+  };
+  validation?: {
+    valid: boolean;
+    issues: string[];
+    completedWorkItemIds: string[];
+    failedWorkItemIds: string[];
+    missingWorkItemIds: string[];
+  };
+  workerResults?: AgentRunSwarmWorkerSummary[];
+  synthesis?: {
+    sourceCoverage: Array<{ sourceId: string; sourceKind: string; claimCount: number; summaryPresent: boolean }>;
+    contradictionCount: number;
+    evidenceRefCount: number;
+    gapCount: number;
+    auditNeeded: boolean;
+  };
+  audit?: {
+    passed: boolean;
+    unsupportedSentences: string[];
+    contradictionReminderMissing: boolean;
+    evidenceCoverage: number;
+    summary: string;
+  };
+}
+
 export interface AgentRunRecord {
   runId: string;
   conversationId: string;
@@ -100,6 +165,7 @@ export interface AgentRunRecord {
     graph: AgentRunRetrievalDecision;
     knowledgeDocs: AgentRunRetrievalDecision;
   };
+  swarm?: AgentRunSwarmRecord;
   usage: AgentRunUsageTotals;
   reply?: string;
   error?: string;
@@ -505,6 +571,26 @@ export function recordAgentRunRoundUsage(
       },
     };
   });
+}
+
+export function recordAgentRunSwarm(
+  runId: string,
+  swarm: Partial<AgentRunSwarmRecord>,
+): AgentRunRecord {
+  return mutateRun(runId, (record) => ({
+    ...record,
+    updatedAt: new Date().toISOString(),
+    swarm: {
+      ...(record.swarm ?? { activated: false }),
+      ...swarm,
+      plan: swarm.plan ?? record.swarm?.plan,
+      trace: swarm.trace ?? record.swarm?.trace,
+      validation: swarm.validation ?? record.swarm?.validation,
+      workerResults: swarm.workerResults ?? record.swarm?.workerResults,
+      synthesis: swarm.synthesis ?? record.swarm?.synthesis,
+      audit: swarm.audit ?? record.swarm?.audit,
+    },
+  }));
 }
 
 export function completeAgentRun(
