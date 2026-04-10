@@ -91,7 +91,13 @@ jobs:
         run: docker compose up -d
 
       - name: Prepare local env file
-        run: cp .env.example .env
+        run: |
+          cp .env.example .env
+          mkdir -p "$RUNNER_TEMP/bizbot-home" "$RUNNER_TEMP/bizbot-builder-workspace"
+          {
+            echo "BIZBOT_HOME_DIR=$RUNNER_TEMP/bizbot-home"
+            echo "BIZBOT_BUILDER_WORKSPACE_PATH=$RUNNER_TEMP/bizbot-builder-workspace"
+          } >> .env
 
       - name: Generate Prisma client
         run: npx prisma generate
