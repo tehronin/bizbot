@@ -5,6 +5,7 @@ import { summarizeBuilderProjectMetrics, type BuilderHealthMetrics } from "@/lib
 import { listBuilderCapabilityAuditEvents } from "@/lib/builder/audit";
 import { getBuilderDatabaseInspectionOverview } from "@/lib/builder/database-introspection";
 import { validateBuilderProjectEnv, type BuilderConfigReadinessState } from "@/lib/builder/environment";
+import { listBuilderGovernanceDecisions, type BuilderGovernanceDecisionRecord } from "@/lib/builder/governance";
 import {
   buildCurrentBuilderDependencyContractSnapshot,
   ensureBuilderRunDependencyContractPreflight,
@@ -101,6 +102,7 @@ export interface BuilderProjectOverview {
   mcpSnapshot: BuilderMcpSnapshotOverviewState;
   dependencyContract: BuilderDependencySnapshotOverviewState;
   fileTopologyContract: BuilderFileTopologySnapshotOverviewState;
+  governanceHistory: BuilderGovernanceDecisionRecord[];
   nextRecommendedStep: string | null;
 }
 
@@ -409,11 +411,14 @@ async function syncProjectState(args: {
   ]);
   const configReadiness = validateBuilderProjectEnv(updatedProject.relativePath);
   const reconciliation = inspectBuilderOperationalState({ runs, tasks });
+  const capabilityAudit = listBuilderCapabilityAuditEvents(updatedProject.relativePath, { limit: 8 });
   const operatorTrust = await buildBuilderOperatorTrustState({
     review: args.review ?? null,
     configReadiness,
     reconciliation,
     mcpSnapshot,
+    capabilityAudit,
+    recentRuns: runs,
   });
   syncBuilderProjectProjection({
     project: updatedProject,
@@ -1128,12 +1133,16 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
     context,
     runId: activeRun?.id ?? null,
   });
+  const capabilityAudit = listBuilderCapabilityAuditEvents(project.relativePath, { limit: 8 });
   const operatorTrust = await buildBuilderOperatorTrustState({
     review: structuredReview,
     configReadiness,
     reconciliation,
     mcpSnapshot,
+    capabilityAudit,
+    recentRuns: reconciledRuns,
   });
+  const governanceHistory = listBuilderGovernanceDecisions(project.relativePath, { limit: 8 }).recentEvents;
 
   return {
     project: projectRecord,
@@ -1155,6 +1164,7 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
     mcpSnapshot,
     dependencyContract,
     fileTopologyContract,
+    governanceHistory,
     nextRecommendedStep: buildNextRecommendedStep(planning, context),
   };
 }

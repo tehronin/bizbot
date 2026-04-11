@@ -32,6 +32,125 @@ const structuredSamplingResultSchema = z.object({
 
 type StructuredSamplingResult = z.infer<typeof structuredSamplingResultSchema>;
 
+type SamplingParseMode = "structured_json" | "plain_text_fallback" | "malformed_json_fallback";
+
+interface DevLoopSamplingTelemetryState {
+  totalAttempts: number;
+  availableAttempts: number;
+  unavailableAttempts: number;
+  sampledSuccesses: number;
+  deterministicFallbacks: number;
+  structuredParseSuccesses: number;
+  plainTextFallbacks: number;
+  malformedPayloadCount: number;
+  nestedBlockCount: number;
+  transportCounts: Record<string, number>;
+  unavailableReasonCounts: Record<string, number>;
+  modelCounts: Record<string, number>;
+  stopReasonCounts: Record<string, number>;
+  lastAttemptAt: string | null;
+}
+
+interface ParsedStructuredSamplingResult {
+  result: StructuredSamplingResult;
+  parseMode: SamplingParseMode;
+}
+
+const devLoopSamplingTelemetry: DevLoopSamplingTelemetryState = {
+  totalAttempts: 0,
+  availableAttempts: 0,
+  unavailableAttempts: 0,
+  sampledSuccesses: 0,
+  deterministicFallbacks: 0,
+  structuredParseSuccesses: 0,
+  plainTextFallbacks: 0,
+  malformedPayloadCount: 0,
+  nestedBlockCount: 0,
+  transportCounts: {},
+  unavailableReasonCounts: {},
+  modelCounts: {},
+  stopReasonCounts: {},
+  lastAttemptAt: null,
+};
+
+function incrementCounter(target: Record<string, number>, key: string | null | undefined): void {
+  if (!key) {
+    return;
+  }
+  target[key] = (target[key] ?? 0) + 1;
+}
+
+function recordDevLoopSamplingAttempt(availability: DevLoopSamplingAvailability): void {
+  devLoopSamplingTelemetry.totalAttempts += 1;
+  devLoopSamplingTelemetry.lastAttemptAt = new Date().toISOString();
+  incrementCounter(devLoopSamplingTelemetry.transportCounts, availability.transportKind);
+  if (availability.available) {
+    devLoopSamplingTelemetry.availableAttempts += 1;
+    return;
+  }
+
+  devLoopSamplingTelemetry.unavailableAttempts += 1;
+  devLoopSamplingTelemetry.deterministicFallbacks += 1;
+  if (availability.nestedFlowBlocked) {
+    devLoopSamplingTelemetry.nestedBlockCount += 1;
+  }
+  incrementCounter(devLoopSamplingTelemetry.unavailableReasonCounts, availability.reason);
+}
+
+function recordSampledResponse(parseMode: SamplingParseMode, model: string | null, stopReason: string | null): void {
+  incrementCounter(devLoopSamplingTelemetry.modelCounts, model);
+  incrementCounter(devLoopSamplingTelemetry.stopReasonCounts, stopReason);
+
+  if (parseMode === "structured_json") {
+    devLoopSamplingTelemetry.sampledSuccesses += 1;
+    devLoopSamplingTelemetry.structuredParseSuccesses += 1;
+    return;
+  }
+
+  devLoopSamplingTelemetry.deterministicFallbacks += 1;
+  if (parseMode === "plain_text_fallback") {
+    devLoopSamplingTelemetry.plainTextFallbacks += 1;
+    return;
+  }
+
+  devLoopSamplingTelemetry.malformedPayloadCount += 1;
+}
+
+export function resetDevLoopSamplingTelemetry(): void {
+  devLoopSamplingTelemetry.totalAttempts = 0;
+  devLoopSamplingTelemetry.availableAttempts = 0;
+  devLoopSamplingTelemetry.unavailableAttempts = 0;
+  devLoopSamplingTelemetry.sampledSuccesses = 0;
+  devLoopSamplingTelemetry.deterministicFallbacks = 0;
+  devLoopSamplingTelemetry.structuredParseSuccesses = 0;
+  devLoopSamplingTelemetry.plainTextFallbacks = 0;
+  devLoopSamplingTelemetry.malformedPayloadCount = 0;
+  devLoopSamplingTelemetry.nestedBlockCount = 0;
+  devLoopSamplingTelemetry.lastAttemptAt = null;
+  for (const key of Object.keys(devLoopSamplingTelemetry.transportCounts)) {
+    delete devLoopSamplingTelemetry.transportCounts[key];
+  }
+  for (const key of Object.keys(devLoopSamplingTelemetry.unavailableReasonCounts)) {
+    delete devLoopSamplingTelemetry.unavailableReasonCounts[key];
+  }
+  for (const key of Object.keys(devLoopSamplingTelemetry.modelCounts)) {
+    delete devLoopSamplingTelemetry.modelCounts[key];
+  }
+  for (const key of Object.keys(devLoopSamplingTelemetry.stopReasonCounts)) {
+    delete devLoopSamplingTelemetry.stopReasonCounts[key];
+  }
+}
+
+export function getDevLoopSamplingTelemetrySnapshot(): DevLoopSamplingTelemetryState {
+  return {
+    ...devLoopSamplingTelemetry,
+    transportCounts: { ...devLoopSamplingTelemetry.transportCounts },
+    unavailableReasonCounts: { ...devLoopSamplingTelemetry.unavailableReasonCounts },
+    modelCounts: { ...devLoopSamplingTelemetry.modelCounts },
+    stopReasonCounts: { ...devLoopSamplingTelemetry.stopReasonCounts },
+  };
+}
+
 export interface DevLoopSamplingAvailability {
   available: boolean;
   transportKind: McpSamplingSession["transportKind"];
@@ -301,33 +420,36 @@ function extractJsonCandidate(text: string): string | null {
   return null;
 }
 
-function parseStructuredResult(rawText: string | null, context: BuilderDevLoopContext): StructuredSamplingResult {
+function parseStructuredResult(rawText: string | null, context: BuilderDevLoopContext): ParsedStructuredSamplingResult {
   const fallback = buildDeterministicFallbackDiagnosis(context, rawText ? { summaryOverride: rawText } : undefined);
 
   if (!rawText) {
-    return fallback;
+    return { result: fallback, parseMode: "plain_text_fallback" };
   }
 
   const jsonCandidate = extractJsonCandidate(rawText);
   if (!jsonCandidate) {
-    return fallback;
+    return { result: fallback, parseMode: "plain_text_fallback" };
   }
 
   try {
     const parsed = structuredSamplingResultSchema.safeParse(JSON.parse(jsonCandidate));
     if (!parsed.success) {
-      return fallback;
+      return { result: fallback, parseMode: "malformed_json_fallback" };
     }
 
     return {
-      ...parsed.data,
-      latestFailure: parsed.data.latestFailure ?? fallback.latestFailure,
-      smallestNextFix: parsed.data.smallestNextFix ?? fallback.smallestNextFix,
-      recommendedNextProbe: parsed.data.recommendedNextProbe ?? fallback.recommendedNextProbe,
-      evidenceUsed: parsed.data.evidenceUsed.length > 0 ? parsed.data.evidenceUsed : fallback.evidenceUsed,
+      result: {
+        ...parsed.data,
+        latestFailure: parsed.data.latestFailure ?? fallback.latestFailure,
+        smallestNextFix: parsed.data.smallestNextFix ?? fallback.smallestNextFix,
+        recommendedNextProbe: parsed.data.recommendedNextProbe ?? fallback.recommendedNextProbe,
+        evidenceUsed: parsed.data.evidenceUsed.length > 0 ? parsed.data.evidenceUsed : fallback.evidenceUsed,
+      },
+      parseMode: "structured_json",
     };
   } catch {
-    return fallback;
+    return { result: fallback, parseMode: "malformed_json_fallback" };
   }
 }
 
@@ -336,6 +458,7 @@ export async function requestDevLoopSampling(serverOrSession: McpSamplingSession
     const fallback = buildDeterministicFallbackDiagnosis(context, {
       unavailableReason: "BizBot MCP policy rejected the requested sampling intent.",
     });
+    recordDevLoopSamplingAttempt(buildAvailability(serverOrSession));
     return {
       availability: buildAvailability(serverOrSession),
       diagnosisSource: "deterministic_fallback",
@@ -357,6 +480,7 @@ export async function requestDevLoopSampling(serverOrSession: McpSamplingSession
   }
 
   const availability = buildAvailability(serverOrSession);
+  recordDevLoopSamplingAttempt(availability);
   if (!availability.available || !serverOrSession) {
     const fallback = buildDeterministicFallbackDiagnosis(context, {
       unavailableReason: availability.reason ?? "Sampling is unavailable for this MCP session.",
@@ -388,21 +512,22 @@ export async function requestDevLoopSampling(serverOrSession: McpSamplingSession
 
   const rawText = extractResponseText(response);
   const parsed = parseStructuredResult(rawText, context);
+  recordSampledResponse(parsed.parseMode, response.model ?? null, response.stopReason ?? null);
 
   return {
     availability,
     diagnosisSource: "sampled",
-    summary: parsed.summary,
-    status: parsed.status,
-    tripletHealth: parsed.tripletHealth,
-    latestFailure: parsed.latestFailure,
-    likelyRootCause: parsed.likelyRootCause,
-    suggestedFix: parsed.suggestedFix,
-    smallestNextFix: parsed.smallestNextFix,
-    recommendedNextProbe: parsed.recommendedNextProbe,
-    evidenceUsed: parsed.evidenceUsed,
-    nextSteps: parsed.nextSteps,
-    confidence: parsed.confidence,
+    summary: parsed.result.summary,
+    status: parsed.result.status,
+    tripletHealth: parsed.result.tripletHealth,
+    latestFailure: parsed.result.latestFailure,
+    likelyRootCause: parsed.result.likelyRootCause,
+    suggestedFix: parsed.result.suggestedFix,
+    smallestNextFix: parsed.result.smallestNextFix,
+    recommendedNextProbe: parsed.result.recommendedNextProbe,
+    evidenceUsed: parsed.result.evidenceUsed,
+    nextSteps: parsed.result.nextSteps,
+    confidence: parsed.result.confidence,
     model: response.model,
     stopReason: response.stopReason ?? null,
     rawText,

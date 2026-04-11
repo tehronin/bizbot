@@ -1,19 +1,7 @@
 import { NextRequest } from "next/server";
 import type { BuilderProjectCommandInput } from "@/lib/builder/command-types";
+import { parseBuilderGovernanceCommandPayload } from "@/lib/builder/governance-shared";
 import { getBuilderProject } from "@/lib/builder/projects";
-
-function parseGovernanceApproval(candidate: Record<string, unknown>, actionLabel: string): { confirmed: true; reason: string } {
-  if (candidate.confirmed !== true) {
-    throw new Error(`${actionLabel} requires explicit operator confirmation.`);
-  }
-
-  const reason = typeof candidate.reason === "string" ? candidate.reason.trim() : "";
-  if (!reason) {
-    throw new Error(`${actionLabel} requires a non-empty approval reason.`);
-  }
-
-  return { confirmed: true, reason };
-}
 
 function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
   if (!value || Array.isArray(value)) {
@@ -24,70 +12,8 @@ function parseCommandPayload(value: object | null): BuilderProjectCommandInput {
   if (candidate.action === "initialize_git") {
     return { action: "initialize_git" };
   }
-  if (candidate.action === "reconcile_mcp_policy") {
-    const approval = parseGovernanceApproval(candidate, "Builder MCP policy reconciliation");
-    return {
-      action: "reconcile_mcp_policy",
-      confirmed: approval.confirmed,
-      reason: approval.reason,
-    };
-  }
   if (candidate.action === "reconcile_operational_state") {
     return { action: "reconcile_operational_state" };
-  }
-  if (candidate.action === "resolve_mcp_contract_drift" && typeof candidate.runId === "string") {
-    const decision = candidate.decision === "approve" || candidate.decision === "reject"
-      ? candidate.decision
-      : null;
-    if (!decision) {
-      throw new Error("Builder MCP contract drift resolution requires decision=approve|reject.");
-    }
-
-    const approval = parseGovernanceApproval(candidate, "Builder MCP contract drift resolution");
-
-    return {
-      action: "resolve_mcp_contract_drift",
-      runId: candidate.runId,
-      decision,
-      confirmed: approval.confirmed,
-      reason: approval.reason,
-    };
-  }
-  if (candidate.action === "resolve_dependency_contract_drift" && typeof candidate.runId === "string") {
-    const decision = candidate.decision === "approve" || candidate.decision === "reject"
-      ? candidate.decision
-      : null;
-    if (!decision) {
-      throw new Error("Builder dependency contract drift resolution requires decision=approve|reject.");
-    }
-
-    const approval = parseGovernanceApproval(candidate, "Builder dependency contract drift resolution");
-
-    return {
-      action: "resolve_dependency_contract_drift",
-      runId: candidate.runId,
-      decision,
-      confirmed: approval.confirmed,
-      reason: approval.reason,
-    };
-  }
-  if (candidate.action === "resolve_file_topology_contract_drift" && typeof candidate.runId === "string") {
-    const decision = candidate.decision === "approve" || candidate.decision === "reject"
-      ? candidate.decision
-      : null;
-    if (!decision) {
-      throw new Error("Builder file topology contract drift resolution requires decision=approve|reject.");
-    }
-
-    const approval = parseGovernanceApproval(candidate, "Builder file topology contract drift resolution");
-
-    return {
-      action: "resolve_file_topology_contract_drift",
-      runId: candidate.runId,
-      decision,
-      confirmed: approval.confirmed,
-      reason: approval.reason,
-    };
   }
   if (candidate.action === "install_dependencies") {
     return {
@@ -138,7 +64,9 @@ export async function POST(
     const { launchBuilderProjectCommand, recordBuilderProjectCommand } = await import("@/lib/builder/commands");
     const { id } = await context.params;
     const project = await getBuilderProject(id);
-    const payload = parseCommandPayload(await req.json());
+    const rawPayload = await req.json() as object | null;
+    const governancePayload = parseBuilderGovernanceCommandPayload(rawPayload);
+    const payload = governancePayload?.command ?? parseCommandPayload(rawPayload);
     if (payload.action === "run_agentic_task") {
       const execution = await launchBuilderProjectCommand(project, payload);
       return Response.json({
@@ -158,7 +86,9 @@ export async function POST(
       });
     }
 
-    const execution = await recordBuilderProjectCommand(project, payload);
+    const execution = await recordBuilderProjectCommand(project, payload, {
+      governanceSourceSurface: governancePayload?.sourceSurface,
+    });
     return Response.json({
       runId: execution.runId,
       title: execution.title,

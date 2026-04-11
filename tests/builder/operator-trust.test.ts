@@ -71,6 +71,57 @@ describe("builder operator trust", () => {
         planning: null,
       },
       approvals: [{ id: "approval-1", postId: "post-1", status: "PENDING", approvalStatus: "PENDING", postStatus: "PENDING_APPROVAL", platform: "Twitter", excerpt: "Queued post excerpt", notes: "Review before publishing", createdAt: "2025-01-01T00:00:00.000Z" }],
+      capabilityAudit: {
+        auditPath: "projects/demo/.builder/reports/capability-audit.jsonl",
+        totalEvents: 3,
+        capabilityCounts: { workspace_manipulation: 2, governance_contracts: 1 },
+        outcomeCounts: { blocked: 1, cancelled: 1, succeeded: 1 },
+        severityCounts: { info: 1, warning: 1, critical: 1 },
+        retention: { maxEvents: 250, maxAgeDays: 30, droppedExpiredCount: 0, droppedOverflowCount: 0 },
+        recentEvents: [],
+      },
+      recentRuns: [
+        {
+          status: "FAILED",
+          metadata: {
+            review: {
+              validation: { passed: false, skipped: false },
+              risks: ["compile error", "verification gap"],
+              status: "FAILED",
+            },
+          },
+        },
+        {
+          status: "FAILED",
+          metadata: {
+            review: {
+              validation: { passed: false, skipped: false },
+              risks: ["runtime drift"],
+              status: "FAILED",
+            },
+          },
+        },
+        {
+          status: "SUCCEEDED",
+          metadata: {
+            review: {
+              validation: { passed: true, skipped: false },
+              risks: [],
+              status: "SUCCEEDED",
+            },
+          },
+        },
+        {
+          status: "SUCCEEDED",
+          metadata: {
+            review: {
+              validation: { passed: true, skipped: false },
+              risks: [],
+              status: "SUCCEEDED",
+            },
+          },
+        },
+      ] as never,
     });
 
     expect(trust.overallStatus).toBe("blocked");
@@ -78,5 +129,13 @@ describe("builder operator trust", () => {
     expect(trust.config.status).toBe("warning");
     expect(trust.approvals.pendingCount).toBe(1);
     expect(trust.summary).toContain("runtime blocked");
+    expect(trust.prioritizedBlockers[0]).toEqual(expect.objectContaining({ key: "runtime", status: "blocked" }));
+    expect(trust.prioritizedBlockers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "capability_audit", status: "blocked" }),
+    ]));
+    expect(trust.trend.direction).toBe("degrading");
+    expect(trust.trend.basis).toContain("finished Builder runs");
+    expect(trust.trend.criticalAuditEvents).toBe(1);
+    expect(trust.trend.recentWindow.runCount).toBe(4);
   });
 });

@@ -19,6 +19,7 @@ import { listBuilderProjects } from "@/lib/builder/projects";
 import { getMcpClientStatus, getMcpClientToolCatalog, getMcpClientTools } from "@/lib/mcp/client";
 import { inspectPluginRegistry } from "@/lib/agent/plugins/inspection";
 import { getMcpSamplingPolicy, listMcpSamplingIntents, listSamplingEnabledTransports } from "@/lib/mcp/policy";
+import { getDevLoopSamplingTelemetrySnapshot } from "@/lib/mcp/sampling";
 import { getToolAnnotations, getToolDescription, getToolTitle, MCP_AGENT_PROFILE, MCP_BLOCKED_TOOLS } from "@/lib/mcp/tool-presentation";
 import {
   ONTOLOGY_ENTITY_TYPES,
@@ -179,6 +180,7 @@ async function buildDebugMcpSamplingPolicy() {
   const samplingIntent = "developer_devloop_status" as const;
   const httpPolicy = getMcpSamplingPolicy(samplingIntent, "http", false);
   const stdioPolicy = getMcpSamplingPolicy(samplingIntent, "stdio", true);
+  const telemetry = getDevLoopSamplingTelemetrySnapshot();
 
   return {
     generatedAt: new Date().toISOString(),
@@ -214,6 +216,7 @@ async function buildDebugMcpSamplingPolicy() {
         "Nested sampling is blocked by policy.",
       ],
     },
+    telemetry,
   };
 }
 

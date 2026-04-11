@@ -3,6 +3,8 @@ import { gitInitRepository } from "@/lib/builder/adapters/git";
 import { buildBuilderAgenticExecution, executeBuilderAgenticTask } from "@/lib/builder/agentic";
 import { npmInstall, npmRunScript } from "@/lib/builder/adapters/npm";
 import type { BuilderProjectCommandInput, BuilderProjectRecordedCommandInput } from "@/lib/builder/command-types";
+import { appendBuilderGovernanceDecision } from "@/lib/builder/governance";
+import type { BuilderGovernanceSourceSurface } from "@/lib/builder/governance-shared";
 import { resolveBuilderProjectDependencyContractDrift } from "@/lib/builder/dependency-contract";
 import { resolveBuilderRunFileTopologyContractDrift } from "@/lib/builder/file-topology-snapshots";
 import {
@@ -42,6 +44,10 @@ export interface BuilderProjectCommandLaunch {
   command: string;
   args: string[];
   status: "RUNNING";
+}
+
+interface RecordBuilderProjectCommandOptions {
+  governanceSourceSurface?: BuilderGovernanceSourceSurface;
 }
 
 function getAgenticFinalStatus(finalVerdict: string | undefined): "SUCCEEDED" | "FAILED" | "CANCELLED" {
@@ -393,6 +399,7 @@ export async function executeBuilderProjectCommand(
 export async function recordBuilderProjectCommand(
   project: BuilderProject,
   input: BuilderProjectRecordedCommandInput,
+  options: RecordBuilderProjectCommandOptions = {},
 ): Promise<BuilderProjectCommandExecution & { runId: string }> {
   const execution = await executeBuilderProjectCommand(project, input);
   const run = await createBuilderRun({
@@ -421,6 +428,43 @@ export async function recordBuilderProjectCommand(
       cwd: execution.result.cwd,
     },
   });
+
+  if (
+    input.action === "reconcile_mcp_policy"
+    || input.action === "resolve_mcp_contract_drift"
+    || input.action === "resolve_dependency_contract_drift"
+    || input.action === "resolve_file_topology_contract_drift"
+  ) {
+    const targetRunId = "runId" in input ? input.runId : null;
+    const decision = input.action === "reconcile_mcp_policy" ? "reconcile" : input.decision;
+    const resolutionStatus = execution.metadata && typeof execution.metadata === "object" && !Array.isArray(execution.metadata)
+      && "resolution" in execution.metadata
+      && execution.metadata.resolution
+      && typeof execution.metadata.resolution === "object"
+      && !Array.isArray(execution.metadata.resolution)
+      && "status" in execution.metadata.resolution
+      && typeof (execution.metadata.resolution as { status?: unknown }).status === "string"
+        ? (execution.metadata.resolution as { status: string }).status
+        : input.action === "reconcile_mcp_policy"
+          ? "reconciled"
+          : execution.result.ok
+            ? "recorded"
+            : "failed";
+
+    appendBuilderGovernanceDecision({
+      projectId: project.id,
+      projectRelativePath: project.relativePath,
+      action: input.action,
+      decision,
+      reason: input.reason,
+      sourceSurface: options.governanceSourceSurface ?? "api",
+      commandRunId: run.id,
+      targetRunId,
+      outcome: resolutionStatus,
+      summary: execution.summary ?? execution.title,
+      metadata: execution.metadata,
+    });
+  }
 
   return { ...execution, runId: run.id };
 }

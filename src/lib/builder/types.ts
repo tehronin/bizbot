@@ -655,6 +655,7 @@ export interface BuilderReviewRuntimeState {
 }
 
 export type BuilderOperatorTrustStatus = "trusted" | "warning" | "blocked";
+export type BuilderOperatorTrustTrendDirection = "improving" | "steady" | "degrading";
 
 export interface BuilderOperatorTrustReviewState {
   status: BuilderOperatorTrustStatus;
@@ -716,6 +717,39 @@ export interface BuilderOperatorTrustArtifactPaths {
   processArtifacts: string;
 }
 
+export interface BuilderOperatorTrustTrendState {
+  direction: BuilderOperatorTrustTrendDirection;
+  basis: string;
+  summary: string;
+  warningAuditEvents: number;
+  criticalAuditEvents: number;
+  blockerCount: number;
+  recentWindow: {
+    runCount: number;
+    successRate: number;
+    verificationPassRate: number;
+    averageRiskCount: number;
+    reviewWarningCount: number;
+    blockedRunCount: number;
+  };
+  previousWindow: {
+    runCount: number;
+    successRate: number;
+    verificationPassRate: number;
+    averageRiskCount: number;
+    reviewWarningCount: number;
+    blockedRunCount: number;
+  };
+}
+
+export interface BuilderOperatorTrustPrioritizedBlocker {
+  key: string;
+  label: string;
+  status: BuilderOperatorTrustStatus;
+  priority: number;
+  summary: string;
+}
+
 export interface BuilderOperatorTrustState {
   generatedAt: string;
   overallStatus: BuilderOperatorTrustStatus;
@@ -725,6 +759,8 @@ export interface BuilderOperatorTrustState {
   runtime: BuilderOperatorTrustRuntimeState;
   approvals: BuilderOperatorTrustApprovalState;
   governance: BuilderOperatorTrustGovernanceState;
+  prioritizedBlockers: BuilderOperatorTrustPrioritizedBlocker[];
+  trend: BuilderOperatorTrustTrendState;
   artifactPaths: BuilderOperatorTrustArtifactPaths;
 }
 

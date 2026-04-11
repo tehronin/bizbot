@@ -198,6 +198,9 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Builder now persists a deterministic file topology contract that captures the accepted project structure, projects it into `.builder/file-topology.md`, and blocks execution when structural placement policy drifts from the approved baseline.
 - Operators can resolve structural drift explicitly through `resolve_file_topology_contract_drift`, which rolls the accepted topology baseline and its promoted topology ADR keys forward together.
 - Deterministic Builder verification now forces `NODE_ENV=test` for the `test` script so Jest-style suites do not inherit the host app server environment.
+- Builder governance actions now persist a recent decision history in the dashboard so baseline reconciliations and approvals remain inspectable after the toast disappears.
+- Operator trust now prioritizes the highest-signal blockers and compares the most recent Builder run window against the prior window so regressions surface as a trend, not only as a point-in-time warning count.
+- Capability audit history now derives severity, applies a bounded retention policy, and surfaces visible pruning badges when old or excess audit records are dropped.
 - The live Builder validation path has now been proven on both a minimal hello-world artifact and a realistic Express REST API project that completed planning, continuation, test creation, and passing verification inside the external Builder workspace.
 
 ### Living ADR
@@ -539,6 +542,7 @@ Current repo/runtime assumptions:
 - `npm run test:app` isolates the general Vitest suite from MCP transport coverage
 - `npm run test:mcp` runs MCP transport, contract, and plugin fixture coverage
 - `npm run test:e2e` runs the Playwright browser flows against a managed local web server with Oracle enabled
+- `npm run verify:local` is the full local release gate for this repo: it brings up Docker infrastructure, regenerates Prisma, syncs schema, runs the app suite, runs the MCP sampling suite, runs the Builder Playwright spec, and tears infrastructure back down
 - `npm run lint:docs` enforces README/contributor/plugin markdown quality
 - PostgreSQL, Redis, and Memgraph are expected locally via Docker Compose
 - After local services are up, run `npx prisma migrate deploy` so the tracked schema and manual pgvector follow-up migration are applied before starting the app

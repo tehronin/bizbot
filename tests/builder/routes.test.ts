@@ -586,6 +586,17 @@ describe("builder routes", () => {
         runtime: { status: "blocked", summary: "MCP contract drift is active and must be resolved before trusting runtime state.", activeAlertCount: 1, unresolvedAlertCount: 1, autoFixCount: 0, mcpState: "drifted", driftDetected: true },
         approvals: { status: "warning", summary: "1 post approval item is waiting in the human queue.", pendingCount: 1, pendingApprovals: [{ id: "approval-1", postId: "post-1", approvalStatus: "PENDING", postStatus: "PENDING_APPROVAL", platform: "Twitter", excerpt: "Queued post excerpt", notes: "Operator note", createdAt: "2025-01-01T00:00:00.000Z" }] },
         governance: { status: "warning", summary: "Builder capability gates that require explicit approval when invoked: governance_contracts, database_introspection, runtime_orchestration.", approvalRequiredCapabilities: ["governance_contracts", "database_introspection", "runtime_orchestration"] },
+        prioritizedBlockers: [{ key: "runtime", label: "runtime", status: "blocked", priority: 302, summary: "MCP contract drift is active and must be resolved before trusting runtime state." }],
+        trend: {
+          direction: "degrading",
+          basis: "Compared the last 5 finished Builder runs against the previous 5.",
+          summary: "Trust is degrading: recent runs are trending worse than the prior window and 1 critical audit event remains active.",
+          warningAuditEvents: 0,
+          criticalAuditEvents: 1,
+          blockerCount: 1,
+          recentWindow: { runCount: 5, successRate: 0.2, verificationPassRate: 0.2, averageRiskCount: 1.4, reviewWarningCount: 4, blockedRunCount: 4 },
+          previousWindow: { runCount: 5, successRate: 0.6, verificationPassRate: 0.6, averageRiskCount: 0.4, reviewWarningCount: 2, blockedRunCount: 2 },
+        },
         artifactPaths: { markdown: ".builder/reports/operator-trust.md", json: ".builder/reports/operator-trust.json", latestReview: ".builder/reports/latest-review.md", processArtifacts: ".builder/processes" },
       },
       tasks: [
@@ -822,6 +833,17 @@ describe("builder routes", () => {
         runtime: { status: "trusted", summary: "Runtime artifacts are aligned; MCP snapshot state is captured.", activeAlertCount: 0, unresolvedAlertCount: 0, autoFixCount: 0, mcpState: "captured", driftDetected: false },
         approvals: { status: "trusted", summary: "No pending human approvals are waiting in the queue.", pendingCount: 0, pendingApprovals: [] },
         governance: { status: "warning", summary: "Builder capability gates that require explicit approval when invoked: governance_contracts, database_introspection, runtime_orchestration.", approvalRequiredCapabilities: ["governance_contracts", "database_introspection", "runtime_orchestration"] },
+        prioritizedBlockers: [{ key: "config", label: "config", status: "blocked", priority: 280, summary: "No .env.example schema is present yet." }],
+        trend: {
+          direction: "steady",
+          basis: "No finished Builder runs are available yet, so the trend falls back to current audit and blocker state.",
+          summary: "Trust is steady: config remains the top blocker while the run history is still shallow.",
+          warningAuditEvents: 0,
+          criticalAuditEvents: 0,
+          blockerCount: 1,
+          recentWindow: { runCount: 0, successRate: 0, verificationPassRate: 0, averageRiskCount: 0, reviewWarningCount: 0, blockedRunCount: 0 },
+          previousWindow: { runCount: 0, successRate: 0, verificationPassRate: 0, averageRiskCount: 0, reviewWarningCount: 0, blockedRunCount: 0 },
+        },
         artifactPaths: { markdown: ".builder/reports/operator-trust.md", json: ".builder/reports/operator-trust.json", latestReview: ".builder/reports/latest-review.md", processArtifacts: ".builder/processes" },
       },
       brief: {
@@ -1297,6 +1319,8 @@ describe("builder routes", () => {
     expect(response.status).toBe(200);
     expect(mocks.recordBuilderProjectCommand).toHaveBeenCalledWith(expect.objectContaining({ id: "project-1" }), {
       action: "reconcile_operational_state",
+    }, {
+      governanceSourceSurface: undefined,
     });
     expect(payload.runId).toBe("run-1");
     expect(payload.result).toEqual({ ok: true, stdout: "done", stderr: "", exitCode: 0 });
@@ -1325,6 +1349,8 @@ describe("builder routes", () => {
       decision: "approve",
       confirmed: true,
       reason: "Accept the new contract for this task.",
+    }, {
+      governanceSourceSurface: "api",
     });
     expect(payload.runId).toBe("run-1");
   });
@@ -1352,6 +1378,8 @@ describe("builder routes", () => {
       decision: "approve",
       confirmed: true,
       reason: "Accept the package.json and lockfile rollover.",
+    }, {
+      governanceSourceSurface: "api",
     });
     expect(payload.runId).toBe("run-1");
   });
@@ -1379,6 +1407,8 @@ describe("builder routes", () => {
       decision: "approve",
       confirmed: true,
       reason: "Accept the structural rollover.",
+    }, {
+      governanceSourceSurface: "api",
     });
     expect(payload.runId).toBe("run-1");
   });

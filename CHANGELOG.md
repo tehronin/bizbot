@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-04-11
+
+- Added Builder governance decision history in the dashboard and commands flow so policy reconciliations and other governance actions remain inspectable after execution.
+- Expanded Builder operator trust with prioritized blocker summaries plus recent-versus-previous run trend analysis grounded in persisted Builder run and review metadata.
+- Hardened Builder capability audit reporting with severity classification, bounded retention pruning, and explicit dashboard affordances for expired or overflowed audit records.
+- Added MCP sampling telemetry and policy inspection coverage across the stdio path, debug resource surface, and focused regression tests.
+- Added `npm run verify:local` as a release-style local verification gate and fixed its Windows command spawning path so Prisma generation, schema sync, app tests, MCP sampling tests, and Builder Playwright checks run end to end.
+
 ## 2026-04-10
 
 - Added Core Chat swarm MVP support with internal source collection, worker planning and execution, grounded synthesis, audit passes, SSE swarm events, run-journal telemetry, and focused regression coverage for classifier, runtime, synthesis, audit, executor, and route behavior.

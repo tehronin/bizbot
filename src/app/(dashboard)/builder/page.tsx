@@ -1,5 +1,6 @@
 "use client";
 
+import { buildBuilderGovernanceCommandPayload } from "@/lib/builder/governance-shared";
 import { PaginationControls } from "@/components/layout/PaginationControls";
 import { usePagination } from "@/hooks/usePagination";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
@@ -151,6 +152,37 @@ interface BuilderOperatorTrustState {
     status: "trusted" | "warning" | "blocked";
     summary: string;
     approvalRequiredCapabilities: string[];
+  };
+  prioritizedBlockers: Array<{
+    key: string;
+    label: string;
+    status: "trusted" | "warning" | "blocked";
+    priority: number;
+    summary: string;
+  }>;
+  trend: {
+    direction: "improving" | "steady" | "degrading";
+    basis: string;
+    summary: string;
+    warningAuditEvents: number;
+    criticalAuditEvents: number;
+    blockerCount: number;
+    recentWindow: {
+      runCount: number;
+      successRate: number;
+      verificationPassRate: number;
+      averageRiskCount: number;
+      reviewWarningCount: number;
+      blockedRunCount: number;
+    };
+    previousWindow: {
+      runCount: number;
+      successRate: number;
+      verificationPassRate: number;
+      averageRiskCount: number;
+      reviewWarningCount: number;
+      blockedRunCount: number;
+    };
   };
   artifactPaths: {
     markdown: string;
@@ -642,8 +674,22 @@ interface BuilderProjectDetailResponse {
   mcpSnapshot: BuilderMcpSnapshotOverview;
   dependencyContract: BuilderDependencyContractOverview;
   fileTopologyContract: BuilderFileTopologyContractOverview;
+  governanceHistory: BuilderGovernanceDecisionRecord[];
   nextRecommendedStep: string | null;
   error?: string;
+}
+
+interface BuilderGovernanceDecisionRecord {
+  eventId: string;
+  timestamp: string;
+  action: BuilderGovernanceCommandAction;
+  decision: "approve" | "reject" | "reconcile";
+  reason: string;
+  sourceSurface: "dashboard" | "api" | "plugin_tool";
+  commandRunId: string;
+  targetRunId: string | null;
+  outcome: string;
+  summary: string;
 }
 
 interface BuilderCapabilityAuditEvent {
@@ -652,6 +698,7 @@ interface BuilderCapabilityAuditEvent {
   eventName: string;
   timestamp: string;
   outcomeStatus: "succeeded" | "failed" | "blocked" | "cancelled" | "timed_out";
+  severity: "info" | "warning" | "critical";
   metadata?: Record<string, unknown>;
 }
 
@@ -660,6 +707,13 @@ interface BuilderCapabilityAuditOverview {
   totalEvents: number;
   capabilityCounts: Record<string, number>;
   outcomeCounts: Record<string, number>;
+  severityCounts: { info: number; warning: number; critical: number };
+  retention: {
+    maxEvents: number;
+    maxAgeDays: number;
+    droppedExpiredCount: number;
+    droppedOverflowCount: number;
+  };
   recentEvents: BuilderCapabilityAuditEvent[];
 }
 
@@ -2708,13 +2762,14 @@ export default function BuilderPage() {
                                   if (!reason || !projectDetail.mcpSnapshot.activeRunId) {
                                     return;
                                   }
-                                  void runGovernanceAction("resolve_mcp_contract_drift", {
+                                  void runGovernanceAction("resolve_mcp_contract_drift", buildBuilderGovernanceCommandPayload({
                                     action: "resolve_mcp_contract_drift",
                                     runId: projectDetail.mcpSnapshot.activeRunId,
                                     decision: "approve",
                                     confirmed: true,
                                     reason,
-                                  }, "Approved the Builder MCP contract rollover from the dashboard.");
+                                    sourceSurface: "dashboard",
+                                  }), "Approved the Builder MCP contract rollover from the dashboard.");
                                 }}
                                 className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
                                 style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
@@ -2729,13 +2784,14 @@ export default function BuilderPage() {
                                   if (!reason || !projectDetail.mcpSnapshot.activeRunId) {
                                     return;
                                   }
-                                  void runGovernanceAction("resolve_mcp_contract_drift", {
+                                  void runGovernanceAction("resolve_mcp_contract_drift", buildBuilderGovernanceCommandPayload({
                                     action: "resolve_mcp_contract_drift",
                                     runId: projectDetail.mcpSnapshot.activeRunId,
                                     decision: "reject",
                                     confirmed: true,
                                     reason,
-                                  }, "Rejected the Builder MCP contract rollover from the dashboard.");
+                                    sourceSurface: "dashboard",
+                                  }), "Rejected the Builder MCP contract rollover from the dashboard.");
                                 }}
                                 className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
                                 style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
@@ -2766,11 +2822,12 @@ export default function BuilderPage() {
                             if (!reason) {
                               return;
                             }
-                            void runGovernanceAction("reconcile_mcp_policy", {
+                            void runGovernanceAction("reconcile_mcp_policy", buildBuilderGovernanceCommandPayload({
                               action: "reconcile_mcp_policy",
                               confirmed: true,
                               reason,
-                            }, "Reconciled the Builder MCP policy baseline from the dashboard.");
+                              sourceSurface: "dashboard",
+                            }), "Reconciled the Builder MCP policy baseline from the dashboard.");
                           }}
                           className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
                           style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
@@ -2811,13 +2868,14 @@ export default function BuilderPage() {
                                 if (!reason) {
                                   return;
                                 }
-                                void runGovernanceAction("resolve_dependency_contract_drift", {
+                                void runGovernanceAction("resolve_dependency_contract_drift", buildBuilderGovernanceCommandPayload({
                                   action: "resolve_dependency_contract_drift",
                                   runId: projectDetail.dependencyContract.runId,
                                   decision: "approve",
                                   confirmed: true,
                                   reason,
-                                }, "Approved the Builder dependency contract rollover from the dashboard.");
+                                  sourceSurface: "dashboard",
+                                }), "Approved the Builder dependency contract rollover from the dashboard.");
                               }}
                               className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
                               style={{ borderColor: "var(--warning)", color: "var(--warning)" }}
@@ -2832,13 +2890,14 @@ export default function BuilderPage() {
                                 if (!reason) {
                                   return;
                                 }
-                                void runGovernanceAction("resolve_dependency_contract_drift", {
+                                void runGovernanceAction("resolve_dependency_contract_drift", buildBuilderGovernanceCommandPayload({
                                   action: "resolve_dependency_contract_drift",
                                   runId: projectDetail.dependencyContract.runId,
                                   decision: "reject",
                                   confirmed: true,
                                   reason,
-                                }, "Rejected the Builder dependency contract rollover from the dashboard.");
+                                  sourceSurface: "dashboard",
+                                }), "Rejected the Builder dependency contract rollover from the dashboard.");
                               }}
                               className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
                               style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
@@ -2881,13 +2940,14 @@ export default function BuilderPage() {
                                 if (!reason) {
                                   return;
                                 }
-                                void runGovernanceAction("resolve_file_topology_contract_drift", {
+                                void runGovernanceAction("resolve_file_topology_contract_drift", buildBuilderGovernanceCommandPayload({
                                   action: "resolve_file_topology_contract_drift",
                                   runId: projectDetail.fileTopologyContract.runId,
                                   decision: "approve",
                                   confirmed: true,
                                   reason,
-                                }, "Approved the Builder file topology contract rollover from the dashboard.");
+                                  sourceSurface: "dashboard",
+                                }), "Approved the Builder file topology contract rollover from the dashboard.");
                               }}
                               className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
                               style={{ borderColor: "var(--warning)", color: "var(--warning)" }}
@@ -2902,13 +2962,14 @@ export default function BuilderPage() {
                                 if (!reason) {
                                   return;
                                 }
-                                void runGovernanceAction("resolve_file_topology_contract_drift", {
+                                void runGovernanceAction("resolve_file_topology_contract_drift", buildBuilderGovernanceCommandPayload({
                                   action: "resolve_file_topology_contract_drift",
                                   runId: projectDetail.fileTopologyContract.runId,
                                   decision: "reject",
                                   confirmed: true,
                                   reason,
-                                }, "Rejected the Builder file topology contract rollover from the dashboard.");
+                                  sourceSurface: "dashboard",
+                                }), "Rejected the Builder file topology contract rollover from the dashboard.");
                               }}
                               className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
                               style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
@@ -2917,6 +2978,31 @@ export default function BuilderPage() {
                             </button>
                           </div>
                         ) : null}
+                      </div>
+                      <div data-testid="builder-governance-history" className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>recent governance decisions</div>
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>
+                            {(projectDetail?.governanceHistory ?? []).length} shown
+                          </div>
+                        </div>
+                        {(projectDetail?.governanceHistory ?? []).length === 0 ? (
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                            No governance decisions have been recorded for this project yet.
+                          </div>
+                        ) : (projectDetail?.governanceHistory ?? []).map((entry) => (
+                          <div key={entry.eventId} className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                            <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                              <span>{entry.action.replaceAll("_", " ")}</span>
+                              <span>{entry.decision} · {entry.outcome.replaceAll("_", " ")}</span>
+                            </div>
+                            <div className="text-xs leading-6" style={{ color: "var(--text-primary)" }}>{entry.summary}</div>
+                            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{entry.reason}</div>
+                            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                              {new Date(entry.timestamp).toLocaleString()} · source {entry.sourceSurface.replaceAll("_", " ")} · command run {entry.commandRunId}{entry.targetRunId ? ` · target ${entry.targetRunId}` : ""}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -2993,6 +3079,39 @@ export default function BuilderPage() {
                 <div className="text-sm" style={{ color: "var(--text-primary)" }}>
                   {projectDetail?.operatorTrust.summary ?? "No operator trust artifact has been generated yet."}
                 </div>
+                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>trust trend</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: projectDetail?.operatorTrust.trend.direction === "degrading" ? "var(--danger)" : projectDetail?.operatorTrust.trend.direction === "improving" ? "var(--success)" : "var(--warning)" }}>
+                      {projectDetail?.operatorTrust.trend.direction ?? "steady"}
+                    </div>
+                  </div>
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.trend.basis}</div>
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.trend.summary}</div>
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    Warning audit events {projectDetail?.operatorTrust.trend.warningAuditEvents ?? 0}; critical audit events {projectDetail?.operatorTrust.trend.criticalAuditEvents ?? 0}; prioritized blockers {projectDetail?.operatorTrust.trend.blockerCount ?? 0}.
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>recent window</div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        Runs {projectDetail?.operatorTrust.trend.recentWindow.runCount ?? 0}; success {Math.round((projectDetail?.operatorTrust.trend.recentWindow.successRate ?? 0) * 100)}%; verification {Math.round((projectDetail?.operatorTrust.trend.recentWindow.verificationPassRate ?? 0) * 100)}%.
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        Avg risks {projectDetail?.operatorTrust.trend.recentWindow.averageRiskCount ?? 0}; review warnings {projectDetail?.operatorTrust.trend.recentWindow.reviewWarningCount ?? 0}; blocked runs {projectDetail?.operatorTrust.trend.recentWindow.blockedRunCount ?? 0}.
+                      </div>
+                    </div>
+                    <div className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>previous window</div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        Runs {projectDetail?.operatorTrust.trend.previousWindow.runCount ?? 0}; success {Math.round((projectDetail?.operatorTrust.trend.previousWindow.successRate ?? 0) * 100)}%; verification {Math.round((projectDetail?.operatorTrust.trend.previousWindow.verificationPassRate ?? 0) * 100)}%.
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        Avg risks {projectDetail?.operatorTrust.trend.previousWindow.averageRiskCount ?? 0}; review warnings {projectDetail?.operatorTrust.trend.previousWindow.reviewWarningCount ?? 0}; blocked runs {projectDetail?.operatorTrust.trend.previousWindow.blockedRunCount ?? 0}.
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {[
                     { label: "review", value: formatOperatorTrustLabel(projectDetail?.operatorTrust.review.status), tone: getOperatorTrustColor(projectDetail?.operatorTrust.review.status) },
@@ -3040,6 +3159,19 @@ export default function BuilderPage() {
                       Approval-required capability gates: {projectDetail?.operatorTrust.governance.approvalRequiredCapabilities.join(", ") || "none"}
                     </div>
                   </div>
+                </div>
+                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>prioritized blockers</div>
+                  {(projectDetail?.operatorTrust.prioritizedBlockers ?? []).map((blocker) => (
+                    <div key={`${blocker.key}-${blocker.priority}`} className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                      <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                        <span>{blocker.label}</span>
+                        <span style={{ color: getOperatorTrustColor(blocker.status) }}>{formatOperatorTrustLabel(blocker.status)} · p{blocker.priority}</span>
+                      </div>
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{blocker.summary}</div>
+                    </div>
+                  ))}
+                  {(projectDetail?.operatorTrust.prioritizedBlockers ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No operator blockers are prioritized right now.</div> : null}
                 </div>
               </div>
 
@@ -3175,15 +3307,35 @@ export default function BuilderPage() {
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>capability audit</div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>capability audit</div>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {(projectInspection?.capabilityAudit.retention.droppedExpiredCount ?? 0) > 0 ? (
+                          <span className="border px-2 py-1 text-[10px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))" }}>
+                            pruned {(projectInspection?.capabilityAudit.retention.droppedExpiredCount ?? 0)} expired
+                          </span>
+                        ) : null}
+                        {(projectInspection?.capabilityAudit.retention.droppedOverflowCount ?? 0) > 0 ? (
+                          <span className="border px-2 py-1 text-[10px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--danger)", color: "var(--danger)", background: "color-mix(in srgb, var(--danger) 10%, var(--bg-surface))" }}>
+                            dropped {(projectInspection?.capabilityAudit.retention.droppedOverflowCount ?? 0)} overflow
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
                     <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
                       {projectInspection?.capabilityAudit.totalEvents ?? 0} events · outcomes {Object.entries(projectInspection?.capabilityAudit.outcomeCounts ?? {}).map(([key, value]) => `${key}:${value}`).join(" ") || "none"}
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Severity info:{projectInspection?.capabilityAudit.severityCounts.info ?? 0} warning:{projectInspection?.capabilityAudit.severityCounts.warning ?? 0} critical:{projectInspection?.capabilityAudit.severityCounts.critical ?? 0}
                     </div>
                     <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
                       {Object.entries(projectInspection?.capabilityAudit.capabilityCounts ?? {}).map(([key, value]) => `${key.replaceAll("_", " ")}:${value}`).join(" · ") || "No extension audit events recorded yet."}
                     </div>
                     <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
                       {projectInspection?.capabilityAudit.auditPath ?? "No audit log path available yet."}
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Retention {projectInspection?.capabilityAudit.retention.maxEvents ?? 0} events / {projectInspection?.capabilityAudit.retention.maxAgeDays ?? 0} days; dropped expired {projectInspection?.capabilityAudit.retention.droppedExpiredCount ?? 0}; dropped overflow {projectInspection?.capabilityAudit.retention.droppedOverflowCount ?? 0}
                     </div>
                     <div className="space-y-2">
                       {(projectInspection?.capabilityAudit.recentEvents ?? []).slice(0, 4).map((event) => (
@@ -3193,6 +3345,7 @@ export default function BuilderPage() {
                             <span style={{ color: event.outcomeStatus === "succeeded" ? "var(--success)" : event.outcomeStatus === "failed" || event.outcomeStatus === "blocked" ? "var(--danger)" : "var(--warning)" }}>{event.outcomeStatus.replaceAll("_", " ")}</span>
                           </div>
                           <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{new Date(event.timestamp).toLocaleString()}</div>
+                          <div className="text-xs leading-6" style={{ color: event.severity === "critical" ? "var(--danger)" : event.severity === "warning" ? "var(--warning)" : "var(--text-dim)" }}>severity {event.severity}</div>
                           {typeof event.metadata?.operation === "string" ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>operation {event.metadata.operation}</div> : null}
                         </div>
                       ))}

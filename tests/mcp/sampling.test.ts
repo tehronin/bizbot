@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuilderDevLoopContext } from "@/lib/mcp/devloop-context";
-import { buildDevLoopSamplingRequest, requestDevLoopSampling } from "@/lib/mcp/sampling";
+import { buildDevLoopSamplingRequest, getDevLoopSamplingTelemetrySnapshot, requestDevLoopSampling, resetDevLoopSamplingTelemetry } from "@/lib/mcp/sampling";
 
 function buildContext(): BuilderDevLoopContext {
   return {
@@ -111,6 +111,10 @@ function buildContext(): BuilderDevLoopContext {
 }
 
 describe("MCP sampling bridge", () => {
+  beforeEach(() => {
+    resetDevLoopSamplingTelemetry();
+  });
+
   it("builds an analysis-only request without tools", () => {
     const request = buildDevLoopSamplingRequest(buildContext());
 
@@ -186,6 +190,16 @@ describe("MCP sampling bridge", () => {
     expect(result.evidenceUsed).toEqual(expect.arrayContaining(["MCP snapshot drifted"]));
     expect(result.confidence).toBe("high");
     expect(result.model).toBe("gpt-5.4");
+
+    expect(getDevLoopSamplingTelemetrySnapshot()).toEqual(expect.objectContaining({
+      totalAttempts: 1,
+      availableAttempts: 1,
+      sampledSuccesses: 1,
+      structuredParseSuccesses: 1,
+      deterministicFallbacks: 0,
+      modelCounts: { "gpt-5.4": 1 },
+      stopReasonCounts: { endTurn: 1 },
+    }));
   });
 
   it("falls back to a deterministic diagnosis when the sampling response is plain text", async () => {
@@ -204,6 +218,12 @@ describe("MCP sampling bridge", () => {
     expect(result.summary).toContain("contract looks stale");
     expect(result.smallestNextFix).toContain("snapshot baseline");
     expect(result.recommendedNextProbe).toContain("MCP contract drift");
+
+    expect(getDevLoopSamplingTelemetrySnapshot()).toEqual(expect.objectContaining({
+      totalAttempts: 1,
+      plainTextFallbacks: 1,
+      deterministicFallbacks: 1,
+    }));
   });
 
   it("falls back to a deterministic diagnosis when the sampling response contains malformed JSON", async () => {
@@ -221,6 +241,12 @@ describe("MCP sampling bridge", () => {
     expect(result.diagnosisSource).toBe("sampled");
     expect(result.likelyRootCause).toContain("snapshot baseline");
     expect(result.evidenceUsed.length).toBeGreaterThan(0);
+
+    expect(getDevLoopSamplingTelemetrySnapshot()).toEqual(expect.objectContaining({
+      totalAttempts: 1,
+      malformedPayloadCount: 1,
+      deterministicFallbacks: 1,
+    }));
   });
 
   it("returns a deterministic local diagnosis when sampling is unavailable", async () => {
@@ -235,5 +261,11 @@ describe("MCP sampling bridge", () => {
     expect(result.likelyRootCause).toContain("snapshot baseline");
     expect(result.smallestNextFix).toContain("snapshot baseline");
     expect(result.recommendedNextProbe).toContain("MCP contract drift");
+
+    expect(getDevLoopSamplingTelemetrySnapshot()).toEqual(expect.objectContaining({
+      totalAttempts: 1,
+      unavailableAttempts: 1,
+      deterministicFallbacks: 1,
+    }));
   });
 });

@@ -233,6 +233,17 @@ describe("builder orchestrator planning", () => {
       runtime: { status: "trusted", summary: "Runtime artifacts are aligned.", activeAlertCount: 0, unresolvedAlertCount: 0, autoFixCount: 0, mcpState: "captured", driftDetected: false },
       approvals: { status: "trusted", summary: "No pending human approvals are waiting in the queue.", pendingCount: 0, pendingApprovals: [] },
       governance: { status: "warning", summary: "Approval gates exist.", approvalRequiredCapabilities: ["governance_contracts"] },
+      prioritizedBlockers: [],
+      trend: {
+        direction: "improving",
+        basis: "Compared the last 2 finished Builder runs against the previous 2.",
+        summary: "Trust is improving: recent run and review results are stronger than the prior window, and retained audit history is clean.",
+        warningAuditEvents: 0,
+        criticalAuditEvents: 0,
+        blockerCount: 0,
+        recentWindow: { runCount: 2, successRate: 1, verificationPassRate: 1, averageRiskCount: 0, reviewWarningCount: 0, blockedRunCount: 0 },
+        previousWindow: { runCount: 2, successRate: 0.5, verificationPassRate: 0.5, averageRiskCount: 1, reviewWarningCount: 1, blockedRunCount: 1 },
+      },
       artifactPaths: { markdown: ".builder/reports/operator-trust.md", json: ".builder/reports/operator-trust.json", latestReview: ".builder/reports/latest-review.md", processArtifacts: ".builder/processes" },
     });
   });

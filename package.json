@@ -29,6 +29,7 @@
     "test:mcp:sampling": "node ./node_modules/vitest/vitest.mjs run tests/mcp/sampling.test.ts tests/mcp/stdio-sampling-e2e.test.ts tests/mcp/server.test.ts tests/mcp/http-route.test.ts tests/mcp/stdio-env.test.ts tests/mcp/sampling-policy-resource.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:builder": "playwright test tests/e2e/builder.spec.ts",
+    "verify:local": "node scripts/verify-local.mjs",
     "tauri:prepare-resources": "node scripts/prepare-tauri-resources.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

@@ -87,6 +87,16 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Builder e2e preflight
+        run: |
+          node --version
+          npm --version
+          docker --version
+          docker compose version
+          test -f .env.example
+          test -f compose.yaml
+          mkdir -p "$RUNNER_TEMP/bizbot-home" "$RUNNER_TEMP/bizbot-builder-workspace" test-results/ci
+
       - name: Start local infrastructure
         run: docker compose up -d
 
@@ -107,6 +117,20 @@ jobs:
 
       - name: Run Builder Playwright spec
         run: npm run test:e2e:builder
+
+      - name: Capture infrastructure logs
+        if: failure()
+        run: docker compose logs --no-color > test-results/ci/docker-compose.log
+
+      - name: Upload Builder e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: builder-e2e-artifacts
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
 
       - name: Stop local infrastructure
         if: always()
