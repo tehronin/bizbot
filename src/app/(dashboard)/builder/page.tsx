@@ -2865,12 +2865,13 @@ export default function BuilderPage() {
                               disabled={saving || governanceAction !== null}
                               onClick={() => {
                                 const reason = consumeGovernanceReason("Approving dependency contract drift");
-                                if (!reason) {
+                                const dependencyContractRunId = projectDetail?.dependencyContract.runId;
+                                if (!reason || !dependencyContractRunId) {
                                   return;
                                 }
                                 void runGovernanceAction("resolve_dependency_contract_drift", buildBuilderGovernanceCommandPayload({
                                   action: "resolve_dependency_contract_drift",
-                                  runId: projectDetail.dependencyContract.runId,
+                                  runId: dependencyContractRunId,
                                   decision: "approve",
                                   confirmed: true,
                                   reason,
@@ -2887,12 +2888,13 @@ export default function BuilderPage() {
                               disabled={saving || governanceAction !== null}
                               onClick={() => {
                                 const reason = consumeGovernanceReason("Rejecting dependency contract drift");
-                                if (!reason) {
+                                const dependencyContractRunId = projectDetail?.dependencyContract.runId;
+                                if (!reason || !dependencyContractRunId) {
                                   return;
                                 }
                                 void runGovernanceAction("resolve_dependency_contract_drift", buildBuilderGovernanceCommandPayload({
                                   action: "resolve_dependency_contract_drift",
-                                  runId: projectDetail.dependencyContract.runId,
+                                  runId: dependencyContractRunId,
                                   decision: "reject",
                                   confirmed: true,
                                   reason,
@@ -2937,12 +2939,13 @@ export default function BuilderPage() {
                               disabled={saving || governanceAction !== null}
                               onClick={() => {
                                 const reason = consumeGovernanceReason("Approving file topology contract drift");
-                                if (!reason) {
+                                const fileTopologyContractRunId = projectDetail?.fileTopologyContract.runId;
+                                if (!reason || !fileTopologyContractRunId) {
                                   return;
                                 }
                                 void runGovernanceAction("resolve_file_topology_contract_drift", buildBuilderGovernanceCommandPayload({
                                   action: "resolve_file_topology_contract_drift",
-                                  runId: projectDetail.fileTopologyContract.runId,
+                                  runId: fileTopologyContractRunId,
                                   decision: "approve",
                                   confirmed: true,
                                   reason,
@@ -2959,12 +2962,13 @@ export default function BuilderPage() {
                               disabled={saving || governanceAction !== null}
                               onClick={() => {
                                 const reason = consumeGovernanceReason("Rejecting file topology contract drift");
-                                if (!reason) {
+                                const fileTopologyContractRunId = projectDetail?.fileTopologyContract.runId;
+                                if (!reason || !fileTopologyContractRunId) {
                                   return;
                                 }
                                 void runGovernanceAction("resolve_file_topology_contract_drift", buildBuilderGovernanceCommandPayload({
                                   action: "resolve_file_topology_contract_drift",
-                                  runId: projectDetail.fileTopologyContract.runId,
+                                  runId: fileTopologyContractRunId,
                                   decision: "reject",
                                   confirmed: true,
                                   reason,

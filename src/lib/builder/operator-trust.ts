@@ -272,7 +272,7 @@ function summarizeTrendWindow(runs: Array<Pick<BuilderRun, "status" | "metadata"
     if (run.status === "SUCCEEDED") {
       successCount += 1;
     }
-    if (run.status === "FAILED" || run.status === "CANCELLED" || run.status === "TIMED_OUT") {
+    if (run.status === "FAILED" || run.status === "CANCELLED") {
       blockedRunCount += 1;
     }
 
