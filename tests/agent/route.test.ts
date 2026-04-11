@@ -130,4 +130,34 @@ describe("agent route sidecar stream", () => {
       oraclePrediction: true,
     }));
   });
+
+  it("forwards execution selection and attachments into the executor", async () => {
+    executorMocks.executeAgentConversation.mockResolvedValue({
+      reply: "ok",
+      runId: "run-4",
+      conversationId: "conversation-4",
+      profile: "content_operator",
+      provider: "ollama",
+      model: "model-1",
+    });
+
+    const response = await POST(new Request("http://localhost:3000/api/agent", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        message: "Summarize this doc",
+        mode: "agent",
+        pluginId: "content",
+        attachments: [{ type: "knowledge-doc", path: "knowledge/brief.md", label: "brief.md" }],
+      }),
+    }) as never);
+
+    expect(response.status).toBe(200);
+    expect(executorMocks.executeAgentConversation).toHaveBeenCalledWith(expect.objectContaining({
+      message: "Summarize this doc",
+      mode: "agent",
+      pluginId: "content",
+      attachments: [{ type: "knowledge-doc", path: "knowledge/brief.md", label: "brief.md" }],
+    }));
+  });
 });

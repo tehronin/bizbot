@@ -142,9 +142,9 @@ describe("MCP sampling bridge", () => {
 
   it("normalizes a structured JSON sampling response", async () => {
     const createMessage = vi.fn(async () => ({
-      role: "assistant",
+      role: "assistant" as const,
       content: {
-        type: "text",
+        type: "text" as const,
         text: JSON.stringify({
           summary: "The MCP snapshot drifted after a tool contract change.",
           status: "warning",
@@ -206,10 +206,10 @@ describe("MCP sampling bridge", () => {
     const result = await requestDevLoopSampling({
       transportKind: "stdio",
       createMessage: vi.fn(async () => ({
-        role: "assistant",
-        content: { type: "text", text: "The contract looks stale; inspect the active MCP drift first." },
+        role: "assistant" as const,
+        content: { type: "text" as const, text: "The contract looks stale; inspect the active MCP drift first." },
         model: "gpt-5.4",
-        stopReason: "endTurn",
+        stopReason: "endTurn" as const,
       })),
       getClientCapabilities: () => ({ sampling: {} }),
     }, buildContext());
@@ -230,10 +230,10 @@ describe("MCP sampling bridge", () => {
     const result = await requestDevLoopSampling({
       transportKind: "stdio",
       createMessage: vi.fn(async () => ({
-        role: "assistant",
-        content: { type: "text", text: "```json\n{\"summary\":\"bad\",\"status\":\"warning\"\n```" },
+        role: "assistant" as const,
+        content: { type: "text" as const, text: "```json\n{\"summary\":\"bad\",\"status\":\"warning\"\n```" },
         model: "gpt-5.4",
-        stopReason: "endTurn",
+        stopReason: "endTurn" as const,
       })),
       getClientCapabilities: () => ({ sampling: {} }),
     }, buildContext());

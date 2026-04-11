@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AgenticSetupDrawer } from "@/components/chat/AgenticSetupDrawer";
 import { PaginationControls } from "@/components/layout/PaginationControls";
 import { useChat, type ChatEntry, type UseChatResult } from "@/hooks/useChat";
+import type { ChatExecutionMode, ChatMessageAttachment } from "@/lib/chat/types";
 import { MEMORY_FACT_CATEGORIES, type MemoryFactCategory } from "@/lib/agent/memory/facts";
 import { getResolvedUsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
 import { getOraclePredictionIntent } from "@/lib/oracle/intent";
@@ -14,6 +15,16 @@ interface ChatWorkspaceContentProps {
   chat: UseChatResult;
   setupOpen: boolean;
   closeSetupHref: string;
+}
+
+interface KnowledgeDashboardFile {
+  path: string;
+  name: string;
+  status: "indexed" | "pending" | "skipped";
+}
+
+interface KnowledgeDashboardResponse {
+  files: KnowledgeDashboardFile[];
 }
 
 function inferCategoryFromText(content: string): MemoryFactCategory {
@@ -105,6 +116,33 @@ function MessageGroups({
     });
   }
 
+  function renderExecutionChips(entry: ChatEntry) {
+    const hasMetadata = Boolean(entry.chatMode || entry.chatPluginId || (entry.attachments && entry.attachments.length > 0));
+    if (!hasMetadata) {
+      return null;
+    }
+
+    return (
+      <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+        {entry.chatMode ? (
+          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+            {entry.chatMode}
+          </span>
+        ) : null}
+        {entry.chatPluginId ? (
+          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+            {entry.chatPluginId}
+          </span>
+        ) : null}
+        {entry.attachments?.map((attachment) => (
+          <span key={`${entry.id}-${attachment.path}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+            doc: {attachment.label}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       {messages.length === 0 && (
@@ -139,6 +177,7 @@ function MessageGroups({
               ) : null}
             </div>
             {group.entry.content}
+            {renderExecutionChips(group.entry)}
           </div>
         ) : (
           <div key={`badge-group-${groupIndex}`} className="flex flex-wrap gap-1.5 py-1">
@@ -198,6 +237,11 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   const [panelMode, setPanelMode] = useState<PanelMode>("chat");
   const [oracleModeQuery, setOracleModeQuery] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeDashboardFile[]>([]);
+  const [knowledgeState, setKnowledgeState] = useState<"idle" | "loading" | "ready" | "error" | "uploading">("idle");
+  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
+  const [selectedAttachments, setSelectedAttachments] = useState<ChatMessageAttachment[]>([]);
   const [memoryDraft, setMemoryDraft] = useState<{
     messageId: string;
     category: MemoryFactCategory;
@@ -209,10 +253,33 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   const [historySearchDraft, setHistorySearchDraft] = useState(chat.historyFilters.search);
   const [historyFromDraft, setHistoryFromDraft] = useState(chat.historyFilters.from ?? "");
   const [historyToDraft, setHistoryToDraft] = useState(chat.historyFilters.to ?? "");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const currentConversation = chat.currentConversation;
   const hasHistoryFilters = Boolean(chat.historyFilters.search || chat.historyFilters.from || chat.historyFilters.to);
   const oracleIntent = getOraclePredictionIntent(input);
+  const executionCatalog = chat.executionCatalog ?? {
+    defaults: {
+      mode: "ask" as const,
+      pluginId: "just-chatting",
+    },
+    plugins: [],
+  };
+  const executionMode = chat.executionMode ?? executionCatalog.defaults.mode;
+  const executionPluginId = chat.executionPluginId ?? executionCatalog.defaults.pluginId;
+  const setExecutionMode = chat.setExecutionMode ?? (() => undefined);
+  const setExecutionPluginId = chat.setExecutionPluginId ?? (() => undefined);
+  const activePlugin = executionCatalog.plugins.find((plugin) => plugin.id === executionPluginId)
+    ?? {
+      id: "just-chatting",
+      displayName: "Just Chatting",
+      description: "Full-context chat and planning without tool execution.",
+      accentColor: "#38bdf8",
+      accentSurface: "rgba(56,189,248,0.12)",
+      accentBorder: "rgba(56,189,248,0.36)",
+      toollessInAsk: true,
+      toollessInAgent: true,
+    };
   const activeRunCostEstimate = useMemo(() => {
     const pricing = getResolvedUsageLedgerModelPricing(
       chat.activeRun.model ?? "",
@@ -229,6 +296,105 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
     setHistoryFromDraft(chat.historyFilters.from ?? "");
     setHistoryToDraft(chat.historyFilters.to ?? "");
   }, [chat.historyFilters]);
+
+  async function loadKnowledgeFiles(): Promise<void> {
+    setKnowledgeState("loading");
+    setKnowledgeError(null);
+    try {
+      const response = await fetch("/api/knowledge");
+      const payload = await response.json() as KnowledgeDashboardResponse & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to load knowledge docs.");
+      }
+
+      setKnowledgeFiles(payload.files.filter((file) => file.status !== "skipped"));
+      setKnowledgeState("ready");
+    } catch (error) {
+      setKnowledgeState("error");
+      setKnowledgeError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function toggleAttachmentMenu(): void {
+    setAttachmentMenuOpen((current) => {
+      const next = !current;
+      if (next && knowledgeState === "idle") {
+        void loadKnowledgeFiles();
+      }
+      return next;
+    });
+  }
+
+  function toggleKnowledgeAttachment(file: KnowledgeDashboardFile): void {
+    setSelectedAttachments((current) => {
+      const existing = current.find((attachment) => attachment.path === file.path);
+      if (existing) {
+        return current.filter((attachment) => attachment.path !== file.path);
+      }
+
+      return [...current, {
+        type: "knowledge-doc",
+        path: file.path,
+        label: file.name,
+      }];
+    });
+  }
+
+  async function uploadKnowledgeFiles(files: FileList | null): Promise<void> {
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    setKnowledgeState("uploading");
+    setKnowledgeError(null);
+    try {
+      const formData = new FormData();
+      for (const file of Array.from(files)) {
+        formData.append("files", file);
+      }
+
+      const response = await fetch("/api/knowledge", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await response.json() as {
+        uploaded?: { saved: Array<{ path: string }> };
+        dashboard?: KnowledgeDashboardResponse;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Knowledge upload failed.");
+      }
+
+      const dashboardFiles = payload.dashboard?.files.filter((file) => file.status !== "skipped") ?? [];
+      setKnowledgeFiles(dashboardFiles);
+      setSelectedAttachments((current) => {
+        const existingPaths = new Set(current.map((attachment) => attachment.path));
+        const uploadedAttachments = (payload.uploaded?.saved ?? [])
+          .map((saved) => dashboardFiles.find((file) => file.path === saved.path))
+          .filter((file): file is KnowledgeDashboardFile => Boolean(file))
+          .filter((file) => !existingPaths.has(file.path))
+          .map((file) => ({
+            type: "knowledge-doc" as const,
+            path: file.path,
+            label: file.name,
+          }));
+
+        return [...current, ...uploadedAttachments];
+      });
+      setKnowledgeState("ready");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } catch (error) {
+      setKnowledgeState("error");
+      setKnowledgeError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function clearSelectedAttachments(): void {
+    setSelectedAttachments([]);
+  }
 
   function paginationRange(page: { currentPage: number; pageSize: number; totalItems: number }) {
     if (page.totalItems === 0) {
@@ -359,91 +525,69 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
     }
   }
 
+  const composerAccent = activePlugin.accentColor;
+  const composerAccentSurface = activePlugin.accentSurface;
+  const composerAccentBorder = activePlugin.accentBorder;
+
   return (
     <>
-      <div className="grid gap-4 h-full" style={{ gridTemplateRows: "auto auto 1fr auto auto" }}>
-        <section className="grid gap-3 grid-cols-4">
-          {[
-            { label: "conversation", value: chat.conversationId ?? "new chat" },
-            { label: "run", value: chat.activeRun.runId ?? "idle" },
-            { label: "lane", value: chat.activeRun.profileLabel ?? "unrouted" },
-            { label: "model", value: chat.activeRun.model ?? "pending" },
-          ].map((card) => (
-            <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-              <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
-              <div className="text-sm break-all" style={{ color: "var(--text-primary)" }}>{card.value}</div>
-            </div>
-          ))}
-        </section>
-
-        <section className="border p-4 flex items-center justify-between gap-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="min-w-0 flex-1">
-            <div className="text-xs uppercase tracking-[0.24em] mb-1" style={{ color: "var(--text-muted)" }}>
-              {panelMode === "chat" ? "active conversation" : "conversation history"}
-            </div>
-            <div className="text-sm" style={{ color: "var(--text-primary)" }}>
-              {panelMode === "chat"
-                ? (currentConversation?.label ?? "New chat")
-                : "Manage recent and archived chats"}
-            </div>
-            {panelMode === "chat" ? (
-              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs" style={{ color: "var(--text-dim)" }}>
-                <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <span style={{ color: "var(--text-muted)" }}>requests</span> {formatNumber(chat.activeRun.requestCount)}
-                </div>
-                <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <span style={{ color: "var(--text-muted)" }}>tokens</span> {formatNumber(chat.activeRun.totalTokens)}
-                </div>
-                <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <span style={{ color: "var(--text-muted)" }}>prompt</span> {formatNumber(chat.activeRun.promptTokens)}
-                </div>
-                <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <span style={{ color: "var(--text-muted)" }}>completion</span> {formatNumber(chat.activeRun.completionTokens)}
-                </div>
-                <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <span style={{ color: "var(--text-muted)" }}>cost</span> {formatUsd(activeRunCostEstimate)}
-                </div>
-                {chat.activeRun.cachedPromptTokens > 0 ? (
-                  <div className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                    <span style={{ color: "var(--text-muted)" }}>cached</span> {formatNumber(chat.activeRun.cachedPromptTokens)}
-                  </div>
-                ) : null}
+      <div className="grid gap-3 h-full" style={{ gridTemplateRows: "auto 1fr auto auto" }}>
+        <section className="flex flex-col gap-1.5 px-1">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="text-[11px] uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
+                {panelMode === "chat" ? "active conversation" : "conversation history"}
               </div>
-            ) : null}
+              {panelMode === "chat" ? (
+                <div className="text-sm truncate" style={{ color: "var(--text-primary)" }}>
+                  {currentConversation?.label ?? "New chat"}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  chat.startNewChat();
+                  setPanelMode("chat");
+                  setActionError(null);
+                }}
+                className="px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] border hover:bg-[--bg-hover] transition-colors"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                New Chat
+              </button>
+              <button
+                type="button"
+                onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
+                disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
+                className="px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50 hover:bg-[--bg-hover] transition-colors"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                Archive Chat
+              </button>
+              <button
+                type="button"
+                aria-label="Open history"
+                onClick={() => setPanelMode((current) => current === "chat" ? "history" : "chat")}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] border hover:bg-[--bg-hover] transition-colors"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                <HistoryIcon />
+                History
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                chat.startNewChat();
-                setPanelMode("chat");
-                setActionError(null);
-              }}
-              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-            >
-              New Chat
-            </button>
-            <button
-              type="button"
-              onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
-              disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
-              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-            >
-              Archive Chat
-            </button>
-            <button
-              type="button"
-              aria-label="Open history"
-              onClick={() => setPanelMode((current) => current === "chat" ? "history" : "chat")}
-              className="inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-            >
-              <HistoryIcon />
-              History
-            </button>
-          </div>
+          {panelMode === "chat" ? (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]" style={{ color: "var(--text-dim)" }}>
+              <span><span style={{ color: "var(--text-muted)" }}>requests</span> {formatNumber(chat.activeRun.requestCount)}</span>
+              <span><span style={{ color: "var(--text-muted)" }}>tokens</span> {formatNumber(chat.activeRun.totalTokens)}</span>
+              <span><span style={{ color: "var(--text-muted)" }}>prompt</span> {formatNumber(chat.activeRun.promptTokens)}</span>
+              <span><span style={{ color: "var(--text-muted)" }}>completion</span> {formatNumber(chat.activeRun.completionTokens)}</span>
+              <span><span style={{ color: "var(--text-muted)" }}>cost</span> {formatUsd(activeRunCostEstimate)}</span>
+              {chat.activeRun.cachedPromptTokens > 0 ? <span><span style={{ color: "var(--text-muted)" }}>cached</span> {formatNumber(chat.activeRun.cachedPromptTokens)}</span> : null}
+            </div>
+          ) : null}
         </section>
 
         <section className="border p-4 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", minHeight: 500 }}>
@@ -576,6 +720,10 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       <div key={conversation.id} className="border p-3" style={{ borderColor: conversation.id === chat.conversationId ? "var(--accent)" : "var(--border)" }}>
                         <div className="text-sm" style={{ color: "var(--text-primary)" }}>{conversation.label}</div>
                         <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{conversation.preview ?? "No messages yet"}</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultMode}</span>
+                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultPluginId}</span>
+                        </div>
                         <div className="text-[11px] mt-2 flex items-center justify-between gap-3" style={{ color: "var(--text-muted)" }}>
                           <span>{formatTimestamp(conversation.lastMessageAt)}</span>
                           <span>{conversation.messageCount} messages</span>
@@ -642,6 +790,10 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       <div key={conversation.id} className="border p-3" style={{ borderColor: chat.historyConversation?.id === conversation.id ? "var(--accent)" : "var(--border)" }}>
                         <div className="text-sm" style={{ color: "var(--text-primary)" }}>{conversation.label}</div>
                         <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{conversation.preview ?? "No messages yet"}</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultMode}</span>
+                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultPluginId}</span>
+                        </div>
                         <div className="text-[11px] mt-2" style={{ color: "var(--text-muted)" }}>
                           Archived {formatTimestamp(conversation.archivedAt)}
                         </div>
@@ -807,17 +959,23 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
         ) : null}
 
         <form
-          className="border p-3 flex gap-3"
-          style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}
+          className="border overflow-hidden"
+          style={{ borderColor: composerAccentBorder, background: "var(--bg-surface)" }}
           onSubmit={(event) => {
             event.preventDefault();
             setOracleModeQuery(null);
-            void chat.sendMessage(input);
+            void chat.sendMessage(input, {
+              mode: executionMode,
+              pluginId: executionPluginId,
+              attachments: selectedAttachments,
+            });
             setInput("");
+            clearSelectedAttachments();
+            setAttachmentMenuOpen(false);
           }}
         >
-          <div className="flex-1 space-y-2">
-            <input
+          <div className="p-3">
+            <textarea
               data-testid="chat-input"
               value={input}
               onChange={(event) => {
@@ -826,14 +984,21 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   setOracleModeQuery(null);
                 }
               }}
+              onInput={(event) => {
+                const el = event.currentTarget;
+                el.style.height = "auto";
+                el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+              }}
               placeholder="Draft a launch thread about our product update..."
-              className="w-full bg-transparent outline-none text-sm"
+              rows={1}
+              className="w-full bg-transparent text-sm resize-none leading-relaxed px-1 py-1"
+              style={{ color: "var(--text-primary)", minHeight: "2.5rem", outline: "none", border: "none" }}
               disabled={panelMode === "history"}
             />
             {panelMode === "chat" && oracleModeQuery ? (
               <div
                 data-testid="oracle-mode-chip"
-                className="inline-flex items-center gap-2 px-3 py-1 text-[11px] uppercase tracking-[0.18em] border"
+                className="inline-flex items-center gap-2 mt-2 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] border"
                 style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(245,158,11,0.08)" }}
               >
                 <span>Oracle mode</span>
@@ -848,26 +1013,161 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 type="button"
                 disabled={chat.isPending || !input.trim()}
                 onClick={() => {
+                  setExecutionMode("agent");
+                  setExecutionPluginId("oracle");
                   setOracleModeQuery(oracleIntent.query || input.trim());
-                  void chat.sendOraclePrediction(input);
+                  if (selectedAttachments.length > 0) {
+                    void chat.sendOraclePrediction(input, { attachments: selectedAttachments });
+                  } else {
+                    void chat.sendOraclePrediction(input);
+                  }
                   setInput("");
+                  clearSelectedAttachments();
+                  setAttachmentMenuOpen(false);
                 }}
-                className="inline-flex items-center gap-2 px-3 py-1 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+                className="inline-flex items-center gap-2 mt-2 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] border disabled:opacity-50"
                 style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(245,158,11,0.08)" }}
               >
                 <span>Oracle</span>
                 <span>Run prediction</span>
               </button>
             ) : null}
+            {selectedAttachments.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {selectedAttachments.map((attachment) => (
+                  <button
+                    key={attachment.path}
+                    type="button"
+                    onClick={() => setSelectedAttachments((current) => current.filter((item) => item.path !== attachment.path))}
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] tracking-wide border"
+                    style={{ borderColor: composerAccentBorder, color: composerAccent, background: composerAccentSurface }}
+                  >
+                    <span>{attachment.label}</span>
+                    <span className="opacity-60">×</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
-          <button
-            type="submit"
-            disabled={panelMode === "history" || chat.isPending || !input.trim()}
-            className="px-4 py-2 text-sm uppercase tracking-[0.18em] border disabled:opacity-40"
-            style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
-          >
-            {chat.isPending ? "Running" : "Send"}
-          </button>
+
+          {attachmentMenuOpen ? (
+            <div className="border-t px-3 py-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>knowledge docs</div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    hidden
+                    onChange={(event) => void uploadKnowledgeFiles(event.target.files)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={knowledgeState === "uploading"}
+                    className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50"
+                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  >
+                    {knowledgeState === "uploading" ? "Uploading" : "Upload"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void loadKnowledgeFiles()}
+                    disabled={knowledgeState === "loading" || knowledgeState === "uploading"}
+                    className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50"
+                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  >
+                    Refresh
+                  </button>
+                </div>
+              </div>
+              {knowledgeError ? <div className="text-[11px]" style={{ color: "var(--danger)" }}>{knowledgeError}</div> : null}
+              <div className="grid gap-1.5 max-h-40 overflow-y-auto">
+                {knowledgeFiles.length === 0 && knowledgeState === "ready" ? (
+                  <div className="text-xs" style={{ color: "var(--text-muted)" }}>No indexed docs yet.</div>
+                ) : knowledgeFiles.map((file) => {
+                  const attached = selectedAttachments.some((attachment) => attachment.path === file.path);
+                  return (
+                    <button
+                      key={file.path}
+                      type="button"
+                      onClick={() => toggleKnowledgeAttachment(file)}
+                      className="border px-3 py-2 text-left"
+                      style={{
+                        borderColor: attached ? composerAccentBorder : "var(--border)",
+                        background: attached ? composerAccentSurface : "transparent",
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs" style={{ color: "var(--text-primary)" }}>{file.name}</span>
+                        <span className="text-[10px] uppercase tracking-[0.16em]" style={{ color: attached ? composerAccent : "var(--text-muted)" }}>
+                          {attached ? "attached" : file.status}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex items-center gap-0.5 px-2 py-1.5 border-t" style={{ borderColor: "var(--border)" }}>
+            <button
+              type="button"
+              onClick={toggleAttachmentMenu}
+              disabled={panelMode === "history" || chat.isPending}
+              title="Attach knowledge doc"
+              className="inline-flex items-center justify-center w-7 h-7 disabled:opacity-40 hover:bg-[--bg-hover] transition-colors"
+              style={{ color: "var(--text-dim)" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                <path d="M8 3v10M3 8h10" />
+              </svg>
+            </button>
+
+            <div className="w-px h-4 mx-0.5" style={{ background: "var(--border)" }} />
+
+            <select
+              value={executionMode}
+              disabled={panelMode === "history" || chat.isPending}
+              onChange={(event) => setExecutionMode(event.target.value as ChatExecutionMode)}
+              className="bg-transparent text-xs px-1.5 py-1 outline-none cursor-pointer"
+              style={{ color: "var(--text-primary)", border: "none" }}
+            >
+              <option value="ask">Ask</option>
+              <option value="agent">Agent</option>
+            </select>
+
+            <div className="w-px h-4 mx-0.5" style={{ background: "var(--border)" }} />
+
+            <select
+              value={executionPluginId}
+              disabled={panelMode === "history" || chat.isPending}
+              onChange={(event) => setExecutionPluginId(event.target.value)}
+              title={activePlugin.description}
+              className="bg-transparent text-xs px-1.5 py-1 outline-none cursor-pointer max-w-[200px] truncate"
+              style={{ color: "var(--text-dim)", border: "none" }}
+            >
+              {executionCatalog.plugins.map((plugin) => (
+                <option key={plugin.id} value={plugin.id}>{plugin.displayName}</option>
+              ))}
+            </select>
+
+            <div className="flex-1" />
+
+            <button
+              type="submit"
+              disabled={panelMode === "history" || chat.isPending || !input.trim()}
+              className="inline-flex items-center justify-center w-7 h-7 disabled:opacity-30 transition-colors"
+              style={{ color: composerAccent }}
+              title={chat.isPending ? "Running" : executionMode === "ask" ? "Ask" : "Send"}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 12V4M8 4L4 8M8 4l4 4" />
+              </svg>
+            </button>
+          </div>
         </form>
 
         {actionError ? (

@@ -2,6 +2,8 @@
 
 ## 2026-04-11
 
+- Added chat execution selection defaults, plugin-aware routing, bounded tool allowlisting, attachment-aware prompt context, and focused route/executor regression coverage for the new Ask/Agent chat flow.
+- Redesigned the main chat composer toward a more VS Code-like layout with a compact toolbar, plugin and mode selectors under the prompt, attachment chips, and cleaner focus treatment.
 - Added Builder governance decision history in the dashboard and commands flow so policy reconciliations and other governance actions remain inspectable after execution.
 - Expanded Builder operator trust with prioritized blocker summaries plus recent-versus-previous run trend analysis grounded in persisted Builder run and review metadata.
 - Hardened Builder capability audit reporting with severity classification, bounded retention pruning, and explicit dashboard affordances for expired or overflowed audit records.

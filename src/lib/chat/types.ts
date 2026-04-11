@@ -1,6 +1,11 @@
 import type { AgentProfile } from "@/lib/agent/profiles";
 import type { LLMProvider } from "@/lib/agent/kernel";
 import type { UsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
+import type {
+  ChatExecutionCatalog,
+  ChatExecutionMode,
+  ChatMessageAttachment,
+} from "@/lib/chat/execution";
 
 export const CHAT_PREVIEW_MAX_CHARS = 80;
 export const DEFAULT_CHAT_HISTORY_PAGE_SIZE = 6;
@@ -24,6 +29,11 @@ export interface ChatConversationMessage {
   role: "USER" | "ASSISTANT" | "SYSTEM" | "TOOL";
   content: string;
   createdAt: string;
+  metadata?: {
+    chatMode?: ChatExecutionMode;
+    chatPluginId?: string;
+    attachments?: ChatMessageAttachment[];
+  } | null;
 }
 
 export interface ChatConversationSummary {
@@ -36,10 +46,17 @@ export interface ChatConversationSummary {
   lastMessageAt: string | null;
   archivedAt: string | null;
   messageCount: number;
+  defaultMode: ChatExecutionMode;
+  defaultPluginId: string;
 }
 
 export interface ChatConversationDetail extends ChatConversationSummary {
   messages: ChatConversationMessage[];
+}
+
+export interface ChatExecutionDefaults {
+  mode: ChatExecutionMode;
+  pluginId: string;
 }
 
 export interface ChatConversationUsageSummary {
@@ -60,6 +77,8 @@ export interface ChatConversationUsageSummary {
 export interface ChatConversationBootstrap {
   currentConversationId: string | null;
   currentConversation: ChatConversationDetail | null;
+  executionDefaults: ChatExecutionDefaults;
+  executionCatalog: ChatExecutionCatalog;
   activeRun: ChatConversationUsageSummary;
   modelPricing: Record<string, UsageLedgerModelPricing>;
   recentConversations: ChatConversationSummary[];
@@ -68,6 +87,8 @@ export interface ChatConversationBootstrap {
   archivedPagination: ChatConversationPagination;
   historyFilters: ChatConversationHistoryFilters;
 }
+
+export type { ChatExecutionCatalog, ChatExecutionMode, ChatMessageAttachment };
 
 export function truncateChatPreview(value: string, maxChars = CHAT_PREVIEW_MAX_CHARS): string {
   if (value.length <= maxChars) {

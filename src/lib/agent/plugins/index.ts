@@ -7,6 +7,7 @@
 import type { JsonObject, McpSamplingSession, RegisteredToolDefinition, ToolDescriptor, ToolExecutionResult } from "@/lib/agent/tools";
 import type { AgentRuntimeConfig } from "@/lib/agent/runtime";
 import type { AgentProfile } from "@/lib/agent/profiles";
+import type { ChatExecutionMode } from "@/lib/chat/execution";
 import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { canProfileUseTool } from "@/lib/agent/profiles";
 import { appendBuilderMcpSnapshotMapping } from "@/lib/builder/mcp-snapshots";
@@ -19,6 +20,9 @@ export type { BizBotPlugin, BizBotPluginMetadata } from "./contracts";
 
 export interface ToolAccessContext {
   agentProfile?: AgentProfile;
+  chatMode?: ChatExecutionMode;
+  chatPluginId?: string;
+  allowedToolNames?: string[];
   conversationId?: string;
   runId?: string;
   userId?: string;
@@ -51,6 +55,12 @@ function getToolAccessDenialReason(name: string, config: AgentRuntimeConfig, acc
 
   if (access?.agentProfile && !canProfileUseTool(access.agentProfile, name)) {
     return `tool '${name}' is not allowed for profile '${access.agentProfile}'`;
+  }
+
+  if (access?.allowedToolNames && !access.allowedToolNames.includes(name)) {
+    return access.chatPluginId
+      ? `tool '${name}' is not allowed for chat plugin '${access.chatPluginId}' in mode '${access.chatMode ?? "agent"}'`
+      : `tool '${name}' is not included in the current execution policy`;
   }
 
   return null;

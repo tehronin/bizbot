@@ -7,6 +7,10 @@ import { NextRequest } from "next/server";
 import { executeAgentConversation, type AgentExecutionEvent } from "@/lib/agent/executor";
 import type { LLMProvider } from "@/lib/agent/kernel";
 import type { AgentProfile } from "@/lib/agent/profiles";
+import {
+  normalizeChatMessageAttachments,
+  resolveChatExecutionSelection,
+} from "@/lib/chat/execution";
 import { db } from "@/lib/db";
 
 function toSseChunk(event: string, payload: object): string {
@@ -42,6 +46,9 @@ export async function POST(req: NextRequest) {
       conversationId?: unknown;
       userId?: unknown;
       provider?: unknown;
+      mode?: unknown;
+      pluginId?: unknown;
+      attachments?: unknown;
       stream?: unknown;
       oraclePrediction?: unknown;
       forcedProfile?: AgentProfile;
@@ -70,6 +77,11 @@ export async function POST(req: NextRequest) {
     const conversationId = typeof body.conversationId === "string" ? body.conversationId : undefined;
     const userId = typeof body.userId === "string" ? body.userId : undefined;
     const provider = typeof body.provider === "string" ? body.provider : undefined;
+    const executionSelection = resolveChatExecutionSelection({
+      mode: body.mode === "ask" || body.mode === "agent" ? body.mode : undefined,
+      pluginId: typeof body.pluginId === "string" ? body.pluginId : undefined,
+    });
+    const attachments = normalizeChatMessageAttachments(body.attachments);
     const stream = body.stream === true;
     const oraclePrediction = body.oraclePrediction === true;
 
@@ -100,6 +112,9 @@ export async function POST(req: NextRequest) {
                 conversationId,
                 userId,
                 provider: provider as LLMProvider | undefined,
+                mode: executionSelection.mode,
+                pluginId: executionSelection.pluginId,
+                attachments,
                 oraclePrediction,
                 signal: executionAbortController.signal,
                 onEvent: async (event: AgentExecutionEvent) => {
@@ -144,6 +159,9 @@ export async function POST(req: NextRequest) {
       conversationId,
       userId,
       provider: provider as LLMProvider | undefined,
+      mode: executionSelection.mode,
+      pluginId: executionSelection.pluginId,
+      attachments,
       oraclePrediction,
     });
 

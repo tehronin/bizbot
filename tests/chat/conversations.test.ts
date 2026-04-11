@@ -4,6 +4,8 @@ type TestConversation = {
   id: string;
   title: string | null;
   userId: string;
+  defaultMode: "ASK" | "AGENT";
+  defaultPluginId: string;
   archivedAt: Date | null;
   deletedAt: Date | null;
   lastMessageAt: Date | null;
@@ -13,6 +15,7 @@ type TestConversation = {
     id: string;
     role: "USER" | "ASSISTANT" | "SYSTEM" | "TOOL";
     content: string;
+    metadata?: unknown;
     createdAt: Date;
   }>;
 };
@@ -188,6 +191,33 @@ vi.mock("@/lib/agent/run-journal", () => ({
   getConversationUsageSummary: runJournalMocks.getConversationUsageSummary,
 }));
 
+vi.mock("@/lib/chat/execution", () => ({
+  DEFAULT_CHAT_EXECUTION_MODE: "ask",
+  DEFAULT_CHAT_EXECUTION_PLUGIN_ID: "just-chatting",
+  buildChatExecutionCatalog: () => ({
+    defaults: {
+      mode: "ask",
+      pluginId: "just-chatting",
+    },
+    plugins: [
+      {
+        id: "just-chatting",
+        displayName: "Just Chatting",
+        description: "Full-context chat and planning without tool execution.",
+        accentColor: "#38bdf8",
+        accentSurface: "rgba(56,189,248,0.12)",
+        accentBorder: "rgba(56,189,248,0.36)",
+        toollessInAsk: true,
+        toollessInAgent: true,
+      },
+    ],
+  }),
+  resolveChatExecutionSelection: ({ mode, pluginId }: { mode?: "ask" | "agent"; pluginId?: string }) => ({
+    mode: mode ?? "ask",
+    pluginId: pluginId ?? "just-chatting",
+  }),
+}));
+
 import {
   archiveConversation,
   deleteConversation,
@@ -203,6 +233,8 @@ describe("chat conversations service", () => {
         id: "active-newer",
         title: "Ops triage",
         userId: "local-user",
+        defaultMode: "ASK",
+        defaultPluginId: "just-chatting",
         archivedAt: null,
         deletedAt: null,
         lastMessageAt: new Date("2026-04-01T12:00:00.000Z"),
@@ -217,6 +249,8 @@ describe("chat conversations service", () => {
         id: "active-older",
         title: "Support queue",
         userId: "local-user",
+        defaultMode: "ASK",
+        defaultPluginId: "just-chatting",
         archivedAt: null,
         deletedAt: null,
         lastMessageAt: new Date("2026-03-31T18:00:00.000Z"),
@@ -230,6 +264,8 @@ describe("chat conversations service", () => {
         id: "archived-conversation",
         title: null,
         userId: "local-user",
+        defaultMode: "AGENT",
+        defaultPluginId: "content",
         archivedAt: new Date("2026-03-30T13:00:00.000Z"),
         deletedAt: null,
         lastMessageAt: new Date("2026-03-30T12:00:00.000Z"),
@@ -248,6 +284,8 @@ describe("chat conversations service", () => {
         id: "deleted-conversation",
         title: "Deleted",
         userId: "local-user",
+        defaultMode: "ASK",
+        defaultPluginId: "just-chatting",
         archivedAt: new Date("2026-03-29T09:00:00.000Z"),
         deletedAt: new Date("2026-03-29T10:00:00.000Z"),
         lastMessageAt: new Date("2026-03-29T09:00:00.000Z"),
@@ -320,6 +358,8 @@ describe("chat conversations service", () => {
         id: "active-search-hit",
         title: "Campaign planner",
         userId: "local-user",
+        defaultMode: "ASK",
+        defaultPluginId: "just-chatting",
         archivedAt: null,
         deletedAt: null,
         lastMessageAt: new Date("2026-04-02T09:00:00.000Z"),
@@ -333,6 +373,8 @@ describe("chat conversations service", () => {
         id: "archived-search-hit",
         title: "Archive review",
         userId: "local-user",
+        defaultMode: "AGENT",
+        defaultPluginId: "content",
         archivedAt: new Date("2026-04-02T10:00:00.000Z"),
         deletedAt: null,
         lastMessageAt: new Date("2026-04-02T09:30:00.000Z"),

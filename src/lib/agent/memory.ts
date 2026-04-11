@@ -667,3 +667,16 @@ export async function getOrCreateConversation(
   });
   return conversation.id;
 }
+
+export async function updateConversationExecutionDefaults(
+  conversationId: string,
+  defaults: { mode: "ask" | "agent"; pluginId: string },
+): Promise<void> {
+  await db.conversation.update({
+    where: { id: conversationId },
+    data: {
+      defaultMode: defaults.mode === "agent" ? "AGENT" : "ASK",
+      defaultPluginId: defaults.pluginId,
+    },
+  });
+}

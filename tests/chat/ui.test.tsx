@@ -32,6 +32,8 @@ function createSummary(overrides?: Partial<ChatConversationSummary>): ChatConver
     lastMessageAt: "2026-04-01T12:00:00.000Z",
     archivedAt: null,
     messageCount: 2,
+    defaultMode: "ask",
+    defaultPluginId: "just-chatting",
     ...overrides,
   };
 }
@@ -150,7 +152,14 @@ function Harness() {
   }
 
   const chat: UseChatResult = {
-    messages: [{ id: "entry-1", role: "assistant", content: "Here is the live chat." }],
+    messages: [{
+      id: "entry-1",
+      role: "assistant",
+      content: "Here is the live chat.",
+      chatMode: "agent",
+      chatPluginId: "content",
+      attachments: [{ type: "knowledge-doc", path: "knowledge/brief.md", label: "brief.md" }],
+    }],
     conversationId,
     currentConversation,
     recentConversations,
@@ -169,6 +178,38 @@ function Harness() {
         completionUsdPerMillion: 20,
       },
     },
+    executionCatalog: {
+      defaults: {
+        mode: "ask",
+        pluginId: "just-chatting",
+      },
+      plugins: [
+        {
+          id: "just-chatting",
+          displayName: "Just Chatting",
+          description: "Full-context chat and planning without tool execution.",
+          accentColor: "#38bdf8",
+          accentSurface: "rgba(56,189,248,0.12)",
+          accentBorder: "rgba(56,189,248,0.36)",
+          toollessInAsk: true,
+          toollessInAgent: true,
+        },
+        {
+          id: "oracle",
+          displayName: "Oracle",
+          description: "Market-focused prediction and evidence gathering.",
+          accentColor: "#facc15",
+          accentSurface: "rgba(250,204,21,0.14)",
+          accentBorder: "rgba(250,204,21,0.36)",
+          toollessInAsk: true,
+          toollessInAgent: false,
+        },
+      ],
+    },
+    executionMode: "ask",
+    executionPluginId: "just-chatting",
+    setExecutionMode: vi.fn(),
+    setExecutionPluginId: vi.fn(),
     activeRun: {
       conversationId,
       runId: "run-live-1",
@@ -400,5 +441,13 @@ describe("chat workspace history panel", () => {
 
     const chat = screen.getByText("Here is the live chat.").closest("div");
     expect(chat).toBeTruthy();
+  });
+
+  it("shows per-message execution chips in the transcript", () => {
+    render(<Harness />);
+
+    expect(screen.getAllByText("content").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("agent").length).toBeGreaterThan(0);
+    expect(screen.getByText("doc: brief.md")).toBeTruthy();
   });
 });

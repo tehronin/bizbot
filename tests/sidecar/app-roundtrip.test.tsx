@@ -17,6 +17,38 @@ function createBootstrap(): ChatConversationBootstrap {
   return {
     currentConversationId: "conversation-1",
     currentConversation: null,
+    executionDefaults: {
+      mode: "ask",
+      pluginId: "just-chatting",
+    },
+    executionCatalog: {
+      defaults: {
+        mode: "ask",
+        pluginId: "just-chatting",
+      },
+      plugins: [
+        {
+          id: "just-chatting",
+          displayName: "Just Chatting",
+          description: "Full-context chat and planning without tool execution.",
+          accentColor: "#38bdf8",
+          accentSurface: "rgba(56,189,248,0.12)",
+          accentBorder: "rgba(56,189,248,0.36)",
+          toollessInAsk: true,
+          toollessInAgent: true,
+        },
+        {
+          id: "oracle",
+          displayName: "Oracle",
+          description: "Market-focused prediction and evidence gathering.",
+          accentColor: "#facc15",
+          accentSurface: "rgba(250,204,21,0.14)",
+          accentBorder: "rgba(250,204,21,0.36)",
+          toollessInAsk: true,
+          toollessInAgent: false,
+        },
+      ],
+    },
     activeRun: {
       conversationId: null,
       runId: null,

@@ -31,6 +31,28 @@ describe("chat conversation routes", () => {
     conversationMocks.resolveChatBootstrap.mockResolvedValue({
       currentConversationId: "active-1",
       currentConversation: null,
+      executionDefaults: {
+        mode: "ask",
+        pluginId: "just-chatting",
+      },
+      executionCatalog: {
+        defaults: {
+          mode: "ask",
+          pluginId: "just-chatting",
+        },
+        plugins: [
+          {
+            id: "just-chatting",
+            displayName: "Just Chatting",
+            description: "Full-context chat and planning without tool execution.",
+            accentColor: "#38bdf8",
+            accentSurface: "rgba(56,189,248,0.12)",
+            accentBorder: "rgba(56,189,248,0.36)",
+            toollessInAsk: true,
+            toollessInAgent: true,
+          },
+        ],
+      },
       activeRun: {
         conversationId: "active-1",
         runId: "run-active-1",

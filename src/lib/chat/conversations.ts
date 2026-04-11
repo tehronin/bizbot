@@ -1,7 +1,14 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getConversationUsageSummary } from "@/lib/agent/run-journal";
 import { parseUsageLedgerModelPricingSetting, USAGE_LEDGER_MODEL_PRICING_SETTING_KEY } from "@/lib/agent/usage-ledger-pricing";
 import { resolveAgentUserId } from "@/lib/agent/user-context";
+import {
+  buildChatExecutionCatalog,
+  DEFAULT_CHAT_EXECUTION_MODE,
+  DEFAULT_CHAT_EXECUTION_PLUGIN_ID,
+  resolveChatExecutionSelection,
+} from "@/lib/chat/execution";
 import {
   buildConversationLabel,
   truncateChatPreview,
@@ -16,7 +23,22 @@ import {
   type ChatConversationUsageSummary,
 } from "@/lib/chat/types";
 
-type ConversationRow = Awaited<ReturnType<typeof fetchConversationRows>>[number];
+type ConversationRow = Prisma.ConversationGetPayload<{
+  include: {
+    _count: {
+      select: { messages: true };
+    };
+    messages: {
+      select: {
+        id: true;
+        role: true;
+        content: true;
+        metadata: true;
+        createdAt: true;
+      };
+    };
+  };
+}>;
 type ConversationState = "active" | "archived" | "any";
 type ConversationPageQuery = {
   page?: number;
@@ -24,12 +46,43 @@ type ConversationPageQuery = {
   filters?: Partial<ChatConversationHistoryFilters>;
 };
 
-function serializeMessage(row: { id: string; role: "USER" | "ASSISTANT" | "SYSTEM" | "TOOL"; content: string; createdAt: Date }): ChatConversationMessage {
+function normalizeMessageMetadata(value: unknown): ChatConversationMessage["metadata"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const attachments = Array.isArray(candidate.attachments)
+    ? candidate.attachments.flatMap((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return [];
+        }
+
+        const attachment = entry as Record<string, unknown>;
+        if (attachment.type !== "knowledge-doc") {
+          return [];
+        }
+
+        const path = typeof attachment.path === "string" ? attachment.path : "";
+        const label = typeof attachment.label === "string" ? attachment.label : "";
+        return path && label ? [{ type: "knowledge-doc" as const, path, label }] : [];
+      })
+    : undefined;
+
+  return {
+    chatMode: candidate.chatMode === "ask" || candidate.chatMode === "agent" ? candidate.chatMode : undefined,
+    chatPluginId: typeof candidate.chatPluginId === "string" ? candidate.chatPluginId : undefined,
+    attachments,
+  };
+}
+
+function serializeMessage(row: { id: string; role: "USER" | "ASSISTANT" | "SYSTEM" | "TOOL"; content: string; metadata?: unknown; createdAt: Date }): ChatConversationMessage {
   return {
     id: row.id,
     role: row.role,
     content: row.content,
     createdAt: row.createdAt.toISOString(),
+    metadata: normalizeMessageMetadata(row.metadata),
   };
 }
 
@@ -51,6 +104,8 @@ function serializeSummary(row: ConversationRow): ChatConversationSummary {
     lastMessageAt: row.lastMessageAt ? row.lastMessageAt.toISOString() : null,
     archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
     messageCount: row._count.messages,
+    defaultMode: row.defaultMode === "AGENT" ? "agent" : "ask",
+    defaultPluginId: row.defaultPluginId,
   };
 }
 
@@ -179,6 +234,7 @@ async function fetchConversationRows(
           id: true,
           role: true,
           content: true,
+          metadata: true,
           createdAt: true,
         },
         orderBy: { createdAt: "asc" },
@@ -253,6 +309,13 @@ function emptyConversationUsageSummary(conversationId: string | null): ChatConve
   };
 }
 
+function buildExecutionDefaults(mode: unknown, pluginId: unknown) {
+  return resolveChatExecutionSelection({
+    mode: mode === "AGENT" ? "agent" : mode === "ASK" ? "ask" : DEFAULT_CHAT_EXECUTION_MODE,
+    pluginId: typeof pluginId === "string" ? pluginId : DEFAULT_CHAT_EXECUTION_PLUGIN_ID,
+  });
+}
+
 export async function listActiveConversations(userIdInput?: string): Promise<ChatConversationSummary[]> {
   const userId = resolveAgentUserId(userIdInput);
   await ensureConversationUser(userId);
@@ -293,6 +356,7 @@ export async function getConversationDetail(
           id: true,
           role: true,
           content: true,
+          metadata: true,
           createdAt: true,
         },
         orderBy: { createdAt: "asc" },
@@ -337,6 +401,10 @@ export async function resolveChatBootstrap(options?: {
 
   const currentConversation = preferredConversation ?? fallbackConversation;
   const currentConversationId = currentConversation?.id ?? null;
+  const executionCatalog = buildChatExecutionCatalog();
+  const executionDefaults = currentConversation
+    ? buildExecutionDefaults(currentConversation.defaultMode, currentConversation.defaultPluginId)
+    : executionCatalog.defaults;
   const activeRun = currentConversationId
     ? getConversationUsageSummary(currentConversationId)
     : emptyConversationUsageSummary(null);
@@ -344,6 +412,8 @@ export async function resolveChatBootstrap(options?: {
   return {
     currentConversationId,
     currentConversation,
+    executionDefaults,
+    executionCatalog,
     activeRun,
     modelPricing: parseUsageLedgerModelPricingSetting(pricingSetting?.value),
     recentConversations: recentPage.conversations,

@@ -108,12 +108,19 @@ enum ApprovalStatus {
   AUTO_APPROVED
 }
 
+enum ChatExecutionMode {
+  ASK
+  AGENT
+}
+
 // ─────────────────── CONVERSATIONS ───────────────────
 model Conversation {
   id            String    @id @default(cuid())
   title         String?
   user          User      @relation(fields: [userId], references: [id])
   userId        String
+  defaultMode   ChatExecutionMode @default(ASK)
+  defaultPluginId String  @default("just-chatting")
   promptSummary String?
   promptSummaryUpdatedAt DateTime?
   archivedAt    DateTime?

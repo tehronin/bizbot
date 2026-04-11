@@ -122,7 +122,7 @@ describe("stdio MCP sampling e2e", () => {
       import("@/lib/mcp/stdio"),
     ]);
 
-    const samplingHandler = vi.fn(async () => ({
+    const samplingHandler = vi.fn(async (_params?: unknown) => ({
       role: "assistant" as const,
       content: {
         type: "text" as const,

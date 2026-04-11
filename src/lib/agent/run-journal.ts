@@ -37,6 +37,7 @@ export interface AgentRunPromptAssembly {
   runtimeToolVisibilityChars: number;
   explicitMemoryChars: number;
   ontologyChars: number;
+  attachmentContextChars: number;
   conversationSummaryChars: number;
   recentConversationChars: number;
   semanticRecallChars: number;

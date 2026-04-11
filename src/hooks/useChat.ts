@@ -4,7 +4,10 @@ import { useEffect, useState, useTransition } from "react";
 import type {
   ChatConversationBootstrap,
   ChatConversationDetail,
+  ChatExecutionCatalog,
+  ChatExecutionMode,
   ChatConversationHistoryFilters,
+  ChatMessageAttachment,
   ChatConversationMessage,
   ChatConversationPagination,
   ChatConversationSummary,
@@ -26,6 +29,9 @@ export interface ChatEntry {
   id: string;
   role: "user" | "assistant" | "status" | "tool" | "meta";
   content: string;
+  chatMode?: ChatExecutionMode;
+  chatPluginId?: string;
+  attachments?: ChatMessageAttachment[];
   runId?: string;
   profile?: string;
   profileLabel?: string;
@@ -100,8 +106,13 @@ export interface UseChatResult {
   isLoadingHistoryLists: boolean;
   activeRun: ActiveRunState;
   modelPricing: Record<string, UsageLedgerModelPricing>;
-  sendMessage: (input: string) => Promise<void>;
-  sendOraclePrediction: (input: string) => Promise<void>;
+  executionCatalog: ChatExecutionCatalog;
+  executionMode: ChatExecutionMode;
+  executionPluginId: string;
+  setExecutionMode: React.Dispatch<React.SetStateAction<ChatExecutionMode>>;
+  setExecutionPluginId: React.Dispatch<React.SetStateAction<string>>;
+  sendMessage: (input: string, options?: { mode?: ChatExecutionMode; pluginId?: string; attachments?: ChatMessageAttachment[] }) => Promise<void>;
+  sendOraclePrediction: (input: string, options?: { attachments?: ChatMessageAttachment[] }) => Promise<void>;
   startNewChat: () => void;
   loadConversation: (nextConversationId: string) => Promise<void>;
   archiveConversation: (nextConversationId: string) => Promise<void>;
@@ -158,6 +169,14 @@ const DEFAULT_HISTORY_PAGINATION: ChatConversationPagination = {
   totalPages: 1,
 };
 
+const EMPTY_EXECUTION_CATALOG: ChatExecutionCatalog = {
+  defaults: {
+    mode: "ask",
+    pluginId: "just-chatting",
+  },
+  plugins: [],
+};
+
 function getStoredSelectedConversationId(): string | null {
   if (typeof window === "undefined") {
     return null;
@@ -211,11 +230,16 @@ function createInternalActiveRun(state?: ChatConversationUsageSummary | ActiveRu
   };
 }
 
-function createEntry(role: ChatEntry["role"], content: string): ChatEntry {
+function createEntry(
+  role: ChatEntry["role"],
+  content: string,
+  metadata?: Partial<Pick<ChatEntry, "chatMode" | "chatPluginId" | "attachments">>,
+): ChatEntry {
   return {
     id: `${role}-${crypto.randomUUID()}`,
     role,
     content,
+    ...(metadata ?? {}),
   };
 }
 
@@ -303,11 +327,11 @@ function parseSsePayload(buffer: string): {
 
 function mapConversationMessageToEntry(message: ChatConversationMessage): ChatEntry {
   if (message.role === "USER") {
-    return createEntry("user", message.content);
+    return createEntry("user", message.content, message.metadata ?? undefined);
   }
 
   if (message.role === "ASSISTANT") {
-    return createEntry("assistant", message.content);
+    return createEntry("assistant", message.content, message.metadata ?? undefined);
   }
 
   if (message.role === "TOOL") {
@@ -360,6 +384,9 @@ export function useChat(): UseChatResult {
   const [historyConversation, setHistoryConversation] = useState<ChatConversationDetail | null>(null);
   const [activeRun, setActiveRun] = useState<InternalActiveRunState>(IDLE_ACTIVE_RUN);
   const [modelPricing, setModelPricing] = useState<Record<string, UsageLedgerModelPricing>>({});
+  const [executionCatalog, setExecutionCatalog] = useState<ChatExecutionCatalog>(EMPTY_EXECUTION_CATALOG);
+  const [executionMode, setExecutionMode] = useState<ChatExecutionMode>(EMPTY_EXECUTION_CATALOG.defaults.mode);
+  const [executionPluginId, setExecutionPluginId] = useState<string>(EMPTY_EXECUTION_CATALOG.defaults.pluginId);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isLoadingHistoryConversation, setIsLoadingHistoryConversation] = useState(false);
   const [isLoadingHistoryLists, setIsLoadingHistoryLists] = useState(false);
@@ -407,6 +434,9 @@ export function useChat(): UseChatResult {
     setArchivedPagination(payload.archivedPagination);
     setHistoryFilters(payload.historyFilters);
     setModelPricing(payload.modelPricing);
+    setExecutionCatalog(payload.executionCatalog);
+    setExecutionMode(payload.executionDefaults.mode);
+    setExecutionPluginId(payload.executionDefaults.pluginId);
     setConversationId(payload.currentConversationId);
     setCurrentConversation(payload.currentConversation);
     persistSelectedConversationId(payload.currentConversationId);
@@ -505,6 +535,8 @@ export function useChat(): UseChatResult {
     setMessages([]);
     setActiveRun(IDLE_ACTIVE_RUN);
     setHistoryConversation(null);
+    setExecutionMode(executionCatalog.defaults.mode);
+    setExecutionPluginId(executionCatalog.defaults.pluginId);
     persistSelectedConversationId(null);
   }
 
@@ -652,11 +684,24 @@ export function useChat(): UseChatResult {
     }
   };
 
-  async function streamAgentRequest(input: string, options?: { oraclePrediction?: boolean }): Promise<void> {
+  async function streamAgentRequest(input: string, options?: {
+    oraclePrediction?: boolean;
+    mode?: ChatExecutionMode;
+    pluginId?: string;
+    attachments?: ChatMessageAttachment[];
+  }): Promise<void> {
     const trimmed = input.trim();
     if (!trimmed) return;
 
-    setMessages((current) => [...current, createEntry("user", trimmed)]);
+    const mode = options?.mode ?? executionMode;
+    const pluginId = options?.pluginId ?? executionPluginId;
+    const attachments = options?.attachments ?? [];
+
+    setMessages((current) => [...current, createEntry("user", trimmed, {
+      chatMode: mode,
+      chatPluginId: pluginId,
+      attachments,
+    })]);
 
     startTransition(() => {
       fetch("/api/agent", {
@@ -665,6 +710,9 @@ export function useChat(): UseChatResult {
         body: JSON.stringify({
           message: trimmed,
           conversationId: conversationId ?? undefined,
+          mode,
+          pluginId,
+          attachments,
           stream: true,
           ...(options?.oraclePrediction ? { oraclePrediction: true } : {}),
         }),
@@ -755,12 +803,17 @@ export function useChat(): UseChatResult {
     });
   }
 
-  async function sendMessage(input: string): Promise<void> {
-    await streamAgentRequest(input);
+  async function sendMessage(input: string, options?: { mode?: ChatExecutionMode; pluginId?: string; attachments?: ChatMessageAttachment[] }): Promise<void> {
+    await streamAgentRequest(input, options);
   }
 
-  async function sendOraclePrediction(input: string): Promise<void> {
-    await streamAgentRequest(input, { oraclePrediction: true });
+  async function sendOraclePrediction(input: string, options?: { attachments?: ChatMessageAttachment[] }): Promise<void> {
+    await streamAgentRequest(input, {
+      oraclePrediction: true,
+      mode: "agent",
+      pluginId: "oracle",
+      attachments: options?.attachments,
+    });
   }
 
   return {
@@ -779,6 +832,11 @@ export function useChat(): UseChatResult {
     isLoadingHistoryLists,
     activeRun: toPublicActiveRun(activeRun),
     modelPricing,
+    executionCatalog,
+    executionMode,
+    executionPluginId,
+    setExecutionMode,
+    setExecutionPluginId,
     sendMessage,
     sendOraclePrediction,
     startNewChat,

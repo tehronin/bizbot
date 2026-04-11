@@ -1,4 +1,8 @@
-import { buildContextForPrompt, getOrCreateConversation, saveMessage } from "@/lib/agent/memory";
+import {
+  buildContextForPrompt,
+  getOrCreateConversation,
+  saveMessage,
+} from "@/lib/agent/memory";
 import {
   buildBizBotCapabilitySummary,
   buildRuntimeToolVisibilitySummary,
@@ -11,6 +15,15 @@ import { executeTool, getAllToolDefinitions } from "@/lib/agent/plugins";
 import { ensureMcpClientsInitialized } from "@/lib/mcp/client";
 import { buildAutonomySystemPrompt, getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { resolveAgentUserId } from "@/lib/agent/user-context";
+import {
+  getChatExecutionProfile,
+  isOracleChatExecutionSelection,
+  resolveChatExecutionSelection,
+  resolveChatExecutionToolNames,
+  type ChatExecutionMode,
+  type ChatMessageAttachment,
+} from "@/lib/chat/execution";
+import { getKnowledgeFilePreview } from "@/lib/agent/knowledge-management";
 import { buildOntologyPromptBlock } from "@/lib/ontology/prompt";
 import {
   completeAgentRun,
@@ -113,6 +126,9 @@ export interface AgentExecutionParams {
   conversationId?: string;
   userId?: string;
   provider?: LLMProvider;
+  mode?: ChatExecutionMode;
+  pluginId?: string;
+  attachments?: ChatMessageAttachment[];
   oraclePrediction?: boolean;
   forcedProfile?: AgentProfile;
   parentRunId?: string;
@@ -265,6 +281,35 @@ async function finalizeAssistantReply({
   };
 }
 
+async function buildAttachmentContextBlock(attachments: ChatMessageAttachment[]): Promise<string> {
+  if (attachments.length === 0) {
+    return "";
+  }
+
+  const previews = await Promise.all(attachments.map(async (attachment) => {
+    if (attachment.type !== "knowledge-doc") {
+      return null;
+    }
+
+    const preview = await getKnowledgeFilePreview(attachment.path).catch(() => null);
+    if (!preview || preview.status === "missing" || preview.chunks.length === 0) {
+      return null;
+    }
+
+    const snippets = preview.chunks
+      .slice(0, 3)
+      .map((chunk) => `- ${chunk.snippet}`)
+      .join("\n");
+
+    return `Document: ${attachment.label} (${attachment.path})\n${snippets}`;
+  }));
+
+  const resolvedPreviews = previews.filter((value): value is string => Boolean(value));
+  return resolvedPreviews.length > 0
+    ? `Attached docs:\n${resolvedPreviews.join("\n\n")}`
+    : "";
+}
+
 export async function executeAgentConversation(
   params: AgentExecutionParams,
 ): Promise<AgentExecutionResult> {
@@ -273,6 +318,9 @@ export async function executeAgentConversation(
     conversationId,
     userId,
     provider,
+    mode,
+    pluginId,
+    attachments = [],
     oraclePrediction,
     forcedProfile,
     parentRunId,
@@ -286,14 +334,33 @@ export async function executeAgentConversation(
   await emitStatus(onEvent, "Preparing agent conversation state.");
   const resolvedUserId = resolveAgentUserId(userId);
   const runtimeConfig = getAgentRuntimeConfig();
+  const useLegacyExecutionRouting = !mode && !pluginId && !oraclePrediction;
+  const executionSelection = oraclePrediction
+    ? resolveChatExecutionSelection({ mode: "agent", pluginId: pluginId ?? "oracle" })
+    : resolveChatExecutionSelection({
+        mode: mode ?? (useLegacyExecutionRouting ? "agent" : undefined),
+        pluginId: pluginId ?? "just-chatting",
+      });
+  if (oraclePrediction && pluginId && !isOracleChatExecutionSelection(executionSelection)) {
+    throw new Error("Oracle prediction requires the Oracle chat plugin.");
+  }
   const resolvedConversationId = await getOrCreateConversation(conversationId, resolvedUserId);
+  try {
+    const memoryModule = await import("@/lib/agent/memory");
+    if ("updateConversationExecutionDefaults" in memoryModule && typeof memoryModule.updateConversationExecutionDefaults === "function") {
+      await memoryModule.updateConversationExecutionDefaults(resolvedConversationId, executionSelection);
+    }
+  } catch {
+    // Older tests partially mock the memory module without this helper.
+  }
   await emitStatus(onEvent, `Using conversation ${resolvedConversationId}.`);
   const routedProfileDecision = routeAgentProfile(message);
   const oracleIntent = oraclePrediction ? getOraclePredictionIntent(message) : { matched: false, query: "" };
+  const selectedProfile = oraclePrediction ? "research_operator" : getChatExecutionProfile(executionSelection);
   const profileDecision = oraclePrediction
     ? {
-        profile: "research_operator" as const,
-        reason: "Oracle prediction was explicitly triggered from chat.",
+        profile: selectedProfile,
+        reason: "Oracle prediction was explicitly triggered from the Oracle chat plugin.",
       }
     : forcedProfile
     ? {
@@ -302,7 +369,14 @@ export async function executeAgentConversation(
           ? `delegated by ${delegatedByProfile}`
           : "profile was forced by the caller",
       }
-    : routedProfileDecision;
+    : useLegacyExecutionRouting
+    ? routedProfileDecision
+    : {
+        profile: selectedProfile,
+        reason: executionSelection.pluginId === "just-chatting"
+          ? `chat plugin '${executionSelection.pluginId}' keeps the request in the general chat lane`
+          : `chat plugin '${executionSelection.pluginId}' selected the ${selectedProfile} lane instead of message-based routing (${routedProfileDecision.profile})`,
+      };
   const profilePrompt = buildAgentProfilePrompt(profileDecision.profile, message);
   const profileDescriptor = getAgentProfileDescriptor(profileDecision.profile);
   const resolvedProvider = provider ?? (process.env.ACTIVE_LLM_PROVIDER as LLMProvider | undefined) ?? "ollama";
@@ -326,10 +400,22 @@ export async function executeAgentConversation(
   const explicitMemoryBlock = formatMemoryFactsForPrompt(explicitMemoryFacts);
   const ontologyBlock = ontologyPrompt.omitted ? "" : ontologyPrompt.block;
   const contextBlock = contextResult.text;
+  const attachmentContextBlock = await buildAttachmentContextBlock(attachments);
   const capabilitySummaryBlock = shouldInjectBizBotCapabilitySummary(message)
     ? buildBizBotCapabilitySummary()
     : "";
-  const tools = getAllToolDefinitions(runtimeConfig, { agentProfile: profileDecision.profile });
+  const attachmentMetadata = attachments.map((attachment) => ({
+    type: attachment.type,
+    path: attachment.path,
+    label: attachment.label,
+  }));
+  const allowedToolNames = useLegacyExecutionRouting ? undefined : resolveChatExecutionToolNames(executionSelection);
+  const tools = getAllToolDefinitions(runtimeConfig, {
+    agentProfile: profileDecision.profile,
+    chatMode: executionSelection.mode,
+    chatPluginId: executionSelection.pluginId,
+    allowedToolNames,
+  });
   const runtimeToolVisibilityBlock = shouldInjectRuntimeToolVisibilitySummary(message)
     ? buildRuntimeToolVisibilitySummary({
         profile: profileDecision.profile,
@@ -364,6 +450,7 @@ export async function executeAgentConversation(
   const systemPrompt =
     "You are BizBot, a local-first desktop agent platform. Use tools when they improve correctness, prefer deterministic tool outputs over guessing, and keep responses operational."
     + ` ${buildAutonomySystemPrompt(runtimeConfig)}`
+    + ` Execution mode: ${executionSelection.mode}. Selected chat plugin: ${executionSelection.pluginId}.`
     + ` ${profilePrompt.systemInstruction}`
     + " Explicit user memory policy: use memory_get_facts when stable user preferences, identity, workflows, constraints, or operator settings are relevant. Use memory_set_fact only when the user explicitly asks BizBot to remember a stable fact or an approved onboarding/system flow requires it. Use memory_forget_fact only when the user explicitly asks BizBot to forget a stored fact. Never store secrets, credentials, tokens, payment details, ephemeral chat noise, or speculative inferences as stable memory."
     + ` Delegation options: ${profileDescriptor.delegationTargets.join(", ") || "none"}.`
@@ -371,6 +458,7 @@ export async function executeAgentConversation(
     + (runtimeToolVisibilityBlock ? `\n\n${runtimeToolVisibilityBlock}` : "")
     + (explicitMemoryBlock ? `\n\n${explicitMemoryBlock}` : "")
     + (ontologyBlock ? `\n\n${ontologyBlock}` : "")
+    + (attachmentContextBlock ? `\n\n${attachmentContextBlock}` : "")
     + (contextBlock ? `\n\nContext:\n${contextBlock}` : "");
 
   recordAgentRunPromptAssembly(run.runId, {
@@ -379,6 +467,7 @@ export async function executeAgentConversation(
       runtimeToolVisibilityChars: runtimeToolVisibilityBlock.length,
       explicitMemoryChars: explicitMemoryBlock.length,
       ontologyChars: ontologyBlock.length,
+      attachmentContextChars: attachmentContextBlock.length,
       conversationSummaryChars: contextResult.blocks.conversationSummary.length,
       recentConversationChars: contextResult.blocks.recentConversation.length,
       semanticRecallChars: contextResult.blocks.semanticRecall.length,
@@ -403,6 +492,9 @@ export async function executeAgentConversation(
     userId: resolvedUserId,
     agentRunId: run.runId,
     agentProfile: profileDecision.profile,
+    chatMode: executionSelection.mode,
+    chatPluginId: executionSelection.pluginId,
+    attachments: attachmentMetadata,
   });
 
   await emit(onEvent, {
@@ -459,6 +551,9 @@ export async function executeAgentConversation(
           config: runtimeConfig,
           access: {
             agentProfile: profileDecision.profile,
+            chatMode: executionSelection.mode,
+            chatPluginId: executionSelection.pluginId,
+            allowedToolNames,
             conversationId: resolvedConversationId,
             runId: run.runId,
             userId: resolvedUserId,
@@ -581,6 +676,9 @@ export async function executeAgentConversation(
           oracleQuery: oracleIntent.query,
           oracleEvidenceMode: analysisResult.evidenceMode,
           oracleImpliedProbability: analysisResult.impliedProbability,
+          chatMode: executionSelection.mode,
+          chatPluginId: executionSelection.pluginId,
+          attachments: attachmentMetadata,
         },
       });
     }
@@ -814,6 +912,9 @@ export async function executeAgentConversation(
               toolRoundCount: round,
               agentRunId: run.runId,
               agentProfile: profileDecision.profile,
+              chatMode: executionSelection.mode,
+              chatPluginId: executionSelection.pluginId,
+              attachments: attachmentMetadata,
               llmProvider: finalProvider,
               llmModel: finalModel,
               swarm: {
@@ -856,7 +957,9 @@ export async function executeAgentConversation(
       const requestOptions: ChatRequestOptions = {
         enableGoogleSearch: profilePrompt.googleSearch,
         enableGoogleCodeExecution: profilePrompt.googleCodeExecution,
-        forceFunctionCall: round === 1 && profilePrompt.forceToolUse,
+        forceFunctionCall: useLegacyExecutionRouting
+          ? round === 1 && profilePrompt.forceToolUse
+          : round === 1 && profilePrompt.forceToolUse && tools.length > 0 && executionSelection.mode === "agent",
         includeServerSideToolInvocations: true,
         agentProfile: profileDecision.profile,
         signal,
@@ -921,6 +1024,9 @@ export async function executeAgentConversation(
                 config: runtimeConfig,
                 access: {
                   agentProfile: profileDecision.profile,
+                  chatMode: executionSelection.mode,
+                  chatPluginId: executionSelection.pluginId,
+                  allowedToolNames,
                   conversationId: resolvedConversationId,
                   runId: run.runId,
                   userId: resolvedUserId,
@@ -991,6 +1097,9 @@ export async function executeAgentConversation(
         toolRoundCount: round,
         agentRunId: run.runId,
         agentProfile: profileDecision.profile,
+        chatMode: executionSelection.mode,
+        chatPluginId: executionSelection.pluginId,
+        attachments: attachmentMetadata,
         llmProvider: response.provider,
         llmModel: response.model,
         ...(response.metadata ? { llmMetadata: response.metadata } : {}),
@@ -1016,6 +1125,9 @@ export async function executeAgentConversation(
       toolRoundCount: maxToolRounds,
       agentRunId: run.runId,
       agentProfile: profileDecision.profile,
+      chatMode: executionSelection.mode,
+      chatPluginId: executionSelection.pluginId,
+      attachments: attachmentMetadata,
     });
     completeAgentRun(run.runId, {
       status: "max_tool_rounds",
