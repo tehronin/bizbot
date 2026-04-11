@@ -3,7 +3,7 @@
 import { buildBuilderGovernanceCommandPayload } from "@/lib/builder/governance-shared";
 import { PaginationControls } from "@/components/layout/PaginationControls";
 import { usePagination } from "@/hooks/usePagination";
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 interface BuilderConfig {
   workspaceRoot: string;
@@ -1193,6 +1193,7 @@ export default function BuilderPage() {
   const [governanceAction, setGovernanceAction] = useState<BuilderGovernanceCommandAction | null>(null);
   const recentRunsRef = useRef<HTMLElement | null>(null);
   const runtimeLogStreamRef = useRef<EventSource | null>(null);
+  const runtimeLogStreamKeyRef = useRef<string | null>(null);
   const seenGovernanceToastKeysRef = useRef<Set<string>>(new Set());
 
   function showDashboardToast(toast: Omit<BuilderDashboardToast, "id">): void {
@@ -1286,19 +1287,26 @@ export default function BuilderPage() {
     setRuntimeServiceLogs(payload);
   }
 
-  function stopRuntimeLogStream(): void {
+  const stopRuntimeLogStream = useCallback((): void => {
     runtimeLogStreamRef.current?.close();
     runtimeLogStreamRef.current = null;
+    runtimeLogStreamKeyRef.current = null;
     setRuntimeLogLive(false);
     setRuntimeLogState("idle");
-  }
+  }, []);
 
-  function startRuntimeLogStream(projectId: string, serviceId: string): void {
+  const startRuntimeLogStream = useCallback((projectId: string, serviceId: string): void => {
+    const streamKey = `${projectId}:${serviceId}`;
+    if (runtimeLogStreamRef.current && runtimeLogStreamKeyRef.current === streamKey) {
+      return;
+    }
+
     stopRuntimeLogStream();
     setRuntimeLogLive(true);
     setRuntimeLogState("connecting");
     const eventSource = new EventSource(`/api/builder/projects/${projectId}/runtime/logs/stream?serviceId=${encodeURIComponent(serviceId)}`);
     runtimeLogStreamRef.current = eventSource;
+    runtimeLogStreamKeyRef.current = streamKey;
 
     eventSource.addEventListener("open", () => {
       setRuntimeLogState("connecting");
@@ -1350,6 +1358,7 @@ export default function BuilderPage() {
       setRuntimeServiceLogs((current) => current ? { ...current, nextCursor: payload.nextCursor, complete: true, followed: true, followTimedOut: false } : current);
       eventSource.close();
       runtimeLogStreamRef.current = null;
+      runtimeLogStreamKeyRef.current = null;
       setRuntimeLogLive(false);
     });
 
@@ -1360,8 +1369,9 @@ export default function BuilderPage() {
       setRuntimeLogLive(false);
       eventSource.close();
       runtimeLogStreamRef.current = null;
+      runtimeLogStreamKeyRef.current = null;
     });
-  }
+  }, [stopRuntimeLogStream]);
 
   async function restartRuntimeService(): Promise<void> {
     if (!selectedProjectId || !selectedRuntimeServiceId) {
@@ -1573,7 +1583,7 @@ export default function BuilderPage() {
     }
 
     setSelectedRuntimeServiceId((current) => services.some((service) => service.serviceId === current) ? current : services[0]?.serviceId ?? null);
-  }, [projectInspection]);
+  }, [projectInspection, stopRuntimeLogStream]);
 
   useEffect(() => {
     if (!selectedProjectId || !selectedRuntimeServiceId) {
@@ -1606,7 +1616,7 @@ export default function BuilderPage() {
         error: nextError instanceof Error ? nextError.message : "Failed to load runtime service logs.",
       });
     });
-  }, [projectInspection, runtimeLogLive, selectedProjectId, selectedRuntimeServiceId]);
+  }, [projectInspection, runtimeLogLive, selectedProjectId, selectedRuntimeServiceId, startRuntimeLogStream, stopRuntimeLogStream]);
 
   useEffect(() => () => {
     runtimeLogStreamRef.current?.close();

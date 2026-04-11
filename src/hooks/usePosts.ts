@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface PostRecord {
   id: string;
@@ -18,6 +18,11 @@ interface PostsResponse {
 export function usePosts(status?: string) {
   const [posts, setPosts] = useState<PostRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => () => {
+    isMountedRef.current = false;
+  }, []);
 
   const fetchPosts = useCallback(async (): Promise<PostRecord[]> => {
     const query = status ? `?status=${status}` : "";
@@ -27,10 +32,22 @@ export function usePosts(status?: string) {
   }, [status]);
 
   const reload = useCallback(() => {
+    if (!isMountedRef.current) {
+      return;
+    }
+
     setLoading(true);
     fetchPosts()
-      .then((nextPosts) => setPosts(nextPosts))
-      .finally(() => setLoading(false));
+      .then((nextPosts) => {
+        if (isMountedRef.current) {
+          setPosts(nextPosts);
+        }
+      })
+      .finally(() => {
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+      });
   }, [fetchPosts]);
 
   useEffect(() => {

@@ -122,7 +122,7 @@ describe("stdio MCP sampling e2e", () => {
       import("@/lib/mcp/stdio"),
     ]);
 
-    const samplingHandler = vi.fn(async (_params?: unknown) => ({
+    const samplingHandler = vi.fn(async () => ({
       role: "assistant" as const,
       content: {
         type: "text" as const,
@@ -154,7 +154,10 @@ describe("stdio MCP sampling e2e", () => {
       { name: "vitest-sampling-client", version: "1.0.0" },
       { capabilities: { sampling: {} } },
     );
-    client.setRequestHandler(CreateMessageRequestSchema, async (request) => samplingHandler(request.params));
+    client.setRequestHandler(CreateMessageRequestSchema, async (request) => {
+      void request.params;
+      return samplingHandler();
+    });
 
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([

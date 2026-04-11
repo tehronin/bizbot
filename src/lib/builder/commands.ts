@@ -15,10 +15,9 @@ import {
 import { writeBuilderMcpPolicyArtifact } from "@/lib/builder/mcp-policy";
 import { pnpmInstall, pnpmRunScript } from "@/lib/builder/adapters/pnpm";
 import { listBuilderProjectArchitecture } from "@/lib/builder/planning";
-import { completeBuilderRun, createBuilderRun, getBuilderRun, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
+import { completeBuilderRun, createBuilderRun, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
 import { reconcileBuilderOperationalState } from "@/lib/builder/reconciliation";
-import { cancelBuilderRunController, registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
-import { updateBuilderTask } from "@/lib/builder/tasks";
+import { registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
 import { normalizeBuilderProjectContext } from "@/lib/builder/types";
 import type { BuilderCommandResult } from "@/lib/builder/workspace";
 import { promoteBuilderArchitecturalDecisionsToOntology } from "@/lib/ontology/promotion";

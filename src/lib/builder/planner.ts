@@ -30,16 +30,6 @@ function isNormalizedValidator(
 
 const ARCHITECTURAL_DECISION_KEY_RE = /^[a-z][a-z0-9_]*$/;
 
-function slugifyKey(value: string, fallback: string): string {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-  return normalized || fallback;
-}
-
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
 }

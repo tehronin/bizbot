@@ -2,6 +2,7 @@
 
 ## 2026-04-11
 
+- Hardened chat and Builder UI lifecycle behavior by preventing repeated runtime log SSE reconnects, aborting stale chat bootstrap and sidecar interaction requests, and guarding small dashboard data hooks against state updates after unmount while keeping lint, typecheck, tests, and build green.
 - Added chat execution selection defaults, plugin-aware routing, bounded tool allowlisting, attachment-aware prompt context, and focused route/executor regression coverage for the new Ask/Agent chat flow.
 - Redesigned the main chat composer toward a more VS Code-like layout with a compact toolbar, plugin and mode selectors under the prompt, attachment chips, and cleaner focus treatment.
 - Added Builder governance decision history in the dashboard and commands flow so policy reconciliations and other governance actions remain inspectable after execution.

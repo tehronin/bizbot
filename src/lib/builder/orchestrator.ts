@@ -13,7 +13,6 @@ import {
   selectRelevantBuilderDependencyContext,
 } from "@/lib/builder/dependency-contract";
 import {
-  buildCurrentBuilderFileTopologyContractSnapshot,
   ensureBuilderRunFileTopologySnapshotPreflight,
   getBuilderFileTopologyPlanningContext,
   selectRelevantBuilderFileTopologyContext,
@@ -50,7 +49,7 @@ import { buildBuilderStructuredReview } from "@/lib/builder/review";
 import { completeBuilderRun, createBuilderRun, getBuilderProject, getBuilderProjectRecord, listBuilderRuns, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
 import { registerBuilderRunController, unregisterBuilderRunController } from "@/lib/builder/session";
 import { summarizeBuilderBudgetProfiles, summarizeBuilderRunTelemetry, type BuilderBudgetProfile, type BuilderTelemetrySummary } from "@/lib/builder/telemetry";
-import { createBuilderTask, getBuilderTask, listBuilderTasks, reconcileBuilderRunWithTask, resolveBuilderContinuationTask, resumeBuilderTask, updateBuilderTask, updateBuilderTaskExecutionState, updateBuilderTaskStage } from "@/lib/builder/tasks";
+import { createBuilderTask, getBuilderTask, listBuilderTasks, reconcileBuilderRunWithTask, resumeBuilderTask, updateBuilderTask, updateBuilderTaskExecutionState, updateBuilderTaskStage } from "@/lib/builder/tasks";
 import { ensureMcpClientsInitialized } from "@/lib/mcp/client";
 import {
   defaultBuilderProjectContext,
@@ -171,9 +170,6 @@ function buildBuilderFileTopologySnapshotOverview(args: {
   context: BuilderProjectContextState;
   runId: string | null;
 }): BuilderFileTopologySnapshotOverviewState {
-  const snapshot = buildCurrentBuilderFileTopologyContractSnapshot({
-    projectRelativePath: args.projectRelativePath,
-  });
   const baseline = args.context.fileTopologyContract ?? null;
   const planning = getBuilderFileTopologyPlanningContext({
     projectRelativePath: args.projectRelativePath,

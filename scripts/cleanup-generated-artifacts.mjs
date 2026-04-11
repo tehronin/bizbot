@@ -42,10 +42,6 @@ function parseArgs(argv) {
   return { dryRun, olderThanHours, includeFresh };
 }
 
-function toRepoRelative(targetPath) {
-  return path.relative(process.cwd(), targetPath).replace(/\\/g, "/") || ".";
-}
-
 function isIgnoredByGit(relativePath) {
   const result = spawnSync("git", ["check-ignore", "--no-index", "--", relativePath], {
     cwd: process.cwd(),

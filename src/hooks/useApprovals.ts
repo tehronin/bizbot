@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface ApprovalRecord {
   id: string;
@@ -18,6 +18,11 @@ interface ApprovalsResponse {
 export function useApprovals() {
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => () => {
+    isMountedRef.current = false;
+  }, []);
 
   const fetchApprovals = useCallback(async (): Promise<ApprovalRecord[]> => {
     const response = await fetch("/api/approvals");
@@ -26,10 +31,22 @@ export function useApprovals() {
   }, []);
 
   const reload = useCallback(() => {
+    if (!isMountedRef.current) {
+      return;
+    }
+
     setLoading(true);
     fetchApprovals()
-      .then((nextApprovals) => setApprovals(nextApprovals))
-      .finally(() => setLoading(false));
+      .then((nextApprovals) => {
+        if (isMountedRef.current) {
+          setApprovals(nextApprovals);
+        }
+      })
+      .finally(() => {
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+      });
   }, [fetchApprovals]);
 
   useEffect(() => {

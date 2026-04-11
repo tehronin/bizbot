@@ -12,12 +12,6 @@ import type { JsonObject } from "@/lib/agent/tools";
 import { searchMemories, storeMemoryEmbedding } from "@/lib/embeddings/search";
 import { searchGraph } from "@/lib/graph/queries";
 
-interface MemoryFallbackRow {
-  key: string;
-  value: string;
-  category: string;
-}
-
 interface RecentMessageRow {
   role: string;
   content: string;

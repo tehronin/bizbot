@@ -5,7 +5,7 @@ import { buildBuilderFileTopologyContractBaseline, buildCurrentBuilderFileTopolo
 import { buildCurrentBuilderMcpContractSnapshot, hashBuilderMcpContractSnapshot } from "@/lib/builder/mcp-snapshots";
 import { writeBuilderMcpPolicyArtifact, type BuilderMcpPolicyArtifactState } from "@/lib/builder/mcp-policy";
 import type { BuilderDependencyContractBaselineState, BuilderFileTopologyContractBaselineState, BuilderMcpPolicyBaselineState } from "@/lib/builder/types";
-import { createBuilderDirectory, listBuilderFilesRecursive, readBuilderFile, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
+import { listBuilderFilesRecursive, readBuilderFile, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
 
 export interface BuilderBootstrapResult {
   template: string;

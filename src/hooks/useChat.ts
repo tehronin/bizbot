@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type {
   ChatConversationBootstrap,
   ChatConversationDetail,
@@ -372,6 +372,10 @@ async function readJson<T>(response: Response): Promise<T> {
   }
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 export function useChat(): UseChatResult {
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -391,6 +395,16 @@ export function useChat(): UseChatResult {
   const [isLoadingHistoryConversation, setIsLoadingHistoryConversation] = useState(false);
   const [isLoadingHistoryLists, setIsLoadingHistoryLists] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const isMountedRef = useRef(true);
+  const bootstrapAbortControllerRef = useRef<AbortController | null>(null);
+  const bootstrapRequestIdRef = useRef(0);
+  const sidecarInteractionAbortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => {
+    isMountedRef.current = false;
+    bootstrapAbortControllerRef.current?.abort();
+    sidecarInteractionAbortControllerRef.current?.abort();
+  }, []);
 
   async function loadBootstrap(options?: {
     selectedConversationId?: string | null;
@@ -399,6 +413,12 @@ export function useChat(): UseChatResult {
     archivedPage?: number;
     historyFilters?: ChatConversationHistoryFilters;
   }): Promise<void> {
+    const controller = new AbortController();
+    const requestId = bootstrapRequestIdRef.current + 1;
+    bootstrapRequestIdRef.current = requestId;
+    bootstrapAbortControllerRef.current?.abort();
+    bootstrapAbortControllerRef.current = controller;
+
     const replaceCurrent = options?.replaceCurrent ?? false;
     const nextConversationId = options?.selectedConversationId ?? conversationId;
     const nextRecentPage = options?.recentPage ?? recentPagination.currentPage;
@@ -421,41 +441,53 @@ export function useChat(): UseChatResult {
       params.set("historyTo", nextFilters.to);
     }
 
-    const response = await fetch(`/api/chat/conversations${params.toString() ? `?${params.toString()}` : ""}`);
-    const payload = await readJson<ChatConversationBootstrap & { error?: string }>(response);
+    try {
+      const response = await fetch(`/api/chat/conversations${params.toString() ? `?${params.toString()}` : ""}`, {
+        signal: controller.signal,
+      });
+      const payload = await readJson<ChatConversationBootstrap & { error?: string }>(response);
 
-    if (!response.ok) {
-      throw new Error(payload.error ?? "Failed to load chat conversations.");
-    }
-
-    setRecentConversations(payload.recentConversations);
-    setArchivedConversations(payload.archivedConversations);
-    setRecentPagination(payload.recentPagination);
-    setArchivedPagination(payload.archivedPagination);
-    setHistoryFilters(payload.historyFilters);
-    setModelPricing(payload.modelPricing);
-    setExecutionCatalog(payload.executionCatalog);
-    setExecutionMode(payload.executionDefaults.mode);
-    setExecutionPluginId(payload.executionDefaults.pluginId);
-    setConversationId(payload.currentConversationId);
-    setCurrentConversation(payload.currentConversation);
-    persistSelectedConversationId(payload.currentConversationId);
-
-    if (replaceCurrent) {
-      setMessages(payload.currentConversation ? mapConversationMessages(payload.currentConversation.messages) : []);
-      setActiveRun(createInternalActiveRun(payload.activeRun));
-    }
-
-    setHistoryConversation((current) => {
-      if (!current) {
-        return current;
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to load chat conversations.");
       }
 
-      const stillVisible = payload.archivedConversations.some((conversation) => conversation.id === current.id)
-        || payload.recentConversations.some((conversation) => conversation.id === current.id);
+      if (controller.signal.aborted || !isMountedRef.current || requestId !== bootstrapRequestIdRef.current) {
+        return;
+      }
 
-      return stillVisible ? current : null;
-    });
+      setRecentConversations(payload.recentConversations);
+      setArchivedConversations(payload.archivedConversations);
+      setRecentPagination(payload.recentPagination);
+      setArchivedPagination(payload.archivedPagination);
+      setHistoryFilters(payload.historyFilters);
+      setModelPricing(payload.modelPricing);
+      setExecutionCatalog(payload.executionCatalog);
+      setExecutionMode(payload.executionDefaults.mode);
+      setExecutionPluginId(payload.executionDefaults.pluginId);
+      setConversationId(payload.currentConversationId);
+      setCurrentConversation(payload.currentConversation);
+      persistSelectedConversationId(payload.currentConversationId);
+
+      if (replaceCurrent) {
+        setMessages(payload.currentConversation ? mapConversationMessages(payload.currentConversation.messages) : []);
+        setActiveRun(createInternalActiveRun(payload.activeRun));
+      }
+
+      setHistoryConversation((current) => {
+        if (!current) {
+          return current;
+        }
+
+        const stillVisible = payload.archivedConversations.some((conversation) => conversation.id === current.id)
+          || payload.recentConversations.some((conversation) => conversation.id === current.id);
+
+        return stillVisible ? current : null;
+      });
+    } finally {
+      if (bootstrapAbortControllerRef.current === controller) {
+        bootstrapAbortControllerRef.current = null;
+      }
+    }
   }
 
   useEffect(() => {
@@ -465,9 +497,14 @@ export function useChat(): UseChatResult {
         return;
       }
 
+      sidecarInteractionAbortControllerRef.current?.abort();
+      const controller = new AbortController();
+      sidecarInteractionAbortControllerRef.current = controller;
+
       void fetch("/api/sidecar/interactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           panelId: detail.panelId,
           actionId: detail.actionId,
@@ -481,6 +518,10 @@ export function useChat(): UseChatResult {
             throw new Error(payload.error ?? "Sidecar interaction failed.");
           }
 
+          if (controller.signal.aborted || !isMountedRef.current) {
+            return;
+          }
+
           window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_EVENT, {
             detail: {
               action: payload.action,
@@ -490,7 +531,15 @@ export function useChat(): UseChatResult {
           }));
         })
         .catch((error: Error) => {
+          if (isAbortError(error)) {
+            return;
+          }
           console.error("[sidecar interaction]", error);
+        })
+        .finally(() => {
+          if (sidecarInteractionAbortControllerRef.current === controller) {
+            sidecarInteractionAbortControllerRef.current = null;
+          }
         });
     };
 
@@ -508,12 +557,19 @@ export function useChat(): UseChatResult {
           replaceCurrent: true,
         });
       } catch (error) {
+        if (isAbortError(error)) {
+          return;
+        }
         console.error("[chat bootstrap]", error);
-        setMessages([
-          createEntry("assistant", `Chat bootstrap failed: ${error instanceof Error ? error.message : "Unknown error."}`),
-        ]);
+        if (isMountedRef.current) {
+          setMessages([
+            createEntry("assistant", `Chat bootstrap failed: ${error instanceof Error ? error.message : "Unknown error."}`),
+          ]);
+        }
       } finally {
-        setIsBootstrapping(false);
+        if (isMountedRef.current) {
+          setIsBootstrapping(false);
+        }
       }
     })();
     // Initial bootstrap is intentionally one-time; later refreshes are explicit user actions.
@@ -742,41 +798,47 @@ export function useChat(): UseChatResult {
             for (const event of parsed.events) {
               if (event.conversationId) {
                 nextConversationId = event.conversationId;
-                setConversationId(event.conversationId);
-                persistSelectedConversationId(event.conversationId);
+                if (isMountedRef.current) {
+                  setConversationId(event.conversationId);
+                  persistSelectedConversationId(event.conversationId);
+                }
               }
               if (event.type === "meta") {
-                setActiveRun((current) => {
-                  const nextConversationId = event.conversationId ?? current.conversationId ?? conversationId;
-                  const baseline = current.conversationId === nextConversationId ? current : IDLE_ACTIVE_RUN;
+                if (isMountedRef.current) {
+                  setActiveRun((current) => {
+                    const nextConversationId = event.conversationId ?? current.conversationId ?? conversationId;
+                    const baseline = current.conversationId === nextConversationId ? current : IDLE_ACTIVE_RUN;
 
-                  return {
-                    ...baseline,
-                    conversationId: nextConversationId,
-                    runId: event.runId ?? null,
-                    profile: event.profile ?? baseline.profile,
-                    profileLabel: event.profileLabel ?? baseline.profileLabel,
-                    provider: event.provider ?? baseline.provider,
-                    model: event.model ?? baseline.model,
-                    startedAt: new Date().toISOString(),
-                    runBaseRequestCount: baseline.requestCount,
-                    runBasePromptTokens: baseline.promptTokens,
-                    runBaseCompletionTokens: baseline.completionTokens,
-                    runBaseTotalTokens: baseline.totalTokens,
-                    runBaseCachedPromptTokens: baseline.cachedPromptTokens,
-                  };
-                });
+                    return {
+                      ...baseline,
+                      conversationId: nextConversationId,
+                      runId: event.runId ?? null,
+                      profile: event.profile ?? baseline.profile,
+                      profileLabel: event.profileLabel ?? baseline.profileLabel,
+                      provider: event.provider ?? baseline.provider,
+                      model: event.model ?? baseline.model,
+                      startedAt: new Date().toISOString(),
+                      runBaseRequestCount: baseline.requestCount,
+                      runBasePromptTokens: baseline.promptTokens,
+                      runBaseCompletionTokens: baseline.completionTokens,
+                      runBaseTotalTokens: baseline.totalTokens,
+                      runBaseCachedPromptTokens: baseline.cachedPromptTokens,
+                    };
+                  });
+                }
               } else if (event.type === "usage") {
-                setActiveRun((current) => ({
-                  ...current,
-                  conversationId: event.conversationId ?? current.conversationId,
-                  runId: event.runId ?? current.runId,
-                  requestCount: current.runBaseRequestCount + (event.requestCount ?? 0),
-                  promptTokens: current.runBasePromptTokens + (event.promptTokens ?? 0),
-                  completionTokens: current.runBaseCompletionTokens + (event.completionTokens ?? 0),
-                  totalTokens: current.runBaseTotalTokens + (event.totalTokens ?? 0),
-                  cachedPromptTokens: current.runBaseCachedPromptTokens + (event.cachedPromptTokens ?? 0),
-                }));
+                if (isMountedRef.current) {
+                  setActiveRun((current) => ({
+                    ...current,
+                    conversationId: event.conversationId ?? current.conversationId,
+                    runId: event.runId ?? current.runId,
+                    requestCount: current.runBaseRequestCount + (event.requestCount ?? 0),
+                    promptTokens: current.runBasePromptTokens + (event.promptTokens ?? 0),
+                    completionTokens: current.runBaseCompletionTokens + (event.completionTokens ?? 0),
+                    totalTokens: current.runBaseTotalTokens + (event.totalTokens ?? 0),
+                    cachedPromptTokens: current.runBaseCachedPromptTokens + (event.cachedPromptTokens ?? 0),
+                  }));
+                }
               } else if (event.type === "sidecar" && event.action) {
                 window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_EVENT, {
                   detail: {
@@ -786,7 +848,9 @@ export function useChat(): UseChatResult {
                   },
                 }));
               }
-              setMessages((current) => appendStreamEntries(current, event));
+              if (isMountedRef.current) {
+                setMessages((current) => appendStreamEntries(current, event));
+              }
             }
           }
 
@@ -795,6 +859,9 @@ export function useChat(): UseChatResult {
           }
         })
         .catch((error: Error) => {
+          if (isAbortError(error) || !isMountedRef.current) {
+            return;
+          }
           setMessages((current) => [
             ...current,
             createEntry("assistant", `Request failed: ${error.message}`),
