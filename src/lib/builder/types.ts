@@ -663,6 +663,42 @@ export interface BuilderReviewRuntimeState {
   summary: string;
 }
 
+export interface BuilderReviewContainerStageFileState {
+  path: string;
+  exists: boolean;
+  type: "file" | "directory" | "other" | "missing";
+  size: number | null;
+  preview: string | null;
+  truncated: boolean;
+  auditPath: string | null;
+}
+
+export interface BuilderReviewContainerStageScriptState {
+  script: string;
+  command: string;
+  exitCode: number | null;
+  passed: boolean;
+  summary: string;
+  auditPath: string | null;
+}
+
+export interface BuilderReviewContainerStageState {
+  available: boolean;
+  status: "passed" | "failed" | "blocked" | "skipped";
+  summary: string;
+  composeFile: string | null;
+  serviceId: string | null;
+  serviceName: string | null;
+  workingDirectory: string | null;
+  containerId: string | null;
+  startedService: boolean;
+  stoppedService: boolean;
+  fileChecks: BuilderReviewContainerStageFileState[];
+  scriptChecks: BuilderReviewContainerStageScriptState[];
+  logsPreview: string | null;
+  auditPaths: string[];
+}
+
 export type BuilderOperatorTrustStatus = "trusted" | "warning" | "blocked";
 export type BuilderOperatorTrustTrendDirection = "improving" | "steady" | "degrading";
 
@@ -799,6 +835,7 @@ export interface BuilderStructuredReview {
   audit?: BuilderReviewAuditState;
   database?: BuilderReviewDatabaseState;
   runtime?: BuilderReviewRuntimeState;
+  containerStage?: BuilderReviewContainerStageState;
   risks: string[];
   nextSteps: string[];
   architecture?: BuilderArchitectureReconciliationState;

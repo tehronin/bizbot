@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   buildBuilderPlanAdherence: vi.fn(),
   composeBuilderTaskPrompt: vi.fn(() => "task prompt"),
   buildBuilderStructuredReview: vi.fn(),
+  validateBuilderContainerStage: vi.fn(),
   completeBuilderRun: vi.fn(),
   createBuilderRun: vi.fn(),
   createBuilderTask: vi.fn(),
@@ -106,6 +107,10 @@ vi.mock("@/lib/mcp/client", () => ({
 
 vi.mock("@/lib/builder/review", () => ({
   buildBuilderStructuredReview: mocks.buildBuilderStructuredReview,
+}));
+
+vi.mock("@/lib/builder/container-stage", () => ({
+  validateBuilderContainerStage: mocks.validateBuilderContainerStage,
 }));
 
 vi.mock("@/lib/builder/session", () => ({
@@ -354,6 +359,22 @@ describe("builder orchestrator finalization", () => {
         maxIterations: 3,
       },
     });
+    mocks.validateBuilderContainerStage.mockResolvedValue({
+      available: true,
+      status: "passed",
+      summary: "Container stage passed for app.",
+      composeFile: "compose.yml",
+      serviceId: "compose:compose.yml:app",
+      serviceName: "app",
+      workingDirectory: "/workspace",
+      containerId: "container-1",
+      startedService: true,
+      stoppedService: true,
+      fileChecks: [],
+      scriptChecks: [],
+      logsPreview: null,
+      auditPaths: [],
+    });
     mocks.buildBuilderStructuredReview.mockReturnValue(review);
     mocks.getBuilderTaskSpec.mockRejectedValueOnce(new Error("Builder task spec not found: task-spec-original"));
     mocks.recomputeBuilderPlanningProgress.mockResolvedValue(replannedSnapshot);
@@ -402,6 +423,9 @@ describe("builder orchestrator finalization", () => {
       metadata: expect.objectContaining({
         taskSpecId: "task-spec-replacement",
       }),
+    }));
+    expect(mocks.validateBuilderContainerStage).toHaveBeenCalledWith(expect.objectContaining({
+      project: expect.objectContaining({ id: "project-1" }),
     }));
   });
 

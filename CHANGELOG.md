@@ -2,6 +2,10 @@
 
 ## 2026-04-15
 
+- Added first-class Builder container tooling across the shared runtime and MCP surfaces, including compose-backed container inspection, bounded in-container file reads, named test presets, allowlisted exec, and durable Builder run kinds for container work.
+- Added Docker-ready Builder template contracts plus scaffolded `Dockerfile` and `compose.yml` artifacts for shipped app presets, and integrated native `builder_validate_container_stage` verification into Builder review and orchestration.
+- Added Builder-managed container ownership labels, bounded inventory and removal for Builder-owned and legacy Builder MCP test fixtures, and a higher-level `builder_clean_stale_containers` workflow with end-to-end MCP coverage proving BizBot can remove stale stopped test containers itself.
+- Hardened `mcp-suite` CI with a dedicated Postgres service, Prisma generate or migrate setup, and temp Builder runtime paths so container-aware Builder MCP coverage runs reliably in automation.
 - Expanded Builder Git support by extending the shared Builder VCS core with richer repo inspection, local mutation flows, allowlisted remote operations, and durable Builder run kinds for Git stage, commit, branch, checkout, merge, rebase, clean, fetch, pull, push, and clone behavior.
 - Reworked the Builder plugin and MCP surface to expose the new `builder_git_*` and `builder_repo_*` tools while preserving temporary compatibility aliases, and added end-to-end MCP coverage for local Git actions, allowlisted remote push, and blocked non-allowlisted remotes.
 - Enriched Builder review, trust, and dashboard state with Git health signals such as dirty status, remotes, pending push posture, and remote allowlist governance.

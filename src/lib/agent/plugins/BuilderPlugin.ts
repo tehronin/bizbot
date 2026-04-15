@@ -29,13 +29,25 @@ import {
 } from "@/lib/builder/environment";
 import { builderHttpRequest } from "@/lib/builder/http";
 import {
+  cleanStaleBuilderManagedContainers,
+  execBuilderRuntimeContainerCommand,
   execBuilderRuntimeServiceCommand,
+  getBuilderRuntimeContainer,
+  getBuilderRuntimeContainerLogs,
   getBuilderRuntimeServiceLogs,
+  listBuilderManagedContainers,
+  removeBuilderManagedContainers,
+  listBuilderRuntimeContainers,
   listBuilderRuntimeServices,
+  listBuilderRuntimeContainerFiles,
+  readBuilderRuntimeContainerFile,
   restartBuilderRuntimeService,
   startBuilderRuntimeService,
+  statBuilderRuntimeContainerPath,
   stopBuilderRuntimeService,
+  testBuilderRuntimeContainer,
 } from "@/lib/builder/runtime-orchestration";
+import { validateBuilderContainerStage } from "@/lib/builder/container-stage";
 import { listBuilderTasks } from "@/lib/builder/tasks";
 import {
   appendBuilderFile,
@@ -426,6 +438,50 @@ interface BuilderRuntimeExecArgs extends BuilderRuntimeServiceControlArgs {
   timeoutSeconds?: number;
 }
 
+interface BuilderRuntimeContainerListArgs extends BuilderProjectArgs {
+  includeStopped?: boolean;
+}
+
+interface BuilderRuntimeContainerPathArgs extends BuilderRuntimeServiceControlArgs {
+  path: string;
+}
+
+interface BuilderRuntimeContainerFileListArgs extends BuilderRuntimeContainerPathArgs {
+  maxEntries?: number;
+  includeHidden?: boolean;
+}
+
+interface BuilderRuntimeContainerFileReadArgs extends BuilderRuntimeContainerPathArgs {
+  maxBytes?: number;
+}
+
+interface BuilderRuntimeContainerTestArgs extends BuilderRuntimeServiceControlArgs {
+  preset: "npm_test" | "npm_vitest" | "pnpm_test" | "pnpm_vitest" | "pytest";
+  args?: string[];
+  timeoutSeconds?: number;
+}
+
+interface BuilderManagedContainerListArgs {
+  projectId?: string;
+  status?: "running" | "stopped" | "all";
+  olderThanMinutes?: number;
+  limit?: number;
+}
+
+interface BuilderManagedContainerRemoveArgs extends BuilderManagedContainerListArgs {
+  containerIds?: string[];
+  confirmed: boolean;
+  reason: string;
+}
+
+interface BuilderManagedContainerCleanupArgs extends Omit<BuilderManagedContainerRemoveArgs, "status"> {}
+
+interface BuilderContainerStageValidationArgs extends BuilderProjectArgs {
+  stopAfterValidation?: boolean;
+  taskId?: string;
+  runId?: string;
+}
+
 function assertExplicitGovernanceApproval(args: { confirmed: boolean; reason: string }, actionLabel: string): string {
   if (!args.confirmed) {
     throw new Error(`${actionLabel} requires explicit operator confirmation.`);
@@ -527,6 +583,58 @@ async function executeBuilderGitMutation<TResult extends object>(args: {
         metadata: baseMetadata,
       });
     }
+    throw error;
+  }
+}
+
+async function executeBuilderProjectMutation<TResult extends object>(args: {
+  projectId: string;
+  taskId?: string;
+  runId?: string;
+  kind: string;
+  title: string;
+  command: string;
+  commandArgs?: unknown;
+  metadata?: Record<string, unknown>;
+  execute: (context: { project: Awaited<ReturnType<typeof getBuilderProject>>; builderRunId: string | null }) => TResult | Promise<TResult>;
+  resultMetadata?: (result: TResult) => Record<string, unknown>;
+  statusForResult?: (result: TResult) => "SUCCEEDED" | "FAILED" | "CANCELLED";
+}): Promise<TResult & { builderRunId: string | null }> {
+  const project = await getBuilderProject(args.projectId);
+  const baseMetadata = {
+    parentRunId: args.runId ?? null,
+    ...args.metadata,
+  };
+
+  const run = await createBuilderRun({
+    projectId: project.id,
+    taskId: args.taskId,
+    kind: toBuilderRunKind(args.kind),
+    title: args.title,
+    command: args.command,
+    args: args.commandArgs,
+    metadata: baseMetadata,
+  });
+
+  try {
+    const result = await args.execute({ project, builderRunId: run.id });
+    const resolvedStatus = args.statusForResult ? args.statusForResult(result) : "SUCCEEDED";
+    await completeBuilderRun(run.id, {
+      status: resolvedStatus,
+      summary: args.title,
+      metadata: {
+        ...baseMetadata,
+        ...(args.resultMetadata ? args.resultMetadata(result) : {}),
+      },
+    });
+    return { ...result, builderRunId: run.id };
+  } catch (error) {
+    await completeBuilderRun(run.id, {
+      status: "FAILED",
+      stderr: error instanceof Error ? error.message : String(error),
+      summary: error instanceof Error ? error.message : String(error),
+      metadata: baseMetadata,
+    });
     throw error;
   }
 }
@@ -1489,6 +1597,173 @@ export const builderPlugin = {
       },
     } satisfies ToolDefinition<BuilderRuntimeServiceLogsArgs, Awaited<ReturnType<typeof getBuilderRuntimeServiceLogs>>>)),
     registerTool(defineTool({
+      name: "builder_list_containers",
+      description: "List compose-backed containers discovered for a Builder project.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          includeStopped: { type: "boolean" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId, includeStopped }: BuilderRuntimeContainerListArgs) => {
+        const project = await getBuilderProject(projectId);
+        return {
+          containers: listBuilderRuntimeContainers({
+            projectId,
+            projectRelativePath: project.relativePath,
+            packageManager: project.packageManager,
+            includeStopped,
+          }),
+        };
+      },
+    } satisfies ToolDefinition<BuilderRuntimeContainerListArgs, { containers: ReturnType<typeof listBuilderRuntimeContainers> }>)),
+    registerTool(defineTool({
+      name: "builder_list_managed_containers",
+      description: "List Docker containers owned by BizBot Builder labels or legacy Builder test fixtures.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          status: { type: "string", enum: ["running", "stopped", "all"] },
+          olderThanMinutes: { type: "number" },
+          limit: { type: "number" },
+        },
+      },
+      execute: async ({ projectId, status, olderThanMinutes, limit }: BuilderManagedContainerListArgs) => listBuilderManagedContainers({
+        projectId,
+        status,
+        olderThanMinutes,
+        limit,
+      }),
+    } satisfies ToolDefinition<BuilderManagedContainerListArgs, Awaited<ReturnType<typeof listBuilderManagedContainers>>>)),
+    registerTool(defineTool({
+      name: "builder_get_container",
+      description: "Inspect one compose-backed container resolved through Builder runtime discovery.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+        },
+        required: ["projectId", "serviceId"],
+      },
+      execute: async ({ projectId, serviceId }: BuilderRuntimeServiceControlArgs) => {
+        const project = await getBuilderProject(projectId);
+        return getBuilderRuntimeContainer({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+        });
+      },
+    } satisfies ToolDefinition<BuilderRuntimeServiceControlArgs, ReturnType<typeof getBuilderRuntimeContainer>>)),
+    registerTool(defineTool({
+      name: "builder_container_logs",
+      description: "Read compose-backed logs for a discovered Builder container service.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+          cursor: { type: "number" },
+          maxBytes: { type: "number" },
+          tailBytes: { type: "number" },
+          followSeconds: { type: "number" },
+        },
+        required: ["projectId", "serviceId"],
+      },
+      execute: async ({ projectId, serviceId, cursor, maxBytes, tailBytes, followSeconds }: BuilderRuntimeServiceLogsArgs) => {
+        const project = await getBuilderProject(projectId);
+        return getBuilderRuntimeContainerLogs({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+          cursor,
+          maxBytes,
+          tailBytes,
+          followSeconds,
+        });
+      },
+    } satisfies ToolDefinition<BuilderRuntimeServiceLogsArgs, Awaited<ReturnType<typeof getBuilderRuntimeContainerLogs>>>)),
+    registerTool(defineTool({
+      name: "builder_stat_path_in_container",
+      description: "Stat an allowlisted absolute path inside a compose-backed Builder container.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+          path: { type: "string" },
+        },
+        required: ["projectId", "serviceId", "path"],
+      },
+      execute: async ({ projectId, serviceId, path }: BuilderRuntimeContainerPathArgs) => {
+        const project = await getBuilderProject(projectId);
+        return statBuilderRuntimeContainerPath({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+          path,
+        });
+      },
+    } satisfies ToolDefinition<BuilderRuntimeContainerPathArgs, Awaited<ReturnType<typeof statBuilderRuntimeContainerPath>>>)),
+    registerTool(defineTool({
+      name: "builder_list_files_in_container",
+      description: "List files under an allowlisted directory inside a compose-backed Builder container.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+          path: { type: "string" },
+          maxEntries: { type: "number" },
+          includeHidden: { type: "boolean" },
+        },
+        required: ["projectId", "serviceId", "path"],
+      },
+      execute: async ({ projectId, serviceId, path, maxEntries, includeHidden }: BuilderRuntimeContainerFileListArgs) => {
+        const project = await getBuilderProject(projectId);
+        return listBuilderRuntimeContainerFiles({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+          path,
+          maxEntries,
+          includeHidden,
+        });
+      },
+    } satisfies ToolDefinition<BuilderRuntimeContainerFileListArgs, Awaited<ReturnType<typeof listBuilderRuntimeContainerFiles>>>)),
+    registerTool(defineTool({
+      name: "builder_read_file_in_container",
+      description: "Read a bounded text file from an allowlisted absolute path inside a compose-backed Builder container.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+          path: { type: "string" },
+          maxBytes: { type: "number" },
+        },
+        required: ["projectId", "serviceId", "path"],
+      },
+      execute: async ({ projectId, serviceId, path, maxBytes }: BuilderRuntimeContainerFileReadArgs) => {
+        const project = await getBuilderProject(projectId);
+        return readBuilderRuntimeContainerFile({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+          path,
+          maxBytes,
+        });
+      },
+    } satisfies ToolDefinition<BuilderRuntimeContainerFileReadArgs, Awaited<ReturnType<typeof readBuilderRuntimeContainerFile>>>)),
+    registerTool(defineTool({
       name: "builder_restart_service",
       description: "Restart a discovered Builder runtime service using managed process or compose control when supported.",
       parameters: {
@@ -1578,6 +1853,175 @@ export const builderPlugin = {
         });
       },
     } satisfies ToolDefinition<BuilderRuntimeExecArgs, Awaited<ReturnType<typeof execBuilderRuntimeServiceCommand>>>)),
+    registerTool(defineTool({
+      name: "builder_test_in_container",
+      description: "Run an allowlisted named test preset inside a compose-backed Builder container service.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+          preset: { type: "string", enum: ["npm_test", "npm_vitest", "pnpm_test", "pnpm_vitest", "pytest"] },
+          args: { type: "array", items: { type: "string" } },
+          timeoutSeconds: { type: "number", default: 120 },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+        },
+        required: ["projectId", "serviceId", "preset"],
+      },
+      execute: async ({ projectId, serviceId, preset, args, timeoutSeconds, taskId, runId }: BuilderRuntimeContainerTestArgs & { taskId?: string; runId?: string }) => executeBuilderProjectMutation({
+        projectId,
+        taskId,
+        runId,
+        kind: "CONTAINER_TEST",
+        title: `Run ${preset} in ${serviceId}`,
+        command: preset,
+        commandArgs: args,
+        metadata: { serviceId, preset },
+        execute: async ({ project, builderRunId }) => testBuilderRuntimeContainer({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+          preset,
+          args,
+          timeoutSeconds,
+        }).then((result) => ({ ...result, builderRunId })),
+        resultMetadata: (result) => ({
+          serviceId: result.service.serviceId,
+          exitCode: result.commandResult?.exitCode ?? null,
+          preset,
+        }),
+        statusForResult: (result) => result.status === "completed" ? "SUCCEEDED" : "FAILED",
+      }),
+    } satisfies ToolDefinition<BuilderRuntimeContainerTestArgs & { taskId?: string; runId?: string }, Awaited<ReturnType<typeof executeBuilderProjectMutation>>>)),
+    registerTool(defineTool({
+      name: "builder_exec_in_container",
+      description: "Run an allowlisted command inside a compose-backed Builder container service.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          serviceId: { type: "string" },
+          command: { type: "string" },
+          commandArgs: { type: "array", items: { type: "string" } },
+          timeoutSeconds: { type: "number", default: 120 },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+        },
+        required: ["projectId", "serviceId", "command"],
+      },
+      execute: async ({ projectId, serviceId, command, commandArgs, timeoutSeconds, taskId, runId }: BuilderRuntimeExecArgs & { taskId?: string; runId?: string }) => executeBuilderProjectMutation({
+        projectId,
+        taskId,
+        runId,
+        kind: "CONTAINER_EXEC",
+        title: `Exec ${command} in ${serviceId}`,
+        command,
+        commandArgs,
+        metadata: { serviceId },
+        execute: async ({ project, builderRunId }) => execBuilderRuntimeContainerCommand({
+          projectId,
+          projectRelativePath: project.relativePath,
+          packageManager: project.packageManager,
+          serviceId,
+          command,
+          commandArgs,
+          timeoutSeconds,
+        }).then((result) => ({ ...result, builderRunId })),
+        resultMetadata: (result) => ({
+          serviceId: result.service.serviceId,
+          exitCode: result.commandResult?.exitCode ?? null,
+          command,
+        }),
+        statusForResult: (result) => result.status === "completed" ? "SUCCEEDED" : "FAILED",
+      }),
+    } satisfies ToolDefinition<BuilderRuntimeExecArgs & { taskId?: string; runId?: string }, Awaited<ReturnType<typeof executeBuilderProjectMutation>>>)),
+    registerTool(defineTool({
+      name: "builder_remove_managed_containers",
+      description: "Remove Builder-owned or legacy Builder test-fixture Docker containers identified through Builder labels and bounded heuristics.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          status: { type: "string", enum: ["running", "stopped", "all"] },
+          olderThanMinutes: { type: "number" },
+          limit: { type: "number" },
+          containerIds: { type: "array", items: { type: "string" } },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["confirmed", "reason"],
+      },
+      execute: async ({ projectId, status, olderThanMinutes, limit, containerIds, confirmed, reason }: BuilderManagedContainerRemoveArgs) => {
+        assertExplicitGovernanceApproval({ confirmed, reason }, "Removing managed Builder containers");
+        return removeBuilderManagedContainers({
+          projectId,
+          status,
+          olderThanMinutes,
+          limit,
+          containerIds,
+        });
+      },
+    } satisfies ToolDefinition<BuilderManagedContainerRemoveArgs, Awaited<ReturnType<typeof removeBuilderManagedContainers>>>)),
+    registerTool(defineTool({
+      name: "builder_clean_stale_containers",
+      description: "Remove stopped Builder-owned or legacy Builder test-fixture Docker containers through the bounded managed-container cleanup path.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          olderThanMinutes: { type: "number" },
+          limit: { type: "number" },
+          containerIds: { type: "array", items: { type: "string" } },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["confirmed", "reason"],
+      },
+      execute: async ({ projectId, olderThanMinutes, limit, containerIds, confirmed, reason }: BuilderManagedContainerCleanupArgs) => {
+        assertExplicitGovernanceApproval({ confirmed, reason }, "Cleaning stale Builder containers");
+        return cleanStaleBuilderManagedContainers({
+          projectId,
+          olderThanMinutes,
+          limit,
+          containerIds,
+        });
+      },
+    } satisfies ToolDefinition<BuilderManagedContainerCleanupArgs, Awaited<ReturnType<typeof cleanStaleBuilderManagedContainers>>>)),
+    registerTool(defineTool({
+      name: "builder_validate_container_stage",
+      description: "Run the Docker-ready container stage contract for a Builder project and persist a structured validation result.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          stopAfterValidation: { type: "boolean", default: true },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+        },
+        required: ["projectId"],
+      },
+      execute: async ({ projectId, stopAfterValidation, taskId, runId }: BuilderContainerStageValidationArgs) => executeBuilderProjectMutation({
+        projectId,
+        taskId,
+        runId,
+        kind: "CONTAINER_TEST",
+        title: "Validate Docker-ready container stage",
+        command: "builder_validate_container_stage",
+        metadata: { workflow: "container_stage", stopAfterValidation: stopAfterValidation ?? true },
+        execute: async ({ project, builderRunId }) => validateBuilderContainerStage({
+          project,
+          stopAfterValidation,
+        }).then((result) => ({ ...result, builderRunId })),
+        resultMetadata: (result) => ({
+          workflow: "container_stage",
+          containerStatus: result.status,
+          serviceId: result.serviceId,
+        }),
+        statusForResult: (result) => result.status === "passed" || result.status === "skipped" ? "SUCCEEDED" : "FAILED",
+      }),
+    } satisfies ToolDefinition<BuilderContainerStageValidationArgs, Awaited<ReturnType<typeof executeBuilderProjectMutation>>>)),
     registerTool(defineTool({
       name: "builder_run_command",
       description: "Run an allowlisted command inside the external Builder Mode workspace without shell expansion.",

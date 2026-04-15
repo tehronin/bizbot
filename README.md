@@ -161,6 +161,10 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Desktop packaging includes Builder shortcuts for retry-last-failed-task, open-current-task-logs, and cancel-running-task.
 - Low-level Builder commands and optional CLI adapters still exist for bounded operations, but persistent task orchestration is now the default path.
 - Builder Git support now includes first-class repo inspection, local mutation, and allowlisted remote sync through the shared Builder VCS core and MCP-exposed `builder_*` tools.
+- Builder container support now includes compose-backed container inspection, bounded file reads, named in-container test presets, and allowlisted exec through the same runtime lane without exposing raw daemon-wide Docker control.
+- Builder-generated app templates now carry a minimal Docker-ready contract with scaffolded `Dockerfile` and `compose.yml` artifacts, and Builder can validate that stage through the first-class `builder_validate_container_stage` workflow.
+- Builder-generated compose services now carry BizBot ownership labels, and the MCP surface can list or remove Builder-owned containers plus narrowly identified legacy Builder test fixtures through `builder_list_managed_containers` and `builder_remove_managed_containers`.
+- Builder can also clean stale stopped test containers end to end through the higher-level `builder_clean_stale_containers` workflow, which stays bounded to Builder-owned labels and legacy Builder MCP test fixtures.
 - Claude Code is modeled as a future adapter slot under the same Builder Mode shell, not as a separate builtin product plugin.
 
 ### Builder Mode v2
@@ -227,6 +231,9 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - `BIZBOT_BUILDER_WORKSPACE_PATH` points to the dedicated external builder workspace.
 - `BIZBOT_BUILDER_ALLOWED_COMMANDS` controls the raw command allowlist.
 - `BIZBOT_BUILDER_ALLOWED_REMOTES` controls the normalized Git remote allowlist used by Builder remote add, fetch, pull, push, and clone flows.
+- `BIZBOT_BUILDER_ALLOWED_CONTAINER_COMMANDS` controls the allowlisted in-container commands available to `builder_exec_in_container`.
+- `BIZBOT_BUILDER_ALLOWED_CONTAINER_PATH_PREFIXES` controls the absolute in-container path prefixes available to Builder container inspection tools such as `builder_stat_path_in_container`, `builder_list_files_in_container`, and `builder_read_file_in_container`.
+- `BIZBOT_BUILDER_ALLOWED_CONTAINER_TEST_PRESETS` controls the named in-container test presets available to `builder_test_in_container`.
 - `BIZBOT_BUILDER_DEFAULT_TEMPLATE` and `BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER` set project defaults.
 - `BIZBOT_BUILDER_INIT_GIT` and `BIZBOT_BUILDER_INSTALL_DEPS` set bootstrap defaults.
 - `BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE`, `BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS`, `BIZBOT_BUILDER_AGENTIC_MAX_ITERATIONS`, and the `BIZBOT_BUILDER_CODEX_*` values control optional agentic execution.
@@ -237,6 +244,11 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - MCP exposure keeps Builder Mode inspectable and scriptable without mixing it into the general platform lane.
 - Builder tool access is routed through the dedicated `builder_operator` lane and also surfaced to the bounded `mcp_operator` profile.
 - The Builder MCP surface now includes Git inspection, staging, commit, branching, checkout, merge, rebase, clean, remote management, fetch, pull, push, and clone tools, with temporary compatibility aliases preserved during the tool-surface transition.
+- Phase-1 container tooling is intentionally limited to project-local compose services already discovered by the Builder runtime; it does not expose daemon-wide container listing, arbitrary container ids, image build or push, volume mutation, or file writes into containers.
+- The Builder MCP surface now includes compose-backed container inspection, container logs, allowlisted in-container file reads, named test presets, and bounded in-container exec through `builder_*` tools.
+- Host-side Builder container inventory and cleanup are now bounded to containers carrying BizBot Builder ownership labels, with a narrow fallback for legacy Builder MCP test fixtures so stale test containers can be identified and removed safely.
+- Operators can now trigger stale stopped-container cleanup directly through `builder_clean_stale_containers`, which delegates to the same bounded managed-container ownership rules instead of using a raw daemon-wide prune.
+- Docker-ready Builder templates declare the compose service, working directory, required in-container files, and verification scripts needed for native container-stage validation, so Builder review can treat container validation as a durable stage instead of an ad hoc tool sequence.
 - Remote Git mutations stay bounded by workspace containment, explicit approval on sensitive actions, and the Builder remote allowlist.
 - Builder resource inspection covers projects, current project, current plan, current tasks, current runs, and the latest review snapshot.
 - The Builder project overview and Builder MCP resources now also expose the current MCP snapshot sequence, current contract hash, drift state, and rollover history for the active run.

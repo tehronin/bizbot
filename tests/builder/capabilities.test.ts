@@ -51,6 +51,22 @@ describe("builder capability catalog", () => {
   it("marks shipped extension surfaces as available and keeps runtime orchestration experimental", () => {
     expect(getBuilderCapability("network_http")?.status).toBe("available");
     expect(getBuilderCapability("database_introspection")?.status).toBe("available");
+    expect(getBuilderCapability("container_inspection")?.tools).toEqual(expect.arrayContaining([
+      "builder_list_containers",
+      "builder_list_managed_containers",
+      "builder_get_container",
+      "builder_container_logs",
+      "builder_stat_path_in_container",
+      "builder_list_files_in_container",
+      "builder_read_file_in_container",
+    ]));
+    expect(getBuilderCapability("container_execution")?.tools).toEqual(expect.arrayContaining([
+      "builder_validate_container_stage",
+      "builder_test_in_container",
+      "builder_exec_in_container",
+      "builder_remove_managed_containers",
+      "builder_clean_stale_containers",
+    ]));
     expect(getBuilderCapability("version_control")?.tools).toEqual(expect.arrayContaining([
       "builder_repo_diff",
       "builder_repo_log",
@@ -67,6 +83,7 @@ describe("builder capability catalog", () => {
       "builder_git_push",
       "builder_git_clone",
     ]));
+    expect(getBuilderCapability("container_execution")?.policy.requiresExplicitApproval).toBe(true);
     expect(getBuilderCapability("runtime_orchestration")?.tier).toBe("experimental");
     expect(getBuilderCapability("runtime_orchestration")?.status).toBe("partial");
   });

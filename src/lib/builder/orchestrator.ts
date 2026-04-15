@@ -30,6 +30,8 @@ import { buildBuilderOperatorTrustState } from "@/lib/builder/operator-trust";
 import { listBuilderManagedProcesses } from "@/lib/builder/process-registry";
 import { inspectBuilderOperationalState, type BuilderOperationalStateSummary } from "@/lib/builder/reconciliation";
 import { getBuilderRuntimeInspectionOverview } from "@/lib/builder/runtime-orchestration";
+import { validateBuilderContainerStage } from "@/lib/builder/container-stage";
+import { getBuilderTemplateContainerStageContract } from "@/lib/builder/template-presets";
 import { getBuilderRepoStatus } from "@/lib/builder/vcs";
 import {
   findExecutionTaskForTaskSpec,
@@ -190,13 +192,15 @@ function buildBuilderFileTopologySnapshotOverview(args: {
   };
 }
 
-function buildExecutionPlanSteps(taskSpec: BuilderTaskSpecState, status: BuilderTaskStatus): BuilderPlanStep[] {
+function buildExecutionPlanSteps(taskSpec: BuilderTaskSpecState, status: BuilderTaskStatus, template: string): BuilderPlanStep[] {
   const validators = taskSpec.validators.length > 0 ? taskSpec.validators.join(", ").toLowerCase() : "manual_review";
+  const hasContainerStage = Boolean(getBuilderTemplateContainerStageContract(template));
   if (status === "SUCCEEDED") {
     return [
       { id: "inspect", label: `Inspect the current workspace against ${taskSpec.title}.`, status: "completed" },
       { id: "implement", label: `Implement ${taskSpec.title}.`, status: "completed" },
       { id: "validate", label: `Validate using ${validators}.`, status: "completed" },
+      ...(hasContainerStage ? [{ id: "container", label: "Validate the Docker-ready container stage.", status: "completed" as const }] : []),
       { id: "review", label: "Summarize the result and update project state.", status: "completed" },
     ];
   }
@@ -206,6 +210,7 @@ function buildExecutionPlanSteps(taskSpec: BuilderTaskSpecState, status: Builder
       { id: "inspect", label: `Inspect the current workspace against ${taskSpec.title}.`, status: "completed" },
       { id: "implement", label: `Implement ${taskSpec.title}.`, status: "in_progress" },
       { id: "validate", label: `Validate using ${validators}.`, status: "pending" },
+      ...(hasContainerStage ? [{ id: "container", label: "Validate the Docker-ready container stage.", status: "pending" as const }] : []),
       { id: "review", label: "Summarize the result and update project state.", status: "pending" },
     ];
   }
@@ -214,6 +219,7 @@ function buildExecutionPlanSteps(taskSpec: BuilderTaskSpecState, status: Builder
     { id: "inspect", label: `Inspect the current workspace against ${taskSpec.title}.`, status: "completed" },
     { id: "implement", label: `Implement ${taskSpec.title}.`, status: "completed" },
     { id: "validate", label: `Validate using ${validators}.`, status: "in_progress" },
+    ...(hasContainerStage ? [{ id: "container", label: "Validate the Docker-ready container stage.", status: "pending" as const }] : []),
     { id: "review", label: "Summarize the result and update project state.", status: "pending" },
   ];
 }
@@ -335,6 +341,7 @@ async function resolveTaskSpecForFinalization(
 }
 
 function buildDerivedProjectContext(args: {
+  project: BuilderProject;
   currentContext: BuilderProjectContextState;
   planning: BuilderPlanningSnapshot;
   currentTask?: BuilderTask | null;
@@ -367,7 +374,7 @@ function buildDerivedProjectContext(args: {
     currentPlan: currentTaskMetadata?.planSteps.length
       ? currentTaskMetadata.planSteps
       : args.planning.currentTaskSpec
-        ? buildExecutionPlanSteps(args.planning.currentTaskSpec, "RUNNING")
+        ? buildExecutionPlanSteps(args.planning.currentTaskSpec, "RUNNING", args.project.template)
         : [],
     latestSessionSummary: latestSummary ?? null,
     knownFailures: args.review
@@ -389,6 +396,7 @@ async function syncProjectState(args: {
 }): Promise<{ project: BuilderProject; context: BuilderProjectContextState; planning: BuilderPlanningSnapshot }> {
   const { context } = loadBuilderProjectContext(args.project);
   const nextContext = buildDerivedProjectContext({
+    project: args.project,
     currentContext: context,
     planning: args.planning,
     currentTask: args.currentTask,
@@ -499,7 +507,7 @@ async function ensureExecutionTaskForTaskSpec(args: {
       lastUserRequest: args.request,
       requestedProfile: args.input.profile ?? null,
       requestedModel: args.input.model ?? null,
-      planSteps: buildExecutionPlanSteps(args.taskSpec, "RUNNING"),
+      planSteps: buildExecutionPlanSteps(args.taskSpec, "RUNNING", (await getBuilderProject(args.projectId)).template),
       resumeFromIteration: args.input.fromIteration ?? null,
     }),
   });
@@ -601,7 +609,7 @@ export async function orchestrateBuilderTask(
     stage: "PLANNING",
     status: "RUNNING",
     error: null,
-    planSteps: buildExecutionPlanSteps(taskSpec, "RUNNING"),
+    planSteps: buildExecutionPlanSteps(taskSpec, "RUNNING", project.template),
     lastUserRequest: request,
     requestedProfile: input.profile ?? null,
     requestedModel: input.model ?? null,
@@ -632,12 +640,13 @@ export async function orchestrateBuilderTask(
   await updateBuilderTaskStage(task.id, {
     stage: "IMPLEMENTING",
     status: "RUNNING",
-    planSteps: buildExecutionPlanSteps(taskSpec, "RUNNING"),
+    planSteps: buildExecutionPlanSteps(taskSpec, "RUNNING", project.template),
     error: null,
   });
 
   const implementingTask = await getBuilderTask(task.id);
   const executionContext = buildDerivedProjectContext({
+    project,
     currentContext: loadBuilderProjectContext(project).context,
     planning,
     currentTask: implementingTask,
@@ -759,8 +768,20 @@ export async function orchestrateBuilderTask(
     },
   });
 
-  const taskStatus = deriveTaskStatus(loopResult.loop.finalVerdict);
-  const taskStage = taskStatus === "SUCCEEDED" ? "DONE" : deriveFailureStage(loopResult.loop.phase ?? "reviewing");
+  const initialTaskStatus = deriveTaskStatus(loopResult.loop.finalVerdict);
+  const containerStage = initialTaskStatus === "SUCCEEDED" && getBuilderTemplateContainerStageContract(project.template)
+    ? await validateBuilderContainerStage({ project })
+    : undefined;
+  const taskStatus = initialTaskStatus === "CANCELLED"
+    ? "CANCELLED"
+    : initialTaskStatus === "SUCCEEDED" && containerStage && !["passed", "skipped"].includes(containerStage.status)
+      ? "FAILED"
+      : initialTaskStatus;
+  const taskStage = taskStatus === "SUCCEEDED"
+    ? "DONE"
+    : initialTaskStatus === "SUCCEEDED" && containerStage && !["passed", "skipped"].includes(containerStage.status)
+      ? "TESTING"
+      : deriveFailureStage(loopResult.loop.phase ?? "reviewing");
   const architectureContext = loadBuilderProjectContext(project).context.architecture;
   const configReadiness = validateBuilderProjectEnv(project.relativePath);
   const vcs = (() => {
@@ -886,6 +907,7 @@ export async function orchestrateBuilderTask(
       prominentServiceIds: runtimeInspection.services.slice(0, 5).map((entry) => entry.serviceId),
       summary: runtimeInspection.summary,
     },
+    containerStage,
     architecture: architectureContext
       ? {
           activeKeys: architectureContext.active.map((item) => item.key),
@@ -911,7 +933,7 @@ export async function orchestrateBuilderTask(
     taskSpecId: finalizedTaskSpec.id,
     metadata: toInputJsonValue({
       ...normalizeBuilderTaskMetadata(implementingTask.metadata),
-      planSteps: buildExecutionPlanSteps(finalizedTaskSpec, taskStatus),
+      planSteps: buildExecutionPlanSteps(finalizedTaskSpec, taskStatus, project.template),
       lastStageError: taskStatus === "SUCCEEDED" ? null : review.summary,
       lastAttemptedStage: taskStage,
       lastUserRequest: request,
@@ -947,7 +969,7 @@ export async function orchestrateBuilderTask(
         run,
         mode: adherence.mode,
         loop: loopResult.loop as unknown as Record<string, unknown>,
-        blockedReason: taskStatus === "SUCCEEDED" ? null : loopResult.loop.iterations.at(-1)?.review.reason ?? review.summary,
+        blockedReason: taskStatus === "SUCCEEDED" ? null : containerStage?.status === "failed" || containerStage?.status === "blocked" ? containerStage.summary : loopResult.loop.iterations.at(-1)?.review.reason ?? review.summary,
         verificationOutcome: loopResult.loop.verificationSkipped ? "skipped" : taskStatus === "SUCCEEDED" ? "passed" : "failed",
       }),
       template: project.template,

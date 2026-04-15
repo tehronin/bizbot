@@ -17,6 +17,9 @@ export interface BuilderConfig {
   safe: boolean;
   reason?: string;
   allowedCommands: string[];
+  allowedContainerCommands: string[];
+  allowedContainerPathPrefixes: string[];
+  allowedContainerTestPresets: string[];
   allowedHosts: string[];
   allowedDatabases: string[];
   allowedRemotes: string[];
@@ -107,6 +110,15 @@ function parseCsvEnv(raw: string | undefined): string[] {
   return Array.from(new Set(raw.split(",").map((value) => value.trim()).filter(Boolean)));
 }
 
+function normalizeContainerPathPrefix(raw: string): string {
+  const normalized = raw.replace(/\\/g, "/").trim();
+  if (!normalized.startsWith("/")) {
+    throw new Error(`Builder container path prefix must be absolute: ${raw}`);
+  }
+  const collapsed = normalized.replace(/\/+/g, "/");
+  return collapsed === "/" ? "/" : collapsed.replace(/\/$/, "");
+}
+
 function normalizeRemoteUrlPathname(pathname: string): string {
   return pathname.replace(/\\/g, "/");
 }
@@ -143,6 +155,25 @@ export function getBuilderAllowedHosts(): string[] {
   return parseCsvEnv(process.env.BIZBOT_BUILDER_ALLOWED_HOSTS);
 }
 
+export function getBuilderAllowedContainerCommands(): string[] {
+  return parseCsvEnv(process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_COMMANDS);
+}
+
+export function getBuilderAllowedContainerPathPrefixes(): string[] {
+  return parseCsvEnv(process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_PATH_PREFIXES)
+    .flatMap((value) => {
+      try {
+        return [normalizeContainerPathPrefix(value)];
+      } catch {
+        return [];
+      }
+    });
+}
+
+export function getBuilderAllowedContainerTestPresets(): string[] {
+  return parseCsvEnv(process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_TEST_PRESETS);
+}
+
 export function getBuilderAllowedDatabases(): string[] {
   return parseCsvEnv(process.env.BIZBOT_BUILDER_ALLOWED_DATABASES);
 }
@@ -173,6 +204,9 @@ export function getBuilderConfig(): BuilderConfig {
       ? "Builder workspace overlaps the BizBot repository. Configure BIZBOT_BUILDER_WORKSPACE_PATH to an external directory."
       : undefined,
     allowedCommands: getBuilderAllowedCommands(),
+    allowedContainerCommands: getBuilderAllowedContainerCommands(),
+    allowedContainerPathPrefixes: getBuilderAllowedContainerPathPrefixes(),
+    allowedContainerTestPresets: getBuilderAllowedContainerTestPresets(),
     allowedHosts: getBuilderAllowedHosts(),
     allowedDatabases: getBuilderAllowedDatabases(),
     allowedRemotes: getBuilderAllowedRemotes(),

@@ -55,6 +55,7 @@ export function buildBuilderStructuredReview(args: {
   audit?: BuilderStructuredReview["audit"];
   database?: BuilderStructuredReview["database"];
   runtime?: BuilderStructuredReview["runtime"];
+  containerStage?: BuilderStructuredReview["containerStage"];
   architecture?: BuilderArchitectureReconciliationState;
 }): BuilderStructuredReview {
   const filesChanged = collectFilesChanged(args.loop);
@@ -62,19 +63,33 @@ export function buildBuilderStructuredReview(args: {
   const build = summarizeScript(args.loop, "build");
   const tests = summarizeScript(args.loop, "test");
   const lint = summarizeScript(args.loop, "lint");
+  const containerSummary = args.containerStage && args.containerStage.status !== "skipped"
+    ? args.containerStage.summary
+    : null;
+  const summary = [args.loop.summary, containerSummary].filter(Boolean).join(" ");
   const risks = args.status === "SUCCEEDED"
     ? []
-    : [args.loop.iterations.at(-1)?.review.reason ?? "Builder task did not complete cleanly."];
+    : [
+        args.loop.iterations.at(-1)?.review.reason ?? "Builder task did not complete cleanly.",
+        ...(args.containerStage && ["failed", "blocked"].includes(args.containerStage.status)
+          ? [args.containerStage.summary]
+          : []),
+      ];
   const nextSteps = args.status === "SUCCEEDED"
     ? []
-    : unique(args.loop.iterations.flatMap((iteration) => iteration.changedFiles.slice(0, 3)).slice(0, 5)).map((file) => `Inspect and finish work around ${file}.`);
+    : [
+        ...unique(args.loop.iterations.flatMap((iteration) => iteration.changedFiles.slice(0, 3)).slice(0, 5)).map((file) => `Inspect and finish work around ${file}.`),
+        ...(args.containerStage && ["failed", "blocked"].includes(args.containerStage.status)
+          ? ["Inspect the Docker-ready container stage contract, compose service, and in-container verification scripts."]
+          : []),
+      ];
 
   return {
     taskId: args.task.id,
     projectId: args.projectId,
     status: args.status,
     stage: args.stage,
-    summary: args.loop.summary,
+    summary,
     filesChanged,
     commandsExecuted,
     validation: summarizeValidation(args.loop),
@@ -95,6 +110,7 @@ export function buildBuilderStructuredReview(args: {
     audit: args.audit,
     database: args.database,
     runtime: args.runtime,
+    containerStage: args.containerStage,
     risks,
     nextSteps,
     architecture: args.architecture,
@@ -208,6 +224,23 @@ export function renderBuilderReviewMarkdown(review: BuilderStructuredReview): st
           `- Failed: ${review.runtime.failedServices}`,
           `- Managed: ${review.runtime.managedServices}`,
           `- Prominent services: ${review.runtime.prominentServiceIds.join(", ") || "none"}`,
+        ]
+      : ["- none"]),
+    "",
+    `## Container Stage`,
+    "",
+    ...(review.containerStage
+      ? [
+          `- Available: ${review.containerStage.available}`,
+          `- Status: ${review.containerStage.status}`,
+          `- Summary: ${review.containerStage.summary}`,
+          `- Service: ${review.containerStage.serviceId ?? "none"}`,
+          `- Container: ${review.containerStage.containerId ?? "none"}`,
+          `- Working directory: ${review.containerStage.workingDirectory ?? "none"}`,
+          `- Started by review: ${review.containerStage.startedService}`,
+          `- Stopped by review: ${review.containerStage.stoppedService}`,
+          `- File checks: ${review.containerStage.fileChecks.filter((entry) => entry.exists).length}/${review.containerStage.fileChecks.length}`,
+          `- Script checks: ${review.containerStage.scriptChecks.filter((entry) => entry.passed).length}/${review.containerStage.scriptChecks.length}`,
         ]
       : ["- none"]),
     "",

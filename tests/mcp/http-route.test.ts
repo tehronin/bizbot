@@ -40,6 +40,31 @@ function createTempBuilderRepoWithBareRemote(): {
   return { workspaceRoot, repoPath, remotePath, branchName };
 }
 
+function createTempBuilderRepoWithMetadata(): {
+  workspaceRoot: string;
+  repoPath: string;
+  remotePath: string;
+} {
+  const { workspaceRoot, repoPath } = createTempBuilderRepo();
+  const remotePath = path.join(workspaceRoot, "remotes", "origin.git");
+  fs.mkdirSync(path.dirname(remotePath), { recursive: true });
+  execFileSync("git", ["init", "--bare", remotePath], { stdio: "ignore" });
+  execFileSync("git", ["remote", "add", "origin", remotePath], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["tag", "v1.0.0"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["branch", "feature/observer-test"], { cwd: repoPath, stdio: "ignore" });
+  fs.writeFileSync(path.join(repoPath, "README.md"), "seed\nobserver change\n", "utf-8");
+  return { workspaceRoot, repoPath, remotePath };
+}
+
+function dockerAvailable(): boolean {
+  try {
+    execFileSync("docker", ["version", "--format", "{{.Server.Version}}"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function callMcp(
   method: string,
   params: Record<string, unknown>,
@@ -67,9 +92,68 @@ async function callMcp(
   };
 }
 
+function uniqueBuilderSlug(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function waitForToolStructuredContent(
+  name: string,
+  args: Record<string, unknown>,
+  idPrefix: string,
+  attempts = 10,
+  delayMs = 500,
+): Promise<Awaited<ReturnType<typeof callMcp>>> {
+  let lastResult: Awaited<ReturnType<typeof callMcp>> | null = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const result = await callMcp("tools/call", { name, arguments: args }, `${idPrefix}-${attempt + 1}`);
+    lastResult = result;
+    if (result.body?.result?.structuredContent) {
+      return result;
+    }
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return lastResult!;
+}
+
+async function waitForManagedContainerByName(
+  namePart: string,
+  attempts = 12,
+  delayMs = 500,
+): Promise<{ containerId: string; name: string; ownership: string } | null> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const result = await callMcp("tools/call", {
+      name: "builder_list_managed_containers",
+      arguments: {
+        status: "stopped",
+      },
+    }, `builder-managed-container-wait-${attempt + 1}`);
+
+    const containers = (result.body.result?.structuredContent?.containers ?? []) as Array<{
+      containerId: string;
+      name: string;
+      ownership: string;
+    }>;
+    const matched = containers.find((entry) => entry.name.includes(namePart));
+    if (matched) {
+      return matched;
+    }
+
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return null;
+}
+
 afterEach(() => {
   delete process.env.BIZBOT_BUILDER_WORKSPACE_PATH;
   delete process.env.BIZBOT_BUILDER_ALLOWED_REMOTES;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_COMMANDS;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_PATH_PREFIXES;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_TEST_PRESETS;
 });
 
 describe("MCP HTTP route", () => {
@@ -104,6 +188,16 @@ describe("MCP HTTP route", () => {
       expect.objectContaining({ name: "builder_git_add" }),
       expect.objectContaining({ name: "builder_git_commit" }),
       expect.objectContaining({ name: "builder_git_push" }),
+      expect.objectContaining({ name: "builder_list_containers" }),
+      expect.objectContaining({ name: "builder_list_managed_containers" }),
+      expect.objectContaining({ name: "builder_get_container" }),
+      expect.objectContaining({ name: "builder_container_logs" }),
+      expect.objectContaining({ name: "builder_read_file_in_container" }),
+      expect.objectContaining({ name: "builder_test_in_container" }),
+      expect.objectContaining({ name: "builder_validate_container_stage" }),
+      expect.objectContaining({ name: "builder_exec_in_container" }),
+      expect.objectContaining({ name: "builder_remove_managed_containers" }),
+      expect.objectContaining({ name: "builder_clean_stale_containers" }),
       expect.objectContaining({ name: "developer_inspect_plugin_registry" }),
       expect.objectContaining({ name: "developer_inspect_ontology_schema" }),
       expect.objectContaining({ name: "developer_preview_ontology_context" }),
@@ -158,6 +252,107 @@ describe("MCP HTTP route", () => {
       repoRoot: "projects/repo-demo",
       commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
       summary: expect.stringContaining("mcp test commit"),
+    }));
+  });
+
+  it("exercises read-only Builder git MCP tools against a seeded repo", async () => {
+    const { workspaceRoot } = createTempBuilderRepoWithMetadata();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const [
+      statusResult,
+      diffResult,
+      logResult,
+      showResult,
+      branchesResult,
+      tagsResult,
+      remotesResult,
+      revParseResult,
+    ] = await Promise.all([
+      callMcp("tools/call", {
+        name: "builder_repo_status",
+        arguments: { subdir: "projects/repo-demo" },
+      }, "builder-readonly-status-1"),
+      callMcp("tools/call", {
+        name: "builder_repo_diff",
+        arguments: { subdir: "projects/repo-demo" },
+      }, "builder-readonly-diff-1"),
+      callMcp("tools/call", {
+        name: "builder_repo_log",
+        arguments: { subdir: "projects/repo-demo", limit: 1 },
+      }, "builder-readonly-log-1"),
+      callMcp("tools/call", {
+        name: "builder_repo_show",
+        arguments: { subdir: "projects/repo-demo", revision: "HEAD", stat: true },
+      }, "builder-readonly-show-1"),
+      callMcp("tools/call", {
+        name: "builder_list_branches",
+        arguments: { subdir: "projects/repo-demo" },
+      }, "builder-readonly-branches-1"),
+      callMcp("tools/call", {
+        name: "builder_list_tags",
+        arguments: { subdir: "projects/repo-demo" },
+      }, "builder-readonly-tags-1"),
+      callMcp("tools/call", {
+        name: "builder_list_remotes",
+        arguments: { subdir: "projects/repo-demo" },
+      }, "builder-readonly-remotes-1"),
+      callMcp("tools/call", {
+        name: "builder_rev_parse",
+        arguments: { subdir: "projects/repo-demo", revision: "HEAD" },
+      }, "builder-readonly-revparse-1"),
+    ]);
+
+    expect(statusResult.status).toBe(200);
+    expect(statusResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      dirty: true,
+      unstagedCount: 1,
+      tagCount: 1,
+      remoteCount: 1,
+      remoteNames: ["origin"],
+    }));
+
+    expect(diffResult.status).toBe(200);
+    expect(diffResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      scope: "unstaged",
+      patch: expect.stringContaining("observer change"),
+    }));
+
+    expect(logResult.status).toBe(200);
+    expect(logResult.body.result.structuredContent.entries).toEqual([
+      expect.objectContaining({ subject: "seed" }),
+    ]);
+
+    expect(showResult.status).toBe(200);
+    expect(showResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      revision: "HEAD",
+      output: expect.stringContaining("seed"),
+    }));
+
+    expect(branchesResult.status).toBe(200);
+    expect(branchesResult.body.result.structuredContent.branches).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "feature/observer-test", remote: false }),
+      expect.objectContaining({ current: true }),
+    ]));
+
+    expect(tagsResult.status).toBe(200);
+    expect(tagsResult.body.result.structuredContent.tags).toEqual([
+      expect.objectContaining({ name: "v1.0.0" }),
+    ]);
+
+    expect(remotesResult.status).toBe(200);
+    expect(remotesResult.body.result.structuredContent.remotes).toEqual([
+      expect.objectContaining({ name: "origin" }),
+    ]);
+
+    expect(revParseResult.status).toBe(200);
+    expect(revParseResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      revision: "HEAD",
+      value: expect.stringMatching(/^[0-9a-f]{40}$/),
     }));
   });
 
@@ -251,6 +446,208 @@ describe("MCP HTTP route", () => {
       ]),
     }));
   });
+
+  it("rejects non-allowlisted container commands at the Builder tool boundary", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS = "docker";
+    process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_COMMANDS = "node";
+    const slug = uniqueBuilderSlug("container-demo");
+
+    const projectResult = await callMcp("tools/call", {
+      name: "builder_create_project",
+      arguments: {
+        name: "Container Demo",
+        slug,
+        relativePath: `projects/${slug}`,
+      },
+    }, "container-project-1");
+    expect(projectResult.status).toBe(200);
+    expect(projectResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      project: expect.objectContaining({ id: expect.any(String) }),
+    }));
+    const projectId = projectResult.body.result.structuredContent.project.id as string;
+    const projectRoot = path.join(workspaceRoot, "projects", slug);
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, "compose.yml"), [
+      "services:",
+      "  app:",
+      "    image: alpine:3.20",
+    ].join("\n"), "utf-8");
+
+    const blockedResult = await callMcp("tools/call", {
+      name: "builder_exec_in_container",
+      arguments: {
+        projectId,
+        serviceId: "compose:compose.yml:app",
+        command: "python",
+      },
+    }, "builder-container-blocked-1");
+
+    expect(blockedResult.status).toBe(200);
+    expect(blockedResult.body.result).toEqual(expect.objectContaining({
+      isError: true,
+      content: expect.arrayContaining([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("Builder container command not allowed"),
+        }),
+      ]),
+    }));
+  });
+
+  it("exercises compose-backed container MCP tools against a temp project", async () => {
+    if (!dockerAvailable()) {
+      return;
+    }
+
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS = "docker";
+    process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_PATH_PREFIXES = "/workspace";
+    process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_TEST_PRESETS = "npm_test";
+    const slug = uniqueBuilderSlug("container-mcp-demo");
+
+    const projectResult = await callMcp("tools/call", {
+      name: "builder_create_project",
+      arguments: {
+        name: "Container MCP Demo",
+        slug,
+        relativePath: `projects/${slug}`,
+      },
+    }, "container-project-2");
+    expect(projectResult.status).toBe(200);
+    expect(projectResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      project: expect.objectContaining({ id: expect.any(String) }),
+    }));
+    const projectId = projectResult.body.result.structuredContent.project.id as string;
+    const projectRoot = path.join(workspaceRoot, "projects", slug);
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, "compose.yml"), [
+      "services:",
+      "  app:",
+      "    image: node:22-alpine",
+      "    working_dir: /workspace",
+      "    command:",
+      "      - sh",
+      "      - -lc",
+      "      - mkdir -p /workspace && printf '{\"name\":\"fixture\",\"private\":true,\"scripts\":{\"test\":\"node test.js\"}}' > /workspace/package.json && printf 'console.log(\"container test ok\")\\n' > /workspace/test.js && tail -f /dev/null",
+    ].join("\n"), "utf-8");
+
+    const startResult = await callMcp("tools/call", {
+      name: "builder_start_service",
+      arguments: {
+        projectId,
+        serviceId: "compose:compose.yml:app",
+      },
+    }, "builder-container-start-1");
+
+    expect(startResult.status).toBe(200);
+
+    const inspectResult = await waitForToolStructuredContent(
+      "builder_get_container",
+      {
+        projectId,
+        serviceId: "compose:compose.yml:app",
+      },
+      "builder-container-inspect",
+    );
+    const testResult = await waitForToolStructuredContent(
+      "builder_test_in_container",
+      {
+        projectId,
+        serviceId: "compose:compose.yml:app",
+        preset: "npm_test",
+      },
+      "builder-container-test",
+    );
+    const stopResult = await callMcp("tools/call", {
+      name: "builder_stop_service",
+      arguments: {
+        projectId,
+        serviceId: "compose:compose.yml:app",
+      },
+    }, "builder-container-stop-1");
+
+    expect(inspectResult.status).toBe(200);
+    expect(inspectResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      container: expect.objectContaining({
+        serviceId: "compose:compose.yml:app",
+        status: expect.stringMatching(/running|declared|stopped/),
+      }),
+    }));
+    expect(testResult.status).toBe(200);
+    expect(testResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      preset: "npm_test",
+      status: "completed",
+    }));
+    expect(stopResult.status).toBe(200);
+  }, 20000);
+
+  it("removes a legacy-style stopped Builder container fixture through the managed MCP cleanup path", async () => {
+    if (!dockerAvailable()) {
+      return;
+    }
+
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS = "docker";
+    const slug = uniqueBuilderSlug("container-mcp-demo");
+
+    const projectResult = await callMcp("tools/call", {
+      name: "builder_create_project",
+      arguments: {
+        name: "Legacy Container MCP Demo",
+        slug,
+        relativePath: `projects/${slug}`,
+      },
+    }, "container-project-cleanup-1");
+    expect(projectResult.status).toBe(200);
+    const projectId = projectResult.body.result.structuredContent.project.id as string;
+    const projectRoot = path.join(workspaceRoot, "projects", slug);
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, "compose.yml"), [
+      "services:",
+      "  app:",
+      "    image: node:22-alpine",
+      "    working_dir: /workspace",
+      "    command:",
+      "      - sh",
+      "      - -lc",
+      "      - tail -f /dev/null",
+    ].join("\n"), "utf-8");
+
+    execFileSync("docker", ["compose", "-f", path.join(projectRoot, "compose.yml"), "up", "-d", "app"], { stdio: "ignore" });
+    execFileSync("docker", ["compose", "-f", path.join(projectRoot, "compose.yml"), "stop", "app"], { stdio: "ignore" });
+
+    const legacyFixture = await waitForManagedContainerByName(slug);
+    expect(legacyFixture).toEqual(expect.objectContaining({
+      ownership: "legacy_test_fixture",
+    }));
+
+    const cleanupResult = await callMcp("tools/call", {
+      name: "builder_clean_stale_containers",
+      arguments: {
+        containerIds: [legacyFixture!.containerId],
+        confirmed: true,
+        reason: "Remove stopped legacy Builder test container fixture",
+      },
+    }, "builder-container-cleanup-run-1");
+    expect(cleanupResult.status).toBe(200);
+    expect(cleanupResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      removedContainerIds: expect.arrayContaining([legacyFixture!.containerId]),
+      totalMatched: 1,
+    }));
+
+    const afterResult = await callMcp("tools/call", {
+      name: "builder_list_managed_containers",
+      arguments: {
+        status: "stopped",
+      },
+    }, "builder-container-cleanup-list-2");
+    expect(afterResult.status).toBe(200);
+    expect((afterResult.body.result.structuredContent.containers as Array<{ name: string }>).find((entry) => entry.name.includes(slug))).toBeUndefined();
+  }, 20000);
 
   it("executes a real tool call through JSON-RPC", async () => {
     const result = await callMcp("tools/call", {

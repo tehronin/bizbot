@@ -22,6 +22,10 @@ function createTempBuilderWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-builder-"));
 }
 
+function uniqueBuilderSlug(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function createTempBuilderRepo(): { workspaceRoot: string; repoPath: string } {
   const workspaceRoot = createTempBuilderWorkspace();
   const repoPath = path.join(workspaceRoot, "apps", "repo-demo");
@@ -84,6 +88,9 @@ function writeManagedProcessFixture(args: {
 afterEach(() => {
   delete process.env.BIZBOT_BUILDER_WORKSPACE_PATH;
   delete process.env.BIZBOT_BUILDER_ALLOWED_COMMANDS;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_COMMANDS;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_PATH_PREFIXES;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_TEST_PRESETS;
 });
 
 describe("builder plugin", () => {
@@ -102,15 +109,28 @@ describe("builder plugin", () => {
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_resolve_dependency_contract_drift");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_resolve_file_topology_contract_drift");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_list_services");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_list_containers");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_list_managed_containers");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_get_container");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_container_logs");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_stat_path_in_container");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_list_files_in_container");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_read_file_in_container");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_service_logs");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_start_service");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_stop_service");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_restart_service");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_exec_in_service");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_validate_container_stage");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_test_in_container");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_exec_in_container");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_remove_managed_containers");
+    expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_clean_stale_containers");
     expect(plugin?.tools.map((tool) => tool.name)).toContain("builder_run_agentic_task");
   });
 
   it("reports an unsafe default workspace when it overlaps the repo", async () => {
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = process.cwd();
     const tool = requireTool("builder_get_status");
     const result = asObjectResult<{ safe: boolean; reason: string }>(await tool.execute({}, {}));
 
@@ -223,6 +243,52 @@ describe("builder plugin", () => {
       command: "node",
       args: [process.cwd()],
     }, {})).rejects.toThrow("Builder command arguments reference the BizBot repository");
+  });
+
+  it("blocks invalid container paths and non-allowlisted container commands", async () => {
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_PATH_PREFIXES = "/workspace";
+    process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_COMMANDS = "node";
+    process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_TEST_PRESETS = "npm_test";
+    const slug = uniqueBuilderSlug("container-demo");
+
+    const project = await requireTool("builder_create_project").execute({
+      name: "Container Demo",
+      slug,
+      relativePath: `projects/${slug}`,
+    }, {});
+    const projectId = asObjectResult<{ project: { id: string } }>(project).project.id;
+    const workspaceRoot = process.env.BIZBOT_BUILDER_WORKSPACE_PATH!;
+    const projectRoot = path.join(workspaceRoot, "projects", slug);
+    fs.writeFileSync(path.join(projectRoot, "compose.yml"), [
+      "services:",
+      "  app:",
+      "    image: alpine:3.20",
+    ].join("\n"), "utf-8");
+
+    await expect(() => requireTool("builder_stat_path_in_container").execute({
+      projectId,
+      serviceId: "compose:compose.yml:app",
+      path: "workspace/README.md",
+    }, {})).rejects.toThrow("Container path must be absolute");
+
+    await expect(() => requireTool("builder_read_file_in_container").execute({
+      projectId,
+      serviceId: "compose:compose.yml:app",
+      path: "/etc/passwd",
+    }, {})).rejects.toThrow("Builder container path is not allowlisted");
+
+    await expect(() => requireTool("builder_exec_in_container").execute({
+      projectId,
+      serviceId: "compose:compose.yml:app",
+      command: "python",
+    }, {})).rejects.toThrow("Builder container command not allowed");
+
+    await expect(() => requireTool("builder_test_in_container").execute({
+      projectId,
+      serviceId: "compose:compose.yml:app",
+      preset: "pytest",
+    }, {})).rejects.toThrow("Builder container test preset not allowed");
   });
 
   it("persists managed builder processes and supports filtered listing plus tail/follow logs", async () => {
@@ -395,6 +461,7 @@ describe("builder plugin", () => {
   });
 
   it("rejects unsafe builder workspace execution through the shared tool executor", async () => {
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = process.cwd();
     await expect(() => executeTool("builder_write_file", { path: "demo.txt", content: "bad" }, {
       access: { agentProfile: "builder_operator" },
     })).rejects.toThrow("Builder workspace overlaps the BizBot repository");

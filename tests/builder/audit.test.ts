@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { listBuilderCapabilityAuditEvents } from "@/lib/builder/audit";
+import { BUILDER_AUDIT_TARGET_KINDS } from "@/lib/builder/capabilities";
 import { commitBuilderRepo } from "@/lib/builder/vcs";
 
 function createTempBuilderWorkspace(): string {
@@ -11,6 +12,10 @@ function createTempBuilderWorkspace(): string {
 }
 
 describe("builder capability audit", () => {
+  it("extends audit target kinds with container scope", () => {
+    expect(BUILDER_AUDIT_TARGET_KINDS).toContain("container");
+  });
+
   it("derives severity and prunes expired and overflow audit records", () => {
     const workspaceRoot = createTempBuilderWorkspace();
     process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;

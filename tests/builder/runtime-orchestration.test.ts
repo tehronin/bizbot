@@ -41,12 +41,22 @@ vi.mock("@/lib/builder/workspace", () => ({
 }));
 
 import {
+  execBuilderRuntimeContainerCommand,
   execBuilderRuntimeServiceCommand,
+  getBuilderRuntimeContainer,
+  getBuilderRuntimeContainerLogs,
   getBuilderRuntimeInspectionOverview,
+  listBuilderManagedContainers,
+  listBuilderRuntimeContainers,
+  listBuilderRuntimeContainerFiles,
   previewBuilderRuntimeServiceLogs,
+  readBuilderRuntimeContainerFile,
+  removeBuilderManagedContainers,
   restartBuilderRuntimeService,
   startBuilderRuntimeService,
+  statBuilderRuntimeContainerPath,
   stopBuilderRuntimeService,
+  testBuilderRuntimeContainer,
 } from "@/lib/builder/runtime-orchestration";
 
 function createTempBuilderWorkspace(): string {
@@ -87,6 +97,9 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.BIZBOT_BUILDER_WORKSPACE_PATH;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_COMMANDS;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_PATH_PREFIXES;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_TEST_PRESETS;
 });
 
 describe("builder runtime orchestration", () => {
@@ -390,5 +403,281 @@ describe("builder runtime orchestration", () => {
     expect(started.status).toBe("completed");
     expect(stopped.status).toBe("completed");
     expect(mocks.runBuilderCommand).toHaveBeenCalledWith("docker", expect.arrayContaining(["compose"]), expect.objectContaining({ cwd: "projects/demo" }));
+  });
+
+  it("lists and inspects compose-backed containers", () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    fs.mkdirSync(path.join(workspaceRoot, "projects", "demo"), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, "projects", "demo", "compose.yml"), [
+      "services:",
+      "  db:",
+      "    image: postgres:16",
+    ].join("\n"));
+    mocks.listBuilderManagedProcesses.mockReturnValue({ processes: [], total: 0, returned: 0 });
+    mocks.spawnSync.mockReturnValue({
+      status: 0,
+      stdout: JSON.stringify([{ Service: "db", State: "running", Health: "healthy", ID: "container-1", Publishers: [] }]),
+      stderr: "",
+    });
+
+    const containers = listBuilderRuntimeContainers({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      packageManager: "NPM",
+    });
+    const inspection = getBuilderRuntimeContainer({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      packageManager: "NPM",
+      serviceId: "compose:compose.yml:db",
+    });
+
+    expect(containers).toEqual([
+      expect.objectContaining({
+        serviceId: "compose:compose.yml:db",
+        containerId: "container-1",
+        status: "running",
+      }),
+    ]);
+    expect(inspection).toEqual(expect.objectContaining({
+      composeServiceName: "db",
+      container: expect.objectContaining({ containerId: "container-1" }),
+    }));
+  });
+
+  it("reads container logs and file metadata for compose-backed services", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_PATH_PREFIXES = "/workspace";
+    fs.mkdirSync(path.join(workspaceRoot, "projects", "demo"), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, "projects", "demo", "compose.yml"), [
+      "services:",
+      "  app:",
+      "    image: alpine:3.20",
+    ].join("\n"));
+    mocks.listBuilderManagedProcesses.mockReturnValue({ processes: [], total: 0, returned: 0 });
+    mocks.spawnSync
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify([{ Service: "app", State: "running", Health: "healthy", ID: "container-app", Publishers: [] }]), stderr: "" })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify([{ Service: "app", State: "running", Health: "healthy", ID: "container-app", Publishers: [] }]), stderr: "" })
+      .mockReturnValueOnce({ status: 0, stdout: "2025-01-01T00:00:00Z app | ready\n", stderr: "" });
+    mocks.runBuilderCommand
+      .mockResolvedValueOnce({ ok: true, command: "docker", args: [], cwd: "projects/demo", exitCode: 0, signal: null, stdout: "file\t12\n", stderr: "", timedOut: false, cancelled: false })
+      .mockResolvedValueOnce({ ok: true, command: "docker", args: [], cwd: "projects/demo", exitCode: 0, signal: null, stdout: "README.md\tf\t12\n", stderr: "", timedOut: false, cancelled: false })
+      .mockResolvedValueOnce({ ok: true, command: "docker", args: [], cwd: "projects/demo", exitCode: 0, signal: null, stdout: "hello container", stderr: "", timedOut: false, cancelled: false });
+
+    const logs = await getBuilderRuntimeContainerLogs({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      packageManager: "NPM",
+      serviceId: "compose:compose.yml:app",
+    });
+    const stat = await statBuilderRuntimeContainerPath({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      packageManager: "NPM",
+      serviceId: "compose:compose.yml:app",
+      path: "/workspace/README.md",
+    });
+    const files = await listBuilderRuntimeContainerFiles({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      packageManager: "NPM",
+      serviceId: "compose:compose.yml:app",
+      path: "/workspace",
+    });
+    const file = await readBuilderRuntimeContainerFile({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      packageManager: "NPM",
+      serviceId: "compose:compose.yml:app",
+      path: "/workspace/README.md",
+      maxBytes: 32,
+    });
+
+    expect(logs.logs).toContain("ready");
+    expect(stat).toEqual(expect.objectContaining({ exists: true, type: "file", size: 12 }));
+    expect(files.entries).toEqual([expect.objectContaining({ name: "README.md", type: "file" })]);
+    expect(file).toEqual(expect.objectContaining({ content: "hello container", truncated: false }));
+  });
+
+  it("enforces allowlists for compose-backed container exec and test helpers", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_COMMANDS = "node";
+    process.env.BIZBOT_BUILDER_ALLOWED_CONTAINER_TEST_PRESETS = "npm_test";
+    fs.mkdirSync(path.join(workspaceRoot, "projects", "demo"), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, "projects", "demo", "compose.yml"), [
+      "services:",
+      "  app:",
+      "    image: node:22-alpine",
+    ].join("\n"));
+    mocks.listBuilderManagedProcesses.mockReturnValue({ processes: [], total: 0, returned: 0 });
+    mocks.spawnSync.mockReturnValue({ status: 0, stdout: JSON.stringify([{ Service: "app", State: "running", Health: "healthy", ID: "container-app", Publishers: [] }]), stderr: "" });
+    mocks.runBuilderCommand
+      .mockResolvedValueOnce({ ok: true, command: "docker", args: [], cwd: "projects/demo", exitCode: 0, signal: null, stdout: "v22.0.0", stderr: "", timedOut: false, cancelled: false })
+      .mockResolvedValueOnce({ ok: true, command: "docker", args: [], cwd: "projects/demo", exitCode: 0, signal: null, stdout: "tests ok", stderr: "", timedOut: false, cancelled: false });
+
+    const execResult = await execBuilderRuntimeContainerCommand({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      packageManager: "NPM",
+      serviceId: "compose:compose.yml:app",
+      command: "node",
+      commandArgs: ["--version"],
+    });
+    const testResult = await testBuilderRuntimeContainer({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      packageManager: "NPM",
+      serviceId: "compose:compose.yml:app",
+      preset: "npm_test",
+    });
+
+    await expect(() => execBuilderRuntimeContainerCommand({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      packageManager: "NPM",
+      serviceId: "compose:compose.yml:app",
+      command: "python",
+    })).rejects.toThrow("Builder container command not allowed");
+    await expect(() => testBuilderRuntimeContainer({
+      projectId: "project-1",
+      projectRelativePath: "projects/demo",
+      packageManager: "NPM",
+      serviceId: "compose:compose.yml:app",
+      preset: "pytest",
+    })).rejects.toThrow("Builder container test preset not allowed");
+
+    expect(execResult.status).toBe("completed");
+    expect(testResult.status).toBe("completed");
+  });
+
+  it("lists Builder-managed and legacy Builder test-fixture containers", async () => {
+    mocks.runBuilderCommand
+      .mockResolvedValueOnce({ ok: true, command: "docker", args: [], cwd: ".", exitCode: 0, signal: null, stdout: "container-a\n", stderr: "", timedOut: false, cancelled: false })
+      .mockResolvedValueOnce({ ok: true, command: "docker", args: [], cwd: ".", exitCode: 0, signal: null, stdout: "container-a\ncontainer-b\ncontainer-c\n", stderr: "", timedOut: false, cancelled: false })
+      .mockResolvedValueOnce({
+        ok: true,
+        command: "docker",
+        args: [],
+        cwd: ".",
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify([
+          {
+            Id: "container-a",
+            Name: "/demo-app-1",
+            Created: "2025-04-15T00:00:00.000Z",
+            State: { Status: "running", Running: true },
+            Config: {
+              Image: "node:22-alpine",
+              Labels: {
+                "bizbot.builder.managed": "true",
+                "bizbot.builder.project_id": "project-1",
+                "bizbot.builder.relative_path": "projects/demo",
+                "bizbot.builder.service_id": "compose:compose.yml:app",
+                "bizbot.builder.template": "next-app",
+                "com.docker.compose.project": "demo-app",
+                "com.docker.compose.service": "app",
+                "com.docker.compose.project.working_dir": "C:/temp/project",
+              },
+            },
+          },
+          {
+            Id: "container-b",
+            Name: "/container-mcp-demo-old-app-1",
+            Created: "2025-04-14T00:00:00.000Z",
+            State: { Status: "exited", Running: false },
+            Config: {
+              Image: "node:22-alpine",
+              Labels: {
+                "com.docker.compose.project": "container-mcp-demo-old",
+                "com.docker.compose.service": "app",
+                "com.docker.compose.project.working_dir": "C:\\Users\\test\\AppData\\Local\\Temp\\bizbot-mcp-builder-123\\workspace",
+              },
+            },
+          },
+          {
+            Id: "container-c",
+            Name: "/unrelated-app-1",
+            Created: "2025-04-14T00:00:00.000Z",
+            State: { Status: "running", Running: true },
+            Config: {
+              Image: "nginx:latest",
+              Labels: {
+                "com.docker.compose.project": "other-stack",
+                "com.docker.compose.project.working_dir": "C:/temp/other",
+              },
+            },
+          },
+        ]),
+        stderr: "",
+        timedOut: false,
+        cancelled: false,
+      });
+
+    const result = await listBuilderManagedContainers({ status: "all" });
+
+    expect(result.total).toBe(2);
+    expect(result.containers).toEqual([
+      expect.objectContaining({ containerId: "container-b", ownership: "legacy_test_fixture", running: false }),
+      expect.objectContaining({ containerId: "container-a", ownership: "builder_managed", projectId: "project-1", serviceId: "compose:compose.yml:app" }),
+    ]);
+  });
+
+  it("removes only matched managed containers", async () => {
+    mocks.runBuilderCommand
+      .mockResolvedValueOnce({ ok: true, command: "docker", args: [], cwd: ".", exitCode: 0, signal: null, stdout: "container-a\n", stderr: "", timedOut: false, cancelled: false })
+      .mockResolvedValueOnce({ ok: true, command: "docker", args: [], cwd: ".", exitCode: 0, signal: null, stdout: "container-a\ncontainer-b\n", stderr: "", timedOut: false, cancelled: false })
+      .mockResolvedValueOnce({
+        ok: true,
+        command: "docker",
+        args: [],
+        cwd: ".",
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify([
+          {
+            Id: "container-a",
+            Name: "/demo-app-1",
+            Created: "2025-04-15T00:00:00.000Z",
+            State: { Status: "exited", Running: false },
+            Config: {
+              Image: "node:22-alpine",
+              Labels: {
+                "bizbot.builder.managed": "true",
+                "bizbot.builder.project_id": "project-1",
+              },
+            },
+          },
+          {
+            Id: "container-b",
+            Name: "/demo-app-2",
+            Created: "2025-04-15T00:00:00.000Z",
+            State: { Status: "exited", Running: false },
+            Config: {
+              Image: "node:22-alpine",
+              Labels: {
+                "bizbot.builder.managed": "true",
+                "bizbot.builder.project_id": "project-2",
+              },
+            },
+          },
+        ]),
+        stderr: "",
+        timedOut: false,
+        cancelled: false,
+      })
+      .mockResolvedValueOnce({ ok: true, command: "docker", args: [], cwd: ".", exitCode: 0, signal: null, stdout: "container-a\n", stderr: "", timedOut: false, cancelled: false });
+
+    const result = await removeBuilderManagedContainers({ containerIds: ["container-a"] });
+
+    expect(result).toEqual(expect.objectContaining({
+      removedContainerIds: ["container-a"],
+      skippedContainerIds: [],
+      totalMatched: 1,
+    }));
+    expect(mocks.runBuilderCommand).toHaveBeenLastCalledWith("docker", ["rm", "-f", "container-a"], expect.objectContaining({ cwd: "." }));
   });
 });

@@ -4,6 +4,7 @@ import { buildBuilderDependencyContractBaseline, buildCurrentBuilderDependencyCo
 import { buildBuilderFileTopologyContractBaseline, buildCurrentBuilderFileTopologyContractSnapshot } from "@/lib/builder/file-topology-snapshots";
 import { buildCurrentBuilderMcpContractSnapshot, hashBuilderMcpContractSnapshot } from "@/lib/builder/mcp-snapshots";
 import { writeBuilderMcpPolicyArtifact, type BuilderMcpPolicyArtifactState } from "@/lib/builder/mcp-policy";
+import { getBuilderTemplateContainerStageContract } from "@/lib/builder/template-presets";
 import type { BuilderDependencyContractBaselineState, BuilderFileTopologyContractBaselineState, BuilderMcpPolicyBaselineState } from "@/lib/builder/types";
 import { listBuilderFilesRecursive, readBuilderFile, scaffoldBuilderNodePackage, writeBuilderFile } from "@/lib/builder/workspace";
 
@@ -26,6 +27,74 @@ function packageManagerFlag(packageManager: BuilderPackageManager): "--use-npm" 
   return packageManager === "PNPM" ? "--use-pnpm" : "--use-npm";
 }
 
+function buildDockerfile(project: BuilderProject): string {
+  const installCommand = project.packageManager === "PNPM"
+    ? "pnpm install --frozen-lockfile"
+    : "if [ -f package-lock.json ]; then npm ci --no-fund --no-audit; else npm install --no-fund --no-audit; fi";
+
+  return [
+    "FROM node:22-alpine",
+    "WORKDIR /workspace",
+    "RUN corepack enable",
+    "COPY . .",
+    `RUN ${installCommand}`,
+    'CMD ["sh", "-lc", "tail -f /dev/null"]',
+    "",
+  ].join("\n");
+}
+
+function buildDockerIgnore(): string {
+  return [
+    ".git",
+    "node_modules",
+    "dist",
+    ".next",
+    "coverage",
+    ".builder/reports",
+    ".builder/processes",
+    "",
+  ].join("\n");
+}
+
+function buildComposeFile(project: BuilderProject): string {
+  return [
+    "services:",
+    "  app:",
+    "    build:",
+    "      context: .",
+    "      dockerfile: Dockerfile",
+    "    working_dir: /workspace",
+    "    labels:",
+    '      bizbot.builder.managed: "true"',
+    `      bizbot.builder.project_id: "${project.id}"`,
+    `      bizbot.builder.relative_path: "${project.relativePath}"`,
+    '      bizbot.builder.service_id: "compose:compose.yml:app"',
+    `      bizbot.builder.template: "${project.template}"`,
+    "    command:",
+    "      - sh",
+    "      - -lc",
+    "      - tail -f /dev/null",
+    "",
+  ].join("\n");
+}
+
+function applyDockerReadyScaffold(project: BuilderProject): string[] {
+  const contract = getBuilderTemplateContainerStageContract(project.template);
+  if (!contract) {
+    return [];
+  }
+
+  const dockerfilePath = path.posix.join(project.relativePath, "Dockerfile");
+  const dockerIgnorePath = path.posix.join(project.relativePath, ".dockerignore");
+  const composeFilePath = path.posix.join(project.relativePath, contract.composeFile);
+
+  writeBuilderFile(dockerfilePath, buildDockerfile(project));
+  writeBuilderFile(dockerIgnorePath, buildDockerIgnore());
+  writeBuilderFile(composeFilePath, buildComposeFile(project));
+
+  return [dockerfilePath, dockerIgnorePath, composeFilePath];
+}
+
 async function bootstrapNodeCli(project: BuilderProject): Promise<BuilderTemplateScaffoldResult> {
   const scaffold = scaffoldBuilderNodePackage({
     projectDir: project.relativePath,
@@ -33,7 +102,9 @@ async function bootstrapNodeCli(project: BuilderProject): Promise<BuilderTemplat
     description: `${project.name} scaffolded by BizBot Builder Mode.`,
   });
 
-  return { template: project.template, ...scaffold };
+  const dockerFiles = applyDockerReadyScaffold(project);
+
+  return { template: project.template, root: scaffold.root, files: [...scaffold.files, ...dockerFiles] };
 }
 
 async function bootstrapPluginPackage(project: BuilderProject): Promise<BuilderTemplateScaffoldResult> {
@@ -80,20 +151,23 @@ async function bootstrapPluginPackage(project: BuilderProject): Promise<BuilderT
     "",
   ].join("\n"));
 
+  const dockerFiles = applyDockerReadyScaffold(project);
+
   return {
     template: project.template,
     root: scaffold.root,
-    files: [...scaffold.files, path.posix.join(project.relativePath, "tests/plugin.test.ts")],
+    files: [...scaffold.files, path.posix.join(project.relativePath, "tests/plugin.test.ts"), ...dockerFiles],
   };
 }
 
 async function bootstrapViteApp(project: BuilderProject): Promise<BuilderTemplateScaffoldResult> {
   const { runNpmCreatePackage } = await import("@/lib/builder/adapters/npx");
   await runNpmCreatePackage(path.posix.dirname(project.relativePath), "vite@latest", path.posix.basename(project.relativePath), ["--template", "react-ts", "--no-interactive"]);
+  const dockerFiles = applyDockerReadyScaffold(project);
   return {
     template: project.template,
     root: project.relativePath,
-    files: listBuilderFilesRecursive(project.relativePath),
+    files: [...listBuilderFilesRecursive(project.relativePath), ...dockerFiles],
   };
 }
 
@@ -107,10 +181,12 @@ async function bootstrapNextApp(project: BuilderProject): Promise<BuilderTemplat
     packageManagerFlag(project.packageManager),
   ]);
 
+  const dockerFiles = applyDockerReadyScaffold(project);
+
   return {
     template: project.template,
     root: project.relativePath,
-    files: listBuilderFilesRecursive(project.relativePath),
+    files: [...listBuilderFilesRecursive(project.relativePath), ...dockerFiles],
   };
 }
 
