@@ -122,6 +122,11 @@ interface BuilderOperatorTrustState {
     reviewStatus: string | null;
     validationPassed: boolean | null;
     riskCount: number;
+    gitAvailable: boolean;
+    gitDirty: boolean;
+    gitRemoteCount: number;
+    gitHasRemotes: boolean;
+    gitPendingPush: boolean;
     updatedAt: string | null;
   };
   config: {
@@ -152,6 +157,9 @@ interface BuilderOperatorTrustState {
     status: "trusted" | "warning" | "blocked";
     summary: string;
     approvalRequiredCapabilities: string[];
+    gitRemoteAllowlistConfigured: boolean;
+    gitPushCapableToolsAvailable: boolean;
+    gitPushRequiresApproval: boolean;
   };
   prioritizedBlockers: Array<{
     key: string;
@@ -551,9 +559,20 @@ interface BuilderReview {
   vcs?: {
     summary: string;
     currentBranch: string | null;
+    headCommitSha: string | null;
+    ahead: number;
+    behind: number;
+    dirty: boolean;
     stagedCount: number;
     unstagedCount: number;
     untrackedCount: number;
+    conflictedCount: number;
+    stashCount: number;
+    tagCount: number;
+    remoteCount: number;
+    remoteNames: string[];
+    pendingPush: boolean;
+    pendingPushContext: string | null;
     auditPath?: string | null;
   };
   process?: {
@@ -1191,6 +1210,8 @@ export default function BuilderPage() {
   const [governanceReason, setGovernanceReason] = useState("");
   const [governanceConfirmed, setGovernanceConfirmed] = useState(false);
   const [governanceAction, setGovernanceAction] = useState<BuilderGovernanceCommandAction | null>(null);
+  const briefDirtyRef = useRef(false);
+  const briefDraftProjectIdRef = useRef<string | null>(null);
   const recentRunsRef = useRef<HTMLElement | null>(null);
   const runtimeLogStreamRef = useRef<EventSource | null>(null);
   const runtimeLogStreamKeyRef = useRef<string | null>(null);
@@ -1237,11 +1258,16 @@ export default function BuilderPage() {
       throw new Error(payload.error ?? "Failed to load builder project details.");
     }
     setProjectDetail(payload);
-    setBriefDraft({
+    const serverBrief = {
       title: payload.brief?.title ?? "",
       summary: payload.brief?.summary ?? "",
       notes: payload.brief?.notes ?? "",
-    });
+    };
+    if (!briefDirtyRef.current || briefDraftProjectIdRef.current !== payload.project.id) {
+      briefDraftProjectIdRef.current = payload.project.id;
+      briefDirtyRef.current = false;
+      setBriefDraft(serverBrief);
+    }
     setEnvDraft((current) => ({
       key: current.key && payload.configReadiness.keys.some((entry) => entry.key === current.key)
         ? current.key
@@ -1765,6 +1791,8 @@ export default function BuilderPage() {
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to plan Builder project.");
       }
+      briefDirtyRef.current = false;
+      briefDraftProjectIdRef.current = payload.project.id;
       setProjectDetail(payload);
       setResultNotice("Updated the project brief and regenerated the canonical Builder plan.");
       await refresh(selectedProjectId);
@@ -2373,15 +2401,24 @@ export default function BuilderPage() {
                   </div>
                   <div>
                     <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Title</label>
-                    <input data-testid="builder-brief-title" value={briefDraft.title} onChange={(event) => setBriefDraft((current) => ({ ...current, title: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    <input data-testid="builder-brief-title" value={briefDraft.title} onChange={(event) => {
+                      briefDirtyRef.current = true;
+                      setBriefDraft((current) => ({ ...current, title: event.target.value }));
+                    }} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
                   </div>
                   <div>
                     <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Summary</label>
-                    <textarea data-testid="builder-brief-summary" value={briefDraft.summary} onChange={(event) => setBriefDraft((current) => ({ ...current, summary: event.target.value }))} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    <textarea data-testid="builder-brief-summary" value={briefDraft.summary} onChange={(event) => {
+                      briefDirtyRef.current = true;
+                      setBriefDraft((current) => ({ ...current, summary: event.target.value }));
+                    }} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
                   </div>
                   <div>
                     <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Notes</label>
-                    <textarea data-testid="builder-brief-notes" value={briefDraft.notes} onChange={(event) => setBriefDraft((current) => ({ ...current, notes: event.target.value }))} rows={3} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    <textarea data-testid="builder-brief-notes" value={briefDraft.notes} onChange={(event) => {
+                      briefDirtyRef.current = true;
+                      setBriefDraft((current) => ({ ...current, notes: event.target.value }));
+                    }} rows={3} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
                   </div>
                 </div>
                 <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>

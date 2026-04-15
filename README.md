@@ -160,6 +160,7 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Builder health panels now apply threshold-based highlighting so high retry rate, low verification pass rate, blocked promotion flow, stale ADR pressure, and stuck-run conditions stand out without reading every raw metric.
 - Desktop packaging includes Builder shortcuts for retry-last-failed-task, open-current-task-logs, and cancel-running-task.
 - Low-level Builder commands and optional CLI adapters still exist for bounded operations, but persistent task orchestration is now the default path.
+- Builder Git support now includes first-class repo inspection, local mutation, and allowlisted remote sync through the shared Builder VCS core and MCP-exposed `builder_*` tools.
 - Claude Code is modeled as a future adapter slot under the same Builder Mode shell, not as a separate builtin product plugin.
 
 ### Builder Mode v2
@@ -225,6 +226,7 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 
 - `BIZBOT_BUILDER_WORKSPACE_PATH` points to the dedicated external builder workspace.
 - `BIZBOT_BUILDER_ALLOWED_COMMANDS` controls the raw command allowlist.
+- `BIZBOT_BUILDER_ALLOWED_REMOTES` controls the normalized Git remote allowlist used by Builder remote add, fetch, pull, push, and clone flows.
 - `BIZBOT_BUILDER_DEFAULT_TEMPLATE` and `BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER` set project defaults.
 - `BIZBOT_BUILDER_INIT_GIT` and `BIZBOT_BUILDER_INSTALL_DEPS` set bootstrap defaults.
 - `BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE`, `BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS`, `BIZBOT_BUILDER_AGENTIC_MAX_ITERATIONS`, and the `BIZBOT_BUILDER_CODEX_*` values control optional agentic execution.
@@ -234,6 +236,8 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - Builder tools are exposed with the `builder_` prefix for bounded remote orchestration.
 - MCP exposure keeps Builder Mode inspectable and scriptable without mixing it into the general platform lane.
 - Builder tool access is routed through the dedicated `builder_operator` lane and also surfaced to the bounded `mcp_operator` profile.
+- The Builder MCP surface now includes Git inspection, staging, commit, branching, checkout, merge, rebase, clean, remote management, fetch, pull, push, and clone tools, with temporary compatibility aliases preserved during the tool-surface transition.
+- Remote Git mutations stay bounded by workspace containment, explicit approval on sensitive actions, and the Builder remote allowlist.
 - Builder resource inspection covers projects, current project, current plan, current tasks, current runs, and the latest review snapshot.
 - The Builder project overview and Builder MCP resources now also expose the current MCP snapshot sequence, current contract hash, drift state, and rollover history for the active run.
 - `bizbot://builder/projects`, `bizbot://builder/current-project`, `bizbot://builder/current-plan`, `bizbot://builder/current-tasks`, `bizbot://builder/current-runs`, and `bizbot://builder/current-review` expose the active Builder state for inspection.

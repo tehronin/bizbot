@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-04-15
+
+- Expanded Builder Git support by extending the shared Builder VCS core with richer repo inspection, local mutation flows, allowlisted remote operations, and durable Builder run kinds for Git stage, commit, branch, checkout, merge, rebase, clean, fetch, pull, push, and clone behavior.
+- Reworked the Builder plugin and MCP surface to expose the new `builder_git_*` and `builder_repo_*` tools while preserving temporary compatibility aliases, and added end-to-end MCP coverage for local Git actions, allowlisted remote push, and blocked non-allowlisted remotes.
+- Enriched Builder review, trust, and dashboard state with Git health signals such as dirty status, remotes, pending push posture, and remote allowlist governance.
+- Fixed a Builder dashboard race where a late project-detail refresh could overwrite an in-progress brief edit before planning, and hardened `npm run verify:local` log capture when Playwright cleanup has removed the verification artifact directory.
+
 ## 2026-04-11
 
 - Hardened chat and Builder UI lifecycle behavior by preventing repeated runtime log SSE reconnects, aborting stale chat bootstrap and sidecar interaction requests, and guarding small dashboard data hooks against state updates after unmount while keeping lint, typecheck, tests, and build green.

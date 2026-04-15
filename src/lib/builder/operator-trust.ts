@@ -2,6 +2,7 @@ import type { BuilderRun } from "@prisma/client";
 import type { BuilderConfigReadinessState } from "@/lib/builder/environment";
 import type { BuilderCapabilityAuditOverview } from "@/lib/builder/audit";
 import { listBuilderCapabilities } from "@/lib/builder/capabilities";
+import { getBuilderAllowedRemotes } from "@/lib/builder/config";
 import type { BuilderOperationalStateSummary } from "@/lib/builder/reconciliation";
 import type {
   BuilderMcpSnapshotOverviewState,
@@ -53,6 +54,11 @@ function buildReviewState(review: BuilderStructuredReview | null): BuilderOperat
       reviewStatus: null,
       validationPassed: null,
       riskCount: 0,
+      gitAvailable: false,
+      gitDirty: false,
+      gitRemoteCount: 0,
+      gitHasRemotes: false,
+      gitPendingPush: false,
       updatedAt: null,
     };
   }
@@ -60,7 +66,8 @@ function buildReviewState(review: BuilderStructuredReview | null): BuilderOperat
   const databaseConcern = review.database?.status === "drifted" || review.database?.status === "probe_failed";
   const auditConcern = (review.audit?.notableEvents.length ?? 0) > 0;
   const runtimeConcern = (review.runtime?.failedServices ?? 0) > 0;
-  const status: BuilderOperatorTrustStatus = review.status === "SUCCEEDED" && review.risks.length === 0 && review.validation.passed && !databaseConcern && !auditConcern && !runtimeConcern
+  const gitConcern = Boolean(review.vcs?.dirty) || Boolean(review.vcs?.pendingPush) || (review.vcs?.conflictedCount ?? 0) > 0;
+  const status: BuilderOperatorTrustStatus = review.status === "SUCCEEDED" && review.risks.length === 0 && review.validation.passed && !databaseConcern && !auditConcern && !runtimeConcern && !gitConcern
     ? "trusted"
     : "warning";
   const reviewSummary = [
@@ -77,6 +84,11 @@ function buildReviewState(review: BuilderStructuredReview | null): BuilderOperat
     reviewStatus: review.status,
     validationPassed: review.validation.passed,
     riskCount: review.risks.length,
+    gitAvailable: Boolean(review.vcs?.available),
+    gitDirty: Boolean(review.vcs?.dirty),
+    gitRemoteCount: review.vcs?.remoteCount ?? 0,
+    gitHasRemotes: (review.vcs?.remoteCount ?? 0) > 0,
+    gitPendingPush: Boolean(review.vcs?.pendingPush),
     updatedAt: review.updatedAt,
   };
 }
@@ -150,17 +162,33 @@ function buildApprovalState(approvals: PendingApprovalSnapshot[]): BuilderOperat
   };
 }
 
-function buildGovernanceState(): BuilderOperatorTrustGovernanceState {
+function buildGovernanceState(review: BuilderStructuredReview | null): BuilderOperatorTrustGovernanceState {
   const approvalRequiredCapabilities = listBuilderCapabilities()
     .filter((capability) => capability.policy.requiresExplicitApproval)
     .map((capability) => capability.key);
+  const remoteAllowlistConfigured = getBuilderAllowedRemotes().length > 0;
+  const pushCapableToolsAvailable = listBuilderCapabilities().some((capability) => capability.tools.includes("builder_git_push"));
+  const pushRequiresApproval = listBuilderCapabilities().some((capability) => capability.key === "version_control_remote" && capability.policy.requiresExplicitApproval);
+  const repoHasRemotes = (review?.vcs?.remoteCount ?? 0) > 0;
+  const status: BuilderOperatorTrustStatus = repoHasRemotes && !remoteAllowlistConfigured
+    ? "blocked"
+    : approvalRequiredCapabilities.length > 0 || pushCapableToolsAvailable
+      ? "warning"
+      : "trusted";
 
   return {
-    status: approvalRequiredCapabilities.length > 0 ? "warning" : "trusted",
-    summary: approvalRequiredCapabilities.length > 0
-      ? `Builder capability gates that require explicit approval when invoked: ${approvalRequiredCapabilities.join(", ")}.`
-      : "No Builder capability gates currently require explicit approval.",
+    status,
+    summary: repoHasRemotes && !remoteAllowlistConfigured
+      ? "Git remotes are configured but no Builder remote allowlist is configured, so remote sync cannot be trusted."
+      : approvalRequiredCapabilities.length > 0
+        ? `Builder capability gates that require explicit approval when invoked: ${approvalRequiredCapabilities.join(", ")}. Git push remains approval-gated.`
+        : pushCapableToolsAvailable
+          ? "Git push is available and remains approval-gated; no remote allowlist issue is currently blocking trust."
+          : "No Builder capability gates currently require explicit approval.",
     approvalRequiredCapabilities,
+    gitRemoteAllowlistConfigured: remoteAllowlistConfigured,
+    gitPushCapableToolsAvailable: pushCapableToolsAvailable,
+    gitPushRequiresApproval: pushRequiresApproval,
   };
 }
 
@@ -379,7 +407,7 @@ export function composeBuilderOperatorTrustState(args: {
     mcpSnapshot: args.mcpSnapshot,
   });
   const approvals = buildApprovalState(args.approvals);
-  const governance = buildGovernanceState();
+  const governance = buildGovernanceState(args.review);
   const prioritizedBlockers = buildPrioritizedBlockers({
     review,
     config,
@@ -399,6 +427,7 @@ export function composeBuilderOperatorTrustState(args: {
     runtime.status !== "trusted" ? `runtime ${summarizeStatus(runtime.status)}` : null,
     review.status !== "trusted" ? `review ${summarizeStatus(review.status)}` : null,
     approvals.status !== "trusted" ? `approvals ${summarizeStatus(approvals.status)}` : null,
+    governance.status !== "trusted" ? `governance ${summarizeStatus(governance.status)}` : null,
   ].filter(Boolean);
 
   return {
@@ -452,6 +481,10 @@ export function renderBuilderOperatorTrustMarkdown(trust: BuilderOperatorTrustSt
     `- Review result: ${trust.review.reviewStatus ?? "none"}`,
     `- Validation passed: ${trust.review.validationPassed ?? "unknown"}`,
     `- Risk count: ${trust.review.riskCount}`,
+    `- Git available: ${trust.review.gitAvailable}`,
+    `- Git dirty: ${trust.review.gitDirty}`,
+    `- Git remotes: ${trust.review.gitRemoteCount}`,
+    `- Git pending push: ${trust.review.gitPendingPush}`,
     `- Summary: ${trust.review.summary}`,
     "",
     "## Configuration",
@@ -487,6 +520,9 @@ export function renderBuilderOperatorTrustMarkdown(trust: BuilderOperatorTrustSt
     "",
     `- Status: ${trust.governance.status}`,
     `- Approval-required capability gates: ${trust.governance.approvalRequiredCapabilities.join(", ") || "none"}`,
+    `- Remote allowlist configured: ${trust.governance.gitRemoteAllowlistConfigured}`,
+    `- Push-capable tools available: ${trust.governance.gitPushCapableToolsAvailable}`,
+    `- Push requires approval: ${trust.governance.gitPushRequiresApproval}`,
     `- Summary: ${trust.governance.summary}`,
     "",
     "## Prioritized Blockers",

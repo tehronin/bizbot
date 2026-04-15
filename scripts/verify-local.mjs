@@ -69,6 +69,7 @@ async function runCommand(command, args, label) {
 }
 
 async function captureComposeLogs() {
+  await fs.mkdir(verifyArtifactsDir, { recursive: true });
   const outputPath = path.join(verifyArtifactsDir, "docker-compose.log");
   const stream = fsSync.createWriteStream(outputPath, { encoding: "utf8" });
 

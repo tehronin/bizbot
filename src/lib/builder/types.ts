@@ -600,11 +600,20 @@ export interface BuilderReviewVcsState {
   available: boolean;
   repoRoot: string | null;
   currentBranch: string | null;
+  headCommitSha: string | null;
   ahead: number;
   behind: number;
+  dirty: boolean;
   stagedCount: number;
   unstagedCount: number;
   untrackedCount: number;
+  conflictedCount: number;
+  stashCount: number;
+  tagCount: number;
+  remoteCount: number;
+  remoteNames: string[];
+  pendingPush: boolean;
+  pendingPushContext: string | null;
   summary: string;
   auditPath?: string | null;
   error?: string | null;
@@ -663,6 +672,11 @@ export interface BuilderOperatorTrustReviewState {
   reviewStatus: BuilderTaskStatus | string | null;
   validationPassed: boolean | null;
   riskCount: number;
+  gitAvailable: boolean;
+  gitDirty: boolean;
+  gitRemoteCount: number;
+  gitHasRemotes: boolean;
+  gitPendingPush: boolean;
   updatedAt: string | null;
 }
 
@@ -708,6 +722,9 @@ export interface BuilderOperatorTrustGovernanceState {
   status: BuilderOperatorTrustStatus;
   summary: string;
   approvalRequiredCapabilities: string[];
+  gitRemoteAllowlistConfigured: boolean;
+  gitPushCapableToolsAvailable: boolean;
+  gitPushRequiresApproval: boolean;
 }
 
 export interface BuilderOperatorTrustArtifactPaths {

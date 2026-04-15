@@ -51,6 +51,22 @@ describe("builder capability catalog", () => {
   it("marks shipped extension surfaces as available and keeps runtime orchestration experimental", () => {
     expect(getBuilderCapability("network_http")?.status).toBe("available");
     expect(getBuilderCapability("database_introspection")?.status).toBe("available");
+    expect(getBuilderCapability("version_control")?.tools).toEqual(expect.arrayContaining([
+      "builder_repo_diff",
+      "builder_repo_log",
+      "builder_repo_show",
+      "builder_git_add",
+      "builder_git_commit",
+      "builder_git_branch",
+      "builder_git_checkout",
+    ]));
+    expect(getBuilderCapability("version_control_remote")?.tools).toEqual(expect.arrayContaining([
+      "builder_git_remote_add",
+      "builder_git_fetch",
+      "builder_git_pull",
+      "builder_git_push",
+      "builder_git_clone",
+    ]));
     expect(getBuilderCapability("runtime_orchestration")?.tier).toBe("experimental");
     expect(getBuilderCapability("runtime_orchestration")?.status).toBe("partial");
   });

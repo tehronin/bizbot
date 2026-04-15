@@ -1,8 +1,18 @@
 /** BuilderPlugin — Sandbox builder tools for an external project workspace. */
 
-import type { BuilderPackageManager } from "@prisma/client";
+import type { BuilderPackageManager, BuilderRunKind } from "@prisma/client";
 import { loadBuilderProjectContext, syncBuilderProjectProjection } from "@/lib/builder/context";
-import { createBuilderProject, deleteBuilderProject, getBuilderProject, getBuilderRun, listBuilderProjects, listBuilderRuns, updateBuilderProject } from "@/lib/builder/projects";
+import {
+  completeBuilderRun,
+  createBuilderProject,
+  createBuilderRun,
+  deleteBuilderProject,
+  getBuilderProject,
+  getBuilderRun,
+  listBuilderProjects,
+  listBuilderRuns,
+  updateBuilderProject,
+} from "@/lib/builder/projects";
 import {
   describeBuilderDatabaseTable,
   getBuilderDatabaseSchemaSummary,
@@ -52,15 +62,32 @@ import {
   waitForBuilderManagedProcess,
 } from "@/lib/builder/process-registry";
 import {
+  addBuilderRepoRemote,
+  cleanBuilderRepo,
   commitBuilderRepo,
+  cloneBuilderRepo,
   createBuilderRepoBranch,
+  fetchBuilderRepoRemote,
   getBuilderRepoDiff,
+  getBuilderRepoLog,
   getBuilderRepoStatus,
+  listBuilderRepoBranches,
+  listBuilderRepoRemotes,
+  listBuilderRepoTags,
+  manageBuilderRepoBranch,
+  mergeBuilderRepoBranch,
+  pullBuilderRepoRemote,
+  pushBuilderRepoRemote,
+  revParseBuilderRepo,
+  rebaseBuilderRepo,
+  removeBuilderRepoRemote,
+  showBuilderRepoObject,
   stageBuilderRepoPaths,
   switchBuilderRepoBranch,
   unstageBuilderRepoPaths,
 } from "@/lib/builder/vcs";
-import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools";
+import type { BuilderCapabilityAuditContext } from "@/lib/builder/audit";
+import { defineTool, registerTool, type ToolDefinition, type ToolExecutionResult } from "@/lib/agent/tools";
 import type { runBuilderProjectBootstrap } from "@/lib/builder/bootstrap";
 import type { recordBuilderProjectCommand } from "@/lib/builder/commands";
 import type { getBuilderProjectOverview, launchBuilderTask, planBuilderProject } from "@/lib/builder/orchestrator";
@@ -229,11 +256,29 @@ interface BuilderRunArgs {
 
 interface BuilderRepoArgs {
   subdir?: string;
+  projectId?: string;
+  taskId?: string;
+  runId?: string;
 }
 
 interface BuilderRepoDiffArgs extends BuilderRepoArgs {
   staged?: boolean;
   paths?: string[];
+}
+
+interface BuilderRepoLogArgs extends BuilderRepoArgs {
+  limit?: number;
+  ref?: string;
+  paths?: string[];
+}
+
+interface BuilderRepoShowArgs extends BuilderRepoArgs {
+  revision: string;
+  stat?: boolean;
+}
+
+interface BuilderRepoRevParseArgs extends BuilderRepoArgs {
+  revision?: string;
 }
 
 interface BuilderRepoPathsArgs extends BuilderRepoArgs {
@@ -248,6 +293,49 @@ interface BuilderRepoCommitArgs extends BuilderRepoArgs {
 interface BuilderRepoBranchArgs extends BuilderRepoArgs {
   name: string;
   checkout?: boolean;
+  force?: boolean;
+  confirmed?: boolean;
+  reason?: string;
+}
+
+interface BuilderRepoCheckoutArgs extends BuilderRepoArgs {
+  name: string;
+  create?: boolean;
+}
+
+interface BuilderRepoMergeArgs extends BuilderRepoArgs {
+  name: string;
+  ffOnly?: boolean;
+  noCommit?: boolean;
+  confirmed: boolean;
+  reason: string;
+}
+
+interface BuilderRepoRebaseArgs extends BuilderRepoArgs {
+  upstream: string;
+  confirmed: boolean;
+  reason: string;
+}
+
+interface BuilderRepoCleanArgs extends BuilderRepoArgs {
+  force: boolean;
+  directories?: boolean;
+  includeIgnored?: boolean;
+  confirmed: boolean;
+  reason: string;
+}
+
+interface BuilderRepoRemoteArgs extends BuilderRepoArgs {
+  name?: string;
+  remote?: string;
+  remoteUrl?: string;
+  branch?: string;
+  refspec?: string;
+  targetPath?: string;
+  setUpstream?: boolean;
+  force?: boolean;
+  confirmed?: boolean;
+  reason?: string;
 }
 
 interface BuilderHttpArgs {
@@ -349,6 +437,98 @@ function assertExplicitGovernanceApproval(args: { confirmed: boolean; reason: st
   }
 
   return reason;
+}
+
+async function resolveBuilderRepoInvocation(args: BuilderRepoArgs): Promise<{
+  subdir: string;
+  projectId: string | null;
+  taskId: string | null;
+  parentRunId: string | null;
+}> {
+  if (args.projectId) {
+    const project = await getBuilderProject(args.projectId);
+    return {
+      subdir: args.subdir?.trim() || project.relativePath,
+      projectId: project.id,
+      taskId: args.taskId ?? null,
+      parentRunId: args.runId ?? null,
+    };
+  }
+
+  return {
+    subdir: args.subdir?.trim() || ".",
+    projectId: null,
+    taskId: args.taskId ?? null,
+    parentRunId: args.runId ?? null,
+  };
+}
+
+function toBuilderRunKind(value: string): BuilderRunKind {
+  return value as BuilderRunKind;
+}
+
+async function executeBuilderGitMutation<TResult extends object>(args: {
+  repoArgs: BuilderRepoArgs;
+  kind: string;
+  title: string;
+  command: string;
+  commandArgs?: unknown;
+  metadata?: Record<string, unknown>;
+  execute: (context: { subdir: string; audit: BuilderCapabilityAuditContext }) => TResult | Promise<TResult>;
+  resultMetadata?: (result: TResult) => Record<string, unknown>;
+}): Promise<TResult & { builderRunId: string | null }> {
+  const invocation = await resolveBuilderRepoInvocation(args.repoArgs);
+  const baseMetadata = {
+    parentRunId: invocation.parentRunId,
+    requestedSubdir: args.repoArgs.subdir ?? null,
+    ...args.metadata,
+  };
+
+  let builderRunId: string | null = null;
+  if (invocation.projectId) {
+    const run = await createBuilderRun({
+      projectId: invocation.projectId,
+      taskId: invocation.taskId ?? undefined,
+      kind: toBuilderRunKind(args.kind),
+      title: args.title,
+      command: args.command,
+      args: args.commandArgs,
+      metadata: baseMetadata,
+    });
+    builderRunId = run.id;
+  }
+
+  try {
+    const result = await args.execute({
+      subdir: invocation.subdir,
+      audit: {
+        projectId: invocation.projectId,
+        taskId: invocation.taskId,
+        runId: builderRunId,
+      },
+    });
+    if (builderRunId) {
+      await completeBuilderRun(builderRunId, {
+        status: "SUCCEEDED",
+        summary: args.title,
+        metadata: {
+          ...baseMetadata,
+          ...(args.resultMetadata ? args.resultMetadata(result) : {}),
+        },
+      });
+    }
+    return { ...result, builderRunId };
+  } catch (error) {
+    if (builderRunId) {
+      await completeBuilderRun(builderRunId, {
+        status: "FAILED",
+        stderr: error instanceof Error ? error.message : String(error),
+        summary: error instanceof Error ? error.message : String(error),
+        metadata: baseMetadata,
+      });
+    }
+    throw error;
+  }
 }
 
 export const builderPlugin = {
@@ -1512,36 +1692,283 @@ export const builderPlugin = {
         type: "object",
         properties: {
           subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
         },
       },
-      execute: async ({ subdir }: BuilderRepoArgs) => getBuilderRepoStatus(subdir),
+      execute: async (input: BuilderRepoArgs) => {
+        const invocation = await resolveBuilderRepoInvocation(input);
+        return getBuilderRepoStatus(invocation.subdir, {
+          projectId: invocation.projectId,
+          taskId: invocation.taskId,
+          runId: invocation.parentRunId,
+        });
+      },
     } satisfies ToolDefinition<BuilderRepoArgs, ReturnType<typeof getBuilderRepoStatus>>)),
     registerTool(defineTool({
-      name: "builder_diff",
+      name: "builder_repo_diff",
       description: "Return a staged or unstaged git diff for a Builder-managed repository.",
       parameters: {
         type: "object",
         properties: {
           subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
           staged: { type: "boolean", default: false },
           paths: { type: "array", items: { type: "string" } },
         },
       },
-      execute: async ({ subdir, staged, paths }: BuilderRepoDiffArgs) => getBuilderRepoDiff({ subdir, staged, paths }),
+      execute: async (input: BuilderRepoDiffArgs) => {
+        const invocation = await resolveBuilderRepoInvocation(input);
+        return getBuilderRepoDiff({
+          subdir: invocation.subdir,
+          staged: input.staged,
+          paths: input.paths,
+          audit: {
+            projectId: invocation.projectId,
+            taskId: invocation.taskId,
+            runId: invocation.parentRunId,
+          },
+        });
+      },
     } satisfies ToolDefinition<BuilderRepoDiffArgs, ReturnType<typeof getBuilderRepoDiff>>)),
     registerTool(defineTool({
-      name: "builder_stage_paths",
+      name: "builder_diff",
+      description: "Compatibility alias for builder_repo_diff.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          staged: { type: "boolean", default: false },
+          paths: { type: "array", items: { type: "string" } },
+        },
+      },
+      execute: async (input: BuilderRepoDiffArgs) => {
+        const invocation = await resolveBuilderRepoInvocation(input);
+        return getBuilderRepoDiff({
+          subdir: invocation.subdir,
+          staged: input.staged,
+          paths: input.paths,
+          audit: {
+            projectId: invocation.projectId,
+            taskId: invocation.taskId,
+            runId: invocation.parentRunId,
+          },
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoDiffArgs, ReturnType<typeof getBuilderRepoDiff>>)),
+    registerTool(defineTool({
+      name: "builder_repo_log",
+      description: "Read recent commit history for a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          limit: { type: "number", default: 20 },
+          ref: { type: "string" },
+          paths: { type: "array", items: { type: "string" } },
+        },
+      },
+      execute: async (input: BuilderRepoLogArgs) => {
+        const invocation = await resolveBuilderRepoInvocation(input);
+        return getBuilderRepoLog({
+          subdir: invocation.subdir,
+          limit: input.limit,
+          ref: input.ref,
+          paths: input.paths,
+          audit: {
+            projectId: invocation.projectId,
+            taskId: invocation.taskId,
+            runId: invocation.parentRunId,
+          },
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoLogArgs, ReturnType<typeof getBuilderRepoLog>>)),
+    registerTool(defineTool({
+      name: "builder_repo_show",
+      description: "Show a commit, tag, or other revision object from a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          revision: { type: "string" },
+          stat: { type: "boolean", default: false },
+        },
+        required: ["revision"],
+      },
+      execute: async (input: BuilderRepoShowArgs) => {
+        const invocation = await resolveBuilderRepoInvocation(input);
+        return showBuilderRepoObject({
+          subdir: invocation.subdir,
+          revision: input.revision,
+          stat: input.stat,
+          audit: {
+            projectId: invocation.projectId,
+            taskId: invocation.taskId,
+            runId: invocation.parentRunId,
+          },
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoShowArgs, ReturnType<typeof showBuilderRepoObject>>)),
+    registerTool(defineTool({
+      name: "builder_list_branches",
+      description: "List local branches, and optionally remote branches, for a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          includeRemote: { type: "boolean", default: false },
+        },
+      },
+      execute: async (input: BuilderRepoArgs & { includeRemote?: boolean }) => {
+        const invocation = await resolveBuilderRepoInvocation(input);
+        return listBuilderRepoBranches({
+          subdir: invocation.subdir,
+          includeRemote: input.includeRemote,
+          audit: {
+            projectId: invocation.projectId,
+            taskId: invocation.taskId,
+            runId: invocation.parentRunId,
+          },
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoArgs & { includeRemote?: boolean }, ReturnType<typeof listBuilderRepoBranches>>)),
+    registerTool(defineTool({
+      name: "builder_list_tags",
+      description: "List tags for a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+        },
+      },
+      execute: async (input: BuilderRepoArgs) => {
+        const invocation = await resolveBuilderRepoInvocation(input);
+        return listBuilderRepoTags({
+          subdir: invocation.subdir,
+          audit: {
+            projectId: invocation.projectId,
+            taskId: invocation.taskId,
+            runId: invocation.parentRunId,
+          },
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoArgs, ReturnType<typeof listBuilderRepoTags>>)),
+    registerTool(defineTool({
+      name: "builder_list_remotes",
+      description: "List configured remotes for a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+        },
+      },
+      execute: async (input: BuilderRepoArgs) => {
+        const invocation = await resolveBuilderRepoInvocation(input);
+        return listBuilderRepoRemotes({
+          subdir: invocation.subdir,
+          audit: {
+            projectId: invocation.projectId,
+            taskId: invocation.taskId,
+            runId: invocation.parentRunId,
+          },
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoArgs, ReturnType<typeof listBuilderRepoRemotes>>)),
+    registerTool(defineTool({
+      name: "builder_rev_parse",
+      description: "Resolve a revision to its canonical git object id.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          revision: { type: "string" },
+        },
+      },
+      execute: async (input: BuilderRepoRevParseArgs) => {
+        const invocation = await resolveBuilderRepoInvocation(input);
+        return revParseBuilderRepo({
+          subdir: invocation.subdir,
+          revision: input.revision,
+          audit: {
+            projectId: invocation.projectId,
+            taskId: invocation.taskId,
+            runId: invocation.parentRunId,
+          },
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoRevParseArgs, ReturnType<typeof revParseBuilderRepo>>)),
+    registerTool(defineTool({
+      name: "builder_git_add",
       description: "Stage one or more paths in a Builder-managed repository.",
       parameters: {
         type: "object",
         properties: {
           subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
           paths: { type: "array", items: { type: "string" } },
         },
         required: ["paths"],
       },
-      execute: async ({ subdir, paths }: BuilderRepoPathsArgs) => stageBuilderRepoPaths(paths, subdir),
-    } satisfies ToolDefinition<BuilderRepoPathsArgs, ReturnType<typeof stageBuilderRepoPaths>>)),
+      execute: async (input: BuilderRepoPathsArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_STAGE",
+        title: "Stage git paths",
+        command: "builder_git_add",
+        commandArgs: { paths: input.paths },
+        execute: ({ subdir, audit }) => stageBuilderRepoPaths(input.paths, subdir, audit),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, stagedCount: result.stagedCount, unstagedCount: result.unstagedCount }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoPathsArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_stage_paths",
+      description: "Compatibility alias for builder_git_add.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          paths: { type: "array", items: { type: "string" } },
+        },
+        required: ["paths"],
+      },
+      execute: async (input: BuilderRepoPathsArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_STAGE",
+        title: "Stage git paths",
+        command: "builder_stage_paths",
+        commandArgs: { paths: input.paths },
+        execute: ({ subdir, audit }) => stageBuilderRepoPaths(input.paths, subdir, audit),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, stagedCount: result.stagedCount, unstagedCount: result.unstagedCount }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoPathsArgs, ToolExecutionResult>)),
     registerTool(defineTool({
       name: "builder_unstage_paths",
       description: "Unstage one or more paths in a Builder-managed repository.",
@@ -1549,52 +1976,434 @@ export const builderPlugin = {
         type: "object",
         properties: {
           subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
           paths: { type: "array", items: { type: "string" } },
         },
         required: ["paths"],
       },
-      execute: async ({ subdir, paths }: BuilderRepoPathsArgs) => unstageBuilderRepoPaths(paths, subdir),
-    } satisfies ToolDefinition<BuilderRepoPathsArgs, ReturnType<typeof unstageBuilderRepoPaths>>)),
+      execute: async (input: BuilderRepoPathsArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_UNSTAGE",
+        title: "Unstage git paths",
+        command: "builder_unstage_paths",
+        commandArgs: { paths: input.paths },
+        execute: ({ subdir, audit }) => unstageBuilderRepoPaths(input.paths, subdir, audit),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, stagedCount: result.stagedCount, unstagedCount: result.unstagedCount }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoPathsArgs, ToolExecutionResult>)),
     registerTool(defineTool({
-      name: "builder_commit",
+      name: "builder_git_commit",
       description: "Create a git commit in a Builder-managed repository with an explicit message.",
       parameters: {
         type: "object",
         properties: {
           subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
           message: { type: "string" },
           allowEmpty: { type: "boolean", default: false },
         },
         required: ["message"],
       },
-      execute: async ({ subdir, message, allowEmpty }: BuilderRepoCommitArgs) => commitBuilderRepo({ subdir, message, allowEmpty }),
-    } satisfies ToolDefinition<BuilderRepoCommitArgs, ReturnType<typeof commitBuilderRepo>>)),
+      execute: async (input: BuilderRepoCommitArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_COMMIT",
+        title: "Create git commit",
+        command: "builder_git_commit",
+        commandArgs: { message: input.message, allowEmpty: Boolean(input.allowEmpty) },
+        execute: ({ subdir, audit }) => commitBuilderRepo({ subdir, message: input.message, allowEmpty: input.allowEmpty, audit }),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, commitSha: result.commitSha, summary: result.summary }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoCommitArgs, ToolExecutionResult>)),
     registerTool(defineTool({
-      name: "builder_create_branch",
-      description: "Create a branch in a Builder-managed repository and optionally check it out immediately.",
+      name: "builder_commit",
+      description: "Compatibility alias for builder_git_commit.",
       parameters: {
         type: "object",
         properties: {
           subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          message: { type: "string" },
+          allowEmpty: { type: "boolean", default: false },
+        },
+        required: ["message"],
+      },
+      execute: async (input: BuilderRepoCommitArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_COMMIT",
+        title: "Create git commit",
+        command: "builder_commit",
+        commandArgs: { message: input.message, allowEmpty: Boolean(input.allowEmpty) },
+        execute: ({ subdir, audit }) => commitBuilderRepo({ subdir, message: input.message, allowEmpty: input.allowEmpty, audit }),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, commitSha: result.commitSha, summary: result.summary }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoCommitArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_git_branch",
+      description: "Create or delete a branch in a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          action: { type: "string", enum: ["create", "delete"], default: "create" },
+          name: { type: "string" },
+          checkout: { type: "boolean", default: false },
+          force: { type: "boolean", default: false },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["name"],
+      },
+      execute: async (input: BuilderRepoBranchArgs & { action?: "create" | "delete" }) => {
+        const action = input.action ?? "create";
+        const approvalReason = action === "delete"
+          ? assertExplicitGovernanceApproval({ confirmed: Boolean(input.confirmed), reason: input.reason ?? "" }, "Builder git branch deletion")
+          : null;
+        return executeBuilderGitMutation({
+          repoArgs: input,
+          kind: "GIT_BRANCH",
+          title: action === "create" ? "Create git branch" : "Delete git branch",
+          command: "builder_git_branch",
+          commandArgs: { action, name: input.name, checkout: Boolean(input.checkout), force: Boolean(input.force) },
+          metadata: approvalReason ? { approvalReason } : undefined,
+          execute: ({ subdir, audit }) => action === "create"
+            ? createBuilderRepoBranch({ subdir, name: input.name, checkout: input.checkout, audit })
+            : manageBuilderRepoBranch({ subdir, action: "delete", name: input.name, force: input.force, audit }),
+          resultMetadata: (result) => ({ repoRoot: result.repoRoot, currentBranch: result.currentBranch, headCommitSha: result.headCommitSha }),
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoBranchArgs & { action?: "create" | "delete" }, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_create_branch",
+      description: "Compatibility alias for builder_git_branch create.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
           name: { type: "string" },
           checkout: { type: "boolean", default: false },
         },
         required: ["name"],
       },
-      execute: async ({ subdir, name, checkout }: BuilderRepoBranchArgs) => createBuilderRepoBranch({ subdir, name, checkout }),
-    } satisfies ToolDefinition<BuilderRepoBranchArgs, ReturnType<typeof createBuilderRepoBranch>>)),
+      execute: async (input: BuilderRepoBranchArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_BRANCH",
+        title: "Create git branch",
+        command: "builder_create_branch",
+        commandArgs: { name: input.name, checkout: Boolean(input.checkout) },
+        execute: ({ subdir, audit }) => createBuilderRepoBranch({ subdir, name: input.name, checkout: input.checkout, audit }),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, currentBranch: result.currentBranch, headCommitSha: result.headCommitSha }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoBranchArgs, ToolExecutionResult>)),
     registerTool(defineTool({
-      name: "builder_switch_branch",
-      description: "Switch branches in a Builder-managed repository.",
+      name: "builder_git_checkout",
+      description: "Switch branches in a Builder-managed repository, or create and switch in one step.",
       parameters: {
         type: "object",
         properties: {
           subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          name: { type: "string" },
+          create: { type: "boolean", default: false },
+        },
+        required: ["name"],
+      },
+      execute: async (input: BuilderRepoCheckoutArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_CHECKOUT",
+        title: input.create ? "Create and checkout git branch" : "Checkout git branch",
+        command: "builder_git_checkout",
+        commandArgs: { name: input.name, create: Boolean(input.create) },
+        execute: ({ subdir, audit }) => switchBuilderRepoBranch({ subdir, name: input.name, create: input.create, audit }),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, currentBranch: result.currentBranch, headCommitSha: result.headCommitSha }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoCheckoutArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_switch_branch",
+      description: "Compatibility alias for builder_git_checkout.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          name: { type: "string" },
+          create: { type: "boolean", default: false },
+        },
+        required: ["name"],
+      },
+      execute: async (input: BuilderRepoCheckoutArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_CHECKOUT",
+        title: input.create ? "Create and checkout git branch" : "Checkout git branch",
+        command: "builder_switch_branch",
+        commandArgs: { name: input.name, create: Boolean(input.create) },
+        execute: ({ subdir, audit }) => switchBuilderRepoBranch({ subdir, name: input.name, create: input.create, audit }),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, currentBranch: result.currentBranch, headCommitSha: result.headCommitSha }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoCheckoutArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_git_merge",
+      description: "Merge another branch into the current branch with explicit approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          name: { type: "string" },
+          ffOnly: { type: "boolean", default: false },
+          noCommit: { type: "boolean", default: false },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["name", "confirmed", "reason"],
+      },
+      execute: async (input: BuilderRepoMergeArgs) => {
+        const approvalReason = assertExplicitGovernanceApproval({ confirmed: input.confirmed, reason: input.reason }, "Builder git merge");
+        return executeBuilderGitMutation({
+          repoArgs: input,
+          kind: "GIT_MERGE",
+          title: "Merge git branch",
+          command: "builder_git_merge",
+          commandArgs: { name: input.name, ffOnly: Boolean(input.ffOnly), noCommit: Boolean(input.noCommit) },
+          metadata: { approvalReason },
+          execute: ({ subdir, audit }) => mergeBuilderRepoBranch({ subdir, name: input.name, ffOnly: input.ffOnly, noCommit: input.noCommit, audit }),
+          resultMetadata: (result) => ({ repoRoot: result.repoRoot, currentBranch: result.currentBranch, headCommitSha: result.headCommitSha, conflictedCount: result.conflictedFiles.length }),
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoMergeArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_git_rebase",
+      description: "Rebase the current branch onto another ref with explicit approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          upstream: { type: "string" },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["upstream", "confirmed", "reason"],
+      },
+      execute: async (input: BuilderRepoRebaseArgs) => {
+        const approvalReason = assertExplicitGovernanceApproval({ confirmed: input.confirmed, reason: input.reason }, "Builder git rebase");
+        return executeBuilderGitMutation({
+          repoArgs: input,
+          kind: "GIT_REBASE",
+          title: "Rebase git branch",
+          command: "builder_git_rebase",
+          commandArgs: { upstream: input.upstream },
+          metadata: { approvalReason },
+          execute: ({ subdir, audit }) => rebaseBuilderRepo({ subdir, upstream: input.upstream, audit }),
+          resultMetadata: (result) => ({ repoRoot: result.repoRoot, currentBranch: result.currentBranch, headCommitSha: result.headCommitSha, conflictedCount: result.conflictedFiles.length }),
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoRebaseArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_git_clean",
+      description: "Clean untracked files from a Builder-managed repository with explicit approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          force: { type: "boolean" },
+          directories: { type: "boolean", default: false },
+          includeIgnored: { type: "boolean", default: false },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["force", "confirmed", "reason"],
+      },
+      execute: async (input: BuilderRepoCleanArgs) => {
+        const approvalReason = assertExplicitGovernanceApproval({ confirmed: input.confirmed, reason: input.reason }, "Builder git clean");
+        return executeBuilderGitMutation({
+          repoArgs: input,
+          kind: "GIT_CLEAN",
+          title: "Clean git working tree",
+          command: "builder_git_clean",
+          commandArgs: { force: Boolean(input.force), directories: Boolean(input.directories), includeIgnored: Boolean(input.includeIgnored) },
+          metadata: { approvalReason },
+          execute: ({ subdir, audit }) => cleanBuilderRepo({ subdir, force: input.force, directories: input.directories, includeIgnored: input.includeIgnored, audit }),
+          resultMetadata: (result) => ({ repoRoot: result.repoRoot, dirty: result.dirty, untrackedCount: result.untrackedCount }),
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoCleanArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_git_remote_add",
+      description: "Add an allowlisted remote to a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          name: { type: "string" },
+          remoteUrl: { type: "string" },
+        },
+        required: ["name", "remoteUrl"],
+      },
+      execute: async (input: BuilderRepoRemoteArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_REMOTE",
+        title: "Add git remote",
+        command: "builder_git_remote_add",
+        commandArgs: { name: input.name, remoteUrl: input.remoteUrl },
+        execute: ({ subdir, audit }) => addBuilderRepoRemote({ subdir, name: input.name!, remoteUrl: input.remoteUrl!, audit }),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, remoteNames: result.remotes.map((entry) => entry.name) }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoRemoteArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_git_remote_remove",
+      description: "Remove a remote from a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
           name: { type: "string" },
         },
         required: ["name"],
       },
-      execute: async ({ subdir, name }: BuilderRepoBranchArgs) => switchBuilderRepoBranch({ subdir, name }),
-    } satisfies ToolDefinition<BuilderRepoBranchArgs, ReturnType<typeof switchBuilderRepoBranch>>)),
+      execute: async (input: BuilderRepoRemoteArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_REMOTE",
+        title: "Remove git remote",
+        command: "builder_git_remote_remove",
+        commandArgs: { name: input.name },
+        execute: ({ subdir, audit }) => removeBuilderRepoRemote({ subdir, name: input.name!, audit }),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, remoteNames: result.remotes.map((entry) => entry.name) }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoRemoteArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_git_fetch",
+      description: "Fetch from an allowlisted remote for a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          remote: { type: "string" },
+          refspec: { type: "string" },
+        },
+      },
+      execute: async (input: BuilderRepoRemoteArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_FETCH",
+        title: "Fetch git remote",
+        command: "builder_git_fetch",
+        commandArgs: { remote: input.remote, refspec: input.refspec },
+        execute: ({ subdir, audit }) => fetchBuilderRepoRemote({ subdir, remote: input.remote, refspec: input.refspec, audit }),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, ahead: result.ahead, behind: result.behind }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoRemoteArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_git_pull",
+      description: "Pull from an allowlisted remote for a Builder-managed repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          remote: { type: "string" },
+          branch: { type: "string" },
+        },
+      },
+      execute: async (input: BuilderRepoRemoteArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_PULL",
+        title: "Pull git remote",
+        command: "builder_git_pull",
+        commandArgs: { remote: input.remote, branch: input.branch },
+        execute: ({ subdir, audit }) => pullBuilderRepoRemote({ subdir, remote: input.remote, branch: input.branch, audit }),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, currentBranch: result.currentBranch, headCommitSha: result.headCommitSha }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoRemoteArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_git_push",
+      description: "Push to an allowlisted remote for a Builder-managed repository with explicit approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          subdir: { type: "string" },
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          remote: { type: "string" },
+          branch: { type: "string" },
+          setUpstream: { type: "boolean", default: false },
+          force: { type: "boolean", default: false },
+          confirmed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["confirmed", "reason"],
+      },
+      execute: async (input: BuilderRepoRemoteArgs) => {
+        const approvalReason = assertExplicitGovernanceApproval({ confirmed: Boolean(input.confirmed), reason: input.reason ?? "" }, "Builder git push");
+        return executeBuilderGitMutation({
+          repoArgs: input,
+          kind: "GIT_PUSH",
+          title: "Push git remote",
+          command: "builder_git_push",
+          commandArgs: { remote: input.remote, branch: input.branch, setUpstream: Boolean(input.setUpstream), force: Boolean(input.force) },
+          metadata: { approvalReason },
+          execute: ({ subdir, audit }) => pushBuilderRepoRemote({ subdir, remote: input.remote, branch: input.branch, setUpstream: input.setUpstream, force: input.force, audit }),
+          resultMetadata: (result) => ({ repoRoot: result.repoRoot, currentBranch: result.currentBranch, ahead: result.ahead, behind: result.behind }),
+        });
+      },
+    } satisfies ToolDefinition<BuilderRepoRemoteArgs, ToolExecutionResult>)),
+    registerTool(defineTool({
+      name: "builder_git_clone",
+      description: "Clone an allowlisted remote into the external Builder workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          taskId: { type: "string" },
+          runId: { type: "string" },
+          remoteUrl: { type: "string" },
+          targetPath: { type: "string" },
+          branch: { type: "string" },
+        },
+        required: ["remoteUrl", "targetPath"],
+      },
+      execute: async (input: BuilderRepoRemoteArgs) => executeBuilderGitMutation({
+        repoArgs: input,
+        kind: "GIT_CLONE",
+        title: "Clone git repository",
+        command: "builder_git_clone",
+        commandArgs: { remoteUrl: input.remoteUrl, targetPath: input.targetPath, branch: input.branch },
+        execute: ({ audit }) => cloneBuilderRepo({ remoteUrl: input.remoteUrl!, targetPath: input.targetPath!, branch: input.branch, audit }),
+        resultMetadata: (result) => ({ repoRoot: result.repoRoot, currentBranch: result.currentBranch, headCommitSha: result.headCommitSha, targetPath: input.targetPath }),
+      }),
+    } satisfies ToolDefinition<BuilderRepoRemoteArgs, ToolExecutionResult>)),
   ],
 };

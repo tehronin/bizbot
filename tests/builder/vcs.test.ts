@@ -7,6 +7,12 @@ import {
   commitBuilderRepo,
   createBuilderRepoBranch,
   getBuilderRepoStatus,
+  getBuilderRepoLog,
+  listBuilderRepoBranches,
+  listBuilderRepoRemotes,
+  listBuilderRepoTags,
+  revParseBuilderRepo,
+  showBuilderRepoObject,
 } from "@/lib/builder/vcs";
 
 function createTempBuilderWorkspace(): string {
@@ -24,6 +30,17 @@ function createTempBuilderRepo(): { workspaceRoot: string; repoPath: string } {
   execFileSync("git", ["add", "README.md"], { cwd: repoPath, stdio: "ignore" });
   execFileSync("git", ["commit", "-m", "seed"], { cwd: repoPath, stdio: "ignore" });
   return { workspaceRoot, repoPath };
+}
+
+function createTempBuilderRepoWithMetadata(): { workspaceRoot: string; repoPath: string; remotePath: string } {
+  const { workspaceRoot, repoPath } = createTempBuilderRepo();
+  const remotePath = path.join(workspaceRoot, "remotes", "origin.git");
+  fs.mkdirSync(path.dirname(remotePath), { recursive: true });
+  execFileSync("git", ["init", "--bare", remotePath], { stdio: "ignore" });
+  execFileSync("git", ["remote", "add", "origin", remotePath], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["tag", "v1.0.0"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["branch", "feature/observer-test"], { cwd: repoPath, stdio: "ignore" });
+  return { workspaceRoot, repoPath, remotePath };
 }
 
 afterEach(() => {
@@ -68,5 +85,33 @@ describe("builder vcs", () => {
 
     expect(status.currentBranch).toBe("feature/direct-vcs-test");
     expect(fs.existsSync(path.join(workspaceRoot, status.auditPath))).toBe(true);
+  });
+
+  it("returns rich observer state for log, show, branches, tags, remotes, and rev-parse", () => {
+    const { workspaceRoot } = createTempBuilderRepoWithMetadata();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const status = getBuilderRepoStatus("projects/repo-demo");
+    const log = getBuilderRepoLog({ subdir: "projects/repo-demo", limit: 1 });
+    const show = showBuilderRepoObject({ subdir: "projects/repo-demo", revision: "HEAD", stat: true });
+    const branches = listBuilderRepoBranches({ subdir: "projects/repo-demo" });
+    const tags = listBuilderRepoTags({ subdir: "projects/repo-demo" });
+    const remotes = listBuilderRepoRemotes({ subdir: "projects/repo-demo" });
+    const revParse = revParseBuilderRepo({ subdir: "projects/repo-demo", revision: "HEAD" });
+
+    expect(status.headCommitSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(status.dirty).toBe(false);
+    expect(status.conflictedFiles).toEqual([]);
+    expect(status.tagCount).toBe(1);
+    expect(status.remoteCount).toBe(1);
+    expect(status.remoteNames).toEqual(["origin"]);
+
+    expect(log.entries).toHaveLength(1);
+    expect(log.entries[0]?.subject).toBe("seed");
+    expect(show.output).toContain("seed");
+    expect(branches.branches.map((entry) => entry.name)).toEqual(expect.arrayContaining(["feature/observer-test", status.currentBranch ?? ""]));
+    expect(tags.tags.map((entry) => entry.name)).toEqual(["v1.0.0"]);
+    expect(remotes.remotes[0]).toEqual(expect.objectContaining({ name: "origin" }));
+    expect(revParse.value).toBe(status.headCommitSha);
   });
 });

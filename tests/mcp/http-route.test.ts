@@ -1,5 +1,44 @@
-import { describe, expect, it } from "vitest";
+import { execFileSync } from "child_process";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { afterEach, describe, expect, it } from "vitest";
 import { DELETE, GET, POST } from "@/app/api/mcp/route";
+
+function createTempBuilderWorkspace(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-mcp-builder-"));
+}
+
+function createTempBuilderRepo(): { workspaceRoot: string; repoPath: string } {
+  const workspaceRoot = createTempBuilderWorkspace();
+  const repoPath = path.join(workspaceRoot, "projects", "repo-demo");
+  fs.mkdirSync(repoPath, { recursive: true });
+  execFileSync("git", ["init"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "builder@example.com"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Builder Test"], { cwd: repoPath, stdio: "ignore" });
+  fs.writeFileSync(path.join(repoPath, "README.md"), "seed\n", "utf-8");
+  execFileSync("git", ["add", "README.md"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "seed"], { cwd: repoPath, stdio: "ignore" });
+  return { workspaceRoot, repoPath };
+}
+
+function createTempBuilderRepoWithBareRemote(): {
+  workspaceRoot: string;
+  repoPath: string;
+  remotePath: string;
+  branchName: string;
+} {
+  const { workspaceRoot, repoPath } = createTempBuilderRepo();
+  const remotePath = path.join(workspaceRoot, "remotes", "origin.git");
+  fs.mkdirSync(path.dirname(remotePath), { recursive: true });
+  execFileSync("git", ["init", "--bare", remotePath], { stdio: "ignore" });
+  const branchName = execFileSync("git", ["branch", "--show-current"], {
+    cwd: repoPath,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+  }).trim();
+  return { workspaceRoot, repoPath, remotePath, branchName };
+}
 
 async function callMcp(
   method: string,
@@ -27,6 +66,11 @@ async function callMcp(
     body: await response.json(),
   };
 }
+
+afterEach(() => {
+  delete process.env.BIZBOT_BUILDER_WORKSPACE_PATH;
+  delete process.env.BIZBOT_BUILDER_ALLOWED_REMOTES;
+});
 
 describe("MCP HTTP route", () => {
   it("initializes with server metadata", async () => {
@@ -56,6 +100,10 @@ describe("MCP HTTP route", () => {
 
     expect(result.status).toBe(200);
     expect(result.body.result.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "builder_repo_status" }),
+      expect.objectContaining({ name: "builder_git_add" }),
+      expect.objectContaining({ name: "builder_git_commit" }),
+      expect.objectContaining({ name: "builder_git_push" }),
       expect.objectContaining({ name: "developer_inspect_plugin_registry" }),
       expect.objectContaining({ name: "developer_inspect_ontology_schema" }),
       expect.objectContaining({ name: "developer_preview_ontology_context" }),
@@ -67,6 +115,141 @@ describe("MCP HTTP route", () => {
     expect(result.body.result.tools).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "agent_delegate_run" }),
     ]));
+  });
+
+  it("executes Builder git tools through JSON-RPC against a temp repo", async () => {
+    const { workspaceRoot, repoPath } = createTempBuilderRepo();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const repoStatusResult = await callMcp("tools/call", {
+      name: "builder_repo_status",
+      arguments: { subdir: "projects/repo-demo" },
+    }, "builder-status-1");
+
+    expect(repoStatusResult.status).toBe(200);
+    expect(repoStatusResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      currentBranch: expect.any(String),
+      headCommitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      dirty: false,
+    }));
+
+    fs.writeFileSync(path.join(repoPath, "notes.txt"), "mcp change\n", "utf-8");
+
+    const addResult = await callMcp("tools/call", {
+      name: "builder_git_add",
+      arguments: { subdir: "projects/repo-demo", paths: ["notes.txt"] },
+    }, "builder-add-1");
+
+    expect(addResult.status).toBe(200);
+    expect(addResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      stagedCount: expect.any(Number),
+      unstagedCount: expect.any(Number),
+    }));
+
+    const commitResult = await callMcp("tools/call", {
+      name: "builder_git_commit",
+      arguments: { subdir: "projects/repo-demo", message: "mcp test commit" },
+    }, "builder-commit-1");
+
+    expect(commitResult.status).toBe(200);
+    expect(commitResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      summary: expect.stringContaining("mcp test commit"),
+    }));
+  });
+
+  it("pushes to an allowlisted remote through JSON-RPC", async () => {
+    const { workspaceRoot, repoPath, remotePath, branchName } = createTempBuilderRepoWithBareRemote();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    process.env.BIZBOT_BUILDER_ALLOWED_REMOTES = remotePath;
+
+    const addRemoteResult = await callMcp("tools/call", {
+      name: "builder_git_remote_add",
+      arguments: {
+        subdir: "projects/repo-demo",
+        name: "origin",
+        remoteUrl: remotePath,
+      },
+    }, "builder-remote-add-1");
+
+    expect(addRemoteResult.status).toBe(200);
+    expect(addRemoteResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      remotes: [expect.objectContaining({ name: "origin" })],
+    }));
+
+    fs.writeFileSync(path.join(repoPath, "remote.txt"), "push me\n", "utf-8");
+
+    const stageResult = await callMcp("tools/call", {
+      name: "builder_git_add",
+      arguments: { subdir: "projects/repo-demo", paths: ["remote.txt"] },
+    }, "builder-remote-stage-1");
+
+    expect(stageResult.status).toBe(200);
+    expect(stageResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      stagedCount: expect.any(Number),
+    }));
+
+    const commitResult = await callMcp("tools/call", {
+      name: "builder_git_commit",
+      arguments: { subdir: "projects/repo-demo", message: "remote push commit" },
+    }, "builder-remote-commit-1");
+
+    expect(commitResult.status).toBe(200);
+    expect(commitResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+    }));
+
+    const pushResult = await callMcp("tools/call", {
+      name: "builder_git_push",
+      arguments: {
+        subdir: "projects/repo-demo",
+        remote: "origin",
+        branch: branchName,
+        setUpstream: true,
+        confirmed: true,
+        reason: "verify MCP allowlisted remote push",
+      },
+    }, "builder-push-1");
+
+    expect(pushResult.status).toBe(200);
+    expect(pushResult.body.result.structuredContent).toEqual(expect.objectContaining({
+      repoRoot: "projects/repo-demo",
+      currentBranch: branchName,
+      ahead: 0,
+      behind: 0,
+    }));
+  });
+
+  it("rejects non-allowlisted remotes at the Builder tool boundary", async () => {
+    const { workspaceRoot, remotePath } = createTempBuilderRepoWithBareRemote();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+    process.env.BIZBOT_BUILDER_ALLOWED_REMOTES = path.join(workspaceRoot, "remotes", "different.git");
+
+    const blockedResult = await callMcp("tools/call", {
+      name: "builder_git_remote_add",
+      arguments: {
+        subdir: "projects/repo-demo",
+        name: "origin",
+        remoteUrl: remotePath,
+      },
+    }, "builder-remote-blocked-1");
+
+    expect(blockedResult.status).toBe(200);
+    expect(blockedResult.body.result).toEqual(expect.objectContaining({
+      isError: true,
+      content: expect.arrayContaining([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("Builder VCS remote is not allowlisted"),
+        }),
+      ]),
+    }));
   });
 
   it("executes a real tool call through JSON-RPC", async () => {

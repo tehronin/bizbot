@@ -19,6 +19,7 @@ export interface BuilderConfig {
   allowedCommands: string[];
   allowedHosts: string[];
   allowedDatabases: string[];
+  allowedRemotes: string[];
   defaultTemplate: string;
   defaultPackageManager: "NPM" | "PNPM";
   initializeGitByDefault: boolean;
@@ -106,12 +107,55 @@ function parseCsvEnv(raw: string | undefined): string[] {
   return Array.from(new Set(raw.split(",").map((value) => value.trim()).filter(Boolean)));
 }
 
+function normalizeRemoteUrlPathname(pathname: string): string {
+  return pathname.replace(/\\/g, "/");
+}
+
+export function normalizeBuilderRemoteUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new Error("Builder remote URL cannot be empty.");
+  }
+
+  if (/^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith("./") || trimmed.startsWith("../") || trimmed.startsWith(".\\") || trimmed.startsWith("..\\") || trimmed.startsWith("/") || trimmed.startsWith("\\\\")) {
+    return new URL(`file://${normalizeRemoteUrlPathname(path.resolve(/* turbopackIgnore: true */ trimmed))}`).toString().toLowerCase();
+  }
+
+  const scpMatch = trimmed.match(/^([^@\s]+)@([^:\s]+):(.+)$/);
+  if (scpMatch) {
+    const [, user, host, remotePath] = scpMatch;
+    return `ssh://${user}@${host.toLowerCase()}/${normalizeRemoteUrlPathname(remotePath)}`;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "file:") {
+      parsed.pathname = normalizeRemoteUrlPathname(parsed.pathname);
+    }
+    parsed.hostname = parsed.hostname.toLowerCase();
+    return parsed.toString().toLowerCase();
+  } catch {
+    throw new Error(`Builder remote URL is invalid: ${trimmed}`);
+  }
+}
+
 export function getBuilderAllowedHosts(): string[] {
   return parseCsvEnv(process.env.BIZBOT_BUILDER_ALLOWED_HOSTS);
 }
 
 export function getBuilderAllowedDatabases(): string[] {
   return parseCsvEnv(process.env.BIZBOT_BUILDER_ALLOWED_DATABASES);
+}
+
+export function getBuilderAllowedRemotes(): string[] {
+  return parseCsvEnv(process.env.BIZBOT_BUILDER_ALLOWED_REMOTES)
+    .flatMap((value) => {
+      try {
+        return [normalizeBuilderRemoteUrl(value)];
+      } catch {
+        return [];
+      }
+    });
 }
 
 export function getBuilderConfig(): BuilderConfig {
@@ -131,6 +175,7 @@ export function getBuilderConfig(): BuilderConfig {
     allowedCommands: getBuilderAllowedCommands(),
     allowedHosts: getBuilderAllowedHosts(),
     allowedDatabases: getBuilderAllowedDatabases(),
+    allowedRemotes: getBuilderAllowedRemotes(),
     defaultTemplate: process.env.BIZBOT_BUILDER_DEFAULT_TEMPLATE?.trim() || DEFAULT_TEMPLATE,
     defaultPackageManager: process.env.BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER === "PNPM" ? "PNPM" : DEFAULT_PACKAGE_MANAGER,
     initializeGitByDefault: parseBoolean(process.env.BIZBOT_BUILDER_INIT_GIT, true),
