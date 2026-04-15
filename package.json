@@ -23,7 +23,7 @@
     "lint": "eslint",
     "lint:docs": "markdownlint-cli2 \"README.md\" \"CONTRIBUTING.md\" \"CHANGELOG.md\" \"docs/**/*.md\"",
     "test": "node ./node_modules/vitest/vitest.mjs run",
-    "test:app": "node ./node_modules/vitest/vitest.mjs run --exclude tests/mcp/** --exclude tests/plugins/** --passWithNoTests",
+    "test:app": "node ./node_modules/vitest/vitest.mjs run --config vitest.app.config.ts --passWithNoTests",
     "test:watch": "node ./node_modules/vitest/vitest.mjs",
     "test:mcp": "node ./node_modules/vitest/vitest.mjs run tests/mcp tests/plugins",
     "test:mcp:sampling": "node ./node_modules/vitest/vitest.mjs run tests/mcp/sampling.test.ts tests/mcp/stdio-sampling-e2e.test.ts tests/mcp/server.test.ts tests/mcp/http-route.test.ts tests/mcp/stdio-env.test.ts tests/mcp/sampling-policy-resource.test.ts",
