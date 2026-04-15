@@ -89,7 +89,9 @@ export async function validateBuilderContainerStage(args: {
 
     if (!wasRunning) {
       const startResult = await startBuilderRuntimeService(baseArgs);
-      auditPaths.push(startResult.auditPath ?? null);
+      if (startResult.auditPath) {
+        auditPaths.push(startResult.auditPath);
+      }
       startedService = startResult.status === "completed";
       if (startResult.status !== "completed") {
         outcome = {
@@ -155,7 +157,9 @@ export async function validateBuilderContainerStage(args: {
         command: command.command,
         commandArgs: command.args,
       });
-      auditPaths.push(result.auditPath ?? null);
+      if (result.auditPath) {
+        auditPaths.push(result.auditPath);
+      }
       scriptChecks.push({
         script,
         command: command.display,
@@ -222,7 +226,9 @@ export async function validateBuilderContainerStage(args: {
     if ((args.stopAfterValidation ?? true) && !wasRunning) {
       try {
         const stopResult = await teardownBuilderRuntimeService(baseArgs);
-        auditPaths.push(stopResult.auditPath ?? null);
+        if (stopResult.auditPath) {
+          auditPaths.push(stopResult.auditPath);
+        }
         stoppedService = stopResult.status === "completed";
       } catch {
         stoppedService = false;

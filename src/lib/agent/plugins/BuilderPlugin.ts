@@ -1878,7 +1878,7 @@ export const builderPlugin = {
         command: preset,
         commandArgs: args,
         metadata: { serviceId, preset },
-        execute: async ({ project, builderRunId }) => testBuilderRuntimeContainer({
+        execute: async ({ project }) => testBuilderRuntimeContainer({
           projectId,
           projectRelativePath: project.relativePath,
           packageManager: project.packageManager,
@@ -1886,7 +1886,7 @@ export const builderPlugin = {
           preset,
           args,
           timeoutSeconds,
-        }).then((result) => ({ ...result, builderRunId })),
+        }),
         resultMetadata: (result) => ({
           serviceId: result.service.serviceId,
           exitCode: result.commandResult?.exitCode ?? null,
@@ -1920,7 +1920,7 @@ export const builderPlugin = {
         command,
         commandArgs,
         metadata: { serviceId },
-        execute: async ({ project, builderRunId }) => execBuilderRuntimeContainerCommand({
+        execute: async ({ project }) => execBuilderRuntimeContainerCommand({
           projectId,
           projectRelativePath: project.relativePath,
           packageManager: project.packageManager,
@@ -1928,7 +1928,7 @@ export const builderPlugin = {
           command,
           commandArgs,
           timeoutSeconds,
-        }).then((result) => ({ ...result, builderRunId })),
+        }),
         resultMetadata: (result) => ({
           serviceId: result.service.serviceId,
           exitCode: result.commandResult?.exitCode ?? null,
@@ -2010,10 +2010,10 @@ export const builderPlugin = {
         title: "Validate Docker-ready container stage",
         command: "builder_validate_container_stage",
         metadata: { workflow: "container_stage", stopAfterValidation: stopAfterValidation ?? true },
-        execute: async ({ project, builderRunId }) => validateBuilderContainerStage({
+        execute: async ({ project }) => validateBuilderContainerStage({
           project,
           stopAfterValidation,
-        }).then((result) => ({ ...result, builderRunId })),
+        }),
         resultMetadata: (result) => ({
           workflow: "container_stage",
           containerStatus: result.status,
