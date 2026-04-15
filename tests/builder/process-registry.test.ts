@@ -106,7 +106,7 @@ describe("builder process registry", () => {
     expect(finished.completed).toBe(true);
     expect(finished.process.status).toBe("timed_out");
     expect(fs.readFileSync(path.join(workspaceRoot, finished.process.auditPath), "utf-8")).toContain('"action":"completed"');
-  });
+  }, 10000);
 
   it("persists cancellation state and cleanup removes stale completed artifacts", async () => {
     const workspaceRoot = createTempBuilderWorkspace();

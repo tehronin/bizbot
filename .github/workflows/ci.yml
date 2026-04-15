@@ -24,6 +24,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Configure app test runtime paths
+        run: |
+          echo "BIZBOT_HOME_DIR=$RUNNER_TEMP/bizbot-home" >> "$GITHUB_ENV"
+          echo "BIZBOT_BUILDER_WORKSPACE_PATH=$RUNNER_TEMP/bizbot-builder-workspace" >> "$GITHUB_ENV"
+
+      - name: Prepare app test runtime directories
+        run: mkdir -p "$RUNNER_TEMP/bizbot-home" "$RUNNER_TEMP/bizbot-builder-workspace"
+
       - name: Run app test suite
         run: npm run test:app
 
