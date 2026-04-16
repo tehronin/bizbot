@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/mcp/route";
 import { buildCurrentBuilderMcpContractSnapshot, hashBuilderMcpContractSnapshot } from "@/lib/builder/mcp-snapshots";
 
@@ -21,6 +21,14 @@ async function callMcp(method: string, params: Record<string, unknown>, id: stri
 }
 
 describe("MCP contract snapshots", () => {
+  beforeEach(() => {
+    delete process.env.BIZBOT_PLUGIN_ORACLE_ENABLED;
+  });
+
+  afterEach(() => {
+    delete process.env.BIZBOT_PLUGIN_ORACLE_ENABLED;
+  });
+
   it("matches the stable normalized Builder MCP contract seed", () => {
     const snapshot = buildCurrentBuilderMcpContractSnapshot();
 
@@ -276,10 +284,6 @@ describe("MCP contract snapshots", () => {
           "memory_recall",
           "memory_remember",
           "memory_set_fact",
-          "oracle_analyze_prediction",
-          "oracle_get_market_verdict",
-          "oracle_open_personality_selector",
-          "oracle_search_markets",
           "schedule_list",
           "sidecar_close",
           "sidecar_open",
@@ -467,10 +471,6 @@ describe("MCP contract snapshots", () => {
         "memory_recall",
         "memory_remember",
         "memory_set_fact",
-        "oracle_analyze_prediction",
-        "oracle_get_market_verdict",
-        "oracle_open_personality_selector",
-        "oracle_search_markets",
         "schedule_list",
         "sidecar_close",
         "sidecar_open",

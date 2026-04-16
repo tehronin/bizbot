@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const memoryMocks = vi.hoisted(() => ({
   buildContextForPrompt: vi.fn(),
@@ -94,6 +94,7 @@ import { executeAgentConversation } from "@/lib/agent/executor";
 
 describe("agent executor explicit memory", () => {
   beforeEach(() => {
+    process.env.BIZBOT_PLUGIN_ORACLE_ENABLED = "true";
     vi.clearAllMocks();
 
     memoryMocks.getOrCreateConversation.mockResolvedValue("conversation-1");
@@ -176,6 +177,10 @@ describe("agent executor explicit memory", () => {
     }));
     runJournalMocks.countDelegationDepth.mockReturnValue(0);
     runJournalMocks.getDelegationChain.mockReturnValue(["content_operator"]);
+  });
+
+  afterEach(() => {
+    delete process.env.BIZBOT_PLUGIN_ORACLE_ENABLED;
   });
 
   it("injects a separate user memory block before Context when facts exist", async () => {
