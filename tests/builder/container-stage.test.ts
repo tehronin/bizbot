@@ -10,6 +10,15 @@ const mocks = vi.hoisted(() => ({
   getBuilderRuntimeContainerLogs: vi.fn(),
 }));
 
+vi.mock("@/lib/builder/config", () => ({
+  resolveBuilderWorkspacePath: vi.fn((rel: string) => `/workspace-root/${rel}`),
+}));
+
+vi.mock("fs", () => ({
+  default: { existsSync: vi.fn(() => true) },
+  existsSync: vi.fn(() => true),
+}));
+
 vi.mock("@/lib/builder/runtime-orchestration", () => ({
   getBuilderRuntimeContainer: mocks.getBuilderRuntimeContainer,
   startBuilderRuntimeService: mocks.startBuilderRuntimeService,

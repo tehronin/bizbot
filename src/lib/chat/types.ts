@@ -17,6 +17,66 @@ export interface ChatConversationHistoryFilters {
   to: string | null;
 }
 
+export interface ChatBuilderProjectSummary {
+  id: string;
+  name: string;
+  relativePath: string;
+}
+
+export interface ChatBuilderStackPresetSummary {
+  key: string;
+  displayName: string;
+  description: string;
+  template: string;
+  packageManager: string;
+  tags: string[];
+}
+
+export interface ChatBuilderTemplateSummary {
+  key: string;
+  displayName: string;
+  description: string;
+  defaultPackageManager: string;
+}
+
+export type BuilderOnboardingStep = "idle" | "naming" | "stack" | "configuring" | "confirming";
+
+export interface BuilderOnboardingSpec {
+  name: string;
+  description: string;
+  stackPresetKey: string;
+  template: string;
+  packageManager: string;
+  docker: boolean;
+  git: boolean;
+}
+
+export interface BuilderChatCardAction {
+  id: "approve" | "reject" | "reconcile";
+  label: string;
+  variant: "primary" | "danger" | "neutral";
+}
+
+export interface BuilderChatCard {
+  id: string;
+  interactionId: string;
+  kind: "mcp_policy_reconciliation" | "mcp_contract_drift" | "dependency_contract_drift" | "file_topology_contract_drift" | "task_execution";
+  status: "pending" | "approved" | "rejected" | "resolved" | "planned" | "running" | "succeeded" | "failed" | "cancelled";
+  projectId: string;
+  projectName: string;
+  projectRelativePath: string;
+  runId: string | null;
+  taskId?: string | null;
+  title: string;
+  summary: string;
+  state: string;
+  recommendations: string[];
+  actions: BuilderChatCardAction[];
+  updatedAt: string;
+  resolvedAt: string | null;
+  resolutionReason?: string | null;
+}
+
 export interface ChatConversationPagination {
   currentPage: number;
   pageSize: number;
@@ -33,6 +93,7 @@ export interface ChatConversationMessage {
     chatMode?: ChatExecutionMode;
     chatPluginId?: string;
     attachments?: ChatMessageAttachment[];
+    builderCards?: BuilderChatCard[];
   } | null;
 }
 
@@ -79,7 +140,11 @@ export interface ChatConversationBootstrap {
   currentConversation: ChatConversationDetail | null;
   executionDefaults: ChatExecutionDefaults;
   executionCatalog: ChatExecutionCatalog;
+  builderProjects: ChatBuilderProjectSummary[];
+  builderStackPresets: ChatBuilderStackPresetSummary[];
+  builderTemplates: ChatBuilderTemplateSummary[];
   activeRun: ChatConversationUsageSummary;
+  builderInbox: BuilderChatCard[];
   modelPricing: Record<string, UsageLedgerModelPricing>;
   recentConversations: ChatConversationSummary[];
   archivedConversations: ChatConversationSummary[];

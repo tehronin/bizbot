@@ -12,6 +12,7 @@ function parseUpdateProjectRequest(value: object | null): {
   template?: string;
   packageManager?: BuilderPackageManager;
   gitInitialized?: boolean;
+  archived?: boolean;
 } {
   if (!value || Array.isArray(value)) {
     throw new Error("Invalid builder project payload.");
@@ -23,6 +24,7 @@ function parseUpdateProjectRequest(value: object | null): {
     template: typeof candidate.template === "string" ? candidate.template : undefined,
     packageManager: parsePackageManager(candidate.packageManager),
     gitInitialized: typeof candidate.gitInitialized === "boolean" ? candidate.gitInitialized : undefined,
+    archived: typeof candidate.archived === "boolean" ? candidate.archived : undefined,
   };
 }
 
@@ -45,7 +47,14 @@ export async function PATCH(
 ) {
   try {
     const { id } = await context.params;
-    const project = await updateBuilderProject(id, parseUpdateProjectRequest(await req.json()));
+    const payload = parseUpdateProjectRequest(await req.json());
+    const project = await updateBuilderProject(id, {
+      name: payload.name,
+      template: payload.template,
+      packageManager: payload.packageManager,
+      gitInitialized: payload.gitInitialized,
+      ...(payload.archived !== undefined ? { archivedAt: payload.archived ? new Date() : null } : {}),
+    });
     return Response.json({ project });
   } catch (error) {
     return Response.json({ error: String(error) }, { status: 500 });

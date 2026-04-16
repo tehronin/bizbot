@@ -43,7 +43,11 @@ import {
   routeAgentProfile,
   type AgentProfile,
 } from "@/lib/agent/profiles";
-import { getOraclePredictionIntent } from "@/lib/oracle/intent";
+import {
+  getOraclePredictionIntent,
+  isMeaningfulOraclePredictionTarget,
+  parseOraclePredictionTarget,
+} from "@/lib/oracle/intent";
 import { syncActiveSidecarPanel } from "@/lib/sidecar/state";
 import { buildSidecarStreamEvent, isSidecarToolResult } from "@/lib/sidecar/validation";
 import type { SidecarStreamEvent } from "@/lib/sidecar/types";
@@ -355,9 +359,22 @@ export async function executeAgentConversation(
   }
   await emitStatus(onEvent, `Using conversation ${resolvedConversationId}.`);
   const routedProfileDecision = routeAgentProfile(message);
-  const oracleIntent = oraclePrediction ? getOraclePredictionIntent(message) : { matched: false, query: "" };
-  const selectedProfile = oraclePrediction ? "research_operator" : getChatExecutionProfile(executionSelection);
-  const profileDecision = oraclePrediction
+  const isOraclePlugin = isOracleChatExecutionSelection(executionSelection);
+  const oracleIntent = (oraclePrediction || isOraclePlugin) ? getOraclePredictionIntent(message) : { matched: false, query: "" };
+  // When Oracle is explicitly selected via dropdown but the message doesn't contain
+  // "oracle predict" keywords, only force Oracle if the message parses into a
+  // meaningful prediction target. Conversational follow-ups like "are you sure?"
+  // should fall through to the normal agent path.
+  const oracleExplicitTarget = (isOraclePlugin && !oracleIntent.matched) ? parseOraclePredictionTarget(message) : null;
+  const oracleExplicitQualified = isMeaningfulOraclePredictionTarget(oracleExplicitTarget);
+  const effectiveOracleIntent = oracleIntent.matched
+    ? oracleIntent
+    : oracleExplicitQualified
+      ? { matched: true as const, query: message.trim() }
+      : oracleIntent;
+  const oracleWillRunPrediction = effectiveOracleIntent.matched && effectiveOracleIntent.query.trim().length > 0;
+  const selectedProfile = oracleWillRunPrediction ? "research_operator" : getChatExecutionProfile(executionSelection);
+  const profileDecision = oracleWillRunPrediction
     ? {
         profile: selectedProfile,
         reason: "Oracle prediction was explicitly triggered from the Oracle chat plugin.",
@@ -514,21 +531,7 @@ export async function executeAgentConversation(
   let round = 0;
 
   try {
-    if (oraclePrediction) {
-      if (!oracleIntent.matched || !oracleIntent.query.trim()) {
-        return finalizeAssistantReply({
-          reply: "Oracle prediction needs a prompt containing both 'oracle' and 'predict' or 'prediction', plus a market topic to search.",
-          round,
-          resolvedConversationId,
-          resolvedUserId,
-          runId: run.runId,
-          profile: profileDecision.profile,
-          provider: resolvedProvider,
-          model: resolvedModel,
-          onEvent,
-          metadata: { oraclePrediction: true, oracleQuery: oracleIntent.query },
-        });
-      }
+    if (oracleWillRunPrediction) {
 
       const executeOracleTool = async (toolName: string, args: JsonObject): Promise<ToolExecutionResult> => {
         round += 1;
@@ -604,7 +607,7 @@ export async function executeAgentConversation(
 
       await emit(onEvent, {
         type: "status",
-        message: `Oracle is resolving a market target for "${oracleIntent.query}" and collecting odds evidence from enabled market sources.`,
+        message: `Oracle is resolving a market target for "${effectiveOracleIntent.query}" and collecting odds evidence from enabled market sources.`,
         round: round + 1,
       });
 
@@ -623,15 +626,18 @@ export async function executeAgentConversation(
         adjacentMatches: Array<{ question: string }>;
         summaryPacket: string;
         fallbackReply: string;
+        webResearch: Array<{ query: string; snippets: Array<{ url: string; title: string; excerpt: string }> }>;
+        trendSignals: Array<{ query: string; trendDirection: string; interestLevel: string; excerpt: string }>;
+        swarmTrace: { planId: string; durationMs: number; workerCount: number; completedCount: number; failedCount: number };
       };
 
       await emit(onEvent, {
         type: "status",
         message: analysisResult.evidenceMode === "exact_market"
-          ? "Oracle found an exact market match and is drafting a prediction from its odds."
+          ? `Oracle swarm found an exact market match and is drafting a prediction (${analysisResult.swarmTrace.workerCount} workers, ${analysisResult.swarmTrace.durationMs}ms).`
           : analysisResult.evidenceMode === "no_useful_match"
-            ? "Oracle found no active matching market support and is drafting a low-confidence negative prediction from that absence."
-          : "Oracle is drafting a prediction from adjacent market odds and sentiment.",
+            ? `Oracle swarm found no active matching market support but collected ${analysisResult.webResearch.length} web research results and ${analysisResult.trendSignals.length} trend signals for context.`
+          : `Oracle swarm is drafting a prediction from adjacent market odds, web research, and trend signals (${analysisResult.swarmTrace.workerCount} workers).`,
         round: round + 1,
       });
 
@@ -639,7 +645,7 @@ export async function executeAgentConversation(
       const oracleResponse = await chatComplete([
         {
           role: "system",
-          content: "You are Oracle, a market-sentiment prediction narrator. Ground every sentence in the supplied evidence packet. Do not invent markets, odds, or external facts. Keep the reply concise, state whether the evidence is exact or adjacent, mention implied probability and confidence, and adopt the specified Oracle personality style.",
+          content: "You are Oracle, a market-sentiment prediction narrator. Ground every sentence in the supplied evidence packet which includes prediction market odds, web OSINT research, and search trend signals gathered by a parallel swarm. Do not invent markets, odds, or external facts. When market data is weak, leverage web research and trends to form a more informed prediction. Keep the reply concise, state whether the evidence is exact or adjacent, mention implied probability and confidence, reference key web findings and trend direction if available, and adopt the specified Oracle personality style.",
         },
         {
           role: "user",
@@ -673,7 +679,7 @@ export async function executeAgentConversation(
         onEvent,
         metadata: {
           oraclePrediction: true,
-          oracleQuery: oracleIntent.query,
+          oracleQuery: effectiveOracleIntent.query,
           oracleEvidenceMode: analysisResult.evidenceMode,
           oracleImpliedProbability: analysisResult.impliedProbability,
           chatMode: executionSelection.mode,

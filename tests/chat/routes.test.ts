@@ -67,6 +67,16 @@ describe("chat conversation routes", () => {
         totalTokens: 165,
         cachedPromptTokens: 5,
       },
+      builderProjects: [
+        {
+          id: "project-1",
+          name: "Alpha",
+          relativePath: "workspace/alpha",
+        },
+      ],
+      builderStackPresets: [],
+      builderTemplates: [],
+      builderInbox: [],
       modelPricing: {
         "gemini-3-flash-preview": {
           promptUsdPerMillion: 0.45,

@@ -2,8 +2,9 @@ import { defineTool, registerTool, type ToolDefinition } from "@/lib/agent/tools
 import { resolveAgentUserId } from "@/lib/agent/user-context";
 import { isBuiltinPluginEnabled } from "@/lib/agent/plugins/settings";
 import { getPolymarketMarket, searchPolymarketMarkets } from "@/lib/polymarket/service";
-import { resolveOraclePredictionEvidence, type OracleEvidenceBundle, type OracleMarketCandidate } from "@/lib/oracle/evidence";
+import { type OracleEvidenceBundle, type OracleMarketCandidate } from "@/lib/oracle/evidence";
 import { parseOraclePredictionTarget } from "@/lib/oracle/intent";
+import { resolveOracleSwarmEvidence, type OracleWebResearchResult, type OracleTrendSignal } from "@/lib/oracle/swarm";
 import {
   buildOracleFallbackReply,
   formatOracleEvidencePacket,
@@ -56,6 +57,15 @@ interface OracleAnalyzePredictionResult {
   adjacentMatches: Array<ReturnType<typeof summarizeCandidate>>;
   summaryPacket: string;
   fallbackReply: string;
+  webResearch: OracleWebResearchResult[];
+  trendSignals: OracleTrendSignal[];
+  swarmTrace: {
+    planId: string;
+    durationMs: number;
+    workerCount: number;
+    completedCount: number;
+    failedCount: number;
+  };
 }
 
 function ensureOracleEnabled(): void {
@@ -340,7 +350,7 @@ export const oraclePlugin = {
     } satisfies ToolDefinition<OracleMarketVerdictArgs, { market: Awaited<ReturnType<typeof getPolymarketMarket>>; verdict: ReturnType<typeof buildOracleVerdict>; summary: string }>)),
     registerTool(defineTool({
       name: "oracle_analyze_prediction",
-      description: "Resolve a user prediction target against Polymarket, score exact versus adjacent markets, and return an odds-and-sentiment evidence packet for Oracle narration.",
+      description: "Resolve a user prediction target using parallel swarm workers: prediction markets (Kalshi, Polymarket), web OSINT research, and Google Trends analysis. Returns an evidence packet with market odds, web research snippets, and trend signals for Oracle narration.",
       parameters: {
         type: "object",
         properties: {
@@ -363,7 +373,8 @@ export const oraclePlugin = {
         }
 
         const resolvedPersonality = await resolveOraclePersonality(userId, personality);
-        const evidence = await resolveOraclePredictionEvidence(target, { limit });
+        const swarmBundle = await resolveOracleSwarmEvidence(target, { limit });
+        const evidence = swarmBundle.market;
         return {
           target: evidence.target,
           personality: resolvedPersonality,
@@ -380,6 +391,9 @@ export const oraclePlugin = {
           adjacentMatches: evidence.adjacentMatches.map((candidate) => summarizeCandidate(candidate)),
           summaryPacket: formatOracleEvidencePacket(evidence, resolvedPersonality),
           fallbackReply: buildOracleFallbackReply(evidence, resolvedPersonality),
+          webResearch: swarmBundle.webResearch,
+          trendSignals: swarmBundle.trendSignals,
+          swarmTrace: swarmBundle.swarmTrace,
         } satisfies OracleAnalyzePredictionResult;
       },
     } satisfies ToolDefinition<OracleAnalyzePredictionArgs, OracleAnalyzePredictionResult>)),

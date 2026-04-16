@@ -181,11 +181,11 @@ describe("builder routes", () => {
     ]);
     mocks.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
     mocks.listBuilderProjects.mockResolvedValue([
-      { id: "project-1", name: "Demo", slug: "demo", relativePath: "projects/demo", template: "node-cli", packageManager: "NPM", gitInitialized: false, lifecycle: "ACTIVE", lastRunStatus: "IDLE", workspaceState: "present" },
+      { id: "project-1", name: "Demo", slug: "demo", relativePath: "projects/demo", template: "node-cli", packageManager: "NPM", gitInitialized: false, archivedAt: null, lifecycle: "ACTIVE", lastRunStatus: "IDLE", workspaceState: "present" },
     ]);
     mocks.reconcileBuilderWorkspaceProjects.mockResolvedValue({
       projects: [
-        { id: "project-1", name: "Demo", slug: "demo", relativePath: "projects/demo", template: "node-cli", packageManager: "NPM", gitInitialized: false, lifecycle: "ACTIVE", lastRunStatus: "IDLE", workspaceState: "present" },
+        { id: "project-1", name: "Demo", slug: "demo", relativePath: "projects/demo", template: "node-cli", packageManager: "NPM", gitInitialized: false, archivedAt: null, lifecycle: "ACTIVE", lastRunStatus: "IDLE", workspaceState: "present" },
       ],
       scanned: 1,
       verified: 1,
@@ -205,6 +205,7 @@ describe("builder routes", () => {
       template: "node-cli",
       packageManager: "NPM",
       gitInitialized: false,
+      archivedAt: null,
       lifecycle: "ACTIVE",
       lastRunStatus: "IDLE",
     });
@@ -1257,6 +1258,39 @@ describe("builder routes", () => {
     expect(deleteResponse.status).toBe(200);
     expect(mocks.deleteBuilderProject).toHaveBeenCalledWith("project-1", { deleteFiles: true });
     expect(deletePayload.deletedFiles).toBe(true);
+  });
+
+  it("archives and restores a project item", async () => {
+    const archivedAt = new Date("2026-04-16T15:00:00.000Z");
+    mocks.updateBuilderProject
+      .mockResolvedValueOnce({ id: "project-1", name: "Demo", archivedAt })
+      .mockResolvedValueOnce({ id: "project-1", name: "Demo", archivedAt: null });
+
+    const archiveResponse = await patchProject(new NextRequest("http://localhost/api/builder/projects/project-1", {
+      method: "PATCH",
+      body: JSON.stringify({ archived: true }),
+      headers: { "Content-Type": "application/json" },
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const archivePayload = await archiveResponse.json();
+
+    expect(archiveResponse.status).toBe(200);
+    expect(mocks.updateBuilderProject).toHaveBeenNthCalledWith(1, "project-1", expect.objectContaining({ archivedAt: expect.any(Date) }));
+    expect(archivePayload.project.archivedAt).toBe(archivedAt.toISOString());
+
+    const restoreResponse = await patchProject(new NextRequest("http://localhost/api/builder/projects/project-1", {
+      method: "PATCH",
+      body: JSON.stringify({ archived: false }),
+      headers: { "Content-Type": "application/json" },
+    }), {
+      params: Promise.resolve({ id: "project-1" }),
+    });
+    const restorePayload = await restoreResponse.json();
+
+    expect(restoreResponse.status).toBe(200);
+    expect(mocks.updateBuilderProject).toHaveBeenNthCalledWith(2, "project-1", expect.objectContaining({ archivedAt: null }));
+    expect(restorePayload.project.archivedAt).toBeNull();
   });
 
   it("bootstraps a project using builder config defaults when request body is empty", async () => {

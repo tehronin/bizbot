@@ -1,6 +1,5 @@
 "use client";
 
-import { buildBuilderGovernanceCommandPayload } from "@/lib/builder/governance-shared";
 import { PaginationControls } from "@/components/layout/PaginationControls";
 import { usePagination } from "@/hooks/usePagination";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
@@ -63,6 +62,7 @@ interface BuilderProject {
   template: string;
   packageManager: "NPM" | "PNPM";
   gitInitialized: boolean;
+  archivedAt: string | null;
   lifecycle: "DRAFT" | "PLANNED" | "ACTIVE" | "BLOCKED" | "COMPLETE";
   lastRunStatus: "IDLE" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
   workspaceState: "present" | "missing" | "unavailable";
@@ -1038,12 +1038,14 @@ function buildHealthAlerts(metrics: BuilderHealthMetrics | null | undefined): Ar
 function selectPreferredProjectId(projects: BuilderProject[], currentProjectId?: string | null): string | null {
   if (currentProjectId) {
     const currentProject = projects.find((project) => project.id === currentProjectId) ?? null;
-    if (currentProject && (currentProject.workspaceState === "present" || !projects.some((project) => project.workspaceState === "present"))) {
+    if (currentProject) {
       return currentProjectId;
     }
   }
 
-  return projects.find((project) =>
+  const activeProjects = projects.filter((project) => !project.archivedAt);
+
+  return activeProjects.find((project) =>
     project.workspaceState === "present"
     && (
       project.lastRunStatus !== "IDLE"
@@ -1052,13 +1054,14 @@ function selectPreferredProjectId(projects: BuilderProject[], currentProjectId?:
       || project.lifecycle === "COMPLETE"
     )
   )?.id
-    ?? projects.find((project) => project.workspaceState === "present")?.id
-    ?? projects.find((project) =>
+    ?? activeProjects.find((project) => project.workspaceState === "present")?.id
+    ?? activeProjects.find((project) =>
       project.lastRunStatus !== "IDLE"
       || project.lifecycle === "ACTIVE"
       || project.lifecycle === "BLOCKED"
       || project.lifecycle === "COMPLETE"
     )?.id
+    ?? projects.find((project) => project.workspaceState === "present")?.id
     ?? projects[0]?.id
     ?? null;
 }
@@ -1193,7 +1196,6 @@ export default function BuilderPage() {
   const [createDraft, setCreateDraft] = useState(EMPTY_CREATE_PROJECT);
   const [installPackages, setInstallPackages] = useState("");
   const [scriptName, setScriptName] = useState("build");
-  const [taskRequest, setTaskRequest] = useState("");
   const [agenticPrompt, setAgenticPrompt] = useState("");
   const [agenticProfile, setAgenticProfile] = useState("");
   const [agenticModel, setAgenticModel] = useState("");
@@ -1207,9 +1209,8 @@ export default function BuilderPage() {
   const [error, setError] = useState<string | null>(null);
   const [resultNotice, setResultNotice] = useState<string | null>(null);
   const [dashboardToast, setDashboardToast] = useState<BuilderDashboardToast | null>(null);
-  const [governanceReason, setGovernanceReason] = useState("");
-  const [governanceConfirmed, setGovernanceConfirmed] = useState(false);
-  const [governanceAction, setGovernanceAction] = useState<BuilderGovernanceCommandAction | null>(null);
+  const [projectActionProjectId, setProjectActionProjectId] = useState<string | null>(null);
+  const [projectActionType, setProjectActionType] = useState<"archive" | "restore" | "delete" | null>(null);
   const briefDirtyRef = useRef(false);
   const briefDraftProjectIdRef = useRef<string | null>(null);
   const recentRunsRef = useRef<HTMLElement | null>(null);
@@ -1552,6 +1553,65 @@ export default function BuilderPage() {
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to reconcile Builder workspace projects.");
     } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setProjectArchived(projectId: string, archived: boolean): Promise<void> {
+    setSaving(true);
+    setProjectActionProjectId(projectId);
+    setProjectActionType(archived ? "archive" : "restore");
+    setError(null);
+    setResultNotice(null);
+    try {
+      const response = await fetch(`/api/builder/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ archived }),
+      });
+      const payload = await readJsonResponse<{ project?: BuilderProject; error?: string }>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? `Failed to ${archived ? "archive" : "restore"} builder project.`);
+      }
+
+      const nextSelectedProjectId = selectedProjectId === projectId ? projectId : selectedProjectId;
+      await refresh(nextSelectedProjectId);
+      setResultNotice(archived ? "Project archived from the active Builder list." : "Project restored to the active Builder list.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : `Failed to ${archived ? "archive" : "restore"} builder project.`);
+    } finally {
+      setProjectActionProjectId(null);
+      setProjectActionType(null);
+      setSaving(false);
+    }
+  }
+
+  async function deleteProjectHistory(projectId: string): Promise<void> {
+    setSaving(true);
+    setProjectActionProjectId(projectId);
+    setProjectActionType("delete");
+    setError(null);
+    setResultNotice(null);
+    try {
+      const response = await fetch(`/api/builder/projects/${projectId}`, {
+        method: "DELETE",
+      });
+      const payload = await readJsonResponse<{ deletedFiles?: boolean; error?: string }>(response);
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to delete builder project history.");
+      }
+
+      const remainingProjects = projects.filter((project) => project.id !== projectId);
+      const nextSelectedProjectId = selectedProjectId === projectId
+        ? selectPreferredProjectId(remainingProjects)
+        : selectedProjectId;
+      await refresh(nextSelectedProjectId);
+      setResultNotice("Project removed from Builder history. Workspace files were left untouched.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to delete builder project history.");
+    } finally {
+      setProjectActionProjectId(null);
+      setProjectActionType(null);
       setSaving(false);
     }
   }
@@ -2025,7 +2085,10 @@ export default function BuilderPage() {
 
   const selectedProject = projectDetail?.project ?? projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedTask = projectDetail?.tasks.find((task) => task.id === selectedTaskId) ?? projectDetail?.currentTask ?? null;
-  const projectsPagination = usePagination(projects, 15);
+  const activeProjects = useMemo(() => projects.filter((project) => !project.archivedAt), [projects]);
+  const archivedProjects = useMemo(() => projects.filter((project) => Boolean(project.archivedAt)), [projects]);
+  const activeProjectsPagination = usePagination(activeProjects, 15);
+  const archivedProjectsPagination = usePagination(archivedProjects, 15);
   const runsPagination = usePagination(projectDetail?.runs ?? [], 15);
   const healthAlerts = useMemo(() => buildHealthAlerts(projectDetail?.metrics ?? null), [projectDetail?.metrics]);
   const efficiencyTone = getEfficiencyTone(projectDetail?.metrics?.efficiency);
@@ -2035,64 +2098,6 @@ export default function BuilderPage() {
   const hasMcpGovernanceDrift = Boolean(projectDetail?.mcpSnapshot.drift && projectDetail?.mcpSnapshot.activeRunId);
   const dependencyGovernanceState = projectDetail?.dependencyContract.state ?? "not_available";
   const fileTopologyGovernanceState = projectDetail?.fileTopologyContract.state ?? "pending_capture";
-  const dependencyGovernanceNeedsReview = dependencyGovernanceState === "drifted" || dependencyGovernanceState === "pending_capture";
-  const fileTopologyGovernanceNeedsReview = fileTopologyGovernanceState === "drifted" || fileTopologyGovernanceState === "pending_capture";
-
-  function consumeGovernanceReason(actionLabel: string): string | null {
-    if (!governanceConfirmed) {
-      const message = `${actionLabel} requires explicit confirmation.`;
-      setError(message);
-      showDashboardToast({ tone: "warning", title: "Confirmation required", message });
-      return null;
-    }
-
-    const reason = governanceReason.trim();
-    if (!reason) {
-      const message = `${actionLabel} requires a written review reason.`;
-      setError(message);
-      showDashboardToast({ tone: "warning", title: "Reason required", message });
-      return null;
-    }
-
-    return reason;
-  }
-
-  async function runGovernanceAction(action: BuilderGovernanceCommandAction, body: Record<string, unknown>, successMessage: string): Promise<void> {
-    if (!selectedProjectId) {
-      setError("Select a project first.");
-      return;
-    }
-
-    setSaving(true);
-    setGovernanceAction(action);
-    setError(null);
-    setResultNotice(null);
-
-    try {
-      const response = await fetch(`/api/builder/projects/${selectedProjectId}/commands`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const payload = await readJsonResponse<{ error?: string }>(response);
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Governance action failed.");
-      }
-
-      setResultNotice(successMessage);
-      setGovernanceReason("");
-      setGovernanceConfirmed(false);
-      showDashboardToast({ tone: "success", title: "Governance action recorded", message: successMessage });
-      await refresh(selectedProjectId);
-    } catch (nextError) {
-      const message = nextError instanceof Error ? nextError.message : "Governance action failed.";
-      setError(message);
-      showDashboardToast({ tone: "danger", title: "Governance action failed", message });
-    } finally {
-      setGovernanceAction(null);
-      setSaving(false);
-    }
-  }
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -2242,45 +2247,164 @@ export default function BuilderPage() {
           <div className="space-y-3 text-sm">
             {projects.length === 0 ? (
               <div style={{ color: "var(--text-dim)" }}>No builder projects yet.</div>
-            ) : projectsPagination.pageItems.map((project) => (
-              <button
-                key={project.id}
-                onClick={() => setSelectedProjectId(project.id)}
-                className="w-full border p-3 text-left"
-                style={{
-                  borderColor: project.id === selectedProjectId ? "var(--accent)" : "var(--border-sub)",
-                  background: project.id === selectedProjectId ? "var(--accent-glow)" : "var(--bg-raised)",
-                }}
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <span>{project.name}</span>
-                  <span style={{ color: project.lifecycle === "BLOCKED" ? "var(--danger)" : project.lifecycle === "COMPLETE" ? "var(--success)" : project.lifecycle === "ACTIVE" ? "var(--accent)" : "var(--text-dim)" }}>{project.lifecycle.toLowerCase()}</span>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>active builds</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{activeProjects.length} total</div>
+                  </div>
+                  {activeProjects.length === 0 ? (
+                    <div className="border p-3 text-xs" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)", color: "var(--text-dim)" }}>
+                      No active Builder projects. Restore one from archived history or create a new project.
+                    </div>
+                  ) : activeProjectsPagination.pageItems.map((project) => (
+                    <div
+                      key={project.id}
+                      className="border p-3"
+                      style={{
+                        borderColor: project.id === selectedProjectId ? "var(--accent)" : "var(--border-sub)",
+                        background: project.id === selectedProjectId ? "var(--accent-glow)" : "var(--bg-raised)",
+                      }}
+                    >
+                      <button onClick={() => setSelectedProjectId(project.id)} className="w-full text-left">
+                        <div className="flex items-center justify-between gap-4">
+                          <span>{project.name}</span>
+                          <span style={{ color: project.lifecycle === "BLOCKED" ? "var(--danger)" : project.lifecycle === "COMPLETE" ? "var(--success)" : project.lifecycle === "ACTIVE" ? "var(--accent)" : "var(--text-dim)" }}>{project.lifecycle.toLowerCase()}</span>
+                        </div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.relativePath}</div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.template} · {project.packageManager} · last run {project.lastRunStatus.toLowerCase()}</div>
+                        <div className="text-xs leading-6" style={{ color: getWorkspaceStateColor(project.workspaceState) }}>{getWorkspaceStateLabel(project.workspaceState)}</div>
+                        {projectDetail?.project.id === project.id && projectDetail.context.plannedStack ? (
+                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail.context.plannedStack.label} · {projectDetail.context.plannedStack.tags.join(", ")}</div>
+                        ) : null}
+                      </button>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          disabled={saving}
+                          onClick={() => void setProjectArchived(project.id, true)}
+                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                        >
+                          {projectActionProjectId === project.id && projectActionType === "archive" ? "Archiving..." : "Archive"}
+                        </button>
+                        <button
+                          disabled={saving}
+                          onClick={() => void deleteProjectHistory(project.id)}
+                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                          style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                        >
+                          {projectActionProjectId === project.id && projectActionType === "delete" ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <PaginationControls {...activeProjectsPagination} />
                 </div>
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.relativePath}</div>
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.template} · {project.packageManager} · last run {project.lastRunStatus.toLowerCase()}</div>
-                <div className="text-xs leading-6" style={{ color: getWorkspaceStateColor(project.workspaceState) }}>{getWorkspaceStateLabel(project.workspaceState)}</div>
-                {projectDetail?.project.id === project.id && projectDetail.context.plannedStack ? (
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail.context.plannedStack.label} · {projectDetail.context.plannedStack.tags.join(", ")}</div>
-                ) : null}
-              </button>
-            ))}
-            <PaginationControls {...projectsPagination} />
+
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>archived history</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{archivedProjects.length} total</div>
+                  </div>
+                  {archivedProjects.length === 0 ? (
+                    <div className="border p-3 text-xs" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)", color: "var(--text-dim)" }}>
+                      No archived Builder projects yet.
+                    </div>
+                  ) : archivedProjectsPagination.pageItems.map((project) => (
+                    <div
+                      key={project.id}
+                      className="border p-3"
+                      style={{
+                        borderColor: project.id === selectedProjectId ? "var(--accent)" : "var(--border-sub)",
+                        background: project.id === selectedProjectId ? "var(--accent-glow)" : "var(--bg-raised)",
+                      }}
+                    >
+                      <button onClick={() => setSelectedProjectId(project.id)} className="w-full text-left">
+                        <div className="flex items-center justify-between gap-4">
+                          <span>{project.name}</span>
+                          <span style={{ color: "var(--warning)" }}>archived</span>
+                        </div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.relativePath}</div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.template} · {project.packageManager} · last run {project.lastRunStatus.toLowerCase()}</div>
+                        <div className="text-xs leading-6" style={{ color: getWorkspaceStateColor(project.workspaceState) }}>{getWorkspaceStateLabel(project.workspaceState)}</div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                          Archived {project.archivedAt ? new Date(project.archivedAt).toLocaleString() : "recently"}
+                        </div>
+                      </button>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          disabled={saving}
+                          onClick={() => void setProjectArchived(project.id, false)}
+                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                          style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                        >
+                          {projectActionProjectId === project.id && projectActionType === "restore" ? "Restoring..." : "Restore"}
+                        </button>
+                        <button
+                          disabled={saving}
+                          onClick={() => void deleteProjectHistory(project.id)}
+                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                          style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                        >
+                          {projectActionProjectId === project.id && projectActionType === "delete" ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <PaginationControls {...archivedProjectsPagination} />
+                </div>
+              </>
+            )}
           </div>
         </section>
 
         <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="flex items-center justify-between gap-4">
             <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>selected project</div>
-            {selectedProject ? <div className="text-xs" style={{ color: "var(--text-dim)" }}>{selectedProject.slug}</div> : null}
+            <div className="flex items-center gap-3">
+              {selectedProject?.archivedAt ? <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--warning)" }}>archived</div> : null}
+              {selectedProject ? <div className="text-xs" style={{ color: "var(--text-dim)" }}>{selectedProject.slug}</div> : null}
+            </div>
           </div>
           {!selectedProject ? (
             <div className="text-sm" style={{ color: "var(--text-dim)" }}>Select a builder project to inspect runs and execute actions.</div>
           ) : (
             <>
+              <div className="flex flex-wrap gap-2">
+                {selectedProject.archivedAt ? (
+                  <button
+                    disabled={saving}
+                    onClick={() => void setProjectArchived(selectedProject.id, false)}
+                    className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50"
+                    style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                  >
+                    {projectActionProjectId === selectedProject.id && projectActionType === "restore" ? "Restoring..." : "Restore Project"}
+                  </button>
+                ) : (
+                  <button
+                    disabled={saving}
+                    onClick={() => void setProjectArchived(selectedProject.id, true)}
+                    className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50"
+                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  >
+                    {projectActionProjectId === selectedProject.id && projectActionType === "archive" ? "Archiving..." : "Archive Project"}
+                  </button>
+                )}
+                <button
+                  disabled={saving}
+                  onClick={() => void deleteProjectHistory(selectedProject.id)}
+                  className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50"
+                  style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                >
+                  {projectActionProjectId === selectedProject.id && projectActionType === "delete" ? "Deleting..." : "Delete History"}
+                </button>
+              </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                   <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>path</div>
                   <div className="text-sm">{selectedProject.relativePath}</div>
+                  {selectedProject.archivedAt ? <div className="text-xs mt-2" style={{ color: "var(--warning)" }}>Archived {new Date(selectedProject.archivedAt).toLocaleString()}</div> : null}
                   {projectDetail?.context.plannedStack ? <div className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>{projectDetail.context.plannedStack.label}</div> : null}
                 </div>
                 <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
@@ -2747,289 +2871,25 @@ export default function BuilderPage() {
                   <div className="text-sm" style={{ color: "var(--text-primary)" }}>
                     {projectDetail?.operatorTrust.governance.summary ?? "Governance actions are not available until a Builder project is loaded."}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {governanceCapabilityGates.length > 0 ? governanceCapabilityGates.map((capabilityKey) => (
-                      <div key={capabilityKey} className="border px-2 py-1 text-[11px] uppercase tracking-[0.14em]" style={{ borderColor: "var(--warning)", background: "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))", color: "var(--warning)" }}>
-                        {capabilityKey.replaceAll("_", " ")}
-                      </div>
-                    )) : (
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No approval-gated governance capabilities are currently advertised.</div>
-                    )}
-                  </div>
-                  <div className="grid gap-3 lg:grid-cols-[minmax(280px,0.92fr)_minmax(0,1.08fr)]">
-                    <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>operator approval</div>
-                      <div>
-                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Review reason</label>
-                        <textarea
-                          data-testid="builder-governance-reason"
-                          value={governanceReason}
-                          onChange={(event) => setGovernanceReason(event.target.value)}
-                          rows={5}
-                          className="w-full bg-transparent border px-3 py-2 text-sm"
-                          style={{ borderColor: "var(--border)" }}
-                          placeholder="Explain why this governance change is intentional and safe."
-                        />
-                      </div>
-                      <label className="flex items-start gap-3 border p-3 text-xs leading-6" style={{ borderColor: governanceConfirmed ? "var(--accent)" : "var(--border)", background: governanceConfirmed ? "var(--accent-glow)" : "var(--bg-raised)" }}>
-                        <input
-                          data-testid="builder-governance-confirmed"
-                          type="checkbox"
-                          checked={governanceConfirmed}
-                          onChange={(event) => setGovernanceConfirmed(event.target.checked)}
-                        />
-                        <span>I reviewed the drift and I want Builder to record an explicit governance decision with the reason above.</span>
-                      </label>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                        Governance actions are durable and reviewable. The dashboard requires the same explicit confirmation model as the medium-authority Builder tools.
-                      </div>
+                  <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--warning)" }}>chat-first approvals</div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Builder approvals and governance decisions now flow through chat cards in the Chat tab. Use the Builder page for history, inspection, runtime control, and task debugging.
                     </div>
-                    <div className="space-y-3">
-                      <div data-testid="builder-governance-mcp-review" className="border p-3 space-y-3" style={{ borderColor: hasMcpGovernanceDrift ? "var(--danger)" : "var(--border)", background: hasMcpGovernanceDrift ? "color-mix(in srgb, var(--danger) 10%, var(--bg-surface))" : "var(--bg-surface)" }}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: hasMcpGovernanceDrift ? "var(--danger)" : "var(--text-muted)" }}>mcp contract drift</div>
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: hasMcpGovernanceDrift ? "var(--danger)" : "var(--text-dim)" }}>
-                            {hasMcpGovernanceDrift ? "approval required" : "aligned"}
-                          </div>
+                    <div className="flex flex-wrap gap-2">
+                      {governanceCapabilityGates.length > 0 ? governanceCapabilityGates.map((capabilityKey) => (
+                        <div key={capabilityKey} className="border px-2 py-1 text-[11px] uppercase tracking-[0.14em]" style={{ borderColor: "var(--warning)", background: "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))", color: "var(--warning)" }}>
+                          {capabilityKey.replaceAll("_", " ")}
                         </div>
-                        {hasMcpGovernanceDrift && projectDetail?.mcpSnapshot.drift ? (
-                          <>
-                            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                              Tools +{projectDetail.mcpSnapshot.drift.tools.added.length} / -{projectDetail.mcpSnapshot.drift.tools.removed.length} / ~{projectDetail.mcpSnapshot.drift.tools.changed.length}; prompts +{projectDetail.mcpSnapshot.drift.prompts.added.length} / -{projectDetail.mcpSnapshot.drift.prompts.removed.length} / ~{projectDetail.mcpSnapshot.drift.prompts.changed.length}; resources +{projectDetail.mcpSnapshot.drift.resources.added.length} / -{projectDetail.mcpSnapshot.drift.resources.removed.length} / ~{projectDetail.mcpSnapshot.drift.resources.changed.length}.
-                            </div>
-                            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                              Active run: {projectDetail.mcpSnapshot.activeRunId}
-                            </div>
-                            <div className="flex flex-wrap gap-3">
-                              <button
-                                data-testid="builder-governance-approve-mcp-drift"
-                                disabled={saving || governanceAction !== null || !projectDetail.mcpSnapshot.activeRunId}
-                                onClick={() => {
-                                  const reason = consumeGovernanceReason("Approving MCP contract drift");
-                                  if (!reason || !projectDetail.mcpSnapshot.activeRunId) {
-                                    return;
-                                  }
-                                  void runGovernanceAction("resolve_mcp_contract_drift", buildBuilderGovernanceCommandPayload({
-                                    action: "resolve_mcp_contract_drift",
-                                    runId: projectDetail.mcpSnapshot.activeRunId,
-                                    decision: "approve",
-                                    confirmed: true,
-                                    reason,
-                                    sourceSurface: "dashboard",
-                                  }), "Approved the Builder MCP contract rollover from the dashboard.");
-                                }}
-                                className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                                style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
-                              >
-                                approve rollover
-                              </button>
-                              <button
-                                data-testid="builder-governance-reject-mcp-drift"
-                                disabled={saving || governanceAction !== null || !projectDetail.mcpSnapshot.activeRunId}
-                                onClick={() => {
-                                  const reason = consumeGovernanceReason("Rejecting MCP contract drift");
-                                  if (!reason || !projectDetail.mcpSnapshot.activeRunId) {
-                                    return;
-                                  }
-                                  void runGovernanceAction("resolve_mcp_contract_drift", buildBuilderGovernanceCommandPayload({
-                                    action: "resolve_mcp_contract_drift",
-                                    runId: projectDetail.mcpSnapshot.activeRunId,
-                                    decision: "reject",
-                                    confirmed: true,
-                                    reason,
-                                    sourceSurface: "dashboard",
-                                  }), "Rejected the Builder MCP contract rollover from the dashboard.");
-                                }}
-                                className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                              >
-                                reject drift
-                              </button>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                            No active MCP contract drift is waiting for a decision.
-                          </div>
-                        )}
-                      </div>
-                      <div data-testid="builder-governance-policy-review" className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>mcp policy baseline</div>
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>manual reconcile</div>
-                        </div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                          Use this only when the current Builder MCP contract is intentionally changing and you want to promote the reviewed state into the accepted policy baseline.
-                        </div>
-                        <button
-                          data-testid="builder-governance-reconcile-policy"
-                          disabled={saving || governanceAction !== null}
-                          onClick={() => {
-                            const reason = consumeGovernanceReason("Reconciling Builder MCP policy");
-                            if (!reason) {
-                              return;
-                            }
-                            void runGovernanceAction("reconcile_mcp_policy", buildBuilderGovernanceCommandPayload({
-                              action: "reconcile_mcp_policy",
-                              confirmed: true,
-                              reason,
-                              sourceSurface: "dashboard",
-                            }), "Reconciled the Builder MCP policy baseline from the dashboard.");
-                          }}
-                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                          style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
-                        >
-                          reconcile baseline
-                        </button>
-                      </div>
-                      <div data-testid="builder-governance-dependency-review" className="border p-3 space-y-3" style={{ borderColor: dependencyGovernanceNeedsReview ? "var(--warning)" : "var(--border)", background: dependencyGovernanceNeedsReview ? "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))" : "var(--bg-surface)" }}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: dependencyGovernanceNeedsReview ? "var(--warning)" : "var(--text-muted)" }}>dependency contract</div>
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: dependencyGovernanceNeedsReview ? "var(--warning)" : "var(--text-dim)" }}>
-                            {dependencyGovernanceNeedsReview ? "approval required" : dependencyGovernanceState.replaceAll("_", " ")}
-                          </div>
-                        </div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                          {projectDetail?.dependencyContract.planning?.summary ?? "No dependency contract data is available for this project yet."}
-                        </div>
-                        {projectDetail?.dependencyContract.drift ? (
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                            Packages +{projectDetail.dependencyContract.drift.packages.added.length} / -{projectDetail.dependencyContract.drift.packages.removed.length} / ~{projectDetail.dependencyContract.drift.packages.changed.length} / reclass {projectDetail.dependencyContract.drift.packages.reclassified.length}; scripts +{projectDetail.dependencyContract.drift.scripts.added.length} / -{projectDetail.dependencyContract.drift.scripts.removed.length} / ~{projectDetail.dependencyContract.drift.scripts.changed.length}; lockfile changed {projectDetail.dependencyContract.drift.lockfileChanged ? "yes" : "no"}; package manager changed {projectDetail.dependencyContract.drift.packageManagerChanged ? "yes" : "no"}.
-                          </div>
-                        ) : null}
-                        {projectDetail?.dependencyContract.planning?.highlightedPackages.length ? (
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                            Highlighted packages: {projectDetail.dependencyContract.planning.highlightedPackages.join(", ")}
-                          </div>
-                        ) : null}
-                        {(projectDetail?.dependencyContract.planning?.recommendations ?? []).slice(0, 2).map((recommendation) => (
-                          <div key={recommendation} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{recommendation}</div>
-                        ))}
-                        {dependencyGovernanceNeedsReview && projectDetail?.dependencyContract.runId ? (
-                          <div className="flex flex-wrap gap-3">
-                            <button
-                              data-testid="builder-governance-approve-dependency-drift"
-                              disabled={saving || governanceAction !== null}
-                              onClick={() => {
-                                const reason = consumeGovernanceReason("Approving dependency contract drift");
-                                const dependencyContractRunId = projectDetail?.dependencyContract.runId;
-                                if (!reason || !dependencyContractRunId) {
-                                  return;
-                                }
-                                void runGovernanceAction("resolve_dependency_contract_drift", buildBuilderGovernanceCommandPayload({
-                                  action: "resolve_dependency_contract_drift",
-                                  runId: dependencyContractRunId,
-                                  decision: "approve",
-                                  confirmed: true,
-                                  reason,
-                                  sourceSurface: "dashboard",
-                                }), "Approved the Builder dependency contract rollover from the dashboard.");
-                              }}
-                              className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                              style={{ borderColor: "var(--warning)", color: "var(--warning)" }}
-                            >
-                              approve dependency rollover
-                            </button>
-                            <button
-                              data-testid="builder-governance-reject-dependency-drift"
-                              disabled={saving || governanceAction !== null}
-                              onClick={() => {
-                                const reason = consumeGovernanceReason("Rejecting dependency contract drift");
-                                const dependencyContractRunId = projectDetail?.dependencyContract.runId;
-                                if (!reason || !dependencyContractRunId) {
-                                  return;
-                                }
-                                void runGovernanceAction("resolve_dependency_contract_drift", buildBuilderGovernanceCommandPayload({
-                                  action: "resolve_dependency_contract_drift",
-                                  runId: dependencyContractRunId,
-                                  decision: "reject",
-                                  confirmed: true,
-                                  reason,
-                                  sourceSurface: "dashboard",
-                                }), "Rejected the Builder dependency contract rollover from the dashboard.");
-                              }}
-                              className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                            >
-                              reject dependency drift
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                      <div data-testid="builder-governance-file-topology-review" className="border p-3 space-y-3" style={{ borderColor: fileTopologyGovernanceNeedsReview ? "var(--warning)" : "var(--border)", background: fileTopologyGovernanceNeedsReview ? "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))" : "var(--bg-surface)" }}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: fileTopologyGovernanceNeedsReview ? "var(--warning)" : "var(--text-muted)" }}>file topology contract</div>
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: fileTopologyGovernanceNeedsReview ? "var(--warning)" : "var(--text-dim)" }}>
-                            {fileTopologyGovernanceNeedsReview ? "approval required" : fileTopologyGovernanceState.replaceAll("_", " ")}
-                          </div>
-                        </div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                          {projectDetail?.fileTopologyContract.planning?.summary ?? "No file topology contract data is available for this project yet."}
-                        </div>
-                        {projectDetail?.fileTopologyContract.drift ? (
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                            Directories +{projectDetail.fileTopologyContract.drift.directories.added.length} / -{projectDetail.fileTopologyContract.drift.directories.removed.length}; important files +{projectDetail.fileTopologyContract.drift.importantFiles.added.length} / -{projectDetail.fileTopologyContract.drift.importantFiles.removed.length}; anchors changed {projectDetail.fileTopologyContract.drift.anchorsChanged.length}; classifications changed {projectDetail.fileTopologyContract.drift.classificationsChanged.length}; rules changed {projectDetail.fileTopologyContract.drift.rulesChanged.length}.
-                          </div>
-                        ) : null}
-                        {projectDetail?.fileTopologyContract.planning?.topLevel.length ? (
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                            Top-level entries: {projectDetail.fileTopologyContract.planning.topLevel.slice(0, 8).join(", ")}
-                          </div>
-                        ) : null}
-                        {(projectDetail?.fileTopologyContract.planning?.recommendations ?? []).slice(0, 2).map((recommendation) => (
-                          <div key={recommendation} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{recommendation}</div>
-                        ))}
-                        {fileTopologyGovernanceNeedsReview && projectDetail?.fileTopologyContract.runId ? (
-                          <div className="flex flex-wrap gap-3">
-                            <button
-                              data-testid="builder-governance-approve-file-topology-drift"
-                              disabled={saving || governanceAction !== null}
-                              onClick={() => {
-                                const reason = consumeGovernanceReason("Approving file topology contract drift");
-                                const fileTopologyContractRunId = projectDetail?.fileTopologyContract.runId;
-                                if (!reason || !fileTopologyContractRunId) {
-                                  return;
-                                }
-                                void runGovernanceAction("resolve_file_topology_contract_drift", buildBuilderGovernanceCommandPayload({
-                                  action: "resolve_file_topology_contract_drift",
-                                  runId: fileTopologyContractRunId,
-                                  decision: "approve",
-                                  confirmed: true,
-                                  reason,
-                                  sourceSurface: "dashboard",
-                                }), "Approved the Builder file topology contract rollover from the dashboard.");
-                              }}
-                              className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                              style={{ borderColor: "var(--warning)", color: "var(--warning)" }}
-                            >
-                              approve topology rollover
-                            </button>
-                            <button
-                              data-testid="builder-governance-reject-file-topology-drift"
-                              disabled={saving || governanceAction !== null}
-                              onClick={() => {
-                                const reason = consumeGovernanceReason("Rejecting file topology contract drift");
-                                const fileTopologyContractRunId = projectDetail?.fileTopologyContract.runId;
-                                if (!reason || !fileTopologyContractRunId) {
-                                  return;
-                                }
-                                void runGovernanceAction("resolve_file_topology_contract_drift", buildBuilderGovernanceCommandPayload({
-                                  action: "resolve_file_topology_contract_drift",
-                                  runId: fileTopologyContractRunId,
-                                  decision: "reject",
-                                  confirmed: true,
-                                  reason,
-                                  sourceSurface: "dashboard",
-                                }), "Rejected the Builder file topology contract rollover from the dashboard.");
-                              }}
-                              className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                            >
-                              reject topology drift
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
+                      )) : (
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No approval-gated governance capabilities are currently advertised.</div>
+                      )}
+                    </div>
+                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      Pending review signals: MCP {hasMcpGovernanceDrift ? "needs attention" : "aligned"}; dependency {dependencyGovernanceState.replaceAll("_", " ")}; topology {fileTopologyGovernanceState.replaceAll("_", " ")}.
+                    </div>
+                  </div>
+                  <div className="space-y-3">
                       <div data-testid="builder-governance-history" className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>recent governance decisions</div>
@@ -3057,31 +2917,17 @@ export default function BuilderPage() {
                       </div>
                     </div>
                   </div>
-                </div>
               </div>
 
               <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                 <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder task</div>
-                <div>
-                  <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Task request</label>
-                  <textarea value={taskRequest} onChange={(event) => setTaskRequest(event.target.value)} rows={4} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} placeholder="Describe the next Builder step for this project." />
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  Builder task launch and governance resolution now live in chat. Use the chat tab with the Builder plugin selected to start work, continue a task, or resolve Builder review cards.
                 </div>
                 <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                  Builder tasks now run through BizBot&apos;s native in-process builder operator. The CLI profile section below remains available only for direct adapter prompts.
-                </div>
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-                  Desktop shortcuts: Ctrl+Shift+R retries the latest failed task, Ctrl+Shift+L focuses current logs, and Ctrl+Shift+K cancels the active run.
+                  This dashboard stays focused on project state, run history, telemetry, and logs. Desktop shortcuts still work for retry, log focus, and active-run cancellation.
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <button disabled={saving || !taskRequest.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/tasks`, { request: taskRequest })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                    start builder task
-                  </button>
-                  <button disabled={saving || !taskRequest.trim() || !projectDetail?.currentTask} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/tasks`, { request: taskRequest, taskId: projectDetail?.currentTask?.id })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
-                    continue current task
-                  </button>
-                  <button disabled={saving || !taskRequest.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/tasks`, { request: taskRequest, retryFailed: true })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
-                    retry last failed
-                  </button>
                   <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "reconcile_operational_state" })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
                     reconcile state
                   </button>

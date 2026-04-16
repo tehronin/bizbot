@@ -76,6 +76,7 @@ function makeProject(template: "node-cli" | "plugin-package" | "vite-app" | "nex
     template,
     packageManager: "NPM",
     gitInitialized: false,
+    archivedAt: null,
     lifecycle: "DRAFT",
     lastRunStatus: "IDLE",
     context: null,

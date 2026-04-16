@@ -1,6 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { archiveBuilderProject, completeBuilderRun, createBuilderProject, createBuilderRun, deleteBuilderProject, listBuilderProjects, reconcileBuilderWorkspaceProjects, restoreBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ vi.mock("@/lib/db", () => ({
         state.projects.find((project) => project.id === where.id || project.slug === where.slug) ?? null,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const record = {
+          archivedAt: null,
           id: `project-${state.nextProjectId++}`,
           gitInitialized: false,
           lastRunStatus: "IDLE",
@@ -82,8 +84,6 @@ vi.mock("@/lib/db", () => ({
     },
   },
 }));
-
-import { completeBuilderRun, createBuilderProject, createBuilderRun, deleteBuilderProject, listBuilderProjects, reconcileBuilderWorkspaceProjects, updateBuilderRun } from "@/lib/builder/projects";
 
 function createTempBuilderWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-builder-projects-"));
@@ -204,5 +204,22 @@ describe("builder projects", () => {
     expect(lateProgress.summary).toBe("Cancelled deliberately.");
     expect(lateCompletion.status).toBe("CANCELLED");
     expect(lateCompletion.summary).toBe("Cancelled deliberately.");
+  });
+
+  it("can archive and restore projects without deleting workspace files", async () => {
+    const workspaceRoot = createTempBuilderWorkspace();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = workspaceRoot;
+
+    const project = await createBuilderProject({ name: "Archive Me" });
+
+    const archived = await archiveBuilderProject(project.id as string);
+    expect(archived.archivedAt).toBeInstanceOf(Date);
+
+    const archivedProjects = await listBuilderProjects();
+    expect(archivedProjects[0]?.archivedAt).toBeInstanceOf(Date);
+    expect(fs.existsSync(path.resolve(workspaceRoot, "projects", "archive-me"))).toBe(true);
+
+    const restored = await restoreBuilderProject(project.id as string);
+    expect(restored.archivedAt).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import type { BuilderProject } from "@prisma/client";
 import {
@@ -9,6 +10,7 @@ import {
   statBuilderRuntimeContainerPath,
   teardownBuilderRuntimeService,
 } from "@/lib/builder/runtime-orchestration";
+import { resolveBuilderWorkspacePath } from "@/lib/builder/config";
 import { getBuilderTemplateContainerStageContract } from "@/lib/builder/template-presets";
 import type { BuilderReviewContainerStageFileState, BuilderReviewContainerStageScriptState, BuilderReviewContainerStageState } from "@/lib/builder/types";
 
@@ -61,6 +63,11 @@ export async function validateBuilderContainerStage(args: {
   const contract = getBuilderTemplateContainerStageContract(args.project.template);
   if (!contract) {
     return buildSkippedState(`Template ${args.project.template} does not declare a Docker-ready container stage.`);
+  }
+
+  const composeAbsolutePath = resolveBuilderWorkspacePath(path.join(args.project.relativePath, contract.composeFile));
+  if (!fs.existsSync(composeAbsolutePath)) {
+    return buildSkippedState(`Compose file ${contract.composeFile} does not exist yet in ${args.project.relativePath}. Scaffold the project first.`);
   }
 
   const serviceId = `compose:${contract.composeFile}:${contract.serviceName}`;

@@ -130,6 +130,7 @@ model Conversation {
   updatedAt     DateTime  @updatedAt
 
   messages      Message[]
+  builderInteractions BuilderInteraction[]
 
   @@index([userId, archivedAt, deletedAt, lastMessageAt])
 }
@@ -545,6 +546,20 @@ enum BuilderRunStatus {
   CANCELLED
 }
 
+enum BuilderInteractionKind {
+  MCP_POLICY_RECONCILIATION
+  MCP_CONTRACT_DRIFT
+  DEPENDENCY_CONTRACT_DRIFT
+  FILE_TOPOLOGY_CONTRACT_DRIFT
+}
+
+enum BuilderInteractionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RESOLVED
+}
+
 enum BuilderRunKind {
   BOOTSTRAP
   COMMAND
@@ -630,6 +645,7 @@ model BuilderProject {
   template       String
   packageManager BuilderPackageManager @default(NPM)
   gitInitialized Boolean               @default(false)
+  archivedAt     DateTime?
   lifecycle      BuilderProjectLifecycle @default(DRAFT)
   lastRunStatus  BuilderRunStatus      @default(IDLE)
   context        Json?
@@ -640,11 +656,13 @@ model BuilderProject {
   brief          BuilderProjectBrief?
   milestones     BuilderMilestone[]
   runs           BuilderRun[]
+  interactions   BuilderInteraction[]
   mcpSnapshots   BuilderMcpSnapshot[]
   tasks          BuilderTask[]
   taskSpecs      BuilderTaskSpec[]
 
   @@index([template, createdAt])
+  @@index([archivedAt, updatedAt])
 }
 
 model BuilderProjectBrief {
@@ -745,10 +763,35 @@ model BuilderRun {
   finishedAt  DateTime?
 
   mcpSnapshots BuilderMcpSnapshot[]
+  interactions BuilderInteraction[]
 
   @@index([projectId, startedAt])
   @@index([taskId, startedAt])
   @@index([status, startedAt])
+}
+
+model BuilderInteraction {
+  id               String                   @id @default(cuid())
+  project          BuilderProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId        String
+  conversation     Conversation?            @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  conversationId   String?
+  run              BuilderRun?              @relation(fields: [runId], references: [id], onDelete: SetNull)
+  runId            String?
+  kind             BuilderInteractionKind
+  status           BuilderInteractionStatus @default(PENDING)
+  dedupeKey        String                   @unique
+  title            String
+  summary          String
+  metadata         Json?
+  resolutionReason String?
+  resolvedAt       DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@index([projectId, status, createdAt])
+  @@index([conversationId, status, createdAt])
+  @@index([runId, status, createdAt])
 }
 
 model BuilderTask {

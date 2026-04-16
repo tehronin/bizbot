@@ -5,6 +5,23 @@ vi.mock("@/lib/agent/memory/service", () => ({
   setMemoryFact: vi.fn(),
 }));
 
+vi.mock("@/lib/oracle/swarm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/oracle/swarm")>();
+  const { resolveOraclePredictionEvidence } = await import("@/lib/oracle/evidence");
+  return {
+    ...actual,
+    resolveOracleSwarmEvidence: vi.fn(async (target, options) => {
+      const market = await resolveOraclePredictionEvidence(target, options);
+      return {
+        market,
+        webResearch: [],
+        trendSignals: [],
+        swarmTrace: { planId: "test-plan", durationMs: 50, workerCount: 1, completedCount: 1, failedCount: 0 },
+      };
+    }),
+  };
+});
+
 import { getActiveMemoryFacts, setMemoryFact } from "@/lib/agent/memory/service";
 import { executeTool, getAllToolDefinitions } from "@/lib/agent/plugins";
 import { resetKalshiServiceCache } from "@/lib/kalshi/service";

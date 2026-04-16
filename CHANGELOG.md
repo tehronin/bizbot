@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-04-16
+
+- Added Oracle swarm evidence gathering with parallel workers for prediction markets, web OSINT research, and Google Trends analysis, replacing the single-source Oracle evidence path with a richer multi-signal evidence bundle.
+- Added Builder project archiving and restoring so projects can be soft-archived from the dashboard or API without deleting workspace files, with a new `archivedAt` column and Prisma migration.
+- Added Builder chat interaction cards and inbox for surfacing MCP contract drift, dependency drift, file topology drift, and task execution status directly in the chat UI with approve/reject/reconcile actions.
+- Added Builder onboarding flow with stack preset selection, project creation from chat, and conversation-integrated assistant messages.
+- Added chat-integrated Builder task launching and interaction resolution API routes.
+- Hardened Builder orchestrator contract enforcement by making MCP, dependency, and file topology drift checks non-blocking for DRAFT/PLANNED projects while remaining blocking for ACTIVE+ lifecycle stages.
+- Hardened Builder container stage validation with a compose-file existence check before attempting Docker operations, preventing errors on unscaffolded projects.
+- Fixed Builder container validation gate importing the non-existent `resolveBuilderWorkspaceConfig` — corrected to `resolveBuilderWorkspacePath` with updated test mocks.
+- Improved Builder execution plan step generation to respect `analysis_only` mode, skipping container stage validation for analysis-only tasks.
+- Expanded chat bootstrap to include Builder project summaries, stack presets, template catalog, and pending interaction inbox for the chat workspace UI.
+- Expanded Oracle intent parsing with conversational follow-up detection via `isMeaningfulOraclePredictionTarget`, preventing forced Oracle verdict flows for vague inputs like "are you sure?".
+- Added `oracle_swarm` as a new swarm execution mode alongside existing core chat and builder swarm modes.
+- Added MCP stdio shutdown instrumentation with process event listeners for better disconnect diagnostics.
+- Refreshed MCP contract snapshots to include Oracle tools in the exposed tool catalog.
+- Reconciled orphaned metadata-only Builder workspace directories during project reconciliation instead of importing them as stale projects.
+
 ## 2026-04-15
 
 - Added first-class Builder container tooling across the shared runtime and MCP surfaces, including compose-backed container inspection, bounded in-container file reads, named test presets, allowlisted exec, and durable Builder run kinds for container work.

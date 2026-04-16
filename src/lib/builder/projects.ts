@@ -58,6 +58,7 @@ export interface UpdateBuilderProjectInput {
   template?: string;
   packageManager?: BuilderPackageManager;
   gitInitialized?: boolean;
+  archivedAt?: Date | null;
   lifecycle?: BuilderProjectLifecycle;
   context?: Prisma.InputJsonValue;
   latestSessionSummary?: string | null;
@@ -77,6 +78,8 @@ interface ScannedBuilderWorkspaceProject {
   relativePath: string;
   absolutePath: string;
   metadata: BuilderProjectMetadata;
+  /** True when the directory contains only `.builder/` metadata and no project files. */
+  metadataOnly?: boolean;
 }
 
 function slugifySegment(value: string): string {
@@ -187,10 +190,13 @@ function scanBuilderWorkspaceProjects(): ScannedBuilderWorkspaceProject[] {
       const metadata = readBuilderProjectMetadata(metadataPath);
       if (metadata) {
         const relativePath = path.relative(config.workspaceRoot, currentPath).replace(/\\/g, "/");
+        const topLevelEntries = fs.readdirSync(currentPath);
+        const hasProjectContent = topLevelEntries.some((entry) => entry !== ".builder");
         results.push({
           relativePath,
           absolutePath: currentPath,
           metadata,
+          metadataOnly: !hasProjectContent,
         });
       }
       continue;
@@ -354,6 +360,7 @@ export async function updateBuilderProject(projectId: string, input: UpdateBuild
       ...(input.template !== undefined ? { template: input.template } : {}),
       ...(input.packageManager !== undefined ? { packageManager: input.packageManager } : {}),
       ...(input.gitInitialized !== undefined ? { gitInitialized: input.gitInitialized } : {}),
+      ...(input.archivedAt !== undefined ? { archivedAt: input.archivedAt } : {}),
       ...(input.lifecycle !== undefined ? { lifecycle: input.lifecycle } : {}),
       ...(input.context !== undefined ? { context: input.context as never } : {}),
       ...(input.latestSessionSummary !== undefined ? { latestSessionSummary: input.latestSessionSummary } : {}),
@@ -367,6 +374,24 @@ export async function updateBuilderProject(projectId: string, input: UpdateBuild
   }
 
   return project;
+}
+
+export async function archiveBuilderProject(projectId: string): Promise<BuilderProject> {
+  const project = await getBuilderProject(projectId);
+  if (project.archivedAt) {
+    return project;
+  }
+
+  return updateBuilderProject(projectId, { archivedAt: new Date() });
+}
+
+export async function restoreBuilderProject(projectId: string): Promise<BuilderProject> {
+  const project = await getBuilderProject(projectId);
+  if (!project.archivedAt) {
+    return project;
+  }
+
+  return updateBuilderProject(projectId, { archivedAt: null });
 }
 
 export function syncBuilderProjectMetadata(project: Pick<BuilderProject, "id" | "slug" | "name" | "relativePath" | "template" | "packageManager">): void {
@@ -446,6 +471,20 @@ export async function reconcileBuilderWorkspaceProjects(): Promise<BuilderWorksp
         relativePath: scanned.relativePath,
         metadataProjectId: scanned.metadata.projectId,
         summary: `Ignored ${scanned.relativePath} because the relative path is already claimed by ${conflictingRelativePath.name}.`,
+      });
+      continue;
+    }
+
+    // Skip orphaned metadata-only directories (e.g. stale E2E test artifacts)
+    // that have no DB record and no real project files beyond .builder/.
+    if (scanned.metadataOnly) {
+      ignored += 1;
+      entries.push({
+        action: "ignored",
+        projectId: scanned.metadata.projectId,
+        relativePath: scanned.relativePath,
+        metadataProjectId: scanned.metadata.projectId,
+        summary: `Ignored orphaned metadata-only folder at ${scanned.relativePath} (no project files found).`,
       });
       continue;
     }

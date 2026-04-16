@@ -57,6 +57,29 @@ const ORACLE_FILLER_PATTERNS = [
   /\b(?:about|regarding)\b/gi,
   /\b(?:the|a|an|your|you|me|us)\b/gi,
 ];
+const ORACLE_CONVERSATIONAL_TERMS = new Set([
+  "are",
+  "sure",
+  "what",
+  "why",
+  "how",
+  "when",
+  "where",
+  "who",
+  "yes",
+  "no",
+  "not",
+  "really",
+  "explain",
+  "clarify",
+  "more",
+  "again",
+  "still",
+  "then",
+  "okay",
+  "ok",
+  "hmm",
+]);
 
 function formatIsoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -222,6 +245,16 @@ function cleanOracleQuery(message: string): string {
     .trim();
 }
 
+function extractMeaningfulOracleTerms(normalizedPrompt: string): string[] {
+  return normalizedPrompt
+    .toLowerCase()
+    .split(/\s+/)
+    .map((token) => token.replace(/[^a-z0-9]/g, ""))
+    .filter((token) => token.length > 0)
+    .filter((token) => !ORACLE_CONVERSATIONAL_TERMS.has(token))
+    .filter((token) => !/^\d+$/.test(token));
+}
+
 export function parseOraclePredictionTarget(message: string, options?: OracleIntentOptions): OraclePredictionTarget | null {
   const trimmed = message.trim();
   if (!trimmed) {
@@ -250,6 +283,23 @@ export function parseOraclePredictionTarget(message: string, options?: OracleInt
   target.canonicalQuestion = buildCanonicalQuestion(target);
   target.searchQueries = buildSearchQueries(target);
   return target;
+}
+
+export function isMeaningfulOraclePredictionTarget(target: OraclePredictionTarget | null): boolean {
+  if (!target) {
+    return false;
+  }
+
+  if (
+    target.asset !== undefined
+    || target.thresholdValue !== undefined
+    || target.direction !== undefined
+    || target.timeframeEnd !== undefined
+  ) {
+    return true;
+  }
+
+  return extractMeaningfulOracleTerms(target.normalizedPrompt).length > 0;
 }
 
 export function getOraclePredictionIntent(message: string, options?: OracleIntentOptions): OraclePredictionIntent {

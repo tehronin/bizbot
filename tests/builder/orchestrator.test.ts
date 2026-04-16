@@ -64,6 +64,7 @@ vi.mock("@/lib/builder/native-agent", () => ({
 
 vi.mock("@/lib/builder/prompt", () => ({
   composeBuilderTaskPrompt: vi.fn(() => "task prompt"),
+  inferBuilderTaskExecutionMode: vi.fn(() => "implementation"),
 }));
 
 vi.mock("@/lib/builder/review", () => ({

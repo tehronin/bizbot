@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getOraclePredictionIntent } from "@/lib/oracle/intent";
+import {
+  getOraclePredictionIntent,
+  isMeaningfulOraclePredictionTarget,
+  parseOraclePredictionTarget,
+} from "@/lib/oracle/intent";
 
 const REFERENCE_DATE = new Date("2026-04-03T00:00:00.000Z");
 
@@ -61,5 +65,16 @@ describe("oracle prediction intent", () => {
       matched: false,
       query: "",
     });
+  });
+
+  it("treats topical explicit-plugin follow-ups as meaningful Oracle targets", () => {
+    const target = parseOraclePredictionTarget("what about etherium ?", { referenceDate: REFERENCE_DATE });
+    expect(isMeaningfulOraclePredictionTarget(target)).toBe(true);
+  });
+
+  it("rejects conversational follow-ups as explicit Oracle targets", () => {
+    const target = parseOraclePredictionTarget("are you sure?", { referenceDate: REFERENCE_DATE });
+    expect(target).toEqual(expect.objectContaining({ normalizedPrompt: "are sure" }));
+    expect(isMeaningfulOraclePredictionTarget(target)).toBe(false);
   });
 });

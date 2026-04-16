@@ -65,6 +65,7 @@ vi.mock("@/lib/builder/projects", () => ({
 vi.mock("@/lib/builder/prompt", () => ({
   buildBuilderPlanAdherence: mocks.buildBuilderPlanAdherence,
   composeBuilderTaskPrompt: mocks.composeBuilderTaskPrompt,
+  inferBuilderTaskExecutionMode: vi.fn(() => "implementation"),
 }));
 
 vi.mock("@/lib/builder/mcp-snapshots", () => ({
@@ -330,7 +331,7 @@ describe("builder orchestrator finalization", () => {
     });
     mocks.buildBuilderPlanAdherence.mockReturnValue({
       allowsExecution: true,
-      mode: "analysis_only",
+      mode: "implementation",
       summary: "manual review",
       blockingIssues: [],
       requiredDecisionKeys: [],

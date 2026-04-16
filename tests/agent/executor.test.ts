@@ -66,6 +66,7 @@ vi.mock("@/lib/agent/plugins", () => ({
 
 vi.mock("@/lib/mcp/client", () => ({
   ensureMcpClientsInitialized: runtimeMocks.ensureMcpClientsInitialized,
+  getMcpClientTools: vi.fn().mockReturnValue([]),
 }));
 
 vi.mock("@/lib/agent/runtime", () => ({
@@ -453,6 +454,9 @@ describe("agent executor explicit memory", () => {
       adjacentMatches: [{ question: "Will Bitcoin hit 150k by Dec 31 2026?" }],
       summaryPacket: "Oracle personality: Balanced\nCanonical target: Will BTC trade over 150k by 2026-12-31?\nEvidence mode: adjacent_inference\nImplied probability: 34.0%",
       fallbackReply: "Oracle is inferring from adjacent Polymarket markets for this target.",
+      webResearch: [],
+      trendSignals: [],
+      swarmTrace: { planId: "plan-1", durationMs: 500, workerCount: 3, completedCount: 3, failedCount: 0 },
     });
     kernelMocks.chatComplete.mockResolvedValueOnce({
       content: "Oracle sees BTC over 150k this year as a low-probability upside case based on adjacent Polymarket odds. Implied probability is about 34%, with medium confidence.",
@@ -501,6 +505,9 @@ describe("agent executor explicit memory", () => {
       adjacentMatches: [],
       summaryPacket: "Oracle personality: Balanced\nCanonical target: Will BTC trade over 150k by 2026-12-31?\nEvidence mode: no_useful_match\nImplied probability: 18.0%\nMarket sentiment: bearish",
       fallbackReply: "Oracle sees no active Polymarket support for Will BTC trade over 150k by 2026-12-31?. Balanced mode treats that absence as a weak negative signal against the target. Implied probability: 18.0%. Confidence: low.",
+      webResearch: [{ query: "BTC 150k prediction", title: "BTC Analysis", url: "https://example.com", snippet: "Analysts remain cautious" }],
+      trendSignals: [{ query: "BTC 150k", trendDirection: "declining", interestLevel: "low", excerpt: "Search interest declining" }],
+      swarmTrace: { planId: "plan-2", durationMs: 800, workerCount: 4, completedCount: 3, failedCount: 1 },
     });
     kernelMocks.chatComplete.mockResolvedValueOnce({
       content: "Oracle sees BTC over 150k this year as unlikely on current market support. There is no active Polymarket backing for that target, which Oracle treats as a weak negative signal. Implied probability is about 18%, with low confidence.",
@@ -527,7 +534,35 @@ describe("agent executor explicit memory", () => {
 
     expect(kernelMocks.chatComplete).toHaveBeenCalledTimes(1);
     expect(result.reply).toContain("weak negative signal");
-    expect(events.some((event) => event.type === "status" && String(event.message).includes("low-confidence negative prediction"))).toBe(true);
+    expect(events.some((event) => event.type === "status" && String(event.message).includes("no active matching market support"))).toBe(true);
+  });
+
+  it("skips the forced Oracle verdict path for conversational follow-ups but keeps Oracle tools available", async () => {
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+
+    await executeAgentConversation({
+      message: "are you sure?",
+      mode: "agent",
+      pluginId: "oracle",
+      onEvent: async (event) => {
+        events.push(event as { type: string; [key: string]: unknown });
+      },
+    });
+
+    // The forced deterministic Oracle verdict should NOT have run — executeTool
+    // is only called inside the forced path, so it should not have been invoked
+    // directly by the executor.  The model may still choose to call Oracle tools
+    // via the normal agent loop, but the executor itself must not force them.
+    const forcedOracleStatus = events.find(
+      (event) => event.type === "status" && String(event.message).includes("Oracle is resolving a market target"),
+    );
+    expect(forcedOracleStatus).toBeUndefined();
+
+    // Oracle tools should still be available (plugin controls tool visibility)
+    expect(pluginMocks.getAllToolDefinitions).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      chatMode: "agent",
+      chatPluginId: "oracle",
+    }));
   });
 
   it("records Google usage metadata including cached prompt tokens", async () => {

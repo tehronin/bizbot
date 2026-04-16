@@ -1,12 +1,33 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("builder dashboard flow", () => {
+  const createdProjectNames: string[] = [];
+
+  test.afterEach(async ({ page }) => {
+    // Clean up any projects created during the test to avoid stale workspace folders
+    for (const name of createdProjectNames) {
+      try {
+        await page.goto("/builder");
+        const button = page.getByRole("button", { name: new RegExp(name) });
+        if (await button.isVisible({ timeout: 2000 })) {
+          await button.click();
+          await page.getByTestId("builder-delete-project-button").click();
+          await page.getByTestId("builder-delete-confirm").click();
+        }
+      } catch {
+        // Best-effort cleanup
+      }
+    }
+    createdProjectNames.length = 0;
+  });
+
   test("creates a project and generates a canonical plan from the UI", async ({ page }, testInfo) => {
     await page.goto("/builder");
 
     await expect(page.getByText("builder mode")).toBeVisible();
 
     const projectName = `E2E Builder ${Date.now()}-${testInfo.parallelIndex}-${testInfo.repeatEachIndex}`;
+    createdProjectNames.push(projectName);
 
     await page.getByTestId("builder-create-project-name").fill(projectName);
     await page.getByTestId("builder-create-project-button").click();
@@ -50,6 +71,7 @@ test.describe("builder dashboard flow", () => {
     await expect(page.getByText("builder mode")).toBeVisible();
 
     const projectName = `E2E Governance ${Date.now()}-${testInfo.parallelIndex}-${testInfo.repeatEachIndex}`;
+    createdProjectNames.push(projectName);
     const reason = `Playwright governance policy reconcile ${Date.now()}`;
 
     await page.getByTestId("builder-create-project-name").fill(projectName);

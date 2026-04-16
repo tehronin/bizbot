@@ -3,6 +3,10 @@ import { db } from "@/lib/db";
 import { getConversationUsageSummary } from "@/lib/agent/run-journal";
 import { parseUsageLedgerModelPricingSetting, USAGE_LEDGER_MODEL_PRICING_SETTING_KEY } from "@/lib/agent/usage-ledger-pricing";
 import { resolveAgentUserId } from "@/lib/agent/user-context";
+import { listPendingBuilderInteractionCards } from "@/lib/builder/interactions";
+import { listBuilderProjects } from "@/lib/builder/projects";
+import { listBuilderStackPresets } from "@/lib/builder/stacks";
+import { DEFAULT_BUILDER_TEMPLATE_PRESETS } from "@/lib/builder/template-presets";
 import {
   buildChatExecutionCatalog,
   DEFAULT_CHAT_EXECUTION_MODE,
@@ -21,6 +25,11 @@ import {
   type ChatConversationMessage,
   type ChatConversationSummary,
   type ChatConversationUsageSummary,
+  type BuilderChatCard,
+  type BuilderChatCardAction,
+  type ChatBuilderProjectSummary,
+  type ChatBuilderStackPresetSummary,
+  type ChatBuilderTemplateSummary,
 } from "@/lib/chat/types";
 
 type ConversationRow = Prisma.ConversationGetPayload<{
@@ -69,10 +78,94 @@ function normalizeMessageMetadata(value: unknown): ChatConversationMessage["meta
       })
     : undefined;
 
+  const builderCards = Array.isArray(candidate.builderCards)
+    ? candidate.builderCards.flatMap((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return [];
+        }
+
+        const card = entry as Record<string, unknown>;
+        const kind = card.kind;
+        const status = card.status;
+        if (
+          (kind !== "mcp_policy_reconciliation"
+            && kind !== "mcp_contract_drift"
+            && kind !== "dependency_contract_drift"
+            && kind !== "file_topology_contract_drift"
+            && kind !== "task_execution")
+          || (status !== "pending"
+            && status !== "approved"
+            && status !== "rejected"
+            && status !== "resolved"
+            && status !== "planned"
+            && status !== "running"
+            && status !== "succeeded"
+            && status !== "failed"
+            && status !== "cancelled")
+        ) {
+          return [];
+        }
+
+        const actions = Array.isArray(card.actions)
+          ? card.actions.flatMap((actionEntry) => {
+              if (!actionEntry || typeof actionEntry !== "object" || Array.isArray(actionEntry)) {
+                return [];
+              }
+
+              const action = actionEntry as Record<string, unknown>;
+              return (
+                (action.id === "approve" || action.id === "reject" || action.id === "reconcile")
+                && typeof action.label === "string"
+                && (action.variant === "primary" || action.variant === "danger" || action.variant === "neutral")
+              )
+                ? [{ id: action.id as BuilderChatCardAction["id"], label: action.label, variant: action.variant as BuilderChatCardAction["variant"] }]
+                : [];
+            })
+          : [];
+
+        if (
+          typeof card.id !== "string"
+          || typeof card.interactionId !== "string"
+          || typeof card.projectId !== "string"
+          || typeof card.projectName !== "string"
+          || typeof card.projectRelativePath !== "string"
+          || typeof card.title !== "string"
+          || typeof card.summary !== "string"
+          || typeof card.state !== "string"
+          || typeof card.updatedAt !== "string"
+        ) {
+          return [];
+        }
+
+        return [{
+          id: card.id,
+          interactionId: card.interactionId,
+          kind,
+          status,
+          projectId: card.projectId,
+          projectName: card.projectName,
+          projectRelativePath: card.projectRelativePath,
+          runId: typeof card.runId === "string" ? card.runId : null,
+          taskId: typeof card.taskId === "string" ? card.taskId : null,
+          title: card.title,
+          summary: card.summary,
+          state: card.state,
+          recommendations: Array.isArray(card.recommendations)
+            ? card.recommendations.filter((recommendation): recommendation is string => typeof recommendation === "string")
+            : [],
+          actions,
+          updatedAt: card.updatedAt,
+          resolvedAt: typeof card.resolvedAt === "string" ? card.resolvedAt : null,
+          resolutionReason: typeof card.resolutionReason === "string" ? card.resolutionReason : null,
+        } satisfies BuilderChatCard];
+      })
+    : undefined;
+
   return {
     chatMode: candidate.chatMode === "ask" || candidate.chatMode === "agent" ? candidate.chatMode : undefined,
     chatPluginId: typeof candidate.chatPluginId === "string" ? candidate.chatPluginId : undefined,
     attachments,
+    builderCards,
   };
 }
 
@@ -378,7 +471,7 @@ export async function resolveChatBootstrap(options?: {
   const userId = resolveAgentUserId(options?.userId);
   await ensureConversationUser(userId);
 
-  const [recentPage, archivedPage, preferredConversation, fallbackConversation, pricingSetting] = await Promise.all([
+  const [recentPage, archivedPage, preferredConversation, fallbackConversation, pricingSetting, builderProjects, builderInbox] = await Promise.all([
     fetchConversationPage(userId, "active", {
       page: options?.recentPage,
       pageSize: options?.pageSize,
@@ -397,7 +490,33 @@ export async function resolveChatBootstrap(options?: {
       where: { key: USAGE_LEDGER_MODEL_PRICING_SETTING_KEY },
       select: { value: true },
     }),
+    listBuilderProjects(),
+    listPendingBuilderInteractionCards({ conversationId: options?.selectedConversationId ?? null }),
   ]);
+
+  const builderProjectOptions: ChatBuilderProjectSummary[] = builderProjects
+    .filter((project) => !project.archivedAt)
+    .map((project) => ({
+      id: project.id,
+      name: project.name,
+      relativePath: project.relativePath,
+    }));
+
+  const builderStackPresets: ChatBuilderStackPresetSummary[] = listBuilderStackPresets().map((preset) => ({
+    key: preset.key,
+    displayName: preset.displayName,
+    description: preset.description,
+    template: preset.template,
+    packageManager: preset.packageManager,
+    tags: preset.tags,
+  }));
+
+  const builderTemplates: ChatBuilderTemplateSummary[] = DEFAULT_BUILDER_TEMPLATE_PRESETS.map((template) => ({
+    key: template.key,
+    displayName: template.displayName,
+    description: template.description,
+    defaultPackageManager: template.defaultPackageManager,
+  }));
 
   const currentConversation = preferredConversation ?? fallbackConversation;
   const currentConversationId = currentConversation?.id ?? null;
@@ -414,7 +533,11 @@ export async function resolveChatBootstrap(options?: {
     currentConversation,
     executionDefaults,
     executionCatalog,
+    builderProjects: builderProjectOptions,
+    builderStackPresets,
+    builderTemplates,
     activeRun,
+    builderInbox,
     modelPricing: parseUsageLedgerModelPricingSetting(pricingSetting?.value),
     recentConversations: recentPage.conversations,
     archivedConversations: archivedPage.conversations,

@@ -4,7 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AgenticSetupDrawer } from "@/components/chat/AgenticSetupDrawer";
 import { PaginationControls } from "@/components/layout/PaginationControls";
 import { useChat, type ChatEntry, type UseChatResult } from "@/hooks/useChat";
-import type { ChatExecutionMode, ChatMessageAttachment } from "@/lib/chat/types";
+import type {
+  BuilderChatCard,
+  BuilderOnboardingSpec,
+  BuilderOnboardingStep,
+  ChatBuilderProjectSummary,
+  ChatBuilderStackPresetSummary,
+  ChatBuilderTemplateSummary,
+  ChatExecutionMode,
+  ChatMessageAttachment,
+} from "@/lib/chat/types";
 import { MEMORY_FACT_CATEGORIES, type MemoryFactCategory } from "@/lib/agent/memory/facts";
 import { getResolvedUsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
 import { getOraclePredictionIntent } from "@/lib/oracle/intent";
@@ -75,13 +84,461 @@ function HistoryIcon() {
     </svg>
   );
 }
+function BuilderCardList({
+  cards,
+  disabled,
+  onAction,
+}: {
+  cards: BuilderChatCard[];
+  disabled?: boolean;
+  onAction?: (interactionId: string, action: "approve" | "reject" | "reconcile") => void;
+}) {
+  if (cards.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3">
+      {cards.map((card) => (
+        <div
+          key={card.id}
+          className="border p-3 space-y-3"
+          style={{
+            borderColor: card.status === "pending" ? "var(--warning)" : "var(--border)",
+            background: card.status === "pending"
+              ? "color-mix(in srgb, var(--warning) 8%, var(--bg-raised))"
+              : "var(--bg-raised)",
+          }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                builder • {card.projectName}
+              </div>
+              <div className="text-sm mt-1" style={{ color: "var(--text-primary)" }}>{card.title}</div>
+            </div>
+            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: card.status === "pending" ? "var(--warning)" : "var(--text-dim)" }}>
+              {card.status.replaceAll("_", " ")}
+            </div>
+          </div>
+          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.summary}</div>
+          {card.recommendations.length > 0 ? (
+            <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+              {card.recommendations.map((recommendation) => (
+                <span key={`${card.id}-${recommendation}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+                  {recommendation}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            <span>{card.projectRelativePath}</span>
+            <span>state: {card.state.replaceAll("_", " ")}</span>
+          </div>
+          {card.resolutionReason ? (
+            <div className="text-xs" style={{ color: "var(--text-dim)" }}>Reason: {card.resolutionReason}</div>
+          ) : null}
+          {card.actions.length > 0 && onAction ? (
+            <div className="flex flex-wrap gap-2">
+              {card.actions.map((action) => (
+                <button
+                  key={`${card.id}-${action.id}`}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onAction(card.interactionId, action.id)}
+                  className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+                  style={{
+                    borderColor: action.variant === "danger" ? "var(--danger)" : action.variant === "primary" ? "var(--warning)" : "var(--border)",
+                    color: action.variant === "danger" ? "var(--danger)" : action.variant === "primary" ? "var(--warning)" : "var(--text-primary)",
+                  }}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BuilderWelcome({
+  projects,
+  onSelectProject,
+  onNewProject,
+}: {
+  projects: ChatBuilderProjectSummary[];
+  onSelectProject: (id: string) => void;
+  onNewProject: () => void;
+}) {
+  return (
+    <div className="space-y-4" data-testid="builder-welcome">
+      <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
+        builder
+      </div>
+      <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+        Start a new project or select an existing one to continue building.
+      </div>
+      <button
+        type="button"
+        onClick={onNewProject}
+        className="w-full border p-4 text-left hover:bg-[--bg-hover] transition-colors"
+        style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)" }}
+        data-testid="builder-new-project"
+      >
+        <div className="text-sm" style={{ color: "#a78bfa" }}>New Project</div>
+        <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>
+          Start from scratch with guided stack and configuration selection.
+        </div>
+      </button>
+      {projects.length > 0 ? (
+        <div className="space-y-2">
+          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+            existing projects
+          </div>
+          {projects.map((project) => (
+            <button
+              key={project.id}
+              type="button"
+              onClick={() => onSelectProject(project.id)}
+              className="w-full border p-3 text-left hover:bg-[--bg-hover] transition-colors"
+              style={{ borderColor: "var(--border)" }}
+              data-testid={`builder-project-${project.id}`}
+            >
+              <div className="text-sm" style={{ color: "var(--text-primary)" }}>{project.name}</div>
+              <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{project.relativePath}</div>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BuilderOnboarding({
+  step,
+  spec,
+  stackPresets,
+  templates,
+  onUpdateSpec,
+  onSetStep,
+  onConfirm,
+  onCancel,
+  disabled,
+  error,
+}: {
+  step: BuilderOnboardingStep;
+  spec: BuilderOnboardingSpec;
+  stackPresets: ChatBuilderStackPresetSummary[];
+  templates: ChatBuilderTemplateSummary[];
+  onUpdateSpec: (updates: Partial<BuilderOnboardingSpec>) => void;
+  onSetStep: (step: BuilderOnboardingStep) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+  disabled?: boolean;
+  error?: string | null;
+}) {
+  const [nameInput, setNameInput] = useState(spec.name);
+  const [descInput, setDescInput] = useState(spec.description);
+
+  function commitName(): void {
+    const trimmed = nameInput.trim();
+    if (!trimmed) {
+      return;
+    }
+    onUpdateSpec({ name: trimmed, description: descInput.trim() });
+    onSetStep("stack");
+  }
+
+  function selectStack(presetKey: string): void {
+    const preset = stackPresets.find((p) => p.key === presetKey);
+    if (preset) {
+      onUpdateSpec({
+        stackPresetKey: preset.key,
+        template: preset.template,
+        packageManager: preset.packageManager,
+      });
+    } else {
+      onUpdateSpec({ stackPresetKey: "" });
+    }
+    onSetStep("configuring");
+  }
+
+  function skipStack(): void {
+    onUpdateSpec({ stackPresetKey: "" });
+    onSetStep("configuring");
+  }
+
+  return (
+    <div className="space-y-4" data-testid="builder-onboarding">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "#a78bfa" }}>
+          new project setup
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={disabled}
+          className="px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50"
+          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+        >
+          Cancel
+        </button>
+      </div>
+
+      {step === "naming" ? (
+        <div className="border p-4 space-y-3" style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)" }}>
+          <div className="text-sm" style={{ color: "var(--text-primary)" }}>What are you building?</div>
+          <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+            Give your project a name and an optional one-liner description.
+          </div>
+          <label className="block space-y-1.5">
+            <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>project name</span>
+            <input
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitName(); } }}
+              placeholder="my-app"
+              autoFocus
+              className="w-full border px-3 py-2 text-sm"
+              style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-primary)" }}
+              data-testid="onboarding-name-input"
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>description</span>
+            <input
+              value={descInput}
+              onChange={(e) => setDescInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitName(); } }}
+              placeholder="A brief description of what you're building"
+              className="w-full border px-3 py-2 text-sm"
+              style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-primary)" }}
+              data-testid="onboarding-desc-input"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={commitName}
+            disabled={!nameInput.trim() || disabled}
+            className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+            style={{ borderColor: "#a78bfa", color: "#a78bfa" }}
+            data-testid="onboarding-name-next"
+          >
+            Next
+          </button>
+        </div>
+      ) : null}
+
+      {step === "stack" ? (
+        <div className="border p-4 space-y-3" style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)" }}>
+          <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+            Pick a stack for <span style={{ color: "#a78bfa" }}>{spec.name}</span>
+          </div>
+          <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+            Choose a preset or skip to configure manually.
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {stackPresets.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                onClick={() => selectStack(preset.key)}
+                disabled={disabled}
+                className="border p-3 text-left hover:bg-[--bg-hover] transition-colors disabled:opacity-50"
+                style={{
+                  borderColor: spec.stackPresetKey === preset.key ? "#a78bfa" : "var(--border)",
+                  background: spec.stackPresetKey === preset.key ? "rgba(167,139,250,0.12)" : "transparent",
+                }}
+                data-testid={`onboarding-stack-${preset.key}`}
+              >
+                <div className="text-sm" style={{ color: "var(--text-primary)" }}>{preset.displayName}</div>
+                <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{preset.description}</div>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {preset.tags.map((tag) => (
+                    <span key={tag} className="text-[10px] px-1.5 py-0.5 border" style={{ borderColor: "var(--border-sub)", color: "var(--text-muted)" }}>{tag}</span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={skipStack}
+              disabled={disabled}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+            >
+              Skip — configure manually
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetStep("naming")}
+              disabled={disabled}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {step === "configuring" ? (
+        <div className="border p-4 space-y-3" style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)" }}>
+          <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+            Fine-tune configuration for <span style={{ color: "#a78bfa" }}>{spec.name}</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block space-y-1.5">
+              <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>template</span>
+              <select
+                value={spec.template}
+                onChange={(e) => onUpdateSpec({ template: e.target.value, stackPresetKey: "" })}
+                disabled={disabled}
+                className="w-full bg-transparent border px-3 py-2 text-sm"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                data-testid="onboarding-template"
+              >
+                {templates.map((t) => (
+                  <option key={t.key} value={t.key}>{t.displayName}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1.5">
+              <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>package manager</span>
+              <select
+                value={spec.packageManager}
+                onChange={(e) => onUpdateSpec({ packageManager: e.target.value, stackPresetKey: "" })}
+                disabled={disabled}
+                className="w-full bg-transparent border px-3 py-2 text-sm"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                data-testid="onboarding-pm"
+              >
+                <option value="NPM">NPM</option>
+                <option value="PNPM">PNPM</option>
+              </select>
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--text-primary)" }}>
+              <input
+                type="checkbox"
+                checked={spec.docker}
+                onChange={(e) => onUpdateSpec({ docker: e.target.checked })}
+                disabled={disabled}
+                data-testid="onboarding-docker"
+              />
+              Docker setup
+            </label>
+            <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--text-primary)" }}>
+              <input
+                type="checkbox"
+                checked={spec.git}
+                onChange={(e) => onUpdateSpec({ git: e.target.checked })}
+                disabled={disabled}
+                data-testid="onboarding-git"
+              />
+              Initialize git
+            </label>
+          </div>
+          {spec.stackPresetKey ? (
+            <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+              Using stack preset: <span style={{ color: "#a78bfa" }}>{stackPresets.find((p) => p.key === spec.stackPresetKey)?.displayName ?? spec.stackPresetKey}</span>
+            </div>
+          ) : null}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onSetStep("confirming")}
+              disabled={disabled}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+              style={{ borderColor: "#a78bfa", color: "#a78bfa" }}
+              data-testid="onboarding-review"
+            >
+              Review &amp; Confirm
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetStep("stack")}
+              disabled={disabled}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {step === "confirming" ? (
+        <div className="border p-4 space-y-3" style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)" }}>
+          <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+            Ready to create <span style={{ color: "#a78bfa" }}>{spec.name}</span>?
+          </div>
+          <div className="border p-3 space-y-2 text-xs" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+            {spec.description ? (
+              <div style={{ color: "var(--text-dim)" }}>{spec.description}</div>
+            ) : null}
+            <div className="grid gap-1" style={{ color: "var(--text-primary)" }}>
+              <div><span style={{ color: "var(--text-muted)" }}>Template:</span> {templates.find((t) => t.key === spec.template)?.displayName ?? spec.template}</div>
+              <div><span style={{ color: "var(--text-muted)" }}>Package manager:</span> {spec.packageManager}</div>
+              {spec.stackPresetKey ? (
+                <div><span style={{ color: "var(--text-muted)" }}>Stack preset:</span> {stackPresets.find((p) => p.key === spec.stackPresetKey)?.displayName ?? spec.stackPresetKey}</div>
+              ) : null}
+              <div><span style={{ color: "var(--text-muted)" }}>Docker:</span> {spec.docker ? "Yes" : "No"}</div>
+              <div><span style={{ color: "var(--text-muted)" }}>Git:</span> {spec.git ? "Yes" : "No"}</div>
+            </div>
+          </div>
+          {error ? (
+            <div className="text-xs" style={{ color: "var(--danger)" }}>{error}</div>
+          ) : null}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={disabled}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+              style={{ borderColor: "#a78bfa", color: "#a78bfa" }}
+              data-testid="onboarding-confirm"
+            >
+              {disabled ? "Creating..." : "Create Project"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetStep("configuring")}
+              disabled={disabled}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={disabled}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+              style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function MessageGroups({
   messages,
   onPromote,
+  emptyHint,
 }: {
   messages: ChatEntry[];
   onPromote?: (message: ChatEntry) => void;
+  emptyHint?: string;
 }) {
   const [expandedBadges, setExpandedBadges] = useState<Set<string>>(new Set());
 
@@ -147,7 +604,7 @@ function MessageGroups({
     <div className="space-y-3">
       {messages.length === 0 && (
         <div className="text-sm" style={{ color: "var(--text-muted)" }}>
-          Ask BizBot to draft, schedule, inspect analytics, or recall brand context.
+          {emptyHint ?? "Ask BizBot to draft, schedule, inspect analytics, or recall brand context."}
         </div>
       )}
       {grouped.map((group, groupIndex) => (
@@ -178,6 +635,11 @@ function MessageGroups({
             </div>
             {group.entry.content}
             {renderExecutionChips(group.entry)}
+            {group.entry.builderCards && group.entry.builderCards.length > 0 ? (
+              <div className="mt-3">
+                <BuilderCardList cards={group.entry.builderCards} />
+              </div>
+            ) : null}
           </div>
         ) : (
           <div key={`badge-group-${groupIndex}`} className="flex flex-wrap gap-1.5 py-1">
@@ -235,7 +697,6 @@ function MessageGroups({
 export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWorkspaceContentProps) {
   const [input, setInput] = useState("");
   const [panelMode, setPanelMode] = useState<PanelMode>("chat");
-  const [oracleModeQuery, setOracleModeQuery] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeDashboardFile[]>([]);
@@ -257,7 +718,6 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
 
   const currentConversation = chat.currentConversation;
   const hasHistoryFilters = Boolean(chat.historyFilters.search || chat.historyFilters.from || chat.historyFilters.to);
-  const oracleIntent = getOraclePredictionIntent(input);
   const executionCatalog = chat.executionCatalog ?? {
     defaults: {
       mode: "ask" as const,
@@ -269,6 +729,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   const executionPluginId = chat.executionPluginId ?? executionCatalog.defaults.pluginId;
   const setExecutionMode = chat.setExecutionMode ?? (() => undefined);
   const setExecutionPluginId = chat.setExecutionPluginId ?? (() => undefined);
+  const setSelectedBuilderProjectId = chat.setSelectedBuilderProjectId ?? (() => undefined);
   const activePlugin = executionCatalog.plugins.find((plugin) => plugin.id === executionPluginId)
     ?? {
       id: "just-chatting",
@@ -290,6 +751,16 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
     return ((chat.activeRun.promptTokens / 1_000_000) * pricing.promptUsdPerMillion)
       + ((chat.activeRun.completionTokens / 1_000_000) * pricing.completionUsdPerMillion);
   }, [chat.activeRun.completionTokens, chat.activeRun.model, chat.activeRun.promptTokens, chat.activeRun.provider, chat.modelPricing]);
+  const builderProjects = chat.builderProjects ?? [];
+  const builderStackPresets = chat.builderStackPresets ?? [];
+  const builderTemplates = chat.builderTemplates ?? [];
+  const selectedBuilderProjectId = chat.selectedBuilderProjectId;
+  const builderPluginActive = executionPluginId === "builder" && executionMode === "agent";
+  const builderAskMode = executionPluginId === "builder" && executionMode === "ask";
+  const builderOnboarding = chat.builderOnboarding;
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
+  const showBuilderWelcome = builderPluginActive && !builderOnboarding && chat.messages.length === 0 && !chat.isBootstrapping;
 
   useEffect(() => {
     setHistorySearchDraft(chat.historyFilters.search);
@@ -525,6 +996,16 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
     }
   }
 
+  async function handleBuilderInteraction(interactionId: string, action: "approve" | "reject" | "reconcile"): Promise<void> {
+    setActionError(null);
+    try {
+      await chat.resolveBuilderInteraction(interactionId, action);
+      setPanelMode("chat");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   const composerAccent = activePlugin.accentColor;
   const composerAccentSurface = activePlugin.accentSurface;
   const composerAccentBorder = activePlugin.accentBorder;
@@ -544,7 +1025,38 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 </div>
               ) : null}
             </div>
-            <div className="flex items-center gap-1.5">
+
+            {/* Plugin-contextual actions — shown between conversation label and chat buttons */}
+            {panelMode === "chat" && builderPluginActive ? (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    chat.startBuilderOnboarding();
+                    setOnboardingError(null);
+                  }}
+                  className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:brightness-125 transition-colors"
+                  style={{ borderColor: activePlugin.accentBorder, color: activePlugin.accentColor, background: activePlugin.accentSurface }}
+                  data-testid="header-builder-new"
+                >
+                  New Build
+                </button>
+                {chat.selectedBuilderProjectId ? (
+                  <button
+                    type="button"
+                    onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
+                    disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
+                    className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border disabled:opacity-50 hover:brightness-125 transition-colors"
+                    style={{ borderColor: activePlugin.accentBorder, color: activePlugin.accentColor, background: activePlugin.accentSurface }}
+                    data-testid="header-builder-archive"
+                  >
+                    Archive Build
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => {
@@ -552,7 +1064,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   setPanelMode("chat");
                   setActionError(null);
                 }}
-                className="px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] border hover:bg-[--bg-hover] transition-colors"
+                className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:bg-[--bg-hover] transition-colors"
                 style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
               >
                 New Chat
@@ -561,7 +1073,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 type="button"
                 onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
                 disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
-                className="px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50 hover:bg-[--bg-hover] transition-colors"
+                className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border disabled:opacity-50 hover:bg-[--bg-hover] transition-colors"
                 style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
               >
                 Archive Chat
@@ -570,7 +1082,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 type="button"
                 aria-label="Open history"
                 onClick={() => setPanelMode((current) => current === "chat" ? "history" : "chat")}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] border hover:bg-[--bg-hover] transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:bg-[--bg-hover] transition-colors"
                 style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
               >
                 <HistoryIcon />
@@ -603,9 +1115,87 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   </div>
                 )}
               </div>
+              {builderAskMode ? (
+                <div
+                  className="mb-4 border px-4 py-3 text-xs leading-6"
+                  style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)", color: "var(--text-dim)" }}
+                  data-testid="builder-ask-hint"
+                >
+                  <span className="uppercase tracking-[0.16em]" style={{ color: "#a78bfa" }}>Builder is in Ask mode</span>
+                  {" — chat will answer questions about building but won\u2019t execute tools or launch tasks. Switch to "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      chat.setExecutionMode("agent");
+                    }}
+                    className="underline"
+                    style={{ color: "#a78bfa" }}
+                  >
+                    Agent mode
+                  </button>
+                  {" to scaffold projects and run builds."}
+                </div>
+              ) : null}
+              {chat.builderInbox.length > 0 ? (
+                <div className="mb-4 space-y-3">
+                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--warning)" }}>
+                    builder inbox
+                  </div>
+                  <BuilderCardList
+                    cards={chat.builderInbox}
+                    disabled={chat.isPending || chat.isBootstrapping}
+                    onAction={(interactionId, action) => {
+                      void handleBuilderInteraction(interactionId, action);
+                    }}
+                  />
+                </div>
+              ) : null}
+              {showBuilderWelcome ? (
+                <div className="mb-4">
+                  <BuilderWelcome
+                    projects={builderProjects}
+                    onSelectProject={(id) => {
+                      chat.setSelectedBuilderProjectId(id);
+                    }}
+                    onNewProject={() => {
+                      chat.startBuilderOnboarding();
+                      setOnboardingError(null);
+                    }}
+                  />
+                </div>
+              ) : null}
+              {builderOnboarding ? (
+                <div className="mb-4">
+                  <BuilderOnboarding
+                    step={builderOnboarding.step}
+                    spec={builderOnboarding.spec}
+                    stackPresets={builderStackPresets}
+                    templates={builderTemplates}
+                    onUpdateSpec={chat.updateBuilderOnboardingSpec}
+                    onSetStep={chat.setBuilderOnboardingStep}
+                    onConfirm={() => {
+                      setOnboardingBusy(true);
+                      setOnboardingError(null);
+                      void chat.confirmBuilderOnboarding()
+                        .catch((error) => {
+                          setOnboardingError(error instanceof Error ? error.message : String(error));
+                        })
+                        .finally(() => setOnboardingBusy(false));
+                    }}
+                    onCancel={() => {
+                      chat.cancelBuilderOnboarding();
+                      setOnboardingError(null);
+                      setOnboardingBusy(false);
+                    }}
+                    disabled={onboardingBusy}
+                    error={onboardingError}
+                  />
+                </div>
+              ) : null}
               <div className="space-y-3">
                 <MessageGroups
                   messages={chat.messages}
+                  emptyHint={builderPluginActive ? "Select a project and describe what to build. Builder will scaffold, generate, and run tasks in the workspace." : undefined}
                   onPromote={(message) => {
                     if (message.role !== "user" && message.role !== "assistant") {
                       return;
@@ -963,15 +1553,31 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           style={{ borderColor: composerAccentBorder, background: "var(--bg-surface)" }}
           onSubmit={(event) => {
             event.preventDefault();
-            setOracleModeQuery(null);
-            void chat.sendMessage(input, {
-              mode: executionMode,
-              pluginId: executionPluginId,
-              attachments: selectedAttachments,
-            });
-            setInput("");
-            clearSelectedAttachments();
-            setAttachmentMenuOpen(false);
+            setActionError(null);
+            const oracleIntent = getOraclePredictionIntent(input);
+            const useOraclePlugin = oracleIntent.matched && executionPluginId !== "oracle";
+            if (useOraclePlugin) {
+              setExecutionMode("agent");
+              setExecutionPluginId("oracle");
+            }
+            const submitMode = useOraclePlugin ? "agent" : executionMode;
+            const submitPlugin = useOraclePlugin ? "oracle" : executionPluginId;
+            const submit = builderPluginActive
+              ? chat.launchBuilderTaskFromChat(input, { projectId: selectedBuilderProjectId })
+              : chat.sendMessage(input, {
+                  mode: submitMode,
+                  pluginId: submitPlugin,
+                  attachments: selectedAttachments,
+                });
+            void submit
+              .then(() => {
+                setInput("");
+                clearSelectedAttachments();
+                setAttachmentMenuOpen(false);
+              })
+              .catch((error) => {
+                setActionError(error instanceof Error ? error.message : String(error));
+              });
           }}
         >
           <div className="p-3">
@@ -980,58 +1586,18 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
               value={input}
               onChange={(event) => {
                 setInput(event.target.value);
-                if (oracleModeQuery) {
-                  setOracleModeQuery(null);
-                }
               }}
               onInput={(event) => {
                 const el = event.currentTarget;
                 el.style.height = "auto";
                 el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
               }}
-              placeholder="Draft a launch thread about our product update..."
+              placeholder={builderPluginActive ? "Describe what to build or change in the selected project..." : "Draft a launch thread about our product update..."}
               rows={1}
               className="w-full bg-transparent text-sm resize-none leading-relaxed px-1 py-1"
               style={{ color: "var(--text-primary)", minHeight: "2.5rem", outline: "none", border: "none" }}
               disabled={panelMode === "history"}
             />
-            {panelMode === "chat" && oracleModeQuery ? (
-              <div
-                data-testid="oracle-mode-chip"
-                className="inline-flex items-center gap-2 mt-2 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] border"
-                style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(245,158,11,0.08)" }}
-              >
-                <span>Oracle mode</span>
-                <span style={{ color: "var(--text-dim)", textTransform: "none", letterSpacing: "0.04em" }}>
-                  {oracleModeQuery}
-                </span>
-              </div>
-            ) : null}
-            {panelMode === "chat" && oracleIntent.matched ? (
-              <button
-                data-testid="oracle-trigger-button"
-                type="button"
-                disabled={chat.isPending || !input.trim()}
-                onClick={() => {
-                  setExecutionMode("agent");
-                  setExecutionPluginId("oracle");
-                  setOracleModeQuery(oracleIntent.query || input.trim());
-                  if (selectedAttachments.length > 0) {
-                    void chat.sendOraclePrediction(input, { attachments: selectedAttachments });
-                  } else {
-                    void chat.sendOraclePrediction(input);
-                  }
-                  setInput("");
-                  clearSelectedAttachments();
-                  setAttachmentMenuOpen(false);
-                }}
-                className="inline-flex items-center gap-2 mt-2 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] border disabled:opacity-50"
-                style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "rgba(245,158,11,0.08)" }}
-              >
-                <span>Oracle</span>
-                <span>Run prediction</span>
-              </button>
-            ) : null}
             {selectedAttachments.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {selectedAttachments.map((attachment) => (
@@ -1046,6 +1612,34 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                     <span className="opacity-60">×</span>
                   </button>
                 ))}
+              </div>
+            ) : null}
+            {panelMode === "chat" && builderPluginActive ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                <label className="uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                  Builder project
+                </label>
+                <select
+                  value={selectedBuilderProjectId ?? ""}
+                  onChange={(event) => setSelectedBuilderProjectId(event.target.value || null)}
+                  disabled={chat.isPending || builderProjects.length === 0}
+                  className="bg-transparent border px-3 py-2 text-xs min-w-[220px]"
+                  style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                >
+                  {builderProjects.length === 0 ? <option value="">No active Builder projects</option> : null}
+                  {builderProjects.map((project) => (
+                    <option key={project.id} value={project.id}>{project.name} · {project.relativePath}</option>
+                  ))}
+                </select>
+                {builderProjects.length === 0 ? (
+                  <div style={{ color: "var(--warning)" }}>
+                    Create a project first using <strong>New Build</strong> above.
+                  </div>
+                ) : (
+                  <div style={{ color: "var(--text-dim)" }}>
+                    Tasks launch into chat cards and inbox.
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
@@ -1144,7 +1738,10 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
             <select
               value={executionPluginId}
               disabled={panelMode === "history" || chat.isPending}
-              onChange={(event) => setExecutionPluginId(event.target.value)}
+              onChange={(event) => {
+                setExecutionPluginId(event.target.value);
+                setActionError(null);
+              }}
               title={activePlugin.description}
               className="bg-transparent text-xs px-1.5 py-1 outline-none cursor-pointer max-w-[200px] truncate"
               style={{ color: "var(--text-dim)", border: "none" }}

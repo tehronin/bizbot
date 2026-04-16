@@ -7,17 +7,21 @@ import { getBuilderDatabaseInspectionOverview } from "@/lib/builder/database-int
 import { validateBuilderProjectEnv, type BuilderConfigReadinessState } from "@/lib/builder/environment";
 import { listBuilderGovernanceDecisions, type BuilderGovernanceDecisionRecord } from "@/lib/builder/governance";
 import {
+  BuilderDependencyContractDriftError,
   buildCurrentBuilderDependencyContractSnapshot,
   ensureBuilderRunDependencyContractPreflight,
   getBuilderDependencyPlanningContext,
   selectRelevantBuilderDependencyContext,
 } from "@/lib/builder/dependency-contract";
 import {
+  BuilderFileTopologyContractDriftError,
   ensureBuilderRunFileTopologySnapshotPreflight,
   getBuilderFileTopologyPlanningContext,
   selectRelevantBuilderFileTopologyContext,
 } from "@/lib/builder/file-topology-snapshots";
 import {
+  BuilderMcpContractDriftError,
+  BuilderMcpPolicyDriftError,
   ensureBuilderRunMcpSnapshotPreflight,
   getBuilderMcpSnapshotOverview,
   getLatestBuilderMcpSnapshotForRun,
@@ -45,7 +49,7 @@ import {
   upsertBuilderProjectBrief,
   type UpsertBuilderProjectBriefInput,
 } from "@/lib/builder/planning";
-import { buildBuilderPlanAdherence, composeBuilderTaskPrompt } from "@/lib/builder/prompt";
+import { buildBuilderPlanAdherence, composeBuilderTaskPrompt, inferBuilderTaskExecutionMode } from "@/lib/builder/prompt";
 import type { BuilderProjectRecord } from "@/lib/builder/projects";
 import { buildBuilderStructuredReview } from "@/lib/builder/review";
 import { completeBuilderRun, createBuilderRun, getBuilderProject, getBuilderProjectRecord, listBuilderRuns, updateBuilderProject, updateBuilderRun } from "@/lib/builder/projects";
@@ -192,9 +196,15 @@ function buildBuilderFileTopologySnapshotOverview(args: {
   };
 }
 
-function buildExecutionPlanSteps(taskSpec: BuilderTaskSpecState, status: BuilderTaskStatus, template: string): BuilderPlanStep[] {
+function buildExecutionPlanSteps(taskSpec: BuilderTaskSpecState, status: BuilderTaskStatus, template: string, mode?: string | null): BuilderPlanStep[] {
   const validators = taskSpec.validators.length > 0 ? taskSpec.validators.join(", ").toLowerCase() : "manual_review";
-  const hasContainerStage = Boolean(getBuilderTemplateContainerStageContract(template));
+  const effectiveMode = mode ?? inferBuilderTaskExecutionMode({
+    taskTitle: taskSpec.title,
+    taskSummary: taskSpec.summary,
+    completionCriteria: taskSpec.completionCriteria,
+    validators: taskSpec.validators.map(String),
+  });
+  const hasContainerStage = effectiveMode !== "analysis_only" && Boolean(getBuilderTemplateContainerStageContract(template));
   if (status === "SUCCEEDED") {
     return [
       { id: "inspect", label: `Inspect the current workspace against ${taskSpec.title}.`, status: "completed" },
@@ -662,31 +672,68 @@ export async function orchestrateBuilderTask(
   await ensureMcpClientsInitialized().catch((error) => {
     console.warn("[builder orchestrator] MCP client init skipped during snapshot preflight:", error);
   });
-  await ensureBuilderRunMcpSnapshotPreflight({
-    projectId: project.id,
-    runId: run.id,
-    taskId: task.id,
-    taskSpecId: taskSpec.id,
-    projectRelativePath: project.relativePath,
-    projectContext: project.context,
-  });
-  await ensureBuilderRunDependencyContractPreflight({
-    project: {
-      id: project.id,
-      relativePath: project.relativePath,
-      packageManager: project.packageManager,
-      context: project.context,
-    },
-    runId: run.id,
-  });
-  await ensureBuilderRunFileTopologySnapshotPreflight({
-    project: {
-      id: project.id,
-      relativePath: project.relativePath,
-      context: project.context,
-    },
-    runId: run.id,
-  });
+
+  // Contract enforcement: blocking for ACTIVE+ projects, informational for DRAFT/PLANNED.
+  // During initial scaffold the filesystem is in flux and baselines are freshly captured,
+  // so drift detections are expected noise rather than meaningful regressions.
+  const enforceContracts = planning.lifecycle !== "DRAFT" && planning.lifecycle !== "PLANNED";
+  const contractWarnings: string[] = [];
+
+  try {
+    await ensureBuilderRunMcpSnapshotPreflight({
+      projectId: project.id,
+      runId: run.id,
+      taskId: task.id,
+      taskSpecId: taskSpec.id,
+      projectRelativePath: project.relativePath,
+      projectContext: project.context,
+    });
+  } catch (error) {
+    if (enforceContracts || !(error instanceof BuilderMcpContractDriftError || error instanceof BuilderMcpPolicyDriftError)) throw error;
+    console.warn(`[builder orchestrator] MCP contract drift detected during initial build (non-blocking): ${error}`);
+    contractWarnings.push(`MCP drift: ${(error as Error).message}`);
+  }
+
+  try {
+    await ensureBuilderRunDependencyContractPreflight({
+      project: {
+        id: project.id,
+        relativePath: project.relativePath,
+        packageManager: project.packageManager,
+        context: project.context,
+      },
+      runId: run.id,
+    });
+  } catch (error) {
+    if (enforceContracts || !(error instanceof BuilderDependencyContractDriftError)) throw error;
+    console.warn(`[builder orchestrator] Dependency contract drift detected during initial build (non-blocking): ${error}`);
+    contractWarnings.push(`Dependency drift: ${(error as Error).message}`);
+  }
+
+  try {
+    await ensureBuilderRunFileTopologySnapshotPreflight({
+      project: {
+        id: project.id,
+        relativePath: project.relativePath,
+        context: project.context,
+      },
+      runId: run.id,
+    });
+  } catch (error) {
+    if (enforceContracts || !(error instanceof BuilderFileTopologyContractDriftError)) throw error;
+    console.warn(`[builder orchestrator] File topology drift detected during initial build (non-blocking): ${error}`);
+    contractWarnings.push(`File topology drift: ${(error as Error).message}`);
+  }
+
+  if (contractWarnings.length > 0) {
+    await updateRunProgress(run.id, {
+      taskId: task.id,
+      taskSpecId: taskSpec.id,
+      stage: "IMPLEMENTING",
+      template: project.template,
+      summary: `Contract drift detected but non-blocking (${planning.lifecycle}): ${contractWarnings.join("; ")}`,
+    });
+  }
   const mcpContext = selectRelevantBuilderMcpContext({
     mode: adherence.mode,
     validators: taskSpec.validators.map((validator) => String(validator)),
@@ -769,7 +816,7 @@ export async function orchestrateBuilderTask(
   });
 
   const initialTaskStatus = deriveTaskStatus(loopResult.loop.finalVerdict);
-  const containerStage = initialTaskStatus === "SUCCEEDED" && getBuilderTemplateContainerStageContract(project.template)
+  const containerStage = initialTaskStatus === "SUCCEEDED" && adherence.mode !== "analysis_only" && getBuilderTemplateContainerStageContract(project.template)
     ? await validateBuilderContainerStage({ project })
     : undefined;
   const taskStatus = initialTaskStatus === "CANCELLED"
@@ -933,7 +980,7 @@ export async function orchestrateBuilderTask(
     taskSpecId: finalizedTaskSpec.id,
     metadata: toInputJsonValue({
       ...normalizeBuilderTaskMetadata(implementingTask.metadata),
-      planSteps: buildExecutionPlanSteps(finalizedTaskSpec, taskStatus, project.template),
+      planSteps: buildExecutionPlanSteps(finalizedTaskSpec, taskStatus, project.template, adherence.mode),
       lastStageError: taskStatus === "SUCCEEDED" ? null : review.summary,
       lastAttemptedStage: taskStage,
       lastUserRequest: request,

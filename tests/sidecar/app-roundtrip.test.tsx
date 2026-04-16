@@ -49,6 +49,10 @@ function createBootstrap(): ChatConversationBootstrap {
         },
       ],
     },
+    builderProjects: [],
+    builderStackPresets: [],
+    builderTemplates: [],
+    builderInbox: [],
     activeRun: {
       conversationId: null,
       runId: null,

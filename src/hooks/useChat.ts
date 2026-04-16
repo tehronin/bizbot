@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import type {
+  BuilderChatCard,
+  BuilderOnboardingSpec,
+  BuilderOnboardingStep,
+  ChatBuilderProjectSummary,
+  ChatBuilderStackPresetSummary,
+  ChatBuilderTemplateSummary,
   ChatConversationBootstrap,
   ChatConversationDetail,
   ChatExecutionCatalog,
@@ -42,6 +48,7 @@ export interface ChatEntry {
   result?: string;
   round?: number;
   phase?: "call" | "result";
+  builderCards?: BuilderChatCard[];
 }
 
 interface AgentResponse {
@@ -92,6 +99,12 @@ export interface ActiveRunState {
 
 export interface UseChatResult {
   messages: ChatEntry[];
+  builderInbox: BuilderChatCard[];
+  builderProjects: ChatBuilderProjectSummary[];
+  builderStackPresets: ChatBuilderStackPresetSummary[];
+  builderTemplates: ChatBuilderTemplateSummary[];
+  builderOnboarding: { step: BuilderOnboardingStep; spec: BuilderOnboardingSpec } | null;
+  selectedBuilderProjectId: string | null;
   conversationId: string | null;
   currentConversation: ChatConversationDetail | null;
   recentConversations: ChatConversationSummary[];
@@ -111,6 +124,14 @@ export interface UseChatResult {
   executionPluginId: string;
   setExecutionMode: React.Dispatch<React.SetStateAction<ChatExecutionMode>>;
   setExecutionPluginId: React.Dispatch<React.SetStateAction<string>>;
+  setSelectedBuilderProjectId: React.Dispatch<React.SetStateAction<string | null>>;
+  startBuilderOnboarding: () => void;
+  updateBuilderOnboardingSpec: (updates: Partial<BuilderOnboardingSpec>) => void;
+  setBuilderOnboardingStep: (step: BuilderOnboardingStep) => void;
+  cancelBuilderOnboarding: () => void;
+  confirmBuilderOnboarding: () => Promise<void>;
+  resolveBuilderInteraction: (interactionId: string, action: "approve" | "reject" | "reconcile") => Promise<void>;
+  launchBuilderTaskFromChat: (request: string, options?: { projectId?: string | null; retryFailed?: boolean }) => Promise<void>;
   sendMessage: (input: string, options?: { mode?: ChatExecutionMode; pluginId?: string; attachments?: ChatMessageAttachment[] }) => Promise<void>;
   sendOraclePrediction: (input: string, options?: { attachments?: ChatMessageAttachment[] }) => Promise<void>;
   startNewChat: () => void;
@@ -174,7 +195,16 @@ const EMPTY_EXECUTION_CATALOG: ChatExecutionCatalog = {
     mode: "ask",
     pluginId: "just-chatting",
   },
-  plugins: [],
+  plugins: [{
+    id: "just-chatting",
+    displayName: "Just Chatting",
+    description: "Full-context chat and planning without tool execution.",
+    accentColor: "#38bdf8",
+    accentSurface: "rgba(56,189,248,0.12)",
+    accentBorder: "rgba(56,189,248,0.36)",
+    toollessInAsk: true,
+    toollessInAgent: true,
+  }],
 };
 
 function getStoredSelectedConversationId(): string | null {
@@ -233,7 +263,7 @@ function createInternalActiveRun(state?: ChatConversationUsageSummary | ActiveRu
 function createEntry(
   role: ChatEntry["role"],
   content: string,
-  metadata?: Partial<Pick<ChatEntry, "chatMode" | "chatPluginId" | "attachments">>,
+  metadata?: Partial<Pick<ChatEntry, "chatMode" | "chatPluginId" | "attachments" | "builderCards">>,
 ): ChatEntry {
   return {
     id: `${role}-${crypto.randomUUID()}`,
@@ -378,6 +408,12 @@ function isAbortError(error: unknown): boolean {
 
 export function useChat(): UseChatResult {
   const [messages, setMessages] = useState<ChatEntry[]>([]);
+  const [builderInbox, setBuilderInbox] = useState<BuilderChatCard[]>([]);
+  const [builderProjects, setBuilderProjects] = useState<ChatBuilderProjectSummary[]>([]);
+  const [builderStackPresets, setBuilderStackPresets] = useState<ChatBuilderStackPresetSummary[]>([]);
+  const [builderTemplates, setBuilderTemplates] = useState<ChatBuilderTemplateSummary[]>([]);
+  const [builderOnboarding, setBuilderOnboarding] = useState<{ step: BuilderOnboardingStep; spec: BuilderOnboardingSpec } | null>(null);
+  const [selectedBuilderProjectId, setSelectedBuilderProjectId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [currentConversation, setCurrentConversation] = useState<ChatConversationDetail | null>(null);
   const [recentConversations, setRecentConversations] = useState<ChatConversationSummary[]>([]);
@@ -464,6 +500,15 @@ export function useChat(): UseChatResult {
       setExecutionCatalog(payload.executionCatalog);
       setExecutionMode(payload.executionDefaults.mode);
       setExecutionPluginId(payload.executionDefaults.pluginId);
+      setBuilderProjects(payload.builderProjects);
+      setBuilderStackPresets(payload.builderStackPresets ?? []);
+      setBuilderTemplates(payload.builderTemplates ?? []);
+      setSelectedBuilderProjectId((current) => (
+        current && payload.builderProjects.some((project) => project.id === current)
+          ? current
+          : payload.builderProjects[0]?.id ?? null
+      ));
+      setBuilderInbox(payload.builderInbox);
       setConversationId(payload.currentConversationId);
       setCurrentConversation(payload.currentConversation);
       persistSelectedConversationId(payload.currentConversationId);
@@ -740,6 +785,121 @@ export function useChat(): UseChatResult {
     }
   };
 
+  function startBuilderOnboarding(): void {
+    setBuilderOnboarding({
+      step: "naming",
+      spec: {
+        name: "",
+        description: "",
+        stackPresetKey: "",
+        template: "node-cli",
+        packageManager: "NPM",
+        docker: true,
+        git: true,
+      },
+    });
+  }
+
+  function updateBuilderOnboardingSpec(updates: Partial<BuilderOnboardingSpec>): void {
+    setBuilderOnboarding((current) =>
+      current ? { ...current, spec: { ...current.spec, ...updates } } : current,
+    );
+  }
+
+  function setBuilderOnboardingStep(step: BuilderOnboardingStep): void {
+    setBuilderOnboarding((current) => (current ? { ...current, step } : current));
+  }
+
+  function cancelBuilderOnboarding(): void {
+    setBuilderOnboarding(null);
+  }
+
+  async function confirmBuilderOnboarding(): Promise<void> {
+    if (!builderOnboarding) {
+      return;
+    }
+
+    const { spec } = builderOnboarding;
+    const response = await fetch("/api/chat/builder/onboarding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...spec,
+        conversationId: conversationId ?? undefined,
+      }),
+    });
+    const payload = await readJson<{ error?: string; projectId?: string; conversationId?: string }>(response);
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to create project from onboarding.");
+    }
+
+    setBuilderOnboarding(null);
+    setSelectedBuilderProjectId(payload.projectId ?? null);
+
+    await loadBootstrap({
+      selectedConversationId: payload.conversationId ?? conversationId,
+      replaceCurrent: true,
+    });
+  }
+
+  async function resolveBuilderInteraction(interactionId: string, action: "approve" | "reject" | "reconcile"): Promise<void> {
+    const response = await fetch(`/api/chat/builder/interactions/${interactionId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, conversationId }),
+    });
+    const payload = await readJson<{ error?: string }>(response);
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to resolve Builder interaction.");
+    }
+
+    await loadBootstrap({
+      selectedConversationId: conversationId,
+      replaceCurrent: true,
+    });
+  }
+
+  async function launchBuilderTaskFromChat(request: string, options?: { projectId?: string | null; retryFailed?: boolean }): Promise<void> {
+    const trimmed = request.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const projectId = options?.projectId ?? selectedBuilderProjectId;
+    if (!projectId) {
+      throw new Error("Select a Builder project before launching a task from chat.");
+    }
+
+    setMessages((current) => [...current, createEntry("user", trimmed, {
+      chatMode: "agent",
+      chatPluginId: "builder",
+    })]);
+
+    const response = await fetch("/api/chat/builder/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversationId: conversationId ?? undefined,
+        projectId,
+        request: trimmed,
+        retryFailed: options?.retryFailed ?? false,
+      }),
+    });
+    const payload = await readJson<{ error?: string; conversationId?: string }>(response);
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to launch Builder task from chat.");
+    }
+
+    const nextConversationId = payload.conversationId ?? conversationId;
+    await loadBootstrap({
+      selectedConversationId: nextConversationId,
+      replaceCurrent: true,
+    });
+  }
+
   async function streamAgentRequest(input: string, options?: {
     oraclePrediction?: boolean;
     mode?: ChatExecutionMode;
@@ -871,7 +1031,11 @@ export function useChat(): UseChatResult {
   }
 
   async function sendMessage(input: string, options?: { mode?: ChatExecutionMode; pluginId?: string; attachments?: ChatMessageAttachment[] }): Promise<void> {
-    await streamAgentRequest(input, options);
+    const isOracle = (options?.pluginId ?? executionPluginId) === "oracle";
+    await streamAgentRequest(input, {
+      ...options,
+      ...(isOracle ? { mode: "agent", pluginId: "oracle" } : {}),
+    });
   }
 
   async function sendOraclePrediction(input: string, options?: { attachments?: ChatMessageAttachment[] }): Promise<void> {
@@ -885,6 +1049,12 @@ export function useChat(): UseChatResult {
 
   return {
     messages,
+    builderInbox,
+    builderProjects,
+    builderStackPresets,
+    builderTemplates,
+    builderOnboarding,
+    selectedBuilderProjectId,
     conversationId,
     currentConversation,
     recentConversations,
@@ -904,6 +1074,14 @@ export function useChat(): UseChatResult {
     executionPluginId,
     setExecutionMode,
     setExecutionPluginId,
+    setSelectedBuilderProjectId,
+    startBuilderOnboarding,
+    updateBuilderOnboardingSpec,
+    setBuilderOnboardingStep,
+    cancelBuilderOnboarding,
+    confirmBuilderOnboarding,
+    resolveBuilderInteraction,
+    launchBuilderTaskFromChat,
     sendMessage,
     sendOraclePrediction,
     startNewChat,

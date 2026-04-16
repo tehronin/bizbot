@@ -179,6 +179,14 @@ const runJournalMocks = vi.hoisted(() => ({
   })),
 }));
 
+const builderInteractionMocks = vi.hoisted(() => ({
+  listPendingBuilderInteractionCards: vi.fn(async () => []),
+}));
+
+const builderProjectMocks = vi.hoisted(() => ({
+  listBuilderProjects: vi.fn(async () => [] as Array<{ id: string; name: string; relativePath: string; archivedAt: Date | null }>),
+}));
+
 vi.mock("@/lib/db", () => ({
   db: dbMocks,
 }));
@@ -189,6 +197,14 @@ vi.mock("@/lib/agent/user-context", () => ({
 
 vi.mock("@/lib/agent/run-journal", () => ({
   getConversationUsageSummary: runJournalMocks.getConversationUsageSummary,
+}));
+
+vi.mock("@/lib/builder/interactions", () => ({
+  listPendingBuilderInteractionCards: builderInteractionMocks.listPendingBuilderInteractionCards,
+}));
+
+vi.mock("@/lib/builder/projects", () => ({
+  listBuilderProjects: builderProjectMocks.listBuilderProjects,
 }));
 
 vi.mock("@/lib/chat/execution", () => ({
@@ -228,6 +244,20 @@ import {
 
 describe("chat conversations service", () => {
   beforeEach(() => {
+    builderProjectMocks.listBuilderProjects.mockResolvedValue([
+      {
+        id: "project-1",
+        name: "Alpha",
+        relativePath: "workspace/alpha",
+        archivedAt: null,
+      },
+      {
+        id: "project-2",
+        name: "Archived",
+        relativePath: "workspace/archived",
+        archivedAt: new Date("2026-04-01T12:00:00.000Z"),
+      },
+    ]);
     store.conversations = [
       {
         id: "active-newer",
@@ -307,6 +337,13 @@ describe("chat conversations service", () => {
     expect(result.activeRun.conversationId).toBe("active-older");
     expect(result.activeRun.totalTokens).toBe(165);
     expect(result.modelPricing["gemini-3-flash-preview"]?.promptUsdPerMillion).toBe(0.45);
+    expect(result.builderProjects).toEqual([
+      {
+        id: "project-1",
+        name: "Alpha",
+        relativePath: "workspace/alpha",
+      },
+    ]);
   });
 
   it("falls back to the most recent active conversation when there is no stored selection", async () => {

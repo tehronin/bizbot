@@ -18,10 +18,16 @@
  *   npm run mcp:stdio
  */
 
+import { Console } from "node:console";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadLocalEnv } from "./load-local-env.mjs";
 
 loadLocalEnv();
+
+// Redirect all console output to stderr so it never pollutes the JSON-RPC
+// channel on stdout. This must happen before any application module is
+// imported, since console.log / console.info default to stdout in Node.js.
+globalThis.console = new Console({ stdout: process.stderr, stderr: process.stderr });
 
 const { configureStdioMcpEnvironment, getStdioMcpServerOptions } = await import("../src/lib/mcp/stdio.ts");
 configureStdioMcpEnvironment(process.env);

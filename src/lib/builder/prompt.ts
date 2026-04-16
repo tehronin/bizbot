@@ -89,7 +89,7 @@ function renderFileTopologyContractGuidance(context: BuilderProjectContextState)
   return `Builder file topology contract: keep new files aligned with the accepted topology hash ${context.fileTopologyContract.expectedHash.slice(0, 12)}… and preserve ${context.fileTopologyContract.snapshot.anchors.builderProjectionRoot} as Builder-managed projection space; if structure legitimately changes, resolve file topology drift instead of silently moving the baseline.`;
 }
 
-function inferBuilderTaskExecutionMode(args: {
+export function inferBuilderTaskExecutionMode(args: {
   taskTitle: string;
   taskSummary: string;
   completionCriteria: string[];

@@ -4,12 +4,22 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatWorkspaceContent } from "@/components/chat/ChatWorkspace";
-import type { ChatConversationDetail, ChatConversationHistoryFilters, ChatConversationPagination, ChatConversationSummary } from "@/lib/chat/types";
+import type { BuilderChatCard, ChatConversationDetail, ChatConversationHistoryFilters, ChatConversationPagination, ChatConversationSummary } from "@/lib/chat/types";
 import type { UseChatResult } from "@/hooks/useChat";
 
 const PAGE_SIZE = 6;
 const sendMessageSpy = vi.fn(async () => undefined);
 const sendOraclePredictionSpy = vi.fn(async () => undefined);
+const resolveBuilderInteractionSpy = vi.fn(async () => undefined);
+const launchBuilderTaskFromChatSpy = vi.fn(async () => undefined);
+const setSelectedBuilderProjectIdSpy = vi.fn();
+const setExecutionPluginIdSpy = vi.fn();
+const setExecutionModeSpy = vi.fn();
+const startBuilderOnboardingSpy = vi.fn();
+const updateBuilderOnboardingSpecSpy = vi.fn();
+const setBuilderOnboardingStepSpy = vi.fn();
+const cancelBuilderOnboardingSpy = vi.fn();
+const confirmBuilderOnboardingSpy = vi.fn(async () => undefined);
 
 vi.mock("@/components/chat/AgenticSetupDrawer", () => ({
   AgenticSetupDrawer: () => null,
@@ -18,8 +28,40 @@ vi.mock("@/components/chat/AgenticSetupDrawer", () => ({
 afterEach(() => {
   sendMessageSpy.mockClear();
   sendOraclePredictionSpy.mockClear();
+  resolveBuilderInteractionSpy.mockClear();
+  launchBuilderTaskFromChatSpy.mockClear();
+  setSelectedBuilderProjectIdSpy.mockClear();
+  setExecutionPluginIdSpy.mockClear();
+  setExecutionModeSpy.mockClear();
+  startBuilderOnboardingSpy.mockClear();
+  updateBuilderOnboardingSpecSpy.mockClear();
+  setBuilderOnboardingStepSpy.mockClear();
+  cancelBuilderOnboardingSpy.mockClear();
+  confirmBuilderOnboardingSpy.mockClear();
   cleanup();
 });
+
+function createBuilderCard(overrides?: Partial<BuilderChatCard>): BuilderChatCard {
+  return {
+    id: "interaction-1",
+    interactionId: "interaction-1",
+    kind: "mcp_contract_drift",
+    status: "pending",
+    projectId: "project-1",
+    projectName: "Alpha",
+    projectRelativePath: "workspace/alpha",
+    runId: "run-1",
+    title: "Approve Builder contract rollover",
+    summary: "Builder contract drift needs a decision.",
+    state: "drifted",
+    recommendations: ["Review API changes"],
+    actions: [{ id: "approve", label: "approve", variant: "primary" }],
+    updatedAt: "2026-04-16T17:00:00.000Z",
+    resolvedAt: null,
+    resolutionReason: null,
+    ...overrides,
+  };
+}
 
 function createSummary(overrides?: Partial<ChatConversationSummary>): ChatConversationSummary {
   return {
@@ -160,6 +202,14 @@ function Harness() {
       chatPluginId: "content",
       attachments: [{ type: "knowledge-doc", path: "knowledge/brief.md", label: "brief.md" }],
     }],
+    builderInbox: [],
+    builderProjects: [
+      { id: "project-1", name: "Alpha", relativePath: "workspace/alpha" },
+    ],
+    builderStackPresets: [],
+    builderTemplates: [],
+    builderOnboarding: null,
+    selectedBuilderProjectId: "project-1",
     conversationId,
     currentConversation,
     recentConversations,
@@ -208,8 +258,16 @@ function Harness() {
     },
     executionMode: "ask",
     executionPluginId: "just-chatting",
-    setExecutionMode: vi.fn(),
-    setExecutionPluginId: vi.fn(),
+    setExecutionMode: setExecutionModeSpy,
+    setExecutionPluginId: setExecutionPluginIdSpy,
+    setSelectedBuilderProjectId: setSelectedBuilderProjectIdSpy,
+    startBuilderOnboarding: startBuilderOnboardingSpy,
+    updateBuilderOnboardingSpec: updateBuilderOnboardingSpecSpy,
+    setBuilderOnboardingStep: setBuilderOnboardingStepSpy,
+    cancelBuilderOnboarding: cancelBuilderOnboardingSpy,
+    confirmBuilderOnboarding: confirmBuilderOnboardingSpy,
+    resolveBuilderInteraction: resolveBuilderInteractionSpy,
+    launchBuilderTaskFromChat: launchBuilderTaskFromChatSpy,
     activeRun: {
       conversationId,
       runId: "run-live-1",
@@ -307,6 +365,95 @@ function Harness() {
     }),
     setRecentHistoryPage: (value) => setRecentPage((current) => typeof value === "function" ? value(current) : value),
     setArchivedHistoryPage: (value) => setArchivedPage((current) => typeof value === "function" ? value(current) : value),
+  };
+
+  return <ChatWorkspaceContent chat={chat} setupOpen={false} closeSetupHref="/chat" />;
+}
+
+function BuilderHarness() {
+  const chat: UseChatResult = {
+    messages: [],
+    builderInbox: [createBuilderCard()],
+    builderProjects: [
+      { id: "project-1", name: "Alpha", relativePath: "workspace/alpha" },
+      { id: "project-2", name: "Beta", relativePath: "workspace/beta" },
+    ],
+    builderStackPresets: [
+      { key: "next-tailwind", displayName: "Next.js + Tailwind", description: "App Router with Tailwind.", template: "next-app", packageManager: "NPM", tags: ["react", "nextjs", "tailwind"] },
+    ],
+    builderTemplates: [
+      { key: "node-cli", displayName: "Node CLI", description: "Minimal TS CLI package.", defaultPackageManager: "NPM" },
+      { key: "next-app", displayName: "Next App", description: "Next.js App Router app.", defaultPackageManager: "NPM" },
+    ],
+    builderOnboarding: null,
+    selectedBuilderProjectId: "project-1",
+    conversationId: "conv-builder",
+    currentConversation: createDetail({ id: "conv-builder", label: "Builder chat", title: "Builder chat", archivedAt: null }),
+    recentConversations: [createSummary({ id: "conv-builder", label: "Builder chat", title: "Builder chat" })],
+    archivedConversations: [],
+    recentPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: 1, totalPages: 1 },
+    archivedPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: 0, totalPages: 1 },
+    historyFilters: { search: "", from: null, to: null },
+    historyConversation: null,
+    isPending: false,
+    isBootstrapping: false,
+    isLoadingHistoryConversation: false,
+    isLoadingHistoryLists: false,
+    activeRun: {
+      conversationId: "conv-builder",
+      runId: "run-builder",
+      profile: null,
+      profileLabel: null,
+      provider: "openai",
+      model: "gpt-4o",
+      startedAt: "2026-04-01T12:00:00.000Z",
+      requestCount: 1,
+      promptTokens: 12,
+      completionTokens: 8,
+      totalTokens: 20,
+      cachedPromptTokens: 0,
+    },
+    modelPricing: {},
+    executionCatalog: {
+      defaults: { mode: "agent", pluginId: "builder" },
+      plugins: [
+        {
+          id: "builder",
+          displayName: "Builder",
+          description: "Launch and govern Builder work from chat.",
+          accentColor: "#f59e0b",
+          accentSurface: "rgba(245,158,11,0.12)",
+          accentBorder: "rgba(245,158,11,0.36)",
+          toollessInAsk: false,
+          toollessInAgent: false,
+        },
+      ],
+    },
+    executionMode: "agent",
+    executionPluginId: "builder",
+    setExecutionMode: vi.fn(),
+    setExecutionPluginId: vi.fn(),
+    setSelectedBuilderProjectId: setSelectedBuilderProjectIdSpy,
+    startBuilderOnboarding: startBuilderOnboardingSpy,
+    updateBuilderOnboardingSpec: updateBuilderOnboardingSpecSpy,
+    setBuilderOnboardingStep: setBuilderOnboardingStepSpy,
+    cancelBuilderOnboarding: cancelBuilderOnboardingSpy,
+    confirmBuilderOnboarding: confirmBuilderOnboardingSpy,
+    resolveBuilderInteraction: resolveBuilderInteractionSpy,
+    launchBuilderTaskFromChat: launchBuilderTaskFromChatSpy,
+    sendMessage: sendMessageSpy,
+    sendOraclePrediction: sendOraclePredictionSpy,
+    startNewChat: vi.fn(),
+    loadConversation: vi.fn(async () => undefined),
+    archiveConversation: vi.fn(async () => undefined),
+    archiveCurrentConversation: vi.fn(async () => undefined),
+    openHistoryConversation: vi.fn(async () => undefined),
+    restoreConversation: vi.fn(async () => undefined),
+    deleteConversation: vi.fn(async () => undefined),
+    applyHistoryFilters: vi.fn(async () => undefined),
+    clearHistoryFilters: vi.fn(async () => undefined),
+    setRecentHistoryPage: vi.fn(),
+    setArchivedHistoryPage: vi.fn(),
   };
 
   return <ChatWorkspaceContent chat={chat} setupOpen={false} closeSetupHref="/chat" />;
@@ -419,28 +566,26 @@ describe("chat workspace history panel", () => {
     expect(screen.getByText(/cached/i)).toBeTruthy();
   });
 
-  it("shows an Oracle prediction badge for matching prompts and runs the explicit Oracle flow on click", async () => {
+  it("auto-switches to Oracle plugin and sends via sendMessage when oracle intent is detected on submit", async () => {
     render(<Harness />);
 
     fireEvent.change(screen.getByPlaceholderText("Draft a launch thread about our product update..."), {
       target: { value: "oracle predict btc 150k" },
     });
 
-    const oracleButton = screen.getByRole("button", { name: /run prediction/i });
-    expect(oracleButton).toBeTruthy();
-
-    fireEvent.click(oracleButton);
+    const form = screen.getByPlaceholderText("Draft a launch thread about our product update...").closest("form")!;
+    fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(sendOraclePredictionSpy).toHaveBeenCalledWith("oracle predict btc 150k");
+      expect(setExecutionModeSpy).toHaveBeenCalledWith("agent");
+      expect(setExecutionPluginIdSpy).toHaveBeenCalledWith("oracle");
+      expect(sendMessageSpy).toHaveBeenCalledWith("oracle predict btc 150k", expect.objectContaining({
+        mode: "agent",
+        pluginId: "oracle",
+      }));
     });
 
-    expect(screen.getByText("Oracle mode")).toBeTruthy();
-    expect(screen.getByText("btc 150k")).toBeTruthy();
     expect((screen.getByPlaceholderText("Draft a launch thread about our product update...") as HTMLInputElement).value).toBe("");
-
-    const chat = screen.getByText("Here is the live chat.").closest("div");
-    expect(chat).toBeTruthy();
   });
 
   it("shows per-message execution chips in the transcript", () => {
@@ -449,5 +594,217 @@ describe("chat workspace history panel", () => {
     expect(screen.getAllByText("content").length).toBeGreaterThan(0);
     expect(screen.getAllByText("agent").length).toBeGreaterThan(0);
     expect(screen.getByText("doc: brief.md")).toBeTruthy();
+  });
+
+  it("resolves Builder inbox cards from chat", async () => {
+    render(<BuilderHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "approve" }));
+
+    await waitFor(() => {
+      expect(resolveBuilderInteractionSpy).toHaveBeenCalledWith("interaction-1", "approve");
+    });
+  });
+
+  it("launches Builder tasks from the chat composer", async () => {
+    render(<BuilderHarness />);
+
+    fireEvent.change(screen.getByPlaceholderText("Describe what to build or change in the selected project..."), {
+      target: { value: "Implement archive and delete cards" },
+    });
+    fireEvent.change(screen.getByDisplayValue("Alpha · workspace/alpha"), {
+      target: { value: "project-2" },
+    });
+
+    expect(setSelectedBuilderProjectIdSpy).toHaveBeenCalledWith("project-2");
+
+    const composer = screen.getByPlaceholderText("Describe what to build or change in the selected project...").closest("form");
+    expect(composer).toBeTruthy();
+    fireEvent.submit(composer!);
+
+    await waitFor(() => {
+      expect(launchBuilderTaskFromChatSpy).toHaveBeenCalledWith("Implement archive and delete cards", { projectId: "project-1" });
+    });
+  });
+});
+
+/* ── Builder onboarding ── */
+
+function OnboardingHarness({ onboarding }: { onboarding?: UseChatResult["builderOnboarding"] }) {
+  const chat: UseChatResult = {
+    messages: [],
+    builderInbox: [],
+    builderProjects: [
+      { id: "project-1", name: "Alpha", relativePath: "workspace/alpha" },
+    ],
+    builderStackPresets: [
+      { key: "next-tailwind", displayName: "Next.js + Tailwind", description: "App Router with Tailwind.", template: "next-app", packageManager: "NPM", tags: ["react", "nextjs", "tailwind"] },
+    ],
+    builderTemplates: [
+      { key: "node-cli", displayName: "Node CLI", description: "Minimal TS CLI package.", defaultPackageManager: "NPM" },
+      { key: "next-app", displayName: "Next App", description: "Next.js App Router app.", defaultPackageManager: "NPM" },
+    ],
+    builderOnboarding: onboarding ?? null,
+    selectedBuilderProjectId: "project-1",
+    conversationId: "conv-onb",
+    currentConversation: null,
+    recentConversations: [],
+    archivedConversations: [],
+    recentPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: 0, totalPages: 1 },
+    archivedPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: 0, totalPages: 1 },
+    historyFilters: { search: "", from: null, to: null },
+    historyConversation: null,
+    isPending: false,
+    isBootstrapping: false,
+    isLoadingHistoryConversation: false,
+    isLoadingHistoryLists: false,
+    activeRun: {
+      conversationId: "conv-onb",
+      runId: "run-onb",
+      profile: null,
+      profileLabel: null,
+      provider: "openai",
+      model: "gpt-4o",
+      startedAt: "2026-04-01T12:00:00.000Z",
+      requestCount: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cachedPromptTokens: 0,
+    },
+    modelPricing: {},
+    executionCatalog: {
+      defaults: { mode: "agent", pluginId: "builder" },
+      plugins: [
+        {
+          id: "builder",
+          displayName: "Builder",
+          description: "Launch and govern Builder work from chat.",
+          accentColor: "#f59e0b",
+          accentSurface: "rgba(245,158,11,0.12)",
+          accentBorder: "rgba(245,158,11,0.36)",
+          toollessInAsk: false,
+          toollessInAgent: false,
+        },
+      ],
+    },
+    executionMode: "agent",
+    executionPluginId: "builder",
+    setExecutionMode: vi.fn(),
+    setExecutionPluginId: vi.fn(),
+    setSelectedBuilderProjectId: setSelectedBuilderProjectIdSpy,
+    startBuilderOnboarding: startBuilderOnboardingSpy,
+    updateBuilderOnboardingSpec: updateBuilderOnboardingSpecSpy,
+    setBuilderOnboardingStep: setBuilderOnboardingStepSpy,
+    cancelBuilderOnboarding: cancelBuilderOnboardingSpy,
+    confirmBuilderOnboarding: confirmBuilderOnboardingSpy,
+    resolveBuilderInteraction: resolveBuilderInteractionSpy,
+    launchBuilderTaskFromChat: launchBuilderTaskFromChatSpy,
+    sendMessage: sendMessageSpy,
+    sendOraclePrediction: sendOraclePredictionSpy,
+    startNewChat: vi.fn(),
+    loadConversation: vi.fn(async () => undefined),
+    archiveConversation: vi.fn(async () => undefined),
+    archiveCurrentConversation: vi.fn(async () => undefined),
+    openHistoryConversation: vi.fn(async () => undefined),
+    restoreConversation: vi.fn(async () => undefined),
+    deleteConversation: vi.fn(async () => undefined),
+    applyHistoryFilters: vi.fn(async () => undefined),
+    clearHistoryFilters: vi.fn(async () => undefined),
+    setRecentHistoryPage: vi.fn(),
+    setArchivedHistoryPage: vi.fn(),
+  };
+
+  return <ChatWorkspaceContent chat={chat} setupOpen={false} closeSetupHref="/chat" />;
+}
+
+describe("builder onboarding", () => {
+  it("shows builder welcome when builder plugin is active and no messages", () => {
+    render(<OnboardingHarness />);
+    expect(screen.getByTestId("builder-welcome")).toBeTruthy();
+    expect(screen.getByTestId("builder-new-project")).toBeTruthy();
+    // existing project card
+    expect(screen.getByTestId("builder-project-project-1")).toBeTruthy();
+  });
+
+  it("clicking new project triggers startBuilderOnboarding", () => {
+    render(<OnboardingHarness />);
+    fireEvent.click(screen.getByTestId("builder-new-project"));
+    expect(startBuilderOnboardingSpy).toHaveBeenCalled();
+  });
+
+  it("renders the naming step", () => {
+    render(
+      <OnboardingHarness
+        onboarding={{
+          step: "naming",
+          spec: { name: "", description: "", stackPresetKey: "", template: "", packageManager: "NPM", docker: true, git: true },
+        }}
+      />,
+    );
+    expect(screen.getByTestId("builder-onboarding")).toBeTruthy();
+    expect(screen.getByTestId("onboarding-name-input")).toBeTruthy();
+    expect(screen.getByTestId("onboarding-desc-input")).toBeTruthy();
+    // welcome should not appear during onboarding
+    expect(screen.queryByTestId("builder-welcome")).toBeNull();
+  });
+
+  it("renders the stack selection step", () => {
+    render(
+      <OnboardingHarness
+        onboarding={{
+          step: "stack",
+          spec: { name: "My App", description: "A test app", stackPresetKey: "", template: "", packageManager: "NPM", docker: true, git: true },
+        }}
+      />,
+    );
+    expect(screen.getByTestId("builder-onboarding")).toBeTruthy();
+    expect(screen.getByTestId("onboarding-stack-next-tailwind")).toBeTruthy();
+  });
+
+  it("renders the configuring step", () => {
+    render(
+      <OnboardingHarness
+        onboarding={{
+          step: "configuring",
+          spec: { name: "My App", description: "A test app", stackPresetKey: "next-tailwind", template: "next-app", packageManager: "NPM", docker: true, git: true },
+        }}
+      />,
+    );
+    expect(screen.getByTestId("builder-onboarding")).toBeTruthy();
+    expect(screen.getByTestId("onboarding-template")).toBeTruthy();
+    expect(screen.getByTestId("onboarding-pm")).toBeTruthy();
+    expect(screen.getByTestId("onboarding-docker")).toBeTruthy();
+    expect(screen.getByTestId("onboarding-git")).toBeTruthy();
+    expect(screen.getByTestId("onboarding-review")).toBeTruthy();
+  });
+
+  it("renders the confirming step with summary and create button", () => {
+    render(
+      <OnboardingHarness
+        onboarding={{
+          step: "confirming",
+          spec: { name: "My App", description: "A test app", stackPresetKey: "next-tailwind", template: "next-app", packageManager: "NPM", docker: true, git: true },
+        }}
+      />,
+    );
+    expect(screen.getByTestId("builder-onboarding")).toBeTruthy();
+    expect(screen.getByTestId("onboarding-confirm")).toBeTruthy();
+    expect(screen.getByText("My App")).toBeTruthy();
+  });
+
+  it("confirm calls confirmBuilderOnboarding", async () => {
+    render(
+      <OnboardingHarness
+        onboarding={{
+          step: "confirming",
+          spec: { name: "My App", description: "A test app", stackPresetKey: "next-tailwind", template: "next-app", packageManager: "NPM", docker: true, git: true },
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("onboarding-confirm"));
+    await waitFor(() => {
+      expect(confirmBuilderOnboardingSpy).toHaveBeenCalled();
+    });
   });
 });

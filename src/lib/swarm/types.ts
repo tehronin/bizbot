@@ -1,4 +1,4 @@
-export type SwarmExecutionMode = "core_chat_swarm" | "builder_swarm";
+export type SwarmExecutionMode = "core_chat_swarm" | "builder_swarm" | "oracle_swarm";
 
 export type SwarmFailurePolicy = "fail_closed" | "fallback_to_single_agent";
 
