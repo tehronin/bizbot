@@ -43,6 +43,65 @@ export interface BuilderArchitectureReconciliationState {
   retiredDecisionKeys: string[];
 }
 
+export type BuilderAdrRelevantFamily =
+  | "planning"
+  | "runtime"
+  | "service"
+  | "dependency"
+  | "database"
+  | "topology"
+  | "governance"
+  | "verification"
+  | "ui";
+
+export type BuilderAdrDecisionSourceStatus = "active" | "stale" | "new";
+export type BuilderAdrDecisionDisposition = "reconfirm" | "supersede" | "retire" | "defer";
+export type BuilderAdrOverallVerdict = "proceed" | "proceed_with_update" | "block" | "escalate";
+
+export interface BuilderAdrFocusDecisionState {
+  key: string;
+  sourceStatus: Exclude<BuilderAdrDecisionSourceStatus, "new">;
+  family: BuilderAdrRelevantFamily | null;
+  protectedBoundary: boolean;
+  rationale: string;
+}
+
+export interface BuilderAdrContextFocusState {
+  phase: "planning" | "execution";
+  relevant: boolean;
+  summary: string;
+  relevantFamilies: BuilderAdrRelevantFamily[];
+  activeRelevantKeys: string[];
+  staleRelevantKeys: string[];
+  protectedBoundariesTouched: string[];
+  decisions: BuilderAdrFocusDecisionState[];
+}
+
+export interface BuilderAdrDecisionAdjudicationState {
+  key: string;
+  sourceStatus: BuilderAdrDecisionSourceStatus;
+  family: BuilderAdrRelevantFamily | null;
+  disposition: BuilderAdrDecisionDisposition;
+  protectedBoundary: boolean;
+  needsApproval: boolean;
+  rationale: string;
+}
+
+export interface BuilderAdrAdjudicationState {
+  phase: "planning" | "execution";
+  relevant: boolean;
+  summary: string;
+  overallVerdict: BuilderAdrOverallVerdict;
+  escalationReason: string | null;
+  relevantFamilies: BuilderAdrRelevantFamily[];
+  activeRelevantKeys: string[];
+  staleRelevantKeys: string[];
+  protectedBoundariesTouched: string[];
+  updateDecisionKeys: string[];
+  retireDecisionKeys: string[];
+  decisions: BuilderAdrDecisionAdjudicationState[];
+}
+
 export interface BuilderPlanAdherenceState {
   allowsExecution: boolean;
   mode: "analysis_only" | "scaffold" | "implementation" | "verification";
@@ -410,6 +469,7 @@ export interface BuilderPlannerCritiqueState {
   issues: BuilderPlannerCritiqueIssue[];
   normalizedMilestones: BuilderNormalizedMilestoneDraft[];
   reconciliation: BuilderArchitectureReconciliationState;
+  adrAdjudication?: BuilderAdrAdjudicationState | null;
 }
 
 export interface BuilderPlannerInputState {
@@ -839,6 +899,7 @@ export interface BuilderStructuredReview {
   risks: string[];
   nextSteps: string[];
   architecture?: BuilderArchitectureReconciliationState;
+  adrAdjudication?: BuilderAdrAdjudicationState;
   updatedAt: string;
 }
 

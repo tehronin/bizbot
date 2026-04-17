@@ -2,8 +2,12 @@ import type { BuilderProject, BuilderRun, BuilderTask, BuilderTaskStage, Builder
 import { db } from "@/lib/db";
 import type { BuilderAgenticProgressEvent, BuilderAgenticTaskOptions } from "@/lib/builder/agentic";
 import { summarizeBuilderProjectMetrics, type BuilderHealthMetrics } from "@/lib/builder/analytics";
+import { adjudicateBuilderExecutionAdr, buildExecutionAdrFocus } from "@/lib/builder/adr-adjudication";
+import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
+import { getAllToolDefinitions } from "@/lib/agent/plugins";
 import { listBuilderCapabilityAuditEvents } from "@/lib/builder/audit";
 import { getBuilderDatabaseInspectionOverview } from "@/lib/builder/database-introspection";
+import { getBuilderConfig } from "@/lib/builder/config";
 import { validateBuilderProjectEnv, type BuilderConfigReadinessState } from "@/lib/builder/environment";
 import { listBuilderGovernanceDecisions, type BuilderGovernanceDecisionRecord } from "@/lib/builder/governance";
 import {
@@ -35,6 +39,7 @@ import { listBuilderManagedProcesses } from "@/lib/builder/process-registry";
 import { inspectBuilderOperationalState, type BuilderOperationalStateSummary } from "@/lib/builder/reconciliation";
 import { getBuilderRuntimeInspectionOverview } from "@/lib/builder/runtime-orchestration";
 import { validateBuilderContainerStage } from "@/lib/builder/container-stage";
+import { selectRelevantBuilderToolSubset } from "@/lib/builder/tool-subset";
 import { getBuilderTemplateContainerStageContract } from "@/lib/builder/template-presets";
 import { getBuilderRepoStatus } from "@/lib/builder/vcs";
 import {
@@ -57,6 +62,7 @@ import { registerBuilderRunController, unregisterBuilderRunController } from "@/
 import { summarizeBuilderBudgetProfiles, summarizeBuilderRunTelemetry, type BuilderBudgetProfile, type BuilderTelemetrySummary } from "@/lib/builder/telemetry";
 import { createBuilderTask, getBuilderTask, listBuilderTasks, reconcileBuilderRunWithTask, resumeBuilderTask, updateBuilderTask, updateBuilderTaskExecutionState, updateBuilderTaskStage } from "@/lib/builder/tasks";
 import { ensureMcpClientsInitialized } from "@/lib/mcp/client";
+import { promoteBuilderArchitecturalDecisionsToOntology } from "@/lib/ontology/promotion";
 import {
   defaultBuilderProjectContext,
   type BuilderDependencySnapshotOverviewState,
@@ -749,6 +755,21 @@ export async function orchestrateBuilderTask(
     projectRelativePath: project.relativePath,
     reasons: [`mode:${adherence.mode}`, `template:${project.template}`],
   });
+  const adrFocus = buildExecutionAdrFocus({
+    request,
+    taskSpec,
+    adherence,
+    activeArchitecture: executionContext.architecture?.active,
+    staleArchitecture: executionContext.architecture?.stale,
+    dependencyContext,
+    fileTopologyContext,
+    mcpContext,
+  });
+  const adrAdjudication = adjudicateBuilderExecutionAdr({
+    focus: adrFocus,
+    taskSpec,
+    adherence,
+  });
   const prompt = composeBuilderTaskPrompt({
     project,
     task: implementingTask,
@@ -761,13 +782,28 @@ export async function orchestrateBuilderTask(
     stage: "IMPLEMENTING",
     fragments: selectRelevantInstructionFragments(project, request),
     adherence,
+    adrFocus,
     mcpContext,
     dependencyContext,
     fileTopologyContext,
   });
+  const builderConfig = getBuilderConfig();
+  const builderProfileToolCeiling = getAllToolDefinitions(getAgentRuntimeConfig(), {
+    agentProfile: "builder_operator",
+  }).map((tool) => tool.name);
+  const selectedToolSubset = builderConfig.disableToolSubsetting
+    ? undefined
+    : selectRelevantBuilderToolSubset({
+        taskSpec,
+        adherenceMode: adherence.mode,
+        request,
+        profileAllowed: builderProfileToolCeiling,
+      });
 
   const loopResult = await executeNativeBuilderTask(project, {
     prompt,
+    allowedToolNames: selectedToolSubset?.allowedToolNames,
+    toolSubsetSummary: selectedToolSubset?.familyLabels.join(", "),
     builderMcpContext: {
       projectId: project.id,
       builderRunId: run.id,
@@ -968,7 +1004,19 @@ export async function orchestrateBuilderTask(
           retiredDecisionKeys: [],
         }
       : undefined,
+    adrAdjudication,
   });
+
+  if (taskStatus === "SUCCEEDED" && adrAdjudication.overallVerdict === "proceed_with_update" && adrAdjudication.updateDecisionKeys.length > 0) {
+    await promoteBuilderArchitecturalDecisionsToOntology({
+      projectId: project.id,
+      sourceRef: `builder:${project.id}:task_execution:${run.id}`,
+      decisionKeys: adrAdjudication.updateDecisionKeys,
+      staleKeys: adrAdjudication.retireDecisionKeys,
+    }).catch((error) => {
+      console.warn("[builder orchestrator] failed to promote ADR adjudication:", error);
+    });
+  }
 
   const finalizedTaskSpecResult = await resolveTaskSpecForFinalization(projectId, taskSpec);
   const finalizedTaskSpec = finalizedTaskSpecResult.taskSpec;

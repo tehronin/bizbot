@@ -75,6 +75,14 @@ vi.mock("@/lib/builder/environment", () => ({
   validateBuilderProjectEnv: mocks.validateBuilderProjectEnv,
 }));
 
+vi.mock("@/lib/agent/runtime", () => ({
+  getAgentRuntimeConfig: vi.fn(() => ({})),
+}));
+
+vi.mock("@/lib/agent/plugins", () => ({
+  getAllToolDefinitions: vi.fn(() => []),
+}));
+
 vi.mock("@/lib/builder/operator-trust", () => ({
   buildBuilderOperatorTrustState: mocks.buildBuilderOperatorTrustState,
 }));

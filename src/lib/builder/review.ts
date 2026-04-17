@@ -57,6 +57,7 @@ export function buildBuilderStructuredReview(args: {
   runtime?: BuilderStructuredReview["runtime"];
   containerStage?: BuilderStructuredReview["containerStage"];
   architecture?: BuilderArchitectureReconciliationState;
+  adrAdjudication?: BuilderStructuredReview["adrAdjudication"];
 }): BuilderStructuredReview {
   const filesChanged = collectFilesChanged(args.loop);
   const commandsExecuted = collectCommands(args.loop);
@@ -81,6 +82,9 @@ export function buildBuilderStructuredReview(args: {
         ...unique(args.loop.iterations.flatMap((iteration) => iteration.changedFiles.slice(0, 3)).slice(0, 5)).map((file) => `Inspect and finish work around ${file}.`),
         ...(args.containerStage && ["failed", "blocked"].includes(args.containerStage.status)
           ? ["Inspect the Docker-ready container stage contract, compose service, and in-container verification scripts."]
+          : []),
+        ...(args.adrAdjudication?.overallVerdict === "escalate" && args.adrAdjudication.escalationReason
+          ? [args.adrAdjudication.escalationReason]
           : []),
       ];
 
@@ -114,6 +118,7 @@ export function buildBuilderStructuredReview(args: {
     risks,
     nextSteps,
     architecture: args.architecture,
+    adrAdjudication: args.adrAdjudication,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -211,6 +216,20 @@ export function renderBuilderReviewMarkdown(review: BuilderStructuredReview): st
           `- Artifact/live tables: ${review.database.artifactTableCount}/${review.database.liveTableCount}`,
           `- Latest live probe: ${review.database.latestProbeAt ?? "none"}`,
           `- Audit: ${review.database.auditPath ?? "none"}`,
+        ]
+      : ["- none"]),
+    "",
+    `## ADR Adjudication`,
+    "",
+    ...(review.adrAdjudication
+      ? [
+          `- Verdict: ${review.adrAdjudication.overallVerdict}`,
+          `- Summary: ${review.adrAdjudication.summary}`,
+          `- Relevant families: ${review.adrAdjudication.relevantFamilies.join(", ") || "none"}`,
+          `- Relevant stale keys: ${review.adrAdjudication.staleRelevantKeys.join(", ") || "none"}`,
+          `- Update keys: ${review.adrAdjudication.updateDecisionKeys.join(", ") || "none"}`,
+          `- Retire keys: ${review.adrAdjudication.retireDecisionKeys.join(", ") || "none"}`,
+          `- Escalation: ${review.adrAdjudication.escalationReason ?? "none"}`,
         ]
       : ["- none"]),
     "",

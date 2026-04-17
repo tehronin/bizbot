@@ -269,6 +269,39 @@ describe("native builder agent", () => {
     }));
   });
 
+  it("forwards explicit tool subsets into the shared executor and reports them in progress output", async () => {
+    const onProgress = vi.fn();
+
+    mocks.executeAgentConversation.mockResolvedValue({
+      reply: "Inspected the project.",
+      runId: "run-1",
+      conversationId: "conv-1",
+      profile: "builder_operator",
+      provider: "google",
+      model: "gemini-3-flash-preview",
+    });
+    mocks.npmRunScript
+      .mockResolvedValueOnce(commandResult({ ok: true, stdout: "build ok" }))
+      .mockResolvedValueOnce(commandResult({ ok: true, stdout: "test ok" }));
+
+    await executeNativeBuilderTask(project, {
+      prompt: "Inspect the project and summarize the current state.",
+      allowedToolNames: ["builder_get_project", "builder_read_file"],
+      toolSubsetSummary: "core, git",
+    }, {
+      onProgress,
+    });
+
+    expect(mocks.executeAgentConversation).toHaveBeenCalledWith(expect.objectContaining({
+      allowedToolNames: ["builder_get_project", "builder_read_file"],
+    }));
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({
+      latestResult: expect.objectContaining({
+        stdout: expect.stringContaining("[status] Tool subset active: core, git (2 tools)."),
+      }),
+    }));
+  });
+
   it("forces NODE_ENV=test when running the test verification script", async () => {
     mocks.executeAgentConversation.mockImplementation(async () => ({
       reply: "Added tests.",

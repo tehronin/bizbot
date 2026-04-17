@@ -122,7 +122,10 @@ export async function replaceBuilderProjectPlanWithValidation(args: {
   reconciliation: BuilderPlannerCritiqueState["reconciliation"];
 }> {
   assertBuilderPlannerCritique(args.critique);
-  if (args.critique.reconciliation.missingStaleKeys.length > 0) {
+  if (args.critique.adrAdjudication?.overallVerdict === "block" || args.critique.adrAdjudication?.overallVerdict === "escalate") {
+    throw new Error(args.critique.adrAdjudication.summary);
+  }
+  if (!args.critique.adrAdjudication && args.critique.reconciliation.missingStaleKeys.length > 0) {
     throw new Error(`Planner must address every stale architecture key before persistence: ${args.critique.reconciliation.missingStaleKeys.join(", ")}.`);
   }
 
@@ -186,8 +189,8 @@ export async function generateBuilderProjectPlan(args: {
   await promoteBuilderArchitecturalDecisionsToOntology({
     projectId: args.project.id,
     sourceRef: buildBuilderAdrCanonicalKey(args.project.id, "plan_sync"),
-    decisionKeys: persisted.reconciliation.newDecisionKeys,
-    staleKeys: persisted.reconciliation.retiredDecisionKeys,
+    decisionKeys: pipeline.critique.adrAdjudication?.updateDecisionKeys ?? persisted.reconciliation.newDecisionKeys,
+    staleKeys: pipeline.critique.adrAdjudication?.retireDecisionKeys ?? persisted.reconciliation.retiredDecisionKeys,
   });
 
   return {

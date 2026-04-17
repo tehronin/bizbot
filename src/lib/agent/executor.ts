@@ -138,6 +138,7 @@ export interface AgentExecutionParams {
   parentRunId?: string;
   delegationReason?: string;
   delegatedByProfile?: AgentProfile;
+  allowedToolNames?: string[];
   builderMcpContext?: {
     projectId: string;
     builderRunId: string;
@@ -330,6 +331,7 @@ export async function executeAgentConversation(
     parentRunId,
     delegationReason,
     delegatedByProfile,
+    allowedToolNames: explicitAllowedToolNames,
     builderMcpContext,
     onEvent,
   } = params;
@@ -426,7 +428,8 @@ export async function executeAgentConversation(
     path: attachment.path,
     label: attachment.label,
   }));
-  const allowedToolNames = useLegacyExecutionRouting ? undefined : resolveChatExecutionToolNames(executionSelection);
+  const allowedToolNames = explicitAllowedToolNames
+    ?? (useLegacyExecutionRouting ? undefined : resolveChatExecutionToolNames(executionSelection));
   const tools = getAllToolDefinitions(runtimeConfig, {
     agentProfile: profileDecision.profile,
     chatMode: executionSelection.mode,

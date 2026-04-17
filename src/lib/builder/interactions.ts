@@ -12,12 +12,14 @@ import { recordBuilderProjectCommand } from "@/lib/builder/commands";
 import { getBuilderProjectOverview, launchBuilderTask, type BuilderProjectOverview } from "@/lib/builder/orchestrator";
 import { getBuilderProject, listBuilderProjects } from "@/lib/builder/projects";
 import { getBuilderTask } from "@/lib/builder/tasks";
+import { normalizeBuilderTaskMetadata } from "@/lib/builder/types";
 import { db } from "@/lib/db";
-import type { BuilderChatCard } from "@/lib/chat/types";
+import type { BuilderChatCard, BuilderChatCardDetails, BuilderChatCardProgress } from "@/lib/chat/types";
 
 interface BuilderInteractionMetadata {
   state: string;
   recommendations?: string[];
+  details?: BuilderChatCardDetails;
 }
 
 interface PendingInteractionCandidate {
@@ -27,6 +29,15 @@ interface PendingInteractionCandidate {
   title: string;
   summary: string;
   metadata: BuilderInteractionMetadata;
+}
+
+interface SyncBuilderProjectInteractionsResult {
+  overview: BuilderProjectOverview;
+  interactionCards: BuilderChatCard[];
+}
+
+function toInputJsonValue(value: unknown): Prisma.InputJsonValue {
+  return value as unknown as Prisma.InputJsonValue;
 }
 
 function trimRecommendations(values: string[] | undefined): string[] {
@@ -50,6 +61,73 @@ function normalizeTaskCardStatus(status: string): BuilderChatCard["status"] {
   }
 }
 
+function buildTaskCardProgress(metadata: unknown): BuilderChatCardProgress | undefined {
+  const normalized = normalizeBuilderTaskMetadata(metadata);
+  if (
+    normalized.currentIteration === null
+    && normalized.maxIterations === null
+    && normalized.loopPhase === null
+    && normalized.latestLoopSummary === null
+  ) {
+    return undefined;
+  }
+
+  return {
+    currentIteration: normalized.currentIteration,
+    maxIterations: normalized.maxIterations,
+    loopPhase: normalized.loopPhase,
+    latestLoopSummary: normalized.latestLoopSummary,
+  };
+}
+
+function buildDetailGroup(label: string, items: string[]): { label: string; items: string[] } | null {
+  return items.length > 0 ? { label, items } : null;
+}
+
+function buildDependencyDriftDetails(overview: BuilderProjectOverview): BuilderChatCardDetails["dependencyDrift"] | undefined {
+  const drift = overview.dependencyContract.drift;
+  if (!drift?.changed) {
+    return undefined;
+  }
+
+  return {
+    packageManagerChanged: drift.packageManagerChanged,
+    lockfileChanged: drift.lockfileChanged,
+    packages: [
+      buildDetailGroup("packages added", drift.packages.added),
+      buildDetailGroup("packages removed", drift.packages.removed),
+      buildDetailGroup("packages changed", drift.packages.changed),
+      buildDetailGroup("packages reclassified", drift.packages.reclassified),
+    ].filter((value): value is NonNullable<typeof value> => value !== null),
+    scripts: [
+      buildDetailGroup("scripts added", drift.scripts.added),
+      buildDetailGroup("scripts removed", drift.scripts.removed),
+      buildDetailGroup("scripts changed", drift.scripts.changed),
+    ].filter((value): value is NonNullable<typeof value> => value !== null),
+  };
+}
+
+function buildFileTopologyDriftDetails(overview: BuilderProjectOverview): BuilderChatCardDetails["fileTopologyDrift"] | undefined {
+  const drift = overview.fileTopologyContract.drift;
+  if (!drift?.changed) {
+    return undefined;
+  }
+
+  return {
+    directories: [
+      buildDetailGroup("directories added", drift.directories.added),
+      buildDetailGroup("directories removed", drift.directories.removed),
+    ].filter((value): value is NonNullable<typeof value> => value !== null),
+    importantFiles: [
+      buildDetailGroup("important files added", drift.importantFiles.added),
+      buildDetailGroup("important files removed", drift.importantFiles.removed),
+    ].filter((value): value is NonNullable<typeof value> => value !== null),
+    anchorsChanged: drift.anchorsChanged,
+    classificationsChanged: drift.classificationsChanged,
+    rulesChanged: drift.rulesChanged,
+  };
+}
+
 function buildTaskCard(args: {
   id: string;
   project: Pick<BuilderProject, "id" | "name" | "relativePath">;
@@ -60,6 +138,7 @@ function buildTaskCard(args: {
   status: BuilderChatCard["status"];
   state: string;
   updatedAt: Date;
+  metadata?: unknown;
 }): BuilderChatCard {
   return {
     id: args.id,
@@ -74,6 +153,7 @@ function buildTaskCard(args: {
     title: args.title,
     summary: args.summary,
     state: args.state,
+    progress: buildTaskCardProgress(args.metadata),
     recommendations: [],
     actions: [],
     updatedAt: args.updatedAt.toISOString(),
@@ -99,6 +179,7 @@ function buildOverviewTaskCards(overview: BuilderProjectOverview): BuilderChatCa
       status: normalizeTaskCardStatus(currentTask.status),
       state: currentTask.stage.toLowerCase(),
       updatedAt: currentTask.updatedAt,
+      metadata: currentTask.metadata,
     }));
   }
 
@@ -121,6 +202,7 @@ function buildOverviewTaskCards(overview: BuilderProjectOverview): BuilderChatCa
         status: latestRunStatus,
         state: matchingTask?.stage.toLowerCase() ?? latestFinishedRun.status.toLowerCase(),
         updatedAt: latestFinishedRun.finishedAt ?? latestFinishedRun.startedAt,
+        metadata: matchingTask?.metadata,
       }));
     }
   }
@@ -139,6 +221,9 @@ function toInteractionMetadata(value: Prisma.JsonValue | null | undefined): Buil
     recommendations: Array.isArray(candidate.recommendations)
       ? candidate.recommendations.filter((entry): entry is string => typeof entry === "string")
       : [],
+    details: candidate.details && typeof candidate.details === "object" && !Array.isArray(candidate.details)
+      ? candidate.details as BuilderChatCardDetails
+      : undefined,
   };
 }
 
@@ -184,6 +269,7 @@ function serializeBuilderInteractionCard(
     title: interaction.title,
     summary: interaction.summary,
     state: metadata.state,
+    details: metadata.details,
     recommendations: metadata.recommendations ?? [],
     actions,
     updatedAt: interaction.updatedAt.toISOString(),
@@ -211,7 +297,7 @@ function buildPendingInteractionCandidates(overview: Awaited<ReturnType<typeof g
 
   if (overview.mcpSnapshot.state === "drifted" && overview.mcpSnapshot.activeRunId) {
     candidates.push({
-      dedupeKey: `${overview.project.id}:mcp:drift:${overview.mcpSnapshot.activeRunId}:${overview.mcpSnapshot.currentHash ?? "none"}`,
+      dedupeKey: `${overview.project.id}:mcp:drift:${overview.mcpSnapshot.currentHash ?? "none"}`,
       kind: "MCP_CONTRACT_DRIFT",
       runId: overview.mcpSnapshot.activeRunId,
       title: "Approve Builder MCP contract rollover",
@@ -224,35 +310,37 @@ function buildPendingInteractionCandidates(overview: Awaited<ReturnType<typeof g
     });
   }
 
-  if ((overview.dependencyContract.state === "pending_capture" || overview.dependencyContract.state === "drifted") && overview.dependencyContract.runId) {
+  if (overview.dependencyContract.state === "drifted" && overview.dependencyContract.runId) {
     candidates.push({
-      dedupeKey: `${overview.project.id}:dependency:${overview.dependencyContract.state}:${overview.dependencyContract.runId}:${overview.dependencyContract.currentHash ?? "none"}`,
+      dedupeKey: `${overview.project.id}:dependency:drift:${overview.dependencyContract.currentHash ?? "none"}`,
       kind: "DEPENDENCY_CONTRACT_DRIFT",
       runId: overview.dependencyContract.runId,
-      title: overview.dependencyContract.state === "pending_capture"
-        ? "Capture Builder dependency contract"
-        : "Approve Builder dependency contract rollover",
+      title: "Approve Builder dependency contract rollover",
       summary: overview.dependencyContract.planning?.summary
         ?? "Builder dependency contract drift needs an explicit decision.",
       metadata: {
         state: overview.dependencyContract.state,
+        details: {
+          dependencyDrift: buildDependencyDriftDetails(overview),
+        },
         recommendations: trimRecommendations(overview.dependencyContract.planning?.recommendations),
       },
     });
   }
 
-  if ((overview.fileTopologyContract.state === "pending_capture" || overview.fileTopologyContract.state === "drifted") && overview.fileTopologyContract.runId) {
+  if (overview.fileTopologyContract.state === "drifted" && overview.fileTopologyContract.runId) {
     candidates.push({
-      dedupeKey: `${overview.project.id}:file-topology:${overview.fileTopologyContract.state}:${overview.fileTopologyContract.runId}:${overview.fileTopologyContract.currentHash ?? "none"}`,
+      dedupeKey: `${overview.project.id}:file-topology:drift:${overview.fileTopologyContract.currentHash ?? "none"}`,
       kind: "FILE_TOPOLOGY_CONTRACT_DRIFT",
       runId: overview.fileTopologyContract.runId,
-      title: overview.fileTopologyContract.state === "pending_capture"
-        ? "Capture Builder file topology contract"
-        : "Approve Builder file topology rollover",
+      title: "Approve Builder file topology rollover",
       summary: overview.fileTopologyContract.planning?.summary
         ?? "Builder file topology contract drift needs an explicit decision.",
       metadata: {
         state: overview.fileTopologyContract.state,
+        details: {
+          fileTopologyDrift: buildFileTopologyDriftDetails(overview),
+        },
         recommendations: trimRecommendations(overview.fileTopologyContract.planning?.recommendations),
       },
     });
@@ -261,7 +349,7 @@ function buildPendingInteractionCandidates(overview: Awaited<ReturnType<typeof g
   return candidates;
 }
 
-export async function syncBuilderProjectInteractions(projectId: string, options?: { conversationId?: string | null }): Promise<BuilderChatCard[]> {
+async function syncBuilderProjectInteractionsWithOverview(projectId: string, options?: { conversationId?: string | null }): Promise<SyncBuilderProjectInteractionsResult> {
   const overview = await getBuilderProjectOverview(projectId);
   const candidates = buildPendingInteractionCandidates(overview);
   const pendingInteractions = await db.builderInteraction.findMany({
@@ -298,7 +386,10 @@ export async function syncBuilderProjectInteractions(projectId: string, options?
   }
 
   if (candidates.length === 0) {
-    return [];
+    return {
+      overview,
+      interactionCards: [],
+    };
   }
 
   const interactions = await Promise.all(candidates.map(async (candidate) => db.builderInteraction.upsert({
@@ -311,7 +402,7 @@ export async function syncBuilderProjectInteractions(projectId: string, options?
       status: "PENDING",
       title: candidate.title,
       summary: candidate.summary,
-      metadata: candidate.metadata as unknown as Prisma.InputJsonValue,
+      metadata: toInputJsonValue(candidate.metadata),
       resolutionReason: null,
       resolvedAt: null,
     },
@@ -324,7 +415,7 @@ export async function syncBuilderProjectInteractions(projectId: string, options?
       dedupeKey: candidate.dedupeKey,
       title: candidate.title,
       summary: candidate.summary,
-      metadata: candidate.metadata as unknown as Prisma.InputJsonValue,
+      metadata: toInputJsonValue(candidate.metadata),
     },
     include: {
       project: {
@@ -337,7 +428,15 @@ export async function syncBuilderProjectInteractions(projectId: string, options?
     },
   })));
 
-  return interactions.map((interaction) => serializeBuilderInteractionCard(interaction));
+  return {
+    overview,
+    interactionCards: interactions.map((interaction) => serializeBuilderInteractionCard(interaction)),
+  };
+}
+
+export async function syncBuilderProjectInteractions(projectId: string, options?: { conversationId?: string | null }): Promise<BuilderChatCard[]> {
+  const result = await syncBuilderProjectInteractionsWithOverview(projectId, options);
+  return result.interactionCards;
 }
 
 export async function listPendingBuilderInteractionCards(options?: { conversationId?: string | null }): Promise<BuilderChatCard[]> {
@@ -346,9 +445,8 @@ export async function listPendingBuilderInteractionCards(options?: { conversatio
   const taskCards: BuilderChatCard[] = [];
   await Promise.all(activeProjects.map(async (project) => {
     try {
-      await syncBuilderProjectInteractions(project.id, options);
-      const overview = await getBuilderProjectOverview(project.id);
-      taskCards.push(...buildOverviewTaskCards(overview));
+      const result = await syncBuilderProjectInteractionsWithOverview(project.id, options);
+      taskCards.push(...buildOverviewTaskCards(result.overview));
     } catch (error) {
       console.warn(`[builder interactions] failed to sync project ${project.id}:`, error);
     }
@@ -422,6 +520,7 @@ export async function launchBuilderTaskFromChat(options: {
     status: execution.status === "PLANNED" ? "planned" : "running",
     state: execution.status === "PLANNED" ? "planning" : (task?.stage.toLowerCase() ?? "implementing"),
     updatedAt: new Date(),
+    metadata: task?.metadata,
   });
 
   await saveMessage(conversationId, "ASSISTANT", `${project.name}: ${card.summary}`, {
@@ -525,10 +624,10 @@ export async function resolveBuilderInteraction(options: {
       conversationId: options.conversationId ?? interaction.conversationId,
       resolutionReason: reason,
       resolvedAt: new Date(),
-      metadata: {
+      metadata: toInputJsonValue({
         ...toInteractionMetadata(interaction.metadata as Prisma.JsonValue | null | undefined),
         resolutionRunId: execution.runId,
-      } as Prisma.InputJsonValue,
+      }),
     },
     include: {
       project: {

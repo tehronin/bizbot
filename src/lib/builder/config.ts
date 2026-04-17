@@ -16,6 +16,7 @@ export interface BuilderConfig {
   configuredByEnv: boolean;
   safe: boolean;
   reason?: string;
+  disableToolSubsetting: boolean;
   allowedCommands: string[];
   allowedContainerCommands: string[];
   allowedContainerPathPrefixes: string[];
@@ -203,6 +204,7 @@ export function getBuilderConfig(): BuilderConfig {
     reason: pathsOverlap(workspaceRoot, repositoryRoot)
       ? "Builder workspace overlaps the BizBot repository. Configure BIZBOT_BUILDER_WORKSPACE_PATH to an external directory."
       : undefined,
+    disableToolSubsetting: parseBoolean(process.env.BIZBOT_BUILDER_DISABLE_TOOL_SUBSETTING, false),
     allowedCommands: getBuilderAllowedCommands(),
     allowedContainerCommands: getBuilderAllowedContainerCommands(),
     allowedContainerPathPrefixes: getBuilderAllowedContainerPathPrefixes(),

@@ -54,6 +54,9 @@ function createBuilderCard(overrides?: Partial<BuilderChatCard>): BuilderChatCar
     title: "Approve Builder contract rollover",
     summary: "Builder contract drift needs a decision.",
     state: "drifted",
+    progress: undefined,
+    details: undefined,
+    badges: undefined,
     recommendations: ["Review API changes"],
     actions: [{ id: "approve", label: "approve", variant: "primary" }],
     updatedAt: "2026-04-16T17:00:00.000Z",
@@ -370,10 +373,10 @@ function Harness() {
   return <ChatWorkspaceContent chat={chat} setupOpen={false} closeSetupHref="/chat" />;
 }
 
-function BuilderHarness() {
+function BuilderHarness({ cards = [createBuilderCard()] }: { cards?: BuilderChatCard[] } = {}) {
   const chat: UseChatResult = {
     messages: [],
-    builderInbox: [createBuilderCard()],
+    builderInbox: cards,
     builderProjects: [
       { id: "project-1", name: "Alpha", relativePath: "workspace/alpha" },
       { id: "project-2", name: "Beta", relativePath: "workspace/beta" },
@@ -625,6 +628,55 @@ describe("chat workspace history panel", () => {
     await waitFor(() => {
       expect(launchBuilderTaskFromChatSpy).toHaveBeenCalledWith("Implement archive and delete cards", { projectId: "project-1" });
     });
+  });
+
+  it("renders task progress without showing a null iteration denominator", () => {
+    render(<BuilderHarness cards={[createBuilderCard({
+      kind: "task_execution",
+      status: "running",
+      title: "Repair builder loop",
+      summary: "Builder is repairing the verification step.",
+      state: "testing",
+      progress: {
+        currentIteration: 2,
+        maxIterations: null,
+        loopPhase: "verifying",
+        latestLoopSummary: "Re-running tests after repair.",
+      },
+      recommendations: [],
+      actions: [],
+    })]} />);
+
+    expect(screen.getByText("verifying")).toBeTruthy();
+    expect(screen.getByText("iteration 2")).toBeTruthy();
+    expect(screen.queryByText("iteration 2 of null")).toBeNull();
+    expect(screen.getByText("Re-running tests after repair.")).toBeTruthy();
+  });
+
+  it("renders structured drift details when expanded", () => {
+    render(<BuilderHarness cards={[createBuilderCard({
+      details: {
+        dependencyDrift: {
+          packageManagerChanged: false,
+          lockfileChanged: true,
+          packages: [
+            { label: "packages added", items: ["zod"] },
+            { label: "packages changed", items: ["next"] },
+          ],
+          scripts: [
+            { label: "scripts added", items: ["verify"] },
+          ],
+        },
+      },
+    })]} />);
+
+    fireEvent.click(screen.getByText("drift details"));
+
+    expect(screen.getByText("dependency contract")).toBeTruthy();
+    expect(screen.getByText("Lockfile changed.")).toBeTruthy();
+    expect(screen.getByText("packages added")).toBeTruthy();
+    expect(screen.getByText("zod")).toBeTruthy();
+    expect(screen.getByText("verify")).toBeTruthy();
   });
 });
 

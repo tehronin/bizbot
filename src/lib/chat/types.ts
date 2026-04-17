@@ -57,6 +57,38 @@ export interface BuilderChatCardAction {
   variant: "primary" | "danger" | "neutral";
 }
 
+export interface BuilderChatCardProgress {
+  currentIteration: number | null;
+  maxIterations: number | null;
+  loopPhase: string | null;
+  latestLoopSummary: string | null;
+}
+
+export interface BuilderChatCardDetailGroup {
+  label: string;
+  items: string[];
+}
+
+export interface BuilderChatCardDependencyDetails {
+  packageManagerChanged: boolean;
+  lockfileChanged: boolean;
+  packages: BuilderChatCardDetailGroup[];
+  scripts: BuilderChatCardDetailGroup[];
+}
+
+export interface BuilderChatCardFileTopologyDetails {
+  directories: BuilderChatCardDetailGroup[];
+  importantFiles: BuilderChatCardDetailGroup[];
+  anchorsChanged: string[];
+  classificationsChanged: string[];
+  rulesChanged: string[];
+}
+
+export interface BuilderChatCardDetails {
+  dependencyDrift?: BuilderChatCardDependencyDetails;
+  fileTopologyDrift?: BuilderChatCardFileTopologyDetails;
+}
+
 export interface BuilderChatCard {
   id: string;
   interactionId: string;
@@ -70,6 +102,9 @@ export interface BuilderChatCard {
   title: string;
   summary: string;
   state: string;
+  progress?: BuilderChatCardProgress;
+  details?: BuilderChatCardDetails;
+  badges?: string[];
   recommendations: string[];
   actions: BuilderChatCardAction[];
   updatedAt: string;

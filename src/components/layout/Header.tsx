@@ -42,7 +42,7 @@ function getSetupTooltip(state: AgenticSetupResponse["state"] | null): string {
 export default function Header() {
   const [provider, setProvider] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
-  const [now, setNow] = useState<Date>(() => new Date());
+  const [now, setNow] = useState<string>("");
   const [setupState, setSetupState] = useState<AgenticSetupResponse["state"] | null>(null);
 
   function refreshHeaderState(): void {
@@ -69,7 +69,9 @@ export default function Header() {
   }
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    const updateNow = () => setNow(new Date().toLocaleString());
+    updateNow();
+    const timer = window.setInterval(updateNow, 60_000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -105,7 +107,7 @@ export default function Header() {
           command console
         </div>
         <div className="text-xs font-mono min-h-[1rem]" style={{ color: "var(--text-primary)" }}>
-          {now.toLocaleString()}
+          {now || " "}
         </div>
       </div>
       <div className="flex items-center gap-5 font-mono text-[10px] uppercase tracking-widest">

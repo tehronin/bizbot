@@ -110,6 +110,14 @@ vi.mock("@/lib/builder/review", () => ({
   buildBuilderStructuredReview: mocks.buildBuilderStructuredReview,
 }));
 
+vi.mock("@/lib/agent/runtime", () => ({
+  getAgentRuntimeConfig: vi.fn(() => ({})),
+}));
+
+vi.mock("@/lib/agent/plugins", () => ({
+  getAllToolDefinitions: vi.fn(() => []),
+}));
+
 vi.mock("@/lib/builder/container-stage", () => ({
   validateBuilderContainerStage: mocks.validateBuilderContainerStage,
 }));

@@ -1,4 +1,5 @@
 import type { BuilderProject, BuilderProjectBrief } from "@prisma/client";
+import { adjudicateBuilderPlanningAdr, buildPlanningAdrFocus } from "@/lib/builder/adr-adjudication";
 import { selectRelevantBuilderMcpContext } from "@/lib/builder/mcp-snapshots";
 import { defaultTaskSpecValidators } from "@/lib/builder/planning";
 import { composeBuilderPlannerPrompt } from "@/lib/builder/prompt";
@@ -712,6 +713,14 @@ export function runBuilderPlannerPipeline(args: {
       ...input.staleArchitecture.map((decision) => decision.key),
     ],
   });
+  const adrFocus = buildPlanningAdrFocus({
+    brief: input.brief,
+    activeArchitecture: input.activeArchitecture,
+    staleArchitecture: input.staleArchitecture,
+    dependencyContext: args.dependencyContext,
+    fileTopologyContext: args.fileTopologyContext,
+    mcpContext: plannerMcpContext,
+  });
   const prompt = composeBuilderPlannerPrompt({
     project: args.project as BuilderProject,
     brief: args.brief,
@@ -721,6 +730,7 @@ export function runBuilderPlannerPipeline(args: {
     acceptanceCriteria: input.acceptanceCriteria,
     activeArchitecture: input.activeArchitecture,
     staleArchitecture: input.staleArchitecture,
+    adrFocus,
     dependencyContext: args.dependencyContext,
     mcpContext: plannerMcpContext,
     mcpPlanningContext: args.mcpPlanningContext,
@@ -730,11 +740,18 @@ export function runBuilderPlannerPipeline(args: {
   });
   const candidateMilestones = buildDeterministicPlannerDraft(args.brief, args.architecture ?? defaultBuilderArchitectureContext());
   const normalizedMilestones = normalizePlannerOutput(candidateMilestones);
-  const critique = critiqueBuilderPlanCandidate({
+  const baseCritique = critiqueBuilderPlanCandidate({
     milestones: normalizedMilestones,
     activeArchitecture: input.activeArchitecture,
     staleArchitecture: input.staleArchitecture,
   });
+  const critique: BuilderPlannerCritiqueState = {
+    ...baseCritique,
+    adrAdjudication: adjudicateBuilderPlanningAdr({
+      focus: adrFocus,
+      critique: baseCritique,
+    }),
+  };
 
   return {
     input,

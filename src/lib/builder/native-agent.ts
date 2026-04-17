@@ -48,6 +48,8 @@ interface BuilderWorkspaceSnapshot {
 
 interface NativeBuilderTaskInput {
   prompt: string;
+  allowedToolNames?: string[];
+  toolSubsetSummary?: string;
   builderMcpContext?: {
     projectId: string;
     builderRunId: string;
@@ -562,11 +564,18 @@ export async function executeNativeBuilderTask(
         await appendStdout("[status] Loading shared agent executor.\n");
         ({ executeAgentConversation } = await import("@/lib/agent/executor"));
       }
+      if (input.allowedToolNames?.length) {
+        const summary = input.toolSubsetSummary?.trim()
+          ? `${input.toolSubsetSummary} `
+          : "";
+        await appendStdout(`[status] Tool subset active: ${summary}(${input.allowedToolNames.length} tools).\n`);
+      }
       await appendStdout("[status] Dispatching builder operator conversation.\n");
 
       const agentResult = await executeAgentConversation({
         message: buildNativeBuilderMessage(project, currentPrompt),
         forcedProfile: "builder_operator",
+        allowedToolNames: input.allowedToolNames,
         builderMcpContext: input.builderMcpContext,
         signal: executionSignal.signal,
         onEvent: async (event: AgentExecutionEvent) => {

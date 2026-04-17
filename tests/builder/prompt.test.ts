@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildExecutionAdrFocus } from "@/lib/builder/adr-adjudication";
 import { buildBuilderPlanAdherence, composeBuilderPlannerPrompt, composeBuilderTaskPrompt } from "@/lib/builder/prompt";
 
 describe("builder prompt synthesis", () => {
@@ -710,5 +711,169 @@ describe("builder prompt synthesis", () => {
     expect(prompt).toContain("Planner validates stale ADR reconciliation");
     expect(prompt).toContain("Active architecture should be carried forward when it still governs the plan");
     expect(prompt).toContain("next-app");
+  });
+
+  it("renders only relevant ADR context in the task prompt", () => {
+    const adherence = buildBuilderPlanAdherence({
+      task: {
+        title: "Sync Builder projections",
+        acceptanceCriteria: ["Refresh the task board"],
+        metadata: { planSteps: [{ id: "1", label: "Sync Builder projections", status: "in_progress" }] },
+      },
+      context: {
+        objective: "Keep Builder projections aligned.",
+        plannedStack: null,
+        architectureNotes: [],
+        architecture: {
+          active: [],
+          stale: [{
+            key: "planning_schema",
+            canonicalKey: "builder:project-1:planning_schema",
+            displayName: "planning_schema",
+            description: "Builder planning state remains canonical in the database.",
+            confidence: 0.9,
+            status: "deprecated",
+            source: "builder_adr",
+            updatedAt: new Date("2026-04-04T00:00:00.000Z").toISOString(),
+          }, {
+            key: "orm_prisma",
+            canonicalKey: "builder:project-1:orm_prisma",
+            displayName: "orm_prisma",
+            description: "Prisma remains the ORM boundary.",
+            confidence: 0.9,
+            status: "deprecated",
+            source: "builder_adr",
+            updatedAt: new Date("2026-04-04T00:00:00.000Z").toISOString(),
+          }],
+        },
+        codingConventions: [],
+        constraints: [],
+        importantCommands: [],
+        currentPlan: [],
+        latestSessionSummary: null,
+        knownFailures: [],
+        nextSteps: [],
+        instructionNotes: null,
+        updatedAt: null,
+      },
+      currentMilestone: {
+        id: "milestone-1",
+        title: "Projection sync",
+        summary: "Keep Builder projections current.",
+        status: "ACTIVE",
+        sortOrder: 1,
+        taskSpecs: [],
+      },
+      currentTaskSpec: {
+        id: "task-spec-1",
+        milestoneId: "milestone-1",
+        title: "Sync Builder projections",
+        summary: "Refresh Builder projection files from canonical state.",
+        status: "ACTIVE",
+        sortOrder: 1,
+        completionCriteria: ["Refresh the task board"],
+        validators: ["MANUAL_REVIEW"],
+        architecturalDecisionKeys: ["planning_schema"],
+        dependencyIds: [],
+      },
+    });
+    const adrFocus = buildExecutionAdrFocus({
+      request: "Refresh Builder projection files.",
+      taskSpec: {
+        id: "task-spec-1",
+        milestoneId: "milestone-1",
+        title: "Sync Builder projections",
+        summary: "Refresh Builder projection files from canonical state.",
+        status: "ACTIVE",
+        sortOrder: 1,
+        completionCriteria: ["Refresh the task board"],
+        validators: ["MANUAL_REVIEW"],
+        architecturalDecisionKeys: ["planning_schema"],
+        dependencyIds: [],
+      },
+      adherence,
+      staleArchitecture: [{
+        key: "planning_schema",
+        canonicalKey: "builder:project-1:planning_schema",
+        displayName: "planning_schema",
+        description: "Builder planning state remains canonical in the database.",
+        confidence: 0.9,
+        status: "deprecated",
+        source: "builder_adr",
+        updatedAt: new Date("2026-04-04T00:00:00.000Z").toISOString(),
+      }, {
+        key: "orm_prisma",
+        canonicalKey: "builder:project-1:orm_prisma",
+        displayName: "orm_prisma",
+        description: "Prisma remains the ORM boundary.",
+        confidence: 0.9,
+        status: "deprecated",
+        source: "builder_adr",
+        updatedAt: new Date("2026-04-04T00:00:00.000Z").toISOString(),
+      }],
+    });
+
+    const prompt = composeBuilderTaskPrompt({
+      project: {
+        name: "Demo",
+        relativePath: "projects/demo",
+        template: "next-app",
+        packageManager: "NPM",
+      } as never,
+      task: {
+        title: "Sync Builder projections",
+        acceptanceCriteria: ["Refresh the task board"],
+        metadata: { planSteps: [{ id: "1", label: "Sync Builder projections", status: "in_progress" }] },
+      } as never,
+      context: {
+        objective: "Keep Builder projections aligned.",
+        plannedStack: null,
+        architectureNotes: [],
+        architecture: {
+          active: [],
+          stale: [],
+        },
+        codingConventions: [],
+        constraints: [],
+        importantCommands: [],
+        currentPlan: [],
+        latestSessionSummary: null,
+        knownFailures: [],
+        nextSteps: [],
+        instructionNotes: null,
+        updatedAt: null,
+      },
+      lifecycle: "ACTIVE",
+      brief: null,
+      currentMilestone: {
+        id: "milestone-1",
+        title: "Projection sync",
+        summary: "Keep Builder projections current.",
+        status: "ACTIVE",
+        sortOrder: 1,
+        taskSpecs: [],
+      },
+      currentTaskSpec: {
+        id: "task-spec-1",
+        milestoneId: "milestone-1",
+        title: "Sync Builder projections",
+        summary: "Refresh Builder projection files from canonical state.",
+        status: "ACTIVE",
+        sortOrder: 1,
+        completionCriteria: ["Refresh the task board"],
+        validators: ["MANUAL_REVIEW"],
+        architecturalDecisionKeys: ["planning_schema"],
+        dependencyIds: [],
+      },
+      request: "Refresh Builder projection files.",
+      stage: "IMPLEMENTING",
+      fragments: [],
+      adherence,
+      adrFocus,
+    });
+
+    expect(prompt).toContain("Relevant stale ADR keys: planning_schema");
+    expect(prompt).not.toContain("Relevant stale ADR keys: planning_schema, orm_prisma");
+    expect(prompt).toContain("Internal ADR handling: treat ADR as invisible rolling context.");
   });
 });

@@ -97,6 +97,19 @@ function BuilderCardList({
     return null;
   }
 
+  const renderDetailGroups = (groups: Array<{ label: string; items: string[] }>) => groups.map((group) => (
+    <div key={`${group.label}-${group.items.join("|")}`} className="space-y-1">
+      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{group.label}</div>
+      <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+        {group.items.map((item) => (
+          <span key={`${group.label}-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+            {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  ));
+
   return (
     <div className="space-y-3">
       {cards.map((card) => (
@@ -122,6 +135,22 @@ function BuilderCardList({
             </div>
           </div>
           <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.summary}</div>
+          {card.progress ? (
+            <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                {card.progress.loopPhase ? <span>{card.progress.loopPhase.replaceAll("_", " ")}</span> : null}
+                {card.progress.currentIteration !== null ? (
+                  <span>
+                    iteration {card.progress.currentIteration}
+                    {card.progress.maxIterations !== null ? ` of ${card.progress.maxIterations}` : ""}
+                  </span>
+                ) : null}
+              </div>
+              {card.progress.latestLoopSummary ? (
+                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.progress.latestLoopSummary}</div>
+              ) : null}
+            </div>
+          ) : null}
           {card.recommendations.length > 0 ? (
             <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
               {card.recommendations.map((recommendation) => (
@@ -130,6 +159,65 @@ function BuilderCardList({
                 </span>
               ))}
             </div>
+          ) : null}
+          {card.details ? (
+            <details className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+              <summary className="text-[11px] uppercase tracking-[0.16em] cursor-pointer" style={{ color: "var(--text-muted)" }}>
+                drift details
+              </summary>
+              <div className="mt-3 space-y-3">
+                {card.details.dependencyDrift ? (
+                  <div className="space-y-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>dependency contract</div>
+                    {card.details.dependencyDrift.packageManagerChanged ? (
+                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>Package manager changed.</div>
+                    ) : null}
+                    {card.details.dependencyDrift.lockfileChanged ? (
+                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>Lockfile changed.</div>
+                    ) : null}
+                    {renderDetailGroups(card.details.dependencyDrift.packages)}
+                    {renderDetailGroups(card.details.dependencyDrift.scripts)}
+                  </div>
+                ) : null}
+                {card.details.fileTopologyDrift ? (
+                  <div className="space-y-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>file topology contract</div>
+                    {renderDetailGroups(card.details.fileTopologyDrift.directories)}
+                    {renderDetailGroups(card.details.fileTopologyDrift.importantFiles)}
+                    {card.details.fileTopologyDrift.anchorsChanged.length > 0 ? (
+                      <div className="space-y-1">
+                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>anchors changed</div>
+                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                          {card.details.fileTopologyDrift.anchorsChanged.map((item) => (
+                            <span key={`anchor-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {card.details.fileTopologyDrift.classificationsChanged.length > 0 ? (
+                      <div className="space-y-1">
+                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>classifications changed</div>
+                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                          {card.details.fileTopologyDrift.classificationsChanged.map((item) => (
+                            <span key={`classification-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {card.details.fileTopologyDrift.rulesChanged.length > 0 ? (
+                      <div className="space-y-1">
+                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>rules changed</div>
+                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                          {card.details.fileTopologyDrift.rulesChanged.map((item) => (
+                            <span key={`rule-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </details>
           ) : null}
           <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
             <span>{card.projectRelativePath}</span>

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-04-17
+
+- Added dynamic Builder tool subsetting so Builder operator executions can run with a bounded, task-relevant tool ceiling while preserving a configurable fail-open kill switch for debugging and rollout safety.
+- Reduced Builder chat inbox noise by suppressing dependency and file-topology `pending_capture` action cards, deduping drift cards independently of run id churn, and reusing project overview fetches during inbox bootstrap.
+- Enriched Builder chat cards with live task-loop progress plus structured dependency and file-topology drift details so execution state and reconciliation context are visible without opening separate project surfaces.
+- Reworked Living ADR handling into an internal adjudication flow that narrows planner and execution prompts to relevant architecture context, keeps unrelated stale ADR advisory, persists adjudication into Builder review state, and only escalates protected-boundary architecture changes.
+- Added focused regression coverage for Builder tool subsetting, interaction projection, ADR adjudication, narrowed prompt synthesis, and orchestrator integration.
+
 ## 2026-04-16
 
 - Added Oracle swarm evidence gathering with parallel workers for prediction markets, web OSINT research, and Google Trends analysis, replacing the single-source Oracle evidence path with a richer multi-signal evidence bundle.

@@ -1,5 +1,6 @@
 import type { BuilderProject, BuilderProjectBrief, BuilderProjectLifecycle } from "@prisma/client";
 import type {
+  BuilderAdrContextFocusState,
   BuilderArchitectureDecisionState,
   BuilderDependencyPlanningContextState,
   BuilderFileTopologyPlanningContextState,
@@ -23,6 +24,27 @@ function renderArchitectureSection(title: string, decisions: BuilderArchitecture
     ...(decisions.length > 0
       ? decisions.map((decision) => `- ${decision.key}: ${decision.description ?? decision.displayName} (confidence ${decision.confidence.toFixed(2)}, source ${decision.source})`)
       : ["- " + empty]),
+  ].join("\n");
+}
+
+function renderAdrFocusSection(context: BuilderAdrContextFocusState | null | undefined): string {
+  if (!context) {
+    return "Relevant ADR context: none selected.";
+  }
+
+  return [
+    "[Relevant ADR Context]",
+    `Phase: ${context.phase}`,
+    `Relevant: ${context.relevant}`,
+    `Summary: ${context.summary}`,
+    `Relevant families: ${context.relevantFamilies.length > 0 ? context.relevantFamilies.join(", ") : "none"}`,
+    `Relevant active ADR keys: ${context.activeRelevantKeys.length > 0 ? context.activeRelevantKeys.join(", ") : "none"}`,
+    `Relevant stale ADR keys: ${context.staleRelevantKeys.length > 0 ? context.staleRelevantKeys.join(", ") : "none"}`,
+    `Protected boundaries touched: ${context.protectedBoundariesTouched.length > 0 ? context.protectedBoundariesTouched.join(", ") : "none"}`,
+    ...(context.decisions.length > 0
+      ? context.decisions.map((decision) => `- ${decision.sourceStatus} ${decision.key}${decision.family ? ` [${decision.family}]` : ""}: ${decision.rationale}`)
+      : ["- no ADR decisions need first-class attention"]),
+    "[/Relevant ADR Context]",
   ].join("\n");
 }
 
@@ -349,6 +371,7 @@ export function composeBuilderTaskPrompt(args: {
   stage: string;
   fragments: BuilderInstructionFragment[];
   adherence?: BuilderPlanAdherenceState | null;
+  adrFocus?: BuilderAdrContextFocusState | null;
   mcpContext?: BuilderRelevantMcpContextState | null;
   dependencyContext?: BuilderRelevantDependencyContextState | null;
   fileTopologyContext?: BuilderRelevantFileTopologyContextState | null;
@@ -389,6 +412,7 @@ export function composeBuilderTaskPrompt(args: {
     renderDependencyContractGuidance(args.context),
     renderFileTopologyContractGuidance(args.context),
     renderPlanAdherenceSection(args.adherence),
+    renderAdrFocusSection(args.adrFocus),
     renderRelevantMcpContext(args.mcpContext),
     renderRelevantDependencyContext(args.dependencyContext),
     renderRelevantFileTopologyContext(args.fileTopologyContext),
@@ -402,6 +426,8 @@ export function composeBuilderTaskPrompt(args: {
           ...args.fragments.map((fragment) => `From ${fragment.source} / ${fragment.heading}: ${fragment.content}`),
         ].join("\n")
       : "Relevant instruction fragments: none selected.",
+    "Internal ADR handling: treat ADR as invisible rolling context. Reconfirm or supersede only the relevant ADR keys above when the task materially depends on them; defer unrelated ADR silently.",
+    "Protected-boundary ADR changes should be deliberate and minimal. Do not turn ADR reconciliation into user-facing chatter unless the task cannot proceed safely without operator approval.",
     renderTemplateExecutionGuidance(args.project),
     `Current user request: ${args.request.trim()}`,
     "Do not restate the whole project history. Make the smallest safe set of changes needed for the current task, validate when possible, and leave the workspace in a reviewable state.",
@@ -417,6 +443,7 @@ export function composeBuilderPlannerPrompt(args: {
   acceptanceCriteria: string[];
   activeArchitecture: BuilderArchitectureDecisionState[];
   staleArchitecture: BuilderArchitectureDecisionState[];
+  adrFocus?: BuilderAdrContextFocusState | null;
   dependencyContext?: BuilderRelevantDependencyContextState | null;
   mcpContext?: BuilderRelevantMcpContextState | null;
   mcpPlanningContext?: BuilderMcpPlanningContextState | null;
@@ -435,12 +462,13 @@ export function composeBuilderPlannerPrompt(args: {
     renderRelevantDependencyContext(args.dependencyContext),
     renderRelevantFileTopologyContext(args.fileTopologyContext),
     renderRelevantMcpContext(args.mcpContext),
+    renderAdrFocusSection(args.adrFocus),
     renderMcpContractEvolution(args.mcpPlanningContext),
     renderDependencyContractEvolution(args.dependencyPlanningContext),
     renderFileTopologyEvolution(args.fileTopologyPlanningContext),
     `[Active Architecture]\n${renderArchitectureSection("", args.activeArchitecture, "No active architecture decisions recorded.").replace(/^\n/, "")}\n[/Active Architecture]`,
     `[Stale Architecture - Needs Reconfirmation]\n${renderArchitectureSection("", args.staleArchitecture, "No stale architecture decisions require reconciliation.").replace(/^\n/, "")}\n[/Stale Architecture - Needs Reconfirmation]`,
     `[Context Notes]\n${args.context.objective ? `Objective: ${args.context.objective}` : "Objective: none recorded"}\n${args.context.instructionNotes ? `Instruction notes: ${args.context.instructionNotes}` : "Instruction notes: none recorded"}\n[/Context Notes]`,
-    `[Planner Output Contract]\nReturn structured planner output that can be normalized into milestones and tasks.\nEach task must include: key, title, summary, completionCriteria, validators, dependencyKeys, architectural_new_decisions, architectural_stale_keys.\nEvery stale architecture key must be explicitly addressed either by reconfirming it as a new decision or listing it under architectural_stale_keys.\nActive architecture should be carried forward when it still governs the plan, and only retired through architectural_stale_keys when the plan is explicitly superseding it.\nKeep milestones brief, keep dependencies acyclic, and make template-aware choices.\n[/Planner Output Contract]`,
+    `[Planner Output Contract]\nReturn structured planner output that can be normalized into milestones and tasks.\nEach task must include: key, title, summary, completionCriteria, validators, dependencyKeys, architectural_new_decisions, architectural_stale_keys.\nRelevant stale architecture keys from the ADR context must be explicitly adjudicated either by reconfirming them as new decisions or listing them under architectural_stale_keys.\nUnrelated stale ADR may remain implicit background context and should not force noisy planner work.\nActive architecture should be carried forward when it still governs the plan, and only retired through architectural_stale_keys when the plan is explicitly superseding it.\nKeep milestones brief, keep dependencies acyclic, and make template-aware choices.\n[/Planner Output Contract]`,
   ].join("\n\n");
 }
