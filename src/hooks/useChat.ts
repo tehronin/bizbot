@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import type {
   BuilderChatCard,
+  BuilderChatCardProgress,
   BuilderOnboardingSpec,
   BuilderOnboardingStep,
   ChatBuilderProjectSummary,
@@ -118,6 +119,7 @@ export interface UseChatResult {
   isLoadingHistoryConversation: boolean;
   isLoadingHistoryLists: boolean;
   activeRun: ActiveRunState;
+  activeBuilderProgress: BuilderChatCardProgress | null;
   modelPricing: Record<string, UsageLedgerModelPricing>;
   executionCatalog: ChatExecutionCatalog;
   executionMode: ChatExecutionMode;
@@ -431,6 +433,8 @@ export function useChat(): UseChatResult {
   const [isLoadingHistoryConversation, setIsLoadingHistoryConversation] = useState(false);
   const [isLoadingHistoryLists, setIsLoadingHistoryLists] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [activeBuilderTaskId, setActiveBuilderTaskId] = useState<string | null>(null);
+  const [activeBuilderProgress, setActiveBuilderProgress] = useState<BuilderChatCardProgress | null>(null);
   const isMountedRef = useRef(true);
   const bootstrapAbortControllerRef = useRef<AbortController | null>(null);
   const bootstrapRequestIdRef = useRef(0);
@@ -441,6 +445,47 @@ export function useChat(): UseChatResult {
     bootstrapAbortControllerRef.current?.abort();
     sidecarInteractionAbortControllerRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    if (!activeBuilderTaskId) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch(`/api/builder/tasks/${activeBuilderTaskId}/progress`);
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          taskId: string;
+          status: string;
+          currentIteration: number | null;
+          maxIterations: number | null;
+          loopPhase: string | null;
+          latestLoopSummary: string | null;
+        };
+        if (!cancelled && isMountedRef.current) {
+          setActiveBuilderProgress({
+            currentIteration: data.currentIteration ?? null,
+            maxIterations: data.maxIterations ?? null,
+            loopPhase: data.loopPhase ?? null,
+            latestLoopSummary: data.latestLoopSummary ?? null,
+          });
+          if (data.status !== "RUNNING") {
+            setActiveBuilderTaskId(null);
+          }
+        }
+      } catch {
+        // ignore transient fetch errors
+      }
+    };
+
+    void poll();
+    const intervalId = setInterval(() => void poll(), 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [activeBuilderTaskId]);
 
   async function loadBootstrap(options?: {
     selectedConversationId?: string | null;
@@ -1007,6 +1052,21 @@ export function useChat(): UseChatResult {
                     conversationId: event.conversationId,
                   },
                 }));
+              } else if (
+                event.type === "tool_result" &&
+                (event.name === "builder_plan_task" || event.name === "builder_continue_task")
+              ) {
+                if (isMountedRef.current) {
+                  try {
+                    const parsed = event.result ? (JSON.parse(event.result) as { status?: string; taskId?: string }) : null;
+                    if (parsed?.status === "RUNNING" && typeof parsed?.taskId === "string") {
+                      setActiveBuilderTaskId(parsed.taskId);
+                      setActiveBuilderProgress(null);
+                    }
+                  } catch {
+                    // ignore malformed result
+                  }
+                }
               }
               if (isMountedRef.current) {
                 setMessages((current) => appendStreamEntries(current, event));
@@ -1068,6 +1128,7 @@ export function useChat(): UseChatResult {
     isLoadingHistoryConversation,
     isLoadingHistoryLists,
     activeRun: toPublicActiveRun(activeRun),
+    activeBuilderProgress,
     modelPricing,
     executionCatalog,
     executionMode,

@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AgenticSetupDrawer } from "@/components/chat/AgenticSetupDrawer";
+import { BuilderRunPanel } from "@/components/chat/BuilderRunPanel";
+import { MessageMarkdown } from "@/components/chat/MessageMarkdown";
 import { PaginationControls } from "@/components/layout/PaginationControls";
 import { useChat, type ChatEntry, type UseChatResult } from "@/hooks/useChat";
 import type {
@@ -809,7 +811,7 @@ function MessageGroups({
           <div
             key={group.entry.id}
             data-testid={`chat-message-${group.entry.role}`}
-            className="border px-4 py-3 whitespace-pre-wrap"
+            className="border px-4 py-3"
             style={{
               borderColor: group.entry.role === "user" ? "var(--accent-dim)" : "var(--border)",
               background: group.entry.role === "user" ? "rgba(56,189,248,0.08)" : "var(--bg-raised)",
@@ -830,7 +832,10 @@ function MessageGroups({
                 </button>
               ) : null}
             </div>
-            {group.entry.content}
+            {group.entry.role === "assistant"
+              ? <MessageMarkdown markdown={group.entry.content} />
+              : <div className="whitespace-pre-wrap text-sm" style={{ color: "var(--text-primary)" }}>{group.entry.content}</div>
+            }
             {renderExecutionChips(group.entry)}
             {group.entry.builderCards && group.entry.builderCards.length > 0 ? (
               <div className="mt-3">
@@ -952,6 +957,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   const builderStackPresets = chat.builderStackPresets ?? [];
   const builderTemplates = chat.builderTemplates ?? [];
   const selectedBuilderProjectId = chat.selectedBuilderProjectId;
+  const selectedBuilderProject = selectedBuilderProjectId ? (builderProjects.find((p) => p.id === selectedBuilderProjectId) ?? null) : null;
   const builderPluginActive = executionPluginId === "builder" && executionMode === "agent";
   const builderAskMode = executionPluginId === "builder" && executionMode === "ask";
   const builderOnboarding = chat.builderOnboarding;
@@ -1239,16 +1245,25 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   New Build
                 </button>
                 {chat.selectedBuilderProjectId ? (
-                  <button
-                    type="button"
-                    onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
-                    disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
-                    className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border disabled:opacity-50 hover:brightness-125 transition-colors"
-                    style={{ borderColor: activePlugin.accentBorder, color: activePlugin.accentColor, background: activePlugin.accentSurface }}
-                    data-testid="header-builder-archive"
-                  >
-                    Archive Build
-                  </button>
+                  <>
+                    <span
+                      className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border max-w-[140px] truncate"
+                      title={selectedBuilderProject?.name ?? chat.selectedBuilderProjectId}
+                      style={{ borderColor: activePlugin.accentBorder, color: activePlugin.accentColor, background: activePlugin.accentSurface }}
+                    >
+                      {selectedBuilderProject?.name ?? "project"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
+                      disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
+                      className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border disabled:opacity-50 hover:brightness-125 transition-colors"
+                      style={{ borderColor: activePlugin.accentBorder, color: activePlugin.accentColor, background: activePlugin.accentSurface }}
+                      data-testid="header-builder-archive"
+                    >
+                      Archive Build
+                    </button>
+                  </>
                 ) : null}
               </div>
             ) : null}
@@ -1408,6 +1423,9 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                     setMemoryError(null);
                   }}
                 />
+                {chat.activeBuilderProgress ? (
+                  <BuilderRunPanel progress={chat.activeBuilderProgress} />
+                ) : null}
               </div>
             </>
           ) : (

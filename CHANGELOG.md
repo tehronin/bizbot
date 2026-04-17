@@ -2,7 +2,12 @@
 
 ## 2026-04-17
 
-- Added dynamic Builder tool subsetting so Builder operator executions can run with a bounded, task-relevant tool ceiling while preserving a configurable fail-open kill switch for debugging and rollout safety.
+- Extracted shared `MessageMarkdown` component from `SidecarHost` and applied it to all assistant chat messages for consistent block-level markdown rendering with headings, lists, and fenced code blocks.
+- Added `BuilderRunPanel` live-progress indicator to the chat workspace that polls a new `/api/builder/tasks/[taskId]/progress` endpoint every 3 seconds and displays the current phase, iteration count, and latest loop summary while a Builder task is running.
+- Wired `builder_plan_project` to auto-open the Sidecar with a formatted plan panel (brief title, summary, and milestone checklist) via the `_sidecar` side-channel in the executor, so Builder plans appear in context without a manual open action.
+- Added persistent project name badge to the Builder chat header so the active project is always visible alongside the archive action, independent of whether a welcome screen is showing.
+- Added `{ type: "builder_iteration" }` to the `AgentExecutionEvent` union for future live-streaming of Builder loop metadata through the SSE pipeline.
+
 - Reduced Builder chat inbox noise by suppressing first-run contract capture cards, deduping drift cards independently of run id churn, collapsing MCP, dependency, and topology drift into a single combined preflight review surface, and reusing project overview fetches during inbox bootstrap.
 - Enriched Builder chat cards with live task-loop progress, verification state, changed-file previews, failure excerpts, MCP drift details, and structured dependency and file-topology drift details so execution state and reconciliation context are visible without opening separate project surfaces.
 - Reworked Living ADR handling into an internal adjudication flow that narrows planner and execution prompts to relevant architecture context, keeps unrelated stale ADR advisory, persists adjudication into Builder review state, and only escalates protected-boundary architecture changes.

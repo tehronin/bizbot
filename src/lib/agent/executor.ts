@@ -122,6 +122,7 @@ export type AgentExecutionEvent =
     }
   | SidecarStreamEvent
   | { type: "assistant_message"; content: string }
+  | { type: "builder_iteration"; taskId: string; currentIteration: number | null; maxIterations: number | null; loopPhase: string | null; latestLoopSummary: string | null }
   | { type: "done"; conversationId: string; reply: string }
   | { type: "error"; error: string };
 
@@ -1068,9 +1069,34 @@ export async function executeAgentConversation(
                 toolCallId: toolCall.id,
                 name: toolCall.name,
               }));
+            } else if (!isError && result && typeof result === "object" && !Array.isArray(result)) {
+              const embedded = (result as Record<string, unknown>)["_sidecar"];
+              if (isSidecarToolResult(embedded)) {
+                syncActiveSidecarPanel({
+                  action: embedded.action,
+                  panel: embedded.panel,
+                  conversationId: resolvedConversationId,
+                  runId: run.runId,
+                  userId: resolvedUserId,
+                  toolName: toolCall.name,
+                });
+                await emit(onEvent, buildSidecarStreamEvent({
+                  action: embedded.action,
+                  panel: embedded.panel,
+                  runId: run.runId,
+                  conversationId: resolvedConversationId,
+                  round,
+                  toolCallId: toolCall.id,
+                  name: toolCall.name,
+                }));
+              }
             }
 
-            const resultText = stringifyToolResult(result, runtimeConfig.toolResultMaxChars);
+            const resultForLLM =
+              result && typeof result === "object" && !Array.isArray(result) && "_sidecar" in (result as Record<string, unknown>)
+                ? Object.fromEntries(Object.entries(result as Record<string, unknown>).filter(([k]) => k !== "_sidecar"))
+                : result;
+            const resultText = stringifyToolResult(resultForLLM, runtimeConfig.toolResultMaxChars);
             recordAgentRunToolResult(run.runId, {
               round,
               toolCallId: toolCall.id,

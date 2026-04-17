@@ -103,6 +103,7 @@ import { defineTool, registerTool, type ToolDefinition, type ToolExecutionResult
 import type { runBuilderProjectBootstrap } from "@/lib/builder/bootstrap";
 import type { recordBuilderProjectCommand } from "@/lib/builder/commands";
 import type { getBuilderProjectOverview, launchBuilderTask, planBuilderProject } from "@/lib/builder/orchestrator";
+import type { SidecarToolResult } from "@/lib/sidecar/types";
 
 async function loadBuilderBootstrap() {
   return import("@/lib/builder/bootstrap");
@@ -480,6 +481,42 @@ interface BuilderContainerStageValidationArgs extends BuilderProjectArgs {
   stopAfterValidation?: boolean;
   taskId?: string;
   runId?: string;
+}
+
+function formatPlanAsSidecarMarkdown(overview: Awaited<ReturnType<typeof import("@/lib/builder/orchestrator").planBuilderProject>>): string {
+  const lines: string[] = [];
+  const brief = overview.brief;
+  if (brief?.title) {
+    lines.push(`## ${brief.title}`);
+  }
+  if (brief?.summary) {
+    lines.push("", brief.summary);
+  }
+  if (overview.milestones?.length) {
+    lines.push("", "### Milestones");
+    for (const ms of overview.milestones) {
+      const done = ms.status === "COMPLETE" ? "✓" : "○";
+      const title = ms.title;
+      lines.push(`- ${done} ${title}`);
+    }
+  }
+  if (overview.nextRecommendedStep) {
+    lines.push("", "### Next Step", overview.nextRecommendedStep);
+  }
+  return lines.join("\n");
+}
+
+function buildPlanSidecar(overview: Awaited<ReturnType<typeof import("@/lib/builder/orchestrator").planBuilderProject>>): SidecarToolResult {
+  const markdown = formatPlanAsSidecarMarkdown(overview);
+  return {
+    ok: true,
+    action: "open",
+    panel: {
+      panelId: `builder-plan-${overview.project.id}`,
+      title: overview.brief?.title ? `Plan: ${overview.brief.title}` : "Builder Plan",
+      content: { type: "markdown", markdown },
+    },
+  };
 }
 
 function assertExplicitGovernanceApproval(args: { confirmed: boolean; reason: string }, actionLabel: string): string {
@@ -914,8 +951,8 @@ export const builderPlugin = {
         },
         required: ["projectId"],
       },
-      execute: async ({ projectId, title, summary, goals, constraints, deliverables, notes, regenerate }: BuilderPlanProjectArgs) =>
-          (await loadBuilderOrchestrator()).planBuilderProject(projectId, {
+      execute: async ({ projectId, title, summary, goals, constraints, deliverables, notes, regenerate }: BuilderPlanProjectArgs) => {
+        const overview = await (await loadBuilderOrchestrator()).planBuilderProject(projectId, {
           title: title ?? "",
           summary: summary ?? "",
           goals,
@@ -923,7 +960,9 @@ export const builderPlugin = {
           deliverables,
           notes,
           regenerate,
-        }),
+        });
+        return { ...overview, _sidecar: buildPlanSidecar(overview) };
+      },
     } satisfies ToolDefinition<BuilderPlanProjectArgs, Awaited<ReturnType<typeof planBuilderProject>>>)),
     registerTool(defineTool({
       name: "builder_list_tasks",
