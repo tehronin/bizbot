@@ -66,7 +66,7 @@ describe("oracle MCP exposure", () => {
 
     expect(result.result.structuredContent).toEqual(expect.objectContaining({
       query: "btc",
-      markets: [expect.objectContaining({ id: "market-1" })],
+      markets: [expect.objectContaining({ sourceMarketId: "market-1", title: "Will BTC hit 150k?" })],
       summary: expect.stringContaining("Will BTC hit 150k?"),
     }));
     expect(result.result.content).toEqual(expect.arrayContaining([

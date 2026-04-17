@@ -5,6 +5,36 @@ vi.mock("@/lib/agent/memory/service", () => ({
   setMemoryFact: vi.fn(),
 }));
 
+vi.mock("@/lib/oracle/predictions", () => ({
+  persistOraclePrediction: vi.fn(async ({ userId, conversationId, target, personality, evidenceMode, impliedProbability, calibratedProbability, confidence, sentiment, headline, summary, summaryPacket, sourceBlend, evidenceGaps, verdict, isWatched }) => ({
+    id: "prediction-1",
+    userId,
+    conversationId: conversationId ?? null,
+    rawPrompt: target.rawPrompt,
+    normalizedPrompt: target.normalizedPrompt,
+    canonicalQuestion: target.canonicalQuestion,
+    asset: target.asset ?? null,
+    personality,
+    isWatched: isWatched ?? false,
+    analysisCount: 1,
+    lastEvidenceMode: evidenceMode,
+    lastImpliedProbability: impliedProbability,
+    lastCalibratedProbability: calibratedProbability,
+    lastConfidence: confidence,
+    lastSentiment: sentiment,
+    lastHeadline: headline,
+    lastSummary: summary,
+    lastSummaryPacket: summaryPacket,
+    lastSourceBlend: sourceBlend,
+    lastEvidenceGaps: evidenceGaps,
+    lastVerdict: verdict,
+    lastAnalyzedAt: "2026-04-17T00:00:00.000Z",
+    createdAt: "2026-04-17T00:00:00.000Z",
+    updatedAt: "2026-04-17T00:00:00.000Z",
+  })),
+  listOraclePredictions: vi.fn(async () => []),
+}));
+
 vi.mock("@/lib/oracle/swarm", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/oracle/swarm")>();
   const { resolveOraclePredictionEvidence } = await import("@/lib/oracle/evidence");
@@ -16,6 +46,7 @@ vi.mock("@/lib/oracle/swarm", async (importOriginal) => {
         market,
         webResearch: [],
         trendSignals: [],
+        evidenceGaps: [],
         swarmTrace: { planId: "test-plan", durationMs: 50, workerCount: 1, completedCount: 1, failedCount: 0 },
       };
     }),
@@ -25,12 +56,15 @@ vi.mock("@/lib/oracle/swarm", async (importOriginal) => {
 import { getActiveMemoryFacts, setMemoryFact } from "@/lib/agent/memory/service";
 import { executeTool, getAllToolDefinitions } from "@/lib/agent/plugins";
 import { resetKalshiServiceCache } from "@/lib/kalshi/service";
+import { listOraclePredictions, persistOraclePrediction } from "@/lib/oracle/predictions";
 import { routeSidecarInteraction } from "@/lib/sidecar/router";
 import { resetActiveSidecarPanelsForTests, syncActiveSidecarPanel } from "@/lib/sidecar/state";
 import type { SidecarPanel } from "@/lib/sidecar/types";
 
 const mockedGetActiveMemoryFacts = vi.mocked(getActiveMemoryFacts);
 const mockedSetMemoryFact = vi.mocked(setMemoryFact);
+const mockedPersistOraclePrediction = vi.mocked(persistOraclePrediction);
+const mockedListOraclePredictions = vi.mocked(listOraclePredictions);
 
 describe("oracle plugin", () => {
   beforeEach(() => {
@@ -39,6 +73,8 @@ describe("oracle plugin", () => {
     resetActiveSidecarPanelsForTests();
     mockedGetActiveMemoryFacts.mockReset();
     mockedSetMemoryFact.mockReset();
+    mockedPersistOraclePrediction.mockClear();
+    mockedListOraclePredictions.mockClear();
     mockedGetActiveMemoryFacts.mockResolvedValue([] as never);
     mockedSetMemoryFact.mockResolvedValue({ id: "fact-1", key: "oracle_bot_personality", value: "balanced" } as never);
   });
@@ -54,6 +90,8 @@ describe("oracle plugin", () => {
     expect(enabledTools).toContain("oracle_get_market_verdict");
     expect(enabledTools).toContain("oracle_analyze_prediction");
     expect(enabledTools).toContain("oracle_open_personality_selector");
+    expect(enabledTools).toContain("oracle_watch_prediction");
+    expect(enabledTools).toContain("oracle_list_predictions");
   });
 
   it("builds an evidence-backed Oracle prediction analysis packet", async () => {
@@ -92,6 +130,8 @@ describe("oracle plugin", () => {
     expect(result).toEqual(expect.objectContaining({
       evidenceMode: "exact_market",
       impliedProbability: 0.41,
+      predictionLogId: "prediction-1",
+      watchEnabled: false,
       sourceBlend: expect.objectContaining({
         agreement: "single_source",
         spread: 0,
@@ -296,7 +336,7 @@ describe("oracle plugin", () => {
 
     expect(result).toEqual(expect.objectContaining({
       query: "btc",
-      markets: [expect.objectContaining({ id: "market-1" })],
+      markets: [expect.objectContaining({ sourceMarketId: "market-1", title: "Will BTC hit 150k?" })],
       summary: expect.stringContaining("Will BTC hit 150k?"),
     }));
   });
