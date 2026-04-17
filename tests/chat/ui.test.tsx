@@ -659,6 +659,8 @@ describe("chat workspace history panel", () => {
     render(<BuilderHarness cards={[createBuilderCard({
       details: {
         dependencyDrift: {
+          severity: "notable",
+          reasons: ["Lockfile and dependency contract changed."],
           packageManagerChanged: false,
           lockfileChanged: true,
           packages: [

@@ -70,11 +70,13 @@ describe("builder operator trust", () => {
         currentSequence: 1,
         currentHash: "hash-1",
         state: "drifted",
+        severity: "notable",
         history: [],
         drift: {
           previousHash: "hash-0",
           currentHash: "hash-1",
           changed: true,
+          severity: "notable",
           tools: { added: [], removed: [], changed: [] },
           prompts: { added: [], removed: [], changed: [] },
           resources: { added: [], removed: [], changed: [] },

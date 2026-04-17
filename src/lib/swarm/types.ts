@@ -67,3 +67,16 @@ export interface SwarmValidationResult {
   failedWorkItemIds: string[];
   missingWorkItemIds: string[];
 }
+
+export interface SwarmRunOptions {
+  /** Maximum concurrent workers. Defaults to all items in parallel. */
+  concurrency?: number;
+  /** Per-work-item timeout in ms. Worker is abandoned (counts as failed) after this. */
+  itemTimeoutMs?: number;
+  /** Max retry attempts per item on failure. Default 0 (no retry). */
+  maxRetries?: number;
+  /** AbortSignal — when aborted, pending items are skipped and running items are abandoned. */
+  signal?: AbortSignal;
+  /** Called each time a work item completes or fails. Useful for streaming progress. */
+  onWorkItemComplete?: (result: SwarmWorkerResult) => void;
+}

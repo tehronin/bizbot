@@ -60,6 +60,36 @@ describe("oracle prediction intent", () => {
     ]));
   });
 
+  it("parses macro prompts without misreading the year as a price target", () => {
+    const result = getOraclePredictionIntent("oracle predict whether the fed cuts rates by september 2026", { referenceDate: REFERENCE_DATE });
+    expect(result.matched).toBe(true);
+    expect(result.target).toEqual(expect.objectContaining({
+      asset: "FED",
+      timeframeEnd: "2026-09-30",
+      canonicalQuestion: "whether fed cuts rates by september 2026",
+    }));
+    expect(result.target?.thresholdValue).toBeUndefined();
+  });
+
+  it("parses election prompts as open-ended Oracle targets", () => {
+    const target = parseOraclePredictionTarget("oracle predict who wins the election in 2028", { referenceDate: REFERENCE_DATE });
+    expect(target).toEqual(expect.objectContaining({
+      asset: "US_ELECTION",
+      canonicalQuestion: "who wins election in 2028",
+    }));
+    expect(target?.thresholdValue).toBeUndefined();
+    expect(target?.searchQueries).toEqual(expect.arrayContaining(["who wins election in 2028", "election"]));
+  });
+
+  it("treats open-ended market questions as meaningful even without a numeric threshold", () => {
+    const target = parseOraclePredictionTarget("oracle predict if gold breaks out this year", { referenceDate: REFERENCE_DATE });
+    expect(target).toEqual(expect.objectContaining({
+      asset: "GOLD",
+      canonicalQuestion: "if gold breaks out",
+    }));
+    expect(isMeaningfulOraclePredictionTarget(target)).toBe(true);
+  });
+
   it("does not match when the oracle keyword is missing", () => {
     expect(getOraclePredictionIntent("Predict BTC to 150k")).toEqual({
       matched: false,

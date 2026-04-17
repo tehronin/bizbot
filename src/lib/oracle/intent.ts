@@ -29,6 +29,15 @@ const ASSET_ALIASES: Record<string, string[]> = {
   BTC: ["btc", "bitcoin"],
   ETH: ["eth", "ethereum"],
   SOL: ["sol", "solana"],
+  FED: ["fed", "federal reserve", "fomc", "rate cut", "rate hike"],
+  SPX: ["spx", "s&p 500", "s and p 500", "spy"],
+  GOLD: ["gold", "xau"],
+  OIL: ["oil", "crude", "wti", "brent"],
+  TSLA: ["tsla", "tesla"],
+  NVDA: ["nvda", "nvidia"],
+  US_ELECTION: ["election", "president", "white house", "trump", "biden"],
+  CPI: ["cpi", "inflation"],
+  JOBS: ["jobs report", "unemployment", "nonfarm payrolls", "payrolls"],
 };
 const MONTH_LOOKUP = new Map([
   ["january", 0], ["jan", 0],
@@ -116,10 +125,14 @@ function parseCompactNumber(raw: string): number | undefined {
   return base * multiplier;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function detectAsset(message: string): { asset?: string; aliases: string[] } {
   const lower = message.toLowerCase();
   for (const [asset, aliases] of Object.entries(ASSET_ALIASES)) {
-    if (aliases.some((alias) => new RegExp(`\\b${alias}\\b`, "i").test(lower))) {
+    if (aliases.some((alias) => new RegExp(`\\b${escapeRegExp(alias)}\\b`, "i").test(lower))) {
       return { asset, aliases };
     }
   }
@@ -136,17 +149,27 @@ function detectDirection(message: string): OraclePredictionTarget["direction"] |
 }
 
 function detectThreshold(message: string): Pick<OraclePredictionTarget, "thresholdValue" | "thresholdUnit"> {
-  const moneyMatch = message.match(/\b(?:over|above|under|below|to|hit|reach)?\s*\$?(\d+(?:,\d{3})*(?:\.\d+)?[kmb]?)\b/i);
-  if (!moneyMatch) {
+  const percentMatch = message.match(/\b(?:over|above|under|below|to|hit|reach|at)?\s*(\d+(?:\.\d+)?)\s*%\b/i);
+  if (percentMatch) {
+    const thresholdValue = parseCompactNumber(percentMatch[1]);
+    return thresholdValue === undefined ? {} : { thresholdValue, thresholdUnit: "percent" };
+  }
+
+  const directionalMatch = message.match(/\b(?:over|above|under|below|to|hit|reach|at)\s+\$?(\d+(?:,\d{3})*(?:\.\d+)?[kmb]?)\b/i);
+  const moneyMatch = message.match(/\$(\d+(?:,\d{3})*(?:\.\d+)?[kmb]?)\b/i);
+  const compactMatch = message.match(/\b(\d+(?:\.\d+)?[kmb])\b/i);
+  const rawThreshold = directionalMatch?.[1] ?? moneyMatch?.[1] ?? compactMatch?.[1];
+
+  if (!rawThreshold) {
     return {};
   }
 
-  const thresholdValue = parseCompactNumber(moneyMatch[1]);
+  const thresholdValue = parseCompactNumber(rawThreshold);
   if (thresholdValue === undefined) {
     return {};
   }
 
-  const thresholdUnit = /%/.test(moneyMatch[0]) ? "percent" : "usd";
+  const thresholdUnit = "usd";
   return { thresholdValue, thresholdUnit };
 }
 

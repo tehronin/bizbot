@@ -10,8 +10,6 @@ describe("builder ADR adjudication", () => {
   it("blocks planning only for stale ADR that are relevant to the current work", () => {
     const focus = buildPlanningAdrFocus({
       brief: {
-        id: "brief-1",
-        projectId: "project-1",
         title: "Projection sync cleanup",
         summary: "Refine Builder projection sync and staged task board behavior.",
         goals: [],
@@ -72,8 +70,6 @@ describe("builder ADR adjudication", () => {
   it("escalates protected-boundary planning changes", () => {
     const focus = buildPlanningAdrFocus({
       brief: {
-        id: "brief-1",
-        projectId: "project-1",
         title: "Dependency contract overhaul",
         summary: "Revise package manager policy and dependency baseline handling.",
         goals: [],
@@ -120,8 +116,6 @@ describe("builder ADR adjudication", () => {
   it("does not escalate initial protected-boundary ADR introductions during planning", () => {
     const focus = buildPlanningAdrFocus({
       brief: {
-        id: "brief-1",
-        projectId: "project-1",
         title: "Builder smoke planning",
         summary: "Create a minimal Builder plan and stage the first canonical task.",
         goals: [],

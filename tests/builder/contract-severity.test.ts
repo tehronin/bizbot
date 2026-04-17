@@ -2,18 +2,23 @@ import { describe, expect, it } from "vitest";
 import { resolveBuilderDependencyContractDrift } from "@/lib/builder/dependency-contract";
 import { resolveBuilderFileTopologyContractDrift } from "@/lib/builder/file-topology-diff";
 import { compareBuilderMcpContractSnapshots } from "@/lib/builder/mcp-snapshots";
+import type {
+  BuilderDependencyContractSnapshotState,
+  BuilderFileTopologyContractSnapshotState,
+  BuilderMcpContractSnapshotState,
+} from "@/lib/builder/types";
 
 describe("builder contract severity", () => {
   it("classifies lockfile-only dependency drift as benign", () => {
-    const previousSnapshot = {
+    const previousSnapshot: BuilderDependencyContractSnapshotState = {
       packageManager: "npm",
       manifest: { name: "demo", version: "1.0.0", private: true, type: "module" },
       scripts: [{ name: "build", command: "next build" }],
       packages: [{ name: "next", kind: "runtime", range: "16.0.0", resolvedVersion: "16.0.0" }],
       lockfile: { path: "package-lock.json", present: true, lockfileVersion: 3, contentHash: "old" },
       classifications: { framework: ["next"], ui: [], database: [], mcp: [], queue: [], desktop: [], validation: [], graph: [], ai: [] },
-    } as const;
-    const currentSnapshot = {
+    };
+    const currentSnapshot: BuilderDependencyContractSnapshotState = {
       ...previousSnapshot,
       lockfile: { ...previousSnapshot.lockfile, contentHash: "new" },
     };
@@ -25,7 +30,7 @@ describe("builder contract severity", () => {
   });
 
   it("classifies anchor-changing topology drift as breaking", () => {
-    const previousSnapshot = {
+    const previousSnapshot: BuilderFileTopologyContractSnapshotState = {
       root: ".",
       topLevel: ["src", "tests"],
       anchors: {
@@ -54,8 +59,8 @@ describe("builder contract severity", () => {
         discourageTopLevelFeatureFolders: true,
         reserveBuilderProjectionPaths: true,
       },
-    } as const;
-    const currentSnapshot = {
+    };
+    const currentSnapshot: BuilderFileTopologyContractSnapshotState = {
       ...previousSnapshot,
       anchors: {
         ...previousSnapshot.anchors,
@@ -75,7 +80,7 @@ describe("builder contract severity", () => {
   });
 
   it("classifies additive MCP drift as notable", () => {
-    const previousSnapshot = {
+    const previousSnapshot: BuilderMcpContractSnapshotState = {
       contract: {
         version: "v1",
         compatibilityPolicyVersion: "v1",
@@ -95,8 +100,8 @@ describe("builder contract severity", () => {
       tools: [{ name: "builder_read_file", title: "Read", description: "Read", ownerId: "builtin", ownerKind: "builtin", annotations: {}, parameters: {} }],
       prompts: [],
       resources: [],
-    } as const;
-    const currentSnapshot = {
+    };
+    const currentSnapshot: BuilderMcpContractSnapshotState = {
       ...previousSnapshot,
       tools: [
         ...previousSnapshot.tools,

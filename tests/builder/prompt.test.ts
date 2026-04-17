@@ -406,6 +406,7 @@ describe("builder prompt synthesis", () => {
         baselineHash: "dep-hash-baseline",
         currentHash: "dep-hash-plan",
         driftDetected: true,
+        severity: "notable",
         packageManager: "pnpm",
         relatedArchitectureDecisionKeys: ["dependency_manager_pnpm", "framework_next", "orm_prisma"],
         highlightedPackages: ["next", "react", "@prisma/client"],
@@ -415,6 +416,8 @@ describe("builder prompt synthesis", () => {
           previousHash: "dep-hash-baseline",
           currentHash: "dep-hash-plan",
           changed: true,
+          severity: "notable",
+          reasons: ["Lockfile and package/script changes detected."],
           packageManagerChanged: false,
           lockfileChanged: true,
           packages: {

@@ -22,21 +22,37 @@ vi.mock("@/lib/oracle/evidence", async (importOriginal) => {
       sourceProbabilities: [{ source: "kalshi", probability: 0.22, candidateCount: 2 }],
       exactMatch: null,
       adjacentMatches: [],
+      allCandidates: [],
       summaryPacket: "Market evidence summary.",
     }),
   };
 });
 
-vi.mock("@/lib/browser/engine", () => ({
-  navigatePage: vi.fn().mockResolvedValue({
-    result: {
-      url: "https://www.google.com/search?q=btc+150k",
-      title: "btc 150k - Google Search",
-      text: "Bitcoin Price Prediction\nExperts suggest BTC could reach 150k by late 2026 based on current market trends and institutional adoption.\nAnother Result\nSome analysts remain cautious about the 150k target citing regulatory headwinds.",
-    },
-    cookies: [],
+vi.mock("@/lib/polymarket/service", () => ({
+  searchPolymarketMarkets: vi.fn().mockResolvedValue({
+    query: "btc 150k",
+    markets: [
+      {
+        id: "pm-btc-150k",
+        question: "Will BTC exceed $150,000 by end of 2026?",
+        outcomes: [{ label: "Yes", price: 0.22 }, { label: "No", price: 0.78 }],
+        active: true,
+        closed: false,
+        endDate: "2026-12-31",
+        volume: 125000,
+        url: "https://polymarket.com/market/btc-150k",
+      },
+    ],
   }),
-  extractText: vi.fn().mockResolvedValue({ text: "sample text", cookies: [] }),
+}));
+
+vi.mock("@/lib/kalshi/service", () => ({
+  listKalshiSeries: vi.fn().mockResolvedValue([
+    { ticker: "BTC-PRICE", title: "BTC price milestones", tags: ["bitcoin", "crypto"] },
+    { ticker: "BTC-EOY", title: "Bitcoin end of year", tags: ["btc"] },
+    { ticker: "ETH-PRICE", title: "ETH price milestones", tags: ["ethereum", "crypto"] },
+  ]),
+  getKalshiMarkets: vi.fn().mockResolvedValue([]),
 }));
 
 describe("oracle swarm planner", () => {
@@ -61,7 +77,7 @@ describe("oracle swarm planner", () => {
     expect(marketItem.payload.target).toEqual(target);
   });
 
-  it("generates web search queries from the target", () => {
+  it("generates research queries from the target for the web_research lane", () => {
     const target = parseOraclePredictionTarget("oracle predict btc over 150k this year", { referenceDate: REFERENCE_DATE });
     const plan = buildOracleSwarmPlan(target!);
     const webItem = plan.workItems.find((w) => w.id === "web_research")!;
@@ -87,8 +103,30 @@ describe("oracle swarm planner", () => {
 });
 
 describe("oracle swarm execution", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    // Re-apply default mocks after clearAllMocks
+    const { searchPolymarketMarkets } = vi.mocked(await import("@/lib/polymarket/service"));
+    searchPolymarketMarkets.mockResolvedValue({
+      query: "btc 150k",
+      markets: [
+        {
+          id: "pm-btc-150k",
+          question: "Will BTC exceed $150,000 by end of 2026?",
+          outcomes: [{ label: "Yes", price: 0.22 }, { label: "No", price: 0.78 }],
+          active: true,
+          closed: false,
+          endDate: "2026-12-31",
+          volume: 125000,
+          url: "https://polymarket.com/market/btc-150k",
+        },
+      ],
+    });
+    const { listKalshiSeries } = vi.mocked(await import("@/lib/kalshi/service"));
+    listKalshiSeries.mockResolvedValue([
+      { ticker: "BTC-PRICE", title: "BTC price milestones", tags: ["bitcoin", "crypto"] },
+      { ticker: "BTC-EOY", title: "Bitcoin end of year", tags: ["btc"] },
+    ]);
   });
 
   it("resolves a swarm evidence bundle with market, web research, and trend data", async () => {
@@ -102,32 +140,40 @@ describe("oracle swarm execution", () => {
     expect(bundle.market.evidenceMode).toBe("adjacent_inference");
     expect(bundle.market.inferredProbability).toBe(0.22);
 
-    // Web research should contain results from the mocked navigatePage
+    // Web research should contain Polymarket results formatted as structured snippets
     expect(bundle.webResearch.length).toBeGreaterThan(0);
+    const firstResult = bundle.webResearch[0]!;
+    expect(firstResult.snippets.length).toBeGreaterThan(0);
+    expect(firstResult.snippets[0]!.title).toContain("BTC");
 
-    // Trend signals should be present (may be "unknown" since we're mocking)
+    // Trend signals should reflect Kalshi series match count
     expect(bundle.trendSignals.length).toBeGreaterThan(0);
+    const firstSignal = bundle.trendSignals[0]!;
+    expect(["rising", "stable", "declining", "unknown"]).toContain(firstSignal.trendDirection);
 
     // Swarm trace
     expect(bundle.swarmTrace.workerCount).toBe(3);
     expect(bundle.swarmTrace.completedCount).toBe(3);
     expect(bundle.swarmTrace.failedCount).toBe(0);
     expect(bundle.swarmTrace.durationMs).toBeGreaterThanOrEqual(0);
+
+    // Evidence gaps should be empty (all lanes succeeded)
+    expect(bundle.evidenceGaps).toEqual([]);
   });
 
-  it("enriches the market summary packet with web research and trend data", async () => {
+  it("enriches the market summary packet with research and trend data", async () => {
     const target = parseOraclePredictionTarget("oracle predict btc over 150k this year", { referenceDate: REFERENCE_DATE });
     const bundle = await resolveOracleSwarmEvidence(target!);
 
-    // The summary packet should include the original market evidence plus swarm additions
     expect(bundle.market.summaryPacket).toContain("Market evidence summary.");
     expect(bundle.market.summaryPacket).toContain("Swarm:");
   });
 
-  it("handles browser failures gracefully with empty snippets and unknown signals", async () => {
-    // Make browser engine fail for this test
-    const { navigatePage } = await import("@/lib/browser/engine");
-    vi.mocked(navigatePage).mockRejectedValue(new Error("Browser unavailable"));
+  it("records evidence gaps when secondary lanes fail", async () => {
+    const { searchPolymarketMarkets } = vi.mocked(await import("@/lib/polymarket/service"));
+    const { listKalshiSeries } = vi.mocked(await import("@/lib/kalshi/service"));
+    searchPolymarketMarkets.mockRejectedValue(new Error("Polymarket API unavailable"));
+    listKalshiSeries.mockRejectedValue(new Error("Kalshi API unavailable"));
 
     const target = parseOraclePredictionTarget("oracle predict btc over 150k this year", { referenceDate: REFERENCE_DATE });
     const bundle = await resolveOracleSwarmEvidence(target!);
@@ -136,18 +182,18 @@ describe("oracle swarm execution", () => {
     expect(bundle.market).toBeDefined();
     expect(bundle.market.evidenceMode).toBe("adjacent_inference");
 
-    // Web research workers catch errors internally — results have empty snippets
+    // Web research should have empty snippets (worker catches errors internally)
     for (const result of bundle.webResearch) {
       expect(result.snippets).toEqual([]);
     }
 
-    // Trend signals should report "unknown" direction/interest
+    // Trend signals should report "unknown" (listKalshiSeries failed)
     for (const signal of bundle.trendSignals) {
       expect(signal.trendDirection).toBe("unknown");
       expect(signal.interestLevel).toBe("unknown");
     }
 
-    // All three swarm workers still complete (they catch internally)
+    // Swarm workers catch internally, so completedCount is still 3
     expect(bundle.swarmTrace.completedCount).toBe(3);
     expect(bundle.swarmTrace.failedCount).toBe(0);
   });

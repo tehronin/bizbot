@@ -2,6 +2,13 @@
 
 ## 2026-04-17
 
+- Reworked Oracle swarm evidence collection to remove brittle Google scraping and replace it with adjacent market research plus Kalshi market-coverage signals, while surfacing explicit `evidenceGaps` when non-primary lanes fail.
+- Upgraded the shared swarm runtime with optional concurrency control, per-item timeout and retry handling, abort support, and per-item completion callbacks for streaming-friendly execution.
+- Added LLM-driven Oracle verdict generation with a structured verdict object, personality lens prompts, and automatic Sidecar verdict panels for `oracle_analyze_prediction`.
+- Expanded `oracle_search_markets` to include Kalshi results alongside Polymarket in read-only search output.
+- Broadened Oracle intent parsing beyond crypto to cover macro, equity, commodity, and election-style prompts, and fixed numeric parsing so bare years are not misclassified as price thresholds.
+- Added Oracle prediction persistence with a new `OraclePrediction` table, automatic analysis logging, and new `oracle_watch_prediction` and `oracle_list_predictions` tools for recalling watched or recent prediction calls.
+
 - Extracted shared `MessageMarkdown` component from `SidecarHost` and applied it to all assistant chat messages for consistent block-level markdown rendering with headings, lists, and fenced code blocks.
 - Added `BuilderRunPanel` live-progress indicator to the chat workspace that polls a new `/api/builder/tasks/[taskId]/progress` endpoint every 3 seconds and displays the current phase, iteration count, and latest loop summary while a Builder task is running.
 - Wired `builder_plan_project` to auto-open the Sidecar with a formatted plan panel (brief title, summary, and milestone checklist) via the `_sidecar` side-channel in the executor, so Builder plans appear in context without a manual open action.

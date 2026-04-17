@@ -22,6 +22,7 @@ model User {
   posts         Post[]
   memories      Memory[]
   userMemoryFacts UserMemoryFact[]
+  oraclePredictions OraclePrediction[]
   ontologyEntities OntologyEntity[]   @relation("UserOntologyEntities")
   ontologyRelations OntologyRelation[] @relation("UserOntologyRelations")
 }
@@ -133,6 +134,38 @@ model Conversation {
   builderInteractions BuilderInteraction[]
 
   @@index([userId, archivedAt, deletedAt, lastMessageAt])
+}
+
+model OraclePrediction {
+  id                        String   @id @default(cuid())
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                    String
+  conversationId            String?
+  rawPrompt                 String
+  normalizedPrompt          String
+  canonicalQuestion         String
+  asset                     String?
+  personality               String
+  isWatched                 Boolean  @default(false)
+  analysisCount             Int      @default(0)
+  lastEvidenceMode          String?
+  lastImpliedProbability    Float?
+  lastCalibratedProbability Float?
+  lastConfidence            String?
+  lastSentiment             String?
+  lastHeadline              String?
+  lastSummary               String?
+  lastSummaryPacket         String?
+  lastSourceBlend           Json?
+  lastEvidenceGaps          Json?
+  lastVerdict               Json?
+  lastAnalyzedAt            DateTime?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@unique([userId, canonicalQuestion], name: "userId_canonicalQuestion")
+  @@index([userId, isWatched, updatedAt])
+  @@index([userId, updatedAt])
 }
 
 model Message {
