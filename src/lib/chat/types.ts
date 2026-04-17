@@ -64,12 +64,16 @@ export interface BuilderChatCardProgress {
   latestLoopSummary: string | null;
 }
 
+export type BuilderChatCardSeverity = "baseline" | "benign" | "notable" | "breaking";
+
 export interface BuilderChatCardDetailGroup {
   label: string;
   items: string[];
 }
 
 export interface BuilderChatCardDependencyDetails {
+  severity: BuilderChatCardSeverity;
+  reasons: string[];
   packageManagerChanged: boolean;
   lockfileChanged: boolean;
   packages: BuilderChatCardDetailGroup[];
@@ -77,6 +81,8 @@ export interface BuilderChatCardDependencyDetails {
 }
 
 export interface BuilderChatCardFileTopologyDetails {
+  severity: BuilderChatCardSeverity;
+  reasons: string[];
   directories: BuilderChatCardDetailGroup[];
   importantFiles: BuilderChatCardDetailGroup[];
   anchorsChanged: string[];
@@ -84,15 +90,53 @@ export interface BuilderChatCardFileTopologyDetails {
   rulesChanged: string[];
 }
 
+export interface BuilderChatCardMcpDetails {
+  severity: BuilderChatCardSeverity;
+  classification: "breaking" | "non_breaking" | "internal_only";
+  reasons: string[];
+  changedSurfaces: string[];
+  tools: BuilderChatCardDetailGroup[];
+  prompts: BuilderChatCardDetailGroup[];
+  resources: BuilderChatCardDetailGroup[];
+  profileChanged: boolean;
+  contractChanged: boolean;
+}
+
+export interface BuilderChatCardPreflightSurfaceSummary {
+  id: "mcp" | "dependency" | "file_topology";
+  label: string;
+  severity: BuilderChatCardSeverity;
+  state: string;
+  summary: string;
+  recommendations: string[];
+}
+
+export interface BuilderChatCardPreflightReviewDetails {
+  surfaces: BuilderChatCardPreflightSurfaceSummary[];
+}
+
+export interface BuilderChatCardTaskExecutionDetails {
+  changedFiles: string[];
+  verificationStatus: "passed" | "failed" | "skipped" | "not_run";
+  verificationSummary: string | null;
+  verificationScripts: string[];
+  failingScript: string | null;
+  latestExcerpt: string | null;
+  excerptLabel: string | null;
+}
+
 export interface BuilderChatCardDetails {
+  preflightReview?: BuilderChatCardPreflightReviewDetails;
+  mcpDrift?: BuilderChatCardMcpDetails;
   dependencyDrift?: BuilderChatCardDependencyDetails;
   fileTopologyDrift?: BuilderChatCardFileTopologyDetails;
+  taskExecution?: BuilderChatCardTaskExecutionDetails;
 }
 
 export interface BuilderChatCard {
   id: string;
   interactionId: string;
-  kind: "mcp_policy_reconciliation" | "mcp_contract_drift" | "dependency_contract_drift" | "file_topology_contract_drift" | "task_execution";
+  kind: "preflight_review" | "mcp_policy_reconciliation" | "mcp_contract_drift" | "dependency_contract_drift" | "file_topology_contract_drift" | "task_execution";
   status: "pending" | "approved" | "rejected" | "resolved" | "planned" | "running" | "succeeded" | "failed" | "cancelled";
   projectId: string;
   projectName: string;
@@ -102,6 +146,7 @@ export interface BuilderChatCard {
   title: string;
   summary: string;
   state: string;
+  severity?: BuilderChatCardSeverity;
   progress?: BuilderChatCardProgress;
   details?: BuilderChatCardDetails;
   badges?: string[];

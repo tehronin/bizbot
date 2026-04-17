@@ -69,6 +69,8 @@ vi.mock("@/lib/builder/prompt", () => ({
 }));
 
 vi.mock("@/lib/builder/mcp-snapshots", () => ({
+  BuilderMcpContractDriftError: class BuilderMcpContractDriftError extends Error {},
+  BuilderMcpPolicyDriftError: class BuilderMcpPolicyDriftError extends Error {},
   ensureBuilderRunMcpSnapshotPreflight: mocks.ensureBuilderRunMcpSnapshotPreflight,
   getLatestBuilderMcpSnapshotForRun: mocks.getLatestBuilderMcpSnapshotForRun,
   getBuilderMcpSnapshotOverview: mocks.getBuilderMcpSnapshotOverview,

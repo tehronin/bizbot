@@ -3,6 +3,7 @@ import type {
   BuilderInteractionKind,
   BuilderInteractionStatus,
   BuilderProject,
+  BuilderRun,
   BuilderRunStatus,
   Prisma,
 } from "@prisma/client";
@@ -16,8 +17,23 @@ import { normalizeBuilderTaskMetadata } from "@/lib/builder/types";
 import { db } from "@/lib/db";
 import type { BuilderChatCard, BuilderChatCardDetails, BuilderChatCardProgress } from "@/lib/chat/types";
 
+const CONTRACT_INTERACTION_KINDS: BuilderInteractionKind[] = [
+  "MCP_POLICY_RECONCILIATION",
+  "MCP_CONTRACT_DRIFT",
+  "DEPENDENCY_CONTRACT_DRIFT",
+  "FILE_TOPOLOGY_CONTRACT_DRIFT",
+];
+
+const DRIFT_INTERACTION_KINDS: BuilderInteractionKind[] = [
+  "MCP_CONTRACT_DRIFT",
+  "DEPENDENCY_CONTRACT_DRIFT",
+  "FILE_TOPOLOGY_CONTRACT_DRIFT",
+];
+
 interface BuilderInteractionMetadata {
   state: string;
+  severity?: BuilderChatCard["severity"];
+  badges?: string[];
   recommendations?: string[];
   details?: BuilderChatCardDetails;
 }
@@ -61,6 +77,93 @@ function normalizeTaskCardStatus(status: string): BuilderChatCard["status"] {
   }
 }
 
+function readObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
+}
+
+function tailExcerpt(value: string | null | undefined, maxChars = 220): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.length <= maxChars ? trimmed : `...${trimmed.slice(trimmed.length - (maxChars - 3))}`;
+}
+
+function buildTaskCardBadges(args: {
+  verificationStatus: "passed" | "failed" | "skipped" | "not_run";
+  changedFiles: string[];
+}): string[] {
+  const badges: string[] = [];
+  if (args.verificationStatus !== "not_run") {
+    badges.push(`verification: ${args.verificationStatus.replaceAll("_", " ")}`);
+  }
+  if (args.changedFiles.length > 0) {
+    badges.push(`${args.changedFiles.length} file${args.changedFiles.length === 1 ? "" : "s"} changed`);
+  }
+  return badges;
+}
+
+function buildTaskExecutionDetails(run: BuilderRun | null | undefined): BuilderChatCardDetails["taskExecution"] | undefined {
+  if (!run) {
+    return undefined;
+  }
+
+  const metadata = readObject(run.metadata);
+  const loop = readObject(metadata?.loop);
+  const iterations = Array.isArray(loop?.iterations)
+    ? loop.iterations.filter((entry): entry is Record<string, unknown> => Boolean(readObject(entry)))
+    : [];
+  const lastIteration = iterations.length > 0 ? iterations.at(-1) ?? null : null;
+  const verification = readObject(lastIteration?.verification);
+  const verificationSteps = Array.isArray(verification?.steps)
+    ? verification.steps.filter((entry): entry is Record<string, unknown> => Boolean(readObject(entry)))
+    : [];
+  const failingStep = verificationSteps.find((entry) => entry.ok === false) ?? null;
+  const changedFiles = readStringArray(lastIteration?.changedFiles);
+  const stderrExcerpt = tailExcerpt(run.stderr);
+  const stdoutExcerpt = tailExcerpt(run.stdout);
+  const failingStepStderr = tailExcerpt(typeof failingStep?.stderr === "string" ? failingStep.stderr : null);
+  const failingStepStdout = tailExcerpt(typeof failingStep?.stdout === "string" ? failingStep.stdout : null);
+  const latestExcerpt = stderrExcerpt ?? failingStepStderr ?? failingStepStdout ?? stdoutExcerpt;
+  const excerptLabel = stderrExcerpt
+    ? "stderr excerpt"
+    : failingStepStderr || failingStepStdout
+      ? `verification ${String(failingStep?.script ?? "step")}`
+      : stdoutExcerpt
+        ? "stdout excerpt"
+        : null;
+  const verificationStatus = verification
+    ? verification.skipped === true
+      ? "skipped"
+      : verification.passed === true
+        ? "passed"
+        : "failed"
+    : "not_run";
+
+  return {
+    changedFiles,
+    verificationStatus,
+    verificationSummary: typeof verification?.summary === "string" ? verification.summary : null,
+    verificationScripts: readStringArray(verification?.scripts),
+    failingScript: typeof failingStep?.script === "string" ? failingStep.script : null,
+    latestExcerpt,
+    excerptLabel,
+  };
+}
+
 function buildTaskCardProgress(metadata: unknown): BuilderChatCardProgress | undefined {
   const normalized = normalizeBuilderTaskMetadata(metadata);
   if (
@@ -84,6 +187,54 @@ function buildDetailGroup(label: string, items: string[]): { label: string; item
   return items.length > 0 ? { label, items } : null;
 }
 
+function compareSeverity(left: NonNullable<BuilderChatCard["severity"]>, right: NonNullable<BuilderChatCard["severity"]>): number {
+  const order = {
+    baseline: 0,
+    benign: 1,
+    notable: 2,
+    breaking: 3,
+  } as const;
+  return order[left] - order[right];
+}
+
+function maxSeverity(values: Array<BuilderChatCard["severity"] | undefined>): NonNullable<BuilderChatCard["severity"]> {
+  return values
+    .filter((value): value is NonNullable<BuilderChatCard["severity"]> => Boolean(value))
+    .sort(compareSeverity)
+    .at(-1) ?? "benign";
+}
+
+function buildMcpDriftDetails(overview: BuilderProjectOverview): BuilderChatCardDetails["mcpDrift"] | undefined {
+  const drift = overview.mcpSnapshot.drift;
+  if (!drift?.changed) {
+    return undefined;
+  }
+
+  return {
+    severity: drift.severity,
+    classification: drift.impact.classification,
+    reasons: drift.impact.reasons,
+    changedSurfaces: drift.impact.changedSurfaces,
+    tools: [
+      buildDetailGroup("tools added", drift.tools.added),
+      buildDetailGroup("tools removed", drift.tools.removed),
+      buildDetailGroup("tools changed", drift.tools.changed),
+    ].filter((value): value is NonNullable<typeof value> => value !== null),
+    prompts: [
+      buildDetailGroup("prompts added", drift.prompts.added),
+      buildDetailGroup("prompts removed", drift.prompts.removed),
+      buildDetailGroup("prompts changed", drift.prompts.changed),
+    ].filter((value): value is NonNullable<typeof value> => value !== null),
+    resources: [
+      buildDetailGroup("resources added", drift.resources.added),
+      buildDetailGroup("resources removed", drift.resources.removed),
+      buildDetailGroup("resources changed", drift.resources.changed),
+    ].filter((value): value is NonNullable<typeof value> => value !== null),
+    profileChanged: drift.profileChanged,
+    contractChanged: drift.contractChanged,
+  };
+}
+
 function buildDependencyDriftDetails(overview: BuilderProjectOverview): BuilderChatCardDetails["dependencyDrift"] | undefined {
   const drift = overview.dependencyContract.drift;
   if (!drift?.changed) {
@@ -91,6 +242,8 @@ function buildDependencyDriftDetails(overview: BuilderProjectOverview): BuilderC
   }
 
   return {
+    severity: drift.severity,
+    reasons: drift.reasons,
     packageManagerChanged: drift.packageManagerChanged,
     lockfileChanged: drift.lockfileChanged,
     packages: [
@@ -114,6 +267,8 @@ function buildFileTopologyDriftDetails(overview: BuilderProjectOverview): Builde
   }
 
   return {
+    severity: drift.severity,
+    reasons: drift.reasons,
     directories: [
       buildDetailGroup("directories added", drift.directories.added),
       buildDetailGroup("directories removed", drift.directories.removed),
@@ -131,6 +286,7 @@ function buildFileTopologyDriftDetails(overview: BuilderProjectOverview): Builde
 function buildTaskCard(args: {
   id: string;
   project: Pick<BuilderProject, "id" | "name" | "relativePath">;
+  run?: BuilderRun | null;
   taskId?: string | null;
   runId?: string | null;
   title: string;
@@ -140,6 +296,7 @@ function buildTaskCard(args: {
   updatedAt: Date;
   metadata?: unknown;
 }): BuilderChatCard {
+  const taskExecution = buildTaskExecutionDetails(args.run);
   return {
     id: args.id,
     interactionId: args.id,
@@ -153,11 +310,107 @@ function buildTaskCard(args: {
     title: args.title,
     summary: args.summary,
     state: args.state,
+    severity: undefined,
     progress: buildTaskCardProgress(args.metadata),
+    details: taskExecution ? { taskExecution } : undefined,
+    badges: taskExecution ? buildTaskCardBadges({
+      verificationStatus: taskExecution.verificationStatus,
+      changedFiles: taskExecution.changedFiles,
+    }) : undefined,
     recommendations: [],
     actions: [],
     updatedAt: args.updatedAt.toISOString(),
     resolvedAt: args.status === "running" || args.status === "pending" || args.status === "planned" ? null : args.updatedAt.toISOString(),
+    resolutionReason: null,
+  };
+}
+
+function buildCombinedPreflightReviewCard(args: {
+  overview: BuilderProjectOverview;
+  interactions: BuilderChatCard[];
+}): BuilderChatCard | null {
+  const relevantInteractions = args.interactions.filter((card) => DRIFT_INTERACTION_KINDS.includes((
+    card.kind === "mcp_contract_drift"
+      ? "MCP_CONTRACT_DRIFT"
+      : card.kind === "dependency_contract_drift"
+        ? "DEPENDENCY_CONTRACT_DRIFT"
+        : card.kind === "file_topology_contract_drift"
+          ? "FILE_TOPOLOGY_CONTRACT_DRIFT"
+          : "MCP_POLICY_RECONCILIATION"
+  ) as BuilderInteractionKind));
+
+  if (relevantInteractions.length === 0) {
+    return null;
+  }
+
+  const surfaces: NonNullable<BuilderChatCardDetails["preflightReview"]>["surfaces"] = [];
+  if (args.overview.mcpSnapshot.state === "drifted") {
+    surfaces.push({
+      id: "mcp",
+      label: "MCP contract",
+      severity: args.overview.mcpSnapshot.severity,
+      state: args.overview.mcpSnapshot.state,
+      summary: args.overview.mcpSnapshot.planning?.summary ?? "Builder MCP contract drift needs review.",
+      recommendations: trimRecommendations(args.overview.mcpSnapshot.planning?.recommendations),
+    });
+  }
+  if (args.overview.dependencyContract.state === "drifted") {
+    surfaces.push({
+      id: "dependency",
+      label: "Dependency contract",
+      severity: args.overview.dependencyContract.severity,
+      state: args.overview.dependencyContract.state,
+      summary: args.overview.dependencyContract.planning?.summary ?? "Builder dependency drift needs review.",
+      recommendations: trimRecommendations(args.overview.dependencyContract.planning?.recommendations),
+    });
+  }
+  if (args.overview.fileTopologyContract.state === "drifted") {
+    surfaces.push({
+      id: "file_topology",
+      label: "File topology contract",
+      severity: args.overview.fileTopologyContract.severity,
+      state: args.overview.fileTopologyContract.state,
+      summary: args.overview.fileTopologyContract.planning?.summary ?? "Builder file topology drift needs review.",
+      recommendations: trimRecommendations(args.overview.fileTopologyContract.planning?.recommendations),
+    });
+  }
+
+  const highestSeverity = maxSeverity(surfaces.map((surface) => surface.severity));
+  const recommendations = Array.from(new Set(surfaces.flatMap((surface) => surface.recommendations))).slice(0, 4);
+  const badges = [
+    `severity: ${highestSeverity}`,
+    `${surfaces.length} preflight surface${surfaces.length === 1 ? "" : "s"}`,
+  ];
+
+  return {
+    id: `preflight:${args.overview.project.id}`,
+    interactionId: `preflight:${args.overview.project.id}`,
+    kind: "preflight_review",
+    status: "pending",
+    projectId: args.overview.project.id,
+    projectName: args.overview.project.name,
+    projectRelativePath: args.overview.project.relativePath,
+    runId: relevantInteractions[0]?.runId ?? null,
+    title: "Review Builder preflight drift",
+    summary: surfaces.length === 1
+      ? `${surfaces[0]?.label} requires review before Builder proceeds cleanly.`
+      : `${surfaces.length} Builder preflight surfaces require review before Builder proceeds cleanly.`,
+    state: "preflight_review",
+    severity: highestSeverity,
+    details: {
+      preflightReview: { surfaces },
+      mcpDrift: buildMcpDriftDetails(args.overview),
+      dependencyDrift: buildDependencyDriftDetails(args.overview),
+      fileTopologyDrift: buildFileTopologyDriftDetails(args.overview),
+    },
+    badges,
+    recommendations,
+    actions: [
+      { id: "approve", label: "approve all drift", variant: "primary" },
+      { id: "reject", label: "reject all drift", variant: "danger" },
+    ],
+    updatedAt: new Date().toISOString(),
+    resolvedAt: null,
     resolutionReason: null,
   };
 }
@@ -172,6 +425,7 @@ function buildOverviewTaskCards(overview: BuilderProjectOverview): BuilderChatCa
     cards.push(buildTaskCard({
       id: `task-${currentTask.id}`,
       project: overview.project,
+      run: currentRun,
       taskId: currentTask.id,
       runId: currentRun?.id ?? null,
       title: currentTask.title,
@@ -195,6 +449,7 @@ function buildOverviewTaskCards(overview: BuilderProjectOverview): BuilderChatCa
       cards.push(buildTaskCard({
         id: `run-${latestFinishedRun.id}`,
         project: overview.project,
+        run: latestFinishedRun,
         taskId: latestFinishedRun.taskId ?? null,
         runId: latestFinishedRun.id,
         title: matchingTask?.title ?? latestFinishedRun.title,
@@ -218,6 +473,10 @@ function toInteractionMetadata(value: Prisma.JsonValue | null | undefined): Buil
   const candidate = value as Record<string, unknown>;
   return {
     state: typeof candidate.state === "string" ? candidate.state : "unknown",
+    severity: typeof candidate.severity === "string" ? candidate.severity as BuilderChatCard["severity"] : undefined,
+    badges: Array.isArray(candidate.badges)
+      ? candidate.badges.filter((entry): entry is string => typeof entry === "string")
+      : undefined,
     recommendations: Array.isArray(candidate.recommendations)
       ? candidate.recommendations.filter((entry): entry is string => typeof entry === "string")
       : [],
@@ -269,7 +528,9 @@ function serializeBuilderInteractionCard(
     title: interaction.title,
     summary: interaction.summary,
     state: metadata.state,
+    severity: metadata.severity,
     details: metadata.details,
+    badges: metadata.badges,
     recommendations: metadata.recommendations ?? [],
     actions,
     updatedAt: interaction.updatedAt.toISOString(),
@@ -281,20 +542,6 @@ function serializeBuilderInteractionCard(
 function buildPendingInteractionCandidates(overview: Awaited<ReturnType<typeof getBuilderProjectOverview>>): PendingInteractionCandidate[] {
   const candidates: PendingInteractionCandidate[] = [];
 
-  if (overview.mcpSnapshot.state === "pending_capture") {
-    candidates.push({
-      dedupeKey: `${overview.project.id}:mcp:reconcile:${overview.mcpSnapshot.currentHash ?? "none"}`,
-      kind: "MCP_POLICY_RECONCILIATION",
-      title: "Reconcile Builder MCP policy baseline",
-      summary: overview.mcpSnapshot.planning?.summary
-        ?? "Builder MCP policy has not been captured yet. Reconcile the reviewed contract before more Builder work proceeds.",
-      metadata: {
-        state: overview.mcpSnapshot.state,
-        recommendations: trimRecommendations(overview.mcpSnapshot.planning?.recommendations),
-      },
-    });
-  }
-
   if (overview.mcpSnapshot.state === "drifted" && overview.mcpSnapshot.activeRunId) {
     candidates.push({
       dedupeKey: `${overview.project.id}:mcp:drift:${overview.mcpSnapshot.currentHash ?? "none"}`,
@@ -305,6 +552,8 @@ function buildPendingInteractionCandidates(overview: Awaited<ReturnType<typeof g
         ?? "Builder MCP contract drift is blocking execution and needs an explicit decision.",
       metadata: {
         state: overview.mcpSnapshot.state,
+        severity: overview.mcpSnapshot.severity,
+        badges: [`severity: ${overview.mcpSnapshot.severity}`],
         recommendations: trimRecommendations(overview.mcpSnapshot.planning?.recommendations),
       },
     });
@@ -320,6 +569,8 @@ function buildPendingInteractionCandidates(overview: Awaited<ReturnType<typeof g
         ?? "Builder dependency contract drift needs an explicit decision.",
       metadata: {
         state: overview.dependencyContract.state,
+        severity: overview.dependencyContract.severity,
+        badges: [`severity: ${overview.dependencyContract.severity}`],
         details: {
           dependencyDrift: buildDependencyDriftDetails(overview),
         },
@@ -338,6 +589,8 @@ function buildPendingInteractionCandidates(overview: Awaited<ReturnType<typeof g
         ?? "Builder file topology contract drift needs an explicit decision.",
       metadata: {
         state: overview.fileTopologyContract.state,
+        severity: overview.fileTopologyContract.severity,
+        badges: [`severity: ${overview.fileTopologyContract.severity}`],
         details: {
           fileTopologyDrift: buildFileTopologyDriftDetails(overview),
         },
@@ -436,17 +689,24 @@ async function syncBuilderProjectInteractionsWithOverview(projectId: string, opt
 
 export async function syncBuilderProjectInteractions(projectId: string, options?: { conversationId?: string | null }): Promise<BuilderChatCard[]> {
   const result = await syncBuilderProjectInteractionsWithOverview(projectId, options);
-  return result.interactionCards;
+  return [buildCombinedPreflightReviewCard({ overview: result.overview, interactions: result.interactionCards })].filter((value): value is BuilderChatCard => value !== null);
 }
 
 export async function listPendingBuilderInteractionCards(options?: { conversationId?: string | null }): Promise<BuilderChatCard[]> {
   const projects = await listBuilderProjects();
   const activeProjects = projects.filter((project) => !project.archivedAt);
   const taskCards: BuilderChatCard[] = [];
+  const preflightCards: BuilderChatCard[] = [];
+  const combinedProjectIds = new Set<string>();
   await Promise.all(activeProjects.map(async (project) => {
     try {
       const result = await syncBuilderProjectInteractionsWithOverview(project.id, options);
       taskCards.push(...buildOverviewTaskCards(result.overview));
+      const combined = buildCombinedPreflightReviewCard({ overview: result.overview, interactions: result.interactionCards });
+      if (combined) {
+        preflightCards.push(combined);
+        combinedProjectIds.add(project.id);
+      }
     } catch (error) {
       console.warn(`[builder interactions] failed to sync project ${project.id}:`, error);
     }
@@ -471,7 +731,10 @@ export async function listPendingBuilderInteractionCards(options?: { conversatio
 
   return [
     ...taskCards,
-    ...interactions.map((interaction) => serializeBuilderInteractionCard(interaction)),
+    ...preflightCards,
+    ...interactions
+      .filter((interaction) => !(combinedProjectIds.has(interaction.project.id) && CONTRACT_INTERACTION_KINDS.includes(interaction.kind)))
+      .map((interaction) => serializeBuilderInteractionCard(interaction)),
   ].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
 }
 
@@ -542,6 +805,73 @@ export async function resolveBuilderInteraction(options: {
   conversationId?: string | null;
   reason?: string | null;
 }): Promise<{ card: BuilderChatCard; summary: string; resolutionRunId: string }> {
+  if (options.interactionId.startsWith("preflight:")) {
+    const projectId = options.interactionId.slice("preflight:".length);
+    const pendingInteractions = await db.builderInteraction.findMany({
+      where: {
+        projectId,
+        status: "PENDING",
+        kind: { in: options.action === "reconcile" ? ["MCP_POLICY_RECONCILIATION"] : DRIFT_INTERACTION_KINDS },
+      },
+      include: {
+        project: true,
+      },
+      orderBy: [
+        { updatedAt: "desc" },
+        { createdAt: "desc" },
+      ],
+    });
+
+    if (pendingInteractions.length === 0) {
+      throw new Error("Builder preflight review is no longer pending.");
+    }
+
+    const reason = options.reason?.trim()
+      || (options.action === "approve"
+        ? "Approved combined Builder preflight review from chat Builder inbox."
+        : options.action === "reject"
+          ? "Rejected combined Builder preflight review from chat Builder inbox."
+          : "Reconciled combined Builder preflight review from chat Builder inbox.");
+
+    let lastResolutionRunId = "";
+    let lastSummary = "";
+
+    for (const interaction of pendingInteractions) {
+      const resolved = await resolveBuilderInteraction({
+        interactionId: interaction.id,
+        action: options.action,
+        conversationId: options.conversationId,
+        reason,
+      });
+      lastResolutionRunId = resolved.resolutionRunId;
+      lastSummary = resolved.summary;
+    }
+
+    return {
+      card: {
+        id: options.interactionId,
+        interactionId: options.interactionId,
+        kind: "preflight_review",
+        status: options.action === "reject" ? "rejected" : "approved",
+        projectId,
+        projectName: pendingInteractions[0]!.project.name,
+        projectRelativePath: pendingInteractions[0]!.project.relativePath,
+        runId: pendingInteractions[0]!.runId ?? null,
+        title: "Review Builder preflight drift",
+        summary: lastSummary,
+        state: "resolved",
+        severity: maxSeverity(pendingInteractions.map((interaction) => toInteractionMetadata(interaction.metadata as Prisma.JsonValue | null | undefined).severity)),
+        recommendations: [],
+        actions: [],
+        updatedAt: new Date().toISOString(),
+        resolvedAt: new Date().toISOString(),
+        resolutionReason: reason,
+      },
+      summary: lastSummary,
+      resolutionRunId: lastResolutionRunId,
+    };
+  }
+
   const interaction = await db.builderInteraction.findUnique({
     where: { id: options.interactionId },
     include: {

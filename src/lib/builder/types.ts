@@ -57,6 +57,7 @@ export type BuilderAdrRelevantFamily =
 export type BuilderAdrDecisionSourceStatus = "active" | "stale" | "new";
 export type BuilderAdrDecisionDisposition = "reconfirm" | "supersede" | "retire" | "defer";
 export type BuilderAdrOverallVerdict = "proceed" | "proceed_with_update" | "block" | "escalate";
+export type BuilderContractDriftSeverity = "baseline" | "benign" | "notable" | "breaking";
 
 export interface BuilderAdrFocusDecisionState {
   key: string;
@@ -201,6 +202,7 @@ export interface BuilderMcpContractDriftState {
   previousHash: string | null;
   currentHash: string;
   changed: boolean;
+  severity: BuilderContractDriftSeverity;
   tools: BizBotContractDriftSectionState;
   prompts: BizBotContractDriftSectionState;
   resources: BizBotContractDriftSectionState;
@@ -238,6 +240,7 @@ export interface BuilderMcpPlanningContextState {
   baselineHash: string | null;
   currentHash: string;
   driftDetected: boolean;
+  severity: BuilderContractDriftSeverity;
   relatedArchitectureDecisionKeys: string[];
   recommendations: string[];
   summary: string;
@@ -291,6 +294,8 @@ export interface BuilderDependencyContractDriftState {
   previousHash: string | null;
   currentHash: string;
   changed: boolean;
+  severity: BuilderContractDriftSeverity;
+  reasons: string[];
   packageManagerChanged: boolean;
   lockfileChanged: boolean;
   packages: {
@@ -357,6 +362,8 @@ export interface BuilderFileTopologyContractDriftState {
   previousHash: string | null;
   currentHash: string;
   changed: boolean;
+  severity: BuilderContractDriftSeverity;
+  reasons: string[];
   directories: {
     added: string[];
     removed: string[];
@@ -390,6 +397,7 @@ export interface BuilderFileTopologyPlanningContextState {
   baselineHash: string | null;
   currentHash: string;
   driftDetected: boolean;
+  severity: BuilderContractDriftSeverity;
   relatedArchitectureDecisionKeys: string[];
   anchors: BuilderFileTopologyContractSnapshotState["anchors"];
   topLevel: string[];
@@ -403,6 +411,7 @@ export interface BuilderDependencySnapshotOverviewState {
   runId: string | null;
   currentHash: string | null;
   state: "not_available" | "pending_capture" | "captured" | "aligned" | "drifted";
+  severity: BuilderContractDriftSeverity;
   baseline: BuilderDependencyContractBaselineState | null;
   planning: BuilderDependencyPlanningContextState | null;
   drift: BuilderDependencyContractDriftState | null;
@@ -412,6 +421,7 @@ export interface BuilderFileTopologySnapshotOverviewState {
   runId: string | null;
   currentHash: string | null;
   state: "pending_capture" | "captured" | "aligned" | "drifted";
+  severity: BuilderContractDriftSeverity;
   baseline: BuilderFileTopologyContractBaselineState | null;
   drift: BuilderFileTopologyContractDriftState | null;
   planning: BuilderFileTopologyPlanningContextState | null;
@@ -421,6 +431,7 @@ export interface BuilderDependencyPlanningContextState {
   baselineHash: string | null;
   currentHash: string;
   driftDetected: boolean;
+  severity: BuilderContractDriftSeverity;
   packageManager: "npm" | "pnpm";
   relatedArchitectureDecisionKeys: string[];
   highlightedPackages: string[];
@@ -451,6 +462,7 @@ export interface BuilderMcpSnapshotOverviewState {
   currentSequence: number | null;
   currentHash: string | null;
   state: "pending_capture" | "captured" | "aligned" | "drifted";
+  severity: BuilderContractDriftSeverity;
   history: BuilderMcpSnapshotRecordState[];
   drift: BuilderMcpContractDriftState | null;
   semantic: BuilderMcpSemanticState;

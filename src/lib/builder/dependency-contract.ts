@@ -4,6 +4,7 @@ import { hashCanonicalBuilderJsonValue } from "@/lib/builder/canonical-json";
 import { updateBuilderProject } from "@/lib/builder/projects";
 import {
   normalizeBuilderProjectContext,
+  type BuilderContractDriftSeverity,
   type BuilderDependencyClassificationState,
   type BuilderDependencyContractBaselineState,
   type BuilderDependencyContractDriftState,
@@ -233,6 +234,59 @@ function compareNamedMaps(previousValues: Map<string, string>, currentValues: Ma
   return { added, removed, changed };
 }
 
+function classifyBuilderDependencyContractDrift(args: {
+  changed: boolean;
+  packageManagerChanged: boolean;
+  lockfileChanged: boolean;
+  packages: BuilderDependencyContractDriftState["packages"];
+  scripts: BuilderDependencyContractDriftState["scripts"];
+}): { severity: BuilderContractDriftSeverity; reasons: string[] } {
+  if (!args.changed) {
+    return {
+      severity: "benign",
+      reasons: ["Current dependency contract matches the accepted Builder baseline."],
+    };
+  }
+
+  const reasons: string[] = [];
+  let severity: BuilderContractDriftSeverity = "benign";
+
+  if (args.packageManagerChanged) {
+    severity = "breaking";
+    reasons.push("Package manager changed from the accepted dependency baseline.");
+  }
+  if (args.packages.removed.length > 0) {
+    severity = "breaking";
+    reasons.push("Direct dependencies were removed from the accepted baseline.");
+  }
+  if (args.packages.reclassified.length > 0) {
+    severity = "breaking";
+    reasons.push("Dependency kinds moved across runtime, dev, peer, or optional boundaries.");
+  }
+  if (severity !== "breaking" && (args.packages.added.length > 0 || args.packages.changed.length > 0 || args.scripts.removed.length > 0 || args.scripts.changed.length > 0)) {
+    severity = "notable";
+  }
+  if (args.packages.added.length > 0) {
+    reasons.push("Direct dependency additions may change the project runtime or toolchain surface.");
+  }
+  if (args.packages.changed.length > 0) {
+    reasons.push("Existing dependency ranges or resolved versions changed.");
+  }
+  if (args.scripts.removed.length > 0 || args.scripts.changed.length > 0) {
+    reasons.push("Existing package scripts changed and may affect verification or runtime workflows.");
+  }
+  if (args.scripts.added.length > 0) {
+    reasons.push("New package scripts were added.");
+  }
+  if (args.lockfileChanged && reasons.length === 0) {
+    reasons.push("Only the lockfile changed relative to the accepted dependency baseline.");
+  } else if (args.lockfileChanged) {
+    reasons.push("The lockfile also changed and should stay aligned with manifest intent.");
+  }
+
+  return { severity, reasons };
+}
+
 export function resolveBuilderDependencyContractDrift(args: {
   previousSnapshot: BuilderDependencyContractSnapshotState | null;
   currentSnapshot: BuilderDependencyContractSnapshotState;
@@ -279,11 +333,26 @@ export function resolveBuilderDependencyContractDrift(args: {
       || args.previousSnapshot.lockfile.path !== args.currentSnapshot.lockfile.path
       || args.previousSnapshot.lockfile.lockfileVersion !== args.currentSnapshot.lockfile.lockfileVersion
       || args.previousSnapshot.lockfile.contentHash !== args.currentSnapshot.lockfile.contentHash;
+  const driftChanged = previousHash !== null && previousHash !== currentHash;
+  const classification = classifyBuilderDependencyContractDrift({
+    changed: driftChanged,
+    packageManagerChanged,
+    lockfileChanged,
+    packages: {
+      added,
+      removed,
+      changed,
+      reclassified,
+    },
+    scripts: scriptDrift,
+  });
 
   return {
     previousHash,
     currentHash,
-    changed: previousHash !== null && previousHash !== currentHash,
+    changed: driftChanged,
+    severity: classification.severity,
+    reasons: classification.reasons,
     packageManagerChanged,
     lockfileChanged,
     packages: {
@@ -356,12 +425,12 @@ export function buildBuilderDependencyContractBaseline(args: {
 
 function summarizeDependencyDrift(drift: BuilderDependencyContractDriftState | null): string {
   if (!drift) {
-    return "No accepted dependency contract baseline exists yet.";
+    return "No accepted dependency contract baseline exists yet. Builder will capture it when the project is ready to advance.";
   }
   if (!drift.changed) {
     return "Current dependency contract matches the accepted Builder baseline.";
   }
-  return `Dependency contract drift detected: packages(+${drift.packages.added.length}/-${drift.packages.removed.length}/~${drift.packages.changed.length}/reclass ${drift.packages.reclassified.length}), scripts(+${drift.scripts.added.length}/-${drift.scripts.removed.length}/~${drift.scripts.changed.length}), lockfileChanged=${drift.lockfileChanged}, packageManagerChanged=${drift.packageManagerChanged}.`;
+  return `Dependency contract ${drift.severity} drift detected: packages(+${drift.packages.added.length}/-${drift.packages.removed.length}/~${drift.packages.changed.length}/reclass ${drift.packages.reclassified.length}), scripts(+${drift.scripts.added.length}/-${drift.scripts.removed.length}/~${drift.scripts.changed.length}), lockfileChanged=${drift.lockfileChanged}, packageManagerChanged=${drift.packageManagerChanged}.`;
 }
 
 function buildDependencyRecommendations(args: {
@@ -446,6 +515,7 @@ export function getBuilderDependencyPlanningContext(args: {
     baselineHash: baseline?.expectedHash ?? null,
     currentHash: drift.currentHash,
     driftDetected: !baseline || drift.changed,
+    severity: baseline ? drift.severity : "baseline",
     packageManager: snapshot.packageManager,
     relatedArchitectureDecisionKeys: uniqueSorted([
       ...(baseline?.decisionKeys ?? []),

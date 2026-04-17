@@ -23,6 +23,7 @@ import {
 } from "@/lib/mcp/preview-catalog";
 import { normalizeBuilderProjectContext } from "@/lib/builder/types";
 import type {
+  BuilderContractDriftSeverity,
   BuilderMcpContractDriftSectionState,
   BuilderMcpContractDriftState,
   BuilderMcpContractSnapshotState,
@@ -276,6 +277,17 @@ function dedupeNames(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort();
 }
 
+function mapMcpImpactToSeverity(classification: BuilderMcpContractDriftState["impact"]["classification"]): BuilderContractDriftSeverity {
+  switch (classification) {
+    case "breaking":
+      return "breaking";
+    case "non_breaking":
+      return "notable";
+    default:
+      return "benign";
+  }
+}
+
 export function buildCurrentBuilderMcpContractSnapshot(): BuilderMcpContractSnapshotState {
   const runtimeConfig = getAgentRuntimeConfig();
   const tools = listCurrentMcpToolDescriptors()
@@ -384,11 +396,13 @@ export function compareBuilderMcpContractSnapshots(
       resources: { added: [], removed: [], changed: [] },
       profileChanged: false,
       contractChanged: false,
-    } satisfies Omit<BuilderMcpContractDriftState, "impact">;
+    } satisfies Omit<BuilderMcpContractDriftState, "impact" | "severity">;
 
+    const impact = classifyBizBotContractDrift(draft);
     return {
       ...draft,
-      impact: classifyBizBotContractDrift(draft),
+      severity: mapMcpImpactToSeverity(impact.classification),
+      impact,
     };
   }
 
@@ -423,11 +437,13 @@ export function compareBuilderMcpContractSnapshots(
     resources,
     profileChanged,
     contractChanged,
-  } satisfies Omit<BuilderMcpContractDriftState, "impact">;
+  } satisfies Omit<BuilderMcpContractDriftState, "impact" | "severity">;
 
+  const impact = classifyBizBotContractDrift(draft);
   return {
     ...draft,
-    impact: classifyBizBotContractDrift(draft),
+    severity: mapMcpImpactToSeverity(impact.classification),
+    impact,
   };
 }
 
@@ -840,7 +856,22 @@ export async function getBuilderMcpPlanningContext(args: {
 }): Promise<BuilderMcpPlanningContextState | null> {
   const baselineSnapshot = await getLatestBuilderMcpSnapshotForProject(args.projectId);
   if (!baselineSnapshot) {
-    return null;
+    const currentSnapshot = buildCurrentBuilderMcpContractSnapshot();
+    return {
+      baselineSnapshotId: null,
+      baselineSnapshotSequence: null,
+      baselineHash: null,
+      currentHash: hashBuilderMcpContractSnapshot(currentSnapshot),
+      driftDetected: false,
+      severity: "baseline",
+      relatedArchitectureDecisionKeys: dedupeNames(args.architectureDecisionKeys ?? []).filter(hasMcpRelevantArchitectureKey),
+      recommendations: [
+        "Builder will capture the current MCP contract automatically on the next run.",
+        "Treat first-run MCP capture as baseline establishment, not as a manual approval chore.",
+      ],
+      summary: "No accepted MCP baseline exists yet. Builder will capture the current contract automatically on the next run.",
+      drift: null,
+    };
   }
 
   const currentSnapshot = buildCurrentBuilderMcpContractSnapshot();
@@ -857,6 +888,7 @@ export async function getBuilderMcpPlanningContext(args: {
     baselineHash: baselineSnapshot.versionHash,
     currentHash,
     driftDetected: drift.changed,
+    severity: drift.severity,
     relatedArchitectureDecisionKeys,
     recommendations: buildPlanningRecommendations(drift),
     summary: drift.changed
@@ -965,6 +997,7 @@ export async function getBuilderMcpSnapshotOverview(args: {
       currentSequence: projectBaseline?.snapshotSequence ?? null,
       currentHash: projectBaseline?.versionHash ?? null,
       state: projectBaseline ? "captured" : "pending_capture",
+      severity: planning?.severity ?? (projectBaseline ? "benign" : "baseline"),
       history: projectBaseline ? [projectBaseline] : [],
       drift: null,
       semantic: deriveSemanticState(projectBaseline),
@@ -987,6 +1020,7 @@ export async function getBuilderMcpSnapshotOverview(args: {
       currentSequence: projectBaseline?.snapshotSequence ?? null,
       currentHash: hashBuilderMcpContractSnapshot(buildCurrentBuilderMcpContractSnapshot()),
       state: drift?.changed ? "drifted" : projectBaseline ? "captured" : "pending_capture",
+      severity: drift?.severity ?? planning?.severity ?? (projectBaseline ? "benign" : "baseline"),
       history,
       drift: drift?.changed ? drift : null,
       semantic: deriveSemanticState(projectBaseline),
@@ -1013,6 +1047,7 @@ export async function getBuilderMcpSnapshotOverview(args: {
     currentSequence: latestSnapshot.snapshotSequence,
     currentHash: drift.currentHash,
     state: drift.changed ? "drifted" : history.length > 1 ? "aligned" : "captured",
+    severity: drift.severity,
     history,
     drift: drift.changed ? drift : null,
     semantic: deriveSemanticState(latestSnapshot),

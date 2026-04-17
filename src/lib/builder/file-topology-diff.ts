@@ -1,4 +1,5 @@
 import type {
+  BuilderContractDriftSeverity,
   BuilderFileTopologyContractBaselineState,
   BuilderFileTopologyContractDriftState,
   BuilderFileTopologyContractSnapshotState,
@@ -21,6 +22,57 @@ function diffStringLists(previousValues: string[], currentValues: string[]): {
   };
 }
 
+function classifyBuilderFileTopologyDrift(args: {
+  changed: boolean;
+  directories: BuilderFileTopologyContractDriftState["directories"];
+  importantFiles: BuilderFileTopologyContractDriftState["importantFiles"];
+  anchorsChanged: string[];
+  classificationsChanged: string[];
+  rulesChanged: string[];
+}): { severity: BuilderContractDriftSeverity; reasons: string[] } {
+  if (!args.changed) {
+    return {
+      severity: "benign",
+      reasons: ["Current file topology matches the accepted Builder baseline."],
+    };
+  }
+
+  const reasons: string[] = [];
+  let severity: BuilderContractDriftSeverity = "benign";
+
+  if (args.anchorsChanged.length > 0 || args.classificationsChanged.length > 0 || args.rulesChanged.length > 0 || args.importantFiles.removed.length > 0) {
+    severity = "breaking";
+  } else if (args.directories.removed.length > 0 || args.importantFiles.added.length > 0) {
+    severity = "notable";
+  }
+
+  if (args.anchorsChanged.length > 0) {
+    reasons.push("Project anchor paths changed.");
+  }
+  if (args.classificationsChanged.length > 0) {
+    reasons.push("Topology classifications changed.");
+  }
+  if (args.rulesChanged.length > 0) {
+    reasons.push("Topology placement rules changed.");
+  }
+  if (args.importantFiles.removed.length > 0) {
+    reasons.push("Important root or anchor files were removed.");
+  }
+  if (args.importantFiles.added.length > 0) {
+    reasons.push("Important root or anchor files were added.");
+  }
+  if (args.directories.removed.length > 0) {
+    reasons.push("Existing directories were removed from the accepted topology.");
+  }
+  if (args.directories.added.length > 0 && reasons.length === 0) {
+    reasons.push("Only additional directories were introduced under the current topology.");
+  } else if (args.directories.added.length > 0) {
+    reasons.push("Additional directories were introduced.");
+  }
+
+  return { severity, reasons };
+}
+
 export function resolveBuilderFileTopologyContractDrift(args: {
   previousHash: string | null;
   currentHash: string;
@@ -40,11 +92,22 @@ export function resolveBuilderFileTopologyContractDrift(args: {
   const previousRules = args.previousSnapshot?.rules ?? null;
   const ruleKeys = Object.keys(args.currentSnapshot.rules) as Array<keyof BuilderFileTopologyContractSnapshotState["rules"]>;
   const rulesChanged = uniqueSorted(ruleKeys.flatMap((key) => previousRules?.[key] !== args.currentSnapshot.rules[key] ? [key] : []));
+  const changed = args.previousHash !== null && args.previousHash !== args.currentHash;
+  const classification = classifyBuilderFileTopologyDrift({
+    changed,
+    directories,
+    importantFiles,
+    anchorsChanged,
+    classificationsChanged,
+    rulesChanged,
+  });
 
   return {
     previousHash: args.previousHash,
     currentHash: args.currentHash,
-    changed: args.previousHash !== null && args.previousHash !== args.currentHash,
+    changed,
+    severity: classification.severity,
+    reasons: classification.reasons,
     directories,
     importantFiles,
     anchorsChanged,
@@ -55,13 +118,13 @@ export function resolveBuilderFileTopologyContractDrift(args: {
 
 export function summarizeBuilderFileTopologyDrift(drift: BuilderFileTopologyContractDriftState | null): string {
   if (!drift) {
-    return "No accepted file topology contract baseline exists yet.";
+    return "No accepted file topology contract baseline exists yet. Builder will capture it when the project is ready to advance.";
   }
   if (!drift.changed) {
     return "Current file topology matches the accepted Builder baseline.";
   }
 
-  return `File topology drift detected: directories(+${drift.directories.added.length}/-${drift.directories.removed.length}), importantFiles(+${drift.importantFiles.added.length}/-${drift.importantFiles.removed.length}), anchorsChanged=${drift.anchorsChanged.length}, classificationsChanged=${drift.classificationsChanged.length}, rulesChanged=${drift.rulesChanged.length}.`;
+  return `File topology ${drift.severity} drift detected: directories(+${drift.directories.added.length}/-${drift.directories.removed.length}), importantFiles(+${drift.importantFiles.added.length}/-${drift.importantFiles.removed.length}), anchorsChanged=${drift.anchorsChanged.length}, classificationsChanged=${drift.classificationsChanged.length}, rulesChanged=${drift.rulesChanged.length}.`;
 }
 
 export function buildBuilderFileTopologyRecommendations(args: {

@@ -31,6 +31,10 @@ globalThis.console = new Console({ stdout: process.stderr, stderr: process.stder
 
 const { configureStdioMcpEnvironment, getStdioMcpServerOptions } = await import("../src/lib/mcp/stdio.ts");
 configureStdioMcpEnvironment(process.env);
+const [{ closeMcpClients }, { db }] = await Promise.all([
+	import("../src/lib/mcp/client.ts"),
+	import("../src/lib/db.ts"),
+]);
 
 // We need to dynamically import the server factory because it depends on
 // Prisma and other app modules that need env vars loaded first.
@@ -39,7 +43,58 @@ const { createBizBotMcpServer } = await import("../src/lib/mcp/server.ts");
 const server = createBizBotMcpServer(getStdioMcpServerOptions());
 const transport = new StdioServerTransport();
 
+let shuttingDown = false;
+let runtimeReady = false;
+
+async function shutdown(reason, exitCode = 0) {
+	if (shuttingDown) {
+		return;
+	}
+	shuttingDown = true;
+
+	process.stderr.write(`[bizbot-mcp] shutting down (${reason})\n`);
+
+	await Promise.allSettled([
+		runtimeReady ? server.close() : Promise.resolve(),
+		closeMcpClients(),
+		db.$disconnect(),
+	]);
+
+	process.exit(exitCode);
+}
+
+process.on("SIGINT", () => {
+	void shutdown("SIGINT");
+});
+
+process.on("SIGTERM", () => {
+	void shutdown("SIGTERM");
+});
+
+process.on("SIGHUP", () => {
+	void shutdown("SIGHUP");
+});
+
+process.stdin.on("end", () => {
+	void shutdown("stdin_end");
+});
+
+process.stdin.on("close", () => {
+	void shutdown("stdin_close");
+});
+
+process.on("uncaughtException", (error) => {
+	process.stderr.write(`[bizbot-mcp] uncaught exception\n${error instanceof Error ? `${error.stack ?? error.message}\n` : `${String(error)}\n`}`);
+	void shutdown("uncaughtException", 1);
+});
+
+process.on("unhandledRejection", (error) => {
+	process.stderr.write(`[bizbot-mcp] unhandled rejection\n${error instanceof Error ? `${error.stack ?? error.message}\n` : `${String(error)}\n`}`);
+	void shutdown("unhandledRejection", 1);
+});
+
 await server.connect(transport);
+runtimeReady = true;
 
 // Log to stderr (stdout is reserved for JSON-RPC)
 process.stderr.write("[bizbot-mcp] stdio server started\n");

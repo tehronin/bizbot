@@ -157,6 +157,7 @@ function buildBuilderDependencySnapshotOverview(args: {
       runId: args.runId,
       currentHash: null,
       state: "not_available",
+      severity: "baseline",
       baseline,
       planning: null,
       drift: null,
@@ -171,6 +172,7 @@ function buildBuilderDependencySnapshotOverview(args: {
       : planning?.drift?.changed
         ? "drifted"
         : "aligned",
+    severity: planning?.severity ?? (!baseline ? "baseline" : "benign"),
     baseline,
     planning,
     drift: planning?.drift ?? null,
@@ -196,6 +198,7 @@ function buildBuilderFileTopologySnapshotOverview(args: {
       : planning.drift?.changed
         ? "drifted"
         : "aligned",
+    severity: planning.severity,
     baseline,
     drift: planning.drift,
     planning,
@@ -695,9 +698,17 @@ export async function orchestrateBuilderTask(
       projectContext: project.context,
     });
   } catch (error) {
-    if (enforceContracts || !(error instanceof BuilderMcpContractDriftError || error instanceof BuilderMcpPolicyDriftError)) throw error;
-    console.warn(`[builder orchestrator] MCP contract drift detected during initial build (non-blocking): ${error}`);
-    contractWarnings.push(`MCP drift: ${(error as Error).message}`);
+    if (error instanceof BuilderMcpPolicyDriftError) {
+      if (enforceContracts) throw error;
+      console.warn(`[builder orchestrator] MCP policy drift detected during initial build (non-blocking): ${error}`);
+      contractWarnings.push(`MCP policy drift: ${(error as Error).message}`);
+    } else if (error instanceof BuilderMcpContractDriftError) {
+      if (enforceContracts && error.drift.severity === "breaking") throw error;
+      console.warn(`[builder orchestrator] MCP contract ${error.drift.severity} drift detected during build (non-blocking): ${error}`);
+      contractWarnings.push(`MCP ${error.drift.severity} drift: ${(error as Error).message}`);
+    } else {
+      throw error;
+    }
   }
 
   try {
@@ -711,9 +722,10 @@ export async function orchestrateBuilderTask(
       runId: run.id,
     });
   } catch (error) {
-    if (enforceContracts || !(error instanceof BuilderDependencyContractDriftError)) throw error;
-    console.warn(`[builder orchestrator] Dependency contract drift detected during initial build (non-blocking): ${error}`);
-    contractWarnings.push(`Dependency drift: ${(error as Error).message}`);
+    if (!(error instanceof BuilderDependencyContractDriftError)) throw error;
+    if (enforceContracts && error.drift.severity === "breaking") throw error;
+    console.warn(`[builder orchestrator] Dependency contract ${error.drift.severity} drift detected during build (non-blocking): ${error}`);
+    contractWarnings.push(`Dependency ${error.drift.severity} drift: ${(error as Error).message}`);
   }
 
   try {
@@ -726,9 +738,10 @@ export async function orchestrateBuilderTask(
       runId: run.id,
     });
   } catch (error) {
-    if (enforceContracts || !(error instanceof BuilderFileTopologyContractDriftError)) throw error;
-    console.warn(`[builder orchestrator] File topology drift detected during initial build (non-blocking): ${error}`);
-    contractWarnings.push(`File topology drift: ${(error as Error).message}`);
+    if (!(error instanceof BuilderFileTopologyContractDriftError)) throw error;
+    if (enforceContracts && error.drift.severity === "breaking") throw error;
+    console.warn(`[builder orchestrator] File topology ${error.drift.severity} drift detected during build (non-blocking): ${error}`);
+    contractWarnings.push(`File topology ${error.drift.severity} drift: ${(error as Error).message}`);
   }
 
   if (contractWarnings.length > 0) {

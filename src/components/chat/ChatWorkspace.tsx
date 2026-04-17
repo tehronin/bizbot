@@ -151,6 +151,15 @@ function BuilderCardList({
               ) : null}
             </div>
           ) : null}
+          {card.badges && card.badges.length > 0 ? (
+            <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+              {card.badges.map((badge) => (
+                <span key={`${card.id}-${badge}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+                  {badge}
+                </span>
+              ))}
+            </div>
+          ) : null}
           {card.recommendations.length > 0 ? (
             <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
               {card.recommendations.map((recommendation) => (
@@ -163,12 +172,66 @@ function BuilderCardList({
           {card.details ? (
             <details className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
               <summary className="text-[11px] uppercase tracking-[0.16em] cursor-pointer" style={{ color: "var(--text-muted)" }}>
-                drift details
+                {card.kind === "preflight_review" ? "preflight review" : "drift details"}
               </summary>
               <div className="mt-3 space-y-3">
+                {card.details.preflightReview ? (
+                  <div className="space-y-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>preflight surfaces</div>
+                    {card.details.preflightReview.surfaces.map((surface) => (
+                      <div key={`${card.id}-${surface.id}`} className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{surface.label}</span>
+                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {surface.severity}</span>
+                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>state: {surface.state.replaceAll("_", " ")}</span>
+                        </div>
+                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{surface.summary}</div>
+                        {surface.recommendations.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                            {surface.recommendations.map((recommendation) => (
+                              <span key={`${card.id}-${surface.id}-${recommendation}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{recommendation}</span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {card.details.mcpDrift ? (
+                  <div className="space-y-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>mcp contract</div>
+                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                      <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {card.details.mcpDrift.severity}</span>
+                      <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>classification: {card.details.mcpDrift.classification.replaceAll("_", " ")}</span>
+                      {(card.details.mcpDrift.changedSurfaces ?? []).map((surface) => (
+                        <span key={`${card.id}-mcp-${surface}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{surface}</span>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                      {(card.details.mcpDrift.reasons ?? []).map((reason) => (
+                        <span key={`${card.id}-${reason}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{reason}</span>
+                      ))}
+                    </div>
+                    {card.details.mcpDrift.contractChanged ? (
+                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>Platform contract metadata changed.</div>
+                    ) : null}
+                    {card.details.mcpDrift.profileChanged ? (
+                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>Lane or profile exposure changed.</div>
+                    ) : null}
+                    {renderDetailGroups(card.details.mcpDrift.tools)}
+                    {renderDetailGroups(card.details.mcpDrift.prompts)}
+                    {renderDetailGroups(card.details.mcpDrift.resources)}
+                  </div>
+                ) : null}
                 {card.details.dependencyDrift ? (
                   <div className="space-y-3">
                     <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>dependency contract</div>
+                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                      <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {card.details.dependencyDrift.severity}</span>
+                      {(card.details.dependencyDrift.reasons ?? []).map((reason) => (
+                        <span key={`${card.id}-${reason}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{reason}</span>
+                      ))}
+                    </div>
                     {card.details.dependencyDrift.packageManagerChanged ? (
                       <div className="text-xs" style={{ color: "var(--text-dim)" }}>Package manager changed.</div>
                     ) : null}
@@ -182,6 +245,12 @@ function BuilderCardList({
                 {card.details.fileTopologyDrift ? (
                   <div className="space-y-3">
                     <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>file topology contract</div>
+                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                      <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {card.details.fileTopologyDrift.severity}</span>
+                      {(card.details.fileTopologyDrift.reasons ?? []).map((reason) => (
+                        <span key={`${card.id}-${reason}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{reason}</span>
+                      ))}
+                    </div>
                     {renderDetailGroups(card.details.fileTopologyDrift.directories)}
                     {renderDetailGroups(card.details.fileTopologyDrift.importantFiles)}
                     {card.details.fileTopologyDrift.anchorsChanged.length > 0 ? (
@@ -212,6 +281,46 @@ function BuilderCardList({
                             <span key={`rule-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
                           ))}
                         </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {card.details.taskExecution ? (
+                  <div className="space-y-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>task execution</div>
+                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                      <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>verification: {card.details.taskExecution.verificationStatus.replaceAll("_", " ")}</span>
+                      {card.details.taskExecution.failingScript ? (
+                        <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>failing script: {card.details.taskExecution.failingScript}</span>
+                      ) : null}
+                    </div>
+                    {card.details.taskExecution.verificationSummary ? (
+                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.details.taskExecution.verificationSummary}</div>
+                    ) : null}
+                    {card.details.taskExecution.verificationScripts.length > 0 ? (
+                      <div className="space-y-1">
+                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>verification scripts</div>
+                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                          {card.details.taskExecution.verificationScripts.map((item) => (
+                            <span key={`verification-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {card.details.taskExecution.changedFiles.length > 0 ? (
+                      <div className="space-y-1">
+                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>changed files</div>
+                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                          {card.details.taskExecution.changedFiles.map((item) => (
+                            <span key={`changed-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {card.details.taskExecution.latestExcerpt ? (
+                      <div className="space-y-1">
+                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{card.details.taskExecution.excerptLabel ?? "latest excerpt"}</div>
+                        <pre className="text-xs whitespace-pre-wrap border p-3 overflow-x-auto" style={{ color: "var(--text-dim)", borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>{card.details.taskExecution.latestExcerpt}</pre>
                       </div>
                     ) : null}
                   </div>

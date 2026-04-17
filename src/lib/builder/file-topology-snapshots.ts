@@ -292,6 +292,7 @@ export function getBuilderFileTopologyPlanningContext(args: {
     baselineHash: baseline?.expectedHash ?? null,
     currentHash,
     driftDetected: !baseline || drift.changed,
+    severity: baseline ? drift.severity : "baseline",
     relatedArchitectureDecisionKeys: uniqueSorted([
       ...(baseline?.decisionKeys ?? []),
       ...deriveBuilderFileTopologyDecisionKeys(snapshot),
