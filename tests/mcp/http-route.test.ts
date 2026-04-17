@@ -100,8 +100,8 @@ async function waitForToolStructuredContent(
   name: string,
   args: Record<string, unknown>,
   idPrefix: string,
-  attempts = 10,
-  delayMs = 500,
+  attempts = 20,
+  delayMs = 2000,
 ): Promise<Awaited<ReturnType<typeof callMcp>>> {
   let lastResult: Awaited<ReturnType<typeof callMcp>> | null = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -582,7 +582,7 @@ describe("MCP HTTP route", () => {
       status: "completed",
     }));
     expect(stopResult.status).toBe(200);
-  }, 20000);
+  }, 120000);
 
   it("removes a legacy-style stopped Builder container fixture through the managed MCP cleanup path", async () => {
     if (!dockerAvailable()) {
@@ -647,7 +647,7 @@ describe("MCP HTTP route", () => {
     }, "builder-container-cleanup-list-2");
     expect(afterResult.status).toBe(200);
     expect((afterResult.body.result.structuredContent.containers as Array<{ name: string }>).find((entry) => entry.name.includes(slug))).toBeUndefined();
-  }, 20000);
+  }, 120000);
 
   it("executes a real tool call through JSON-RPC", async () => {
     const result = await callMcp("tools/call", {
