@@ -65,14 +65,13 @@ test.describe("builder dashboard flow", () => {
     await expect(page.getByText("No canonical Builder plan has been generated yet.")).not.toBeVisible();
   });
 
-  test("records and renders governance policy decisions in history", async ({ page }, testInfo) => {
+  test("renders governance review history and chat-first guidance", async ({ page }, testInfo) => {
     await page.goto("/builder");
 
     await expect(page.getByText("builder mode")).toBeVisible();
 
     const projectName = `E2E Governance ${Date.now()}-${testInfo.parallelIndex}-${testInfo.repeatEachIndex}`;
     createdProjectNames.push(projectName);
-    const reason = `Playwright governance policy reconcile ${Date.now()}`;
 
     await page.getByTestId("builder-create-project-name").fill(projectName);
     await page.getByTestId("builder-create-project-button").click();
@@ -81,19 +80,9 @@ test.describe("builder dashboard flow", () => {
     await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("builder-governance-panel")).toBeVisible();
 
-    await page.getByTestId("builder-governance-reason").fill(reason);
-    await page.getByTestId("builder-governance-confirmed").check();
-
-    const responsePromise = page.waitForResponse((response) => response.url().includes("/api/builder/projects/")
-      && response.url().endsWith("/commands")
-      && response.request().method() === "POST");
-    await page.getByTestId("builder-governance-reconcile-policy").click();
-    const response = await responsePromise;
-    expect(response.ok()).toBe(true);
-
-    await expect(page.getByTestId("builder-governance-toast")).toContainText("Governance action recorded");
-    await expect(page.getByTestId("builder-governance-toast")).toContainText("Reconciled the Builder MCP policy baseline from the dashboard.");
-    await expect(page.getByTestId("builder-governance-history")).toContainText(reason);
-    await expect(page.getByTestId("builder-governance-history")).toContainText("source dashboard");
+    await expect(page.getByText("chat-first approvals")).toBeVisible();
+    await expect(page.getByText("Builder approvals and governance decisions now flow through chat cards in the Chat tab.")).toBeVisible();
+    await expect(page.getByTestId("builder-governance-history")).toContainText("No governance decisions have been recorded for this project yet.");
+    await expect(page.getByRole("button", { name: "reconcile state" })).toBeVisible();
   });
 });
