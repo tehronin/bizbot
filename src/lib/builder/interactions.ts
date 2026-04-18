@@ -863,10 +863,10 @@ export async function publishBuilderTaskCompletionToConversation(options: {
 
   const summary = task.summary ?? run?.summary ?? task.description;
   const content = task.status === "SUCCEEDED"
-    ? `[builder-task:${task.id}] ${project.name}: Completed the requested step. ${summary}\n\nNext step: review the result or ask Builder for the next change.`
+    ? `[builder-task:${task.id}] I finished that step in ${project.name}. ${summary}\n\nIf you want, I can keep going from here or walk you through what changed.`
     : task.status === "FAILED"
-      ? `[builder-task:${task.id}] ${project.name}: Builder could not finish the requested step. ${summary}\n\nNext step: review the details and retry with a narrower follow-up if needed.`
-      : `[builder-task:${task.id}] ${project.name}: Builder stopped this step. ${summary}\n\nNext step: adjust the request and run it again when ready.`;
+      ? `[builder-task:${task.id}] I ran into a blocker in ${project.name}. ${summary}\n\nIf you want, I can retry with a narrower approach or we can inspect the details together.`
+      : `[builder-task:${task.id}] I stopped that step in ${project.name}. ${summary}\n\nWhen you're ready, I can pick it back up with an adjusted request.`;
 
   await saveMessage(options.conversationId, "ASSISTANT", content, {
     chatMode: "agent",

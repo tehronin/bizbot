@@ -415,9 +415,17 @@ function Harness() {
   return <ChatWorkspaceContent chat={chat} setupOpen={false} closeSetupHref="/chat" />;
 }
 
-function BuilderHarness({ cards = [createBuilderCard()] }: { cards?: BuilderChatCard[] } = {}) {
+function BuilderHarness({
+  cards = [createBuilderCard()],
+  messages = [],
+  activeBuilderProgress = null,
+}: {
+  cards?: BuilderChatCard[];
+  messages?: UseChatResult["messages"];
+  activeBuilderProgress?: UseChatResult["activeBuilderProgress"];
+} = {}) {
   const chat: UseChatResult = {
-    messages: [],
+    messages,
     builderInbox: cards,
     builderProjects: [
       { id: "project-1", name: "Alpha", relativePath: "workspace/alpha" },
@@ -432,7 +440,7 @@ function BuilderHarness({ cards = [createBuilderCard()] }: { cards?: BuilderChat
     ],
     builderOnboarding: null,
     selectedBuilderProjectId: "project-1",
-    activeBuilderProgress: null,
+    activeBuilderProgress,
     conversationId: "conv-builder",
     currentConversation: createDetail({ id: "conv-builder", label: "Builder chat", title: "Builder chat", archivedAt: null }),
     recentConversations: [createSummary({ id: "conv-builder", label: "Builder chat", title: "Builder chat" })],
@@ -510,7 +518,7 @@ describe("chat workspace history panel", () => {
     render(<Harness />);
 
     expect(screen.getByText("active conversation")).toBeTruthy();
-    expect(screen.getByTestId("header-session-summary")).toBeTruthy();
+    expect(screen.getByTestId("header-conversation-details")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open history" }));
     expect(screen.getByText("conversation history")).toBeTruthy();
 
@@ -602,12 +610,13 @@ describe("chat workspace history panel", () => {
   it("shows live run metrics in the active conversation header", async () => {
     render(<Harness />);
 
+    expect(screen.getByText(/conversation details/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByText(/conversation details/i));
+
     expect(screen.getByText(/session/i)).toBeTruthy();
     expect(screen.getByText(/165 tokens/i)).toBeTruthy();
     expect(screen.getByText(/\$0\.0021/)).toBeTruthy();
-
-    fireEvent.click(screen.getByText(/session/i));
-
     expect(screen.getByText(/requests/i)).toBeTruthy();
     expect(screen.getByText(/120/)).toBeTruthy();
     expect(screen.getByText(/45/)).toBeTruthy();
@@ -643,16 +652,14 @@ describe("chat workspace history panel", () => {
     expect(screen.getByTestId("chat-transcript-viewport")).toBeTruthy();
     expect(screen.getAllByTestId("chat-message-user").length).toBe(1);
     expect(screen.getAllByTestId("chat-message-assistant").length).toBe(1);
-    expect(screen.getByText("Used 1 tool • 1 status update • 1 routing note")).toBeTruthy();
+    expect(screen.getByText("Behind the scenes • 1 tool • 1 update • 1 routing note")).toBeTruthy();
 
-    fireEvent.click(screen.getByText("Used 1 tool • 1 status update • 1 routing note"));
+    fireEvent.click(screen.getByText("Behind the scenes • 1 tool • 1 update • 1 routing note"));
 
     expect(screen.getByText("planner_lookup call")).toBeTruthy();
     expect(screen.getByText("Routed to Content")).toBeTruthy();
     expect(screen.getByText("Status")).toBeTruthy();
-    expect(screen.getByText("context: agent • content • 1 attachment")).toBeTruthy();
-
-    fireEvent.click(screen.getByText("context: agent • content • 1 attachment"));
+    expect(screen.getByText("Context: agent • content • 1 attachment")).toBeTruthy();
 
     expect(screen.getByText("plugin: content")).toBeTruthy();
     expect(screen.getByText("mode: agent")).toBeTruthy();
@@ -750,11 +757,12 @@ describe("chat workspace history panel", () => {
   it("resolves Builder inbox cards from chat", async () => {
     render(<BuilderHarness />);
 
-    expect(screen.getByTestId("header-builder-controls")).toBeTruthy();
-    expect(screen.getByTestId("header-builder-controls").textContent).toContain("builder • Alpha");
-    expect(screen.getByTestId("chat-secondary-rail")).toBeTruthy();
-    expect(screen.getByTestId("builder-inbox-panel")).toBeTruthy();
-    expect(screen.getByText("1 item • 1 need your input")).toBeTruthy();
+    expect(screen.getByTestId("header-conversation-details")).toBeTruthy();
+    fireEvent.click(screen.getByText(/conversation details/i));
+    expect(screen.getAllByText(/builder • Alpha/i).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("chat-secondary-rail")).toBeNull();
+    expect(screen.getByText("I need your input before I continue.")).toBeTruthy();
+    expect(screen.getByText("There's one review waiting in Alpha.")).toBeTruthy();
     expect(screen.getByTestId("compact-builder-card-interaction-1")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "approve" }));
@@ -771,6 +779,7 @@ describe("chat workspace history panel", () => {
       target: { value: "Implement archive and delete cards" },
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "advanced capabilities" }));
     fireEvent.change(screen.getByLabelText("builder project"), {
       target: { value: "project-2" },
     });
@@ -786,9 +795,15 @@ describe("chat workspace history panel", () => {
     });
   });
 
-  it("keeps composer routing controls visible in the composer", () => {
+  it("moves composer routing controls into advanced capabilities", () => {
     render(<Harness />);
 
+    expect(screen.queryByLabelText("chat mode")).toBeNull();
+    expect(screen.queryByLabelText("chat plugin")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "advanced capabilities" }));
+
+    expect(screen.getByTestId("composer-capabilities-panel")).toBeTruthy();
     expect(screen.getByLabelText("chat mode")).toBeTruthy();
     expect(screen.getByLabelText("chat plugin")).toBeTruthy();
   });
@@ -806,7 +821,7 @@ describe("chat workspace history panel", () => {
   });
 
   it("renders task progress without showing a null iteration denominator", () => {
-    render(<BuilderHarness cards={[createBuilderCard({
+    const progressCard = createBuilderCard({
       kind: "task_execution",
       status: "running",
       title: "Repair builder loop",
@@ -820,11 +835,18 @@ describe("chat workspace history panel", () => {
       },
       recommendations: [],
       actions: [],
-    })]} />);
+    });
 
-    expect(screen.getByText("verifying")).toBeTruthy();
-    expect(screen.getByText("iteration 2")).toBeTruthy();
-    expect(screen.queryByText("iteration 2 of null")).toBeNull();
+    render(<BuilderHarness
+      cards={[progressCard]}
+      messages={[{ id: "builder-assistant-1", role: "assistant", content: "I started checking the builder loop." }]}
+      activeBuilderProgress={progressCard.progress ?? null}
+    />);
+
+    expect(screen.getByText("I'm working in Alpha and I'm currently verifying.")).toBeTruthy();
+    fireEvent.click(screen.getByText("Working details"));
+    expect(screen.getByText("Verifying")).toBeTruthy();
+    expect(screen.queryByText(/Iteration 2 \/ null/i)).toBeNull();
     expect(screen.getByText("Re-running tests after repair.")).toBeTruthy();
   });
 
@@ -847,7 +869,7 @@ describe("chat workspace history panel", () => {
       },
     })]} />);
 
-    expect(screen.getByTestId("builder-inbox-panel")).toBeTruthy();
+    expect(screen.getByText("I need your input before I continue.")).toBeTruthy();
     expect(screen.getByText("Approve Builder contract rollover")).toBeTruthy();
     expect(screen.getByText("Builder contract drift needs a decision.")).toBeTruthy();
     expect(screen.getByText("Review API changes")).toBeTruthy();

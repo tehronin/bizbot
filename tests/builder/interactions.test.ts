@@ -255,7 +255,7 @@ describe("builder interactions", () => {
       kind: "task_execution",
       runId: "run-1",
       taskId: "task-1",
-      title: "Builder is making changes",
+      title: "I'm working through the changes",
     });
   });
 
