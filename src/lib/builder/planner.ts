@@ -227,7 +227,7 @@ function buildBuilderMetaPlannerDraft(
     summary: "Translate the persisted brief into concrete work boundaries, authority rules, and implementation scope.",
     tasks: [{
       key: "brief_scope",
-      title: "Capture scope and authority split",
+      title: "Confirm the project brief and boundaries",
       summary: brief.summary,
       completionCriteria: [
         "Summarize the brief in durable project context.",

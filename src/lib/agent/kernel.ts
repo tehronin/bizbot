@@ -145,7 +145,20 @@ function parseNumericEnv(raw: string | undefined, fallback: number): number {
 }
 
 export function getActiveProvider(provider?: LLMProvider): LLMProvider {
-  return provider ?? (process.env.ACTIVE_LLM_PROVIDER as LLMProvider) ?? "ollama";
+  if (provider) {
+    return provider;
+  }
+
+  const explicitProvider = process.env.ACTIVE_LLM_PROVIDER as LLMProvider | undefined;
+  if (explicitProvider) {
+    return explicitProvider;
+  }
+
+  const configuredProviders = getConfiguredProviders();
+  const preferredFallbackOrder: LLMProvider[] = ["google", "openai", "anthropic", "minimax"];
+  const configuredFallback = preferredFallbackOrder.find((candidate) => configuredProviders[candidate]);
+
+  return configuredFallback ?? "ollama";
 }
 
 export function getModelForProvider(provider: LLMProvider): string {

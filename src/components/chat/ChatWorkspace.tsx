@@ -90,14 +90,60 @@ function BuilderCardList({
   cards,
   disabled,
   onAction,
+  compact = false,
 }: {
   cards: BuilderChatCard[];
   disabled?: boolean;
   onAction?: (interactionId: string, action: "approve" | "reject" | "reconcile") => void;
+  compact?: boolean;
 }) {
   if (cards.length === 0) {
     return null;
   }
+
+  const isActionRequired = (card: BuilderChatCard) => card.status === "pending" && card.actions.length > 0;
+
+  const formatStatusLabel = (card: BuilderChatCard) => {
+    if (isActionRequired(card)) {
+      return "needs your input";
+    }
+
+    switch (card.status) {
+      case "planned":
+        return "planned";
+      case "running":
+        return "in progress";
+      case "pending":
+        return "queued";
+      case "succeeded":
+        return "done";
+      case "failed":
+        return "needs attention";
+      case "cancelled":
+        return "stopped";
+      case "approved":
+        return "approved";
+      case "rejected":
+        return "stopped";
+      default:
+        return "resolved";
+    }
+  };
+
+  const formatBadge = (badge: string) => {
+    if (badge.startsWith("verification: ")) {
+      const status = badge.slice("verification: ".length);
+      return status === "passed"
+        ? "Checks passed"
+        : status === "failed"
+          ? "Checks failed"
+          : status === "skipped"
+            ? "Checks skipped"
+            : badge;
+    }
+
+    return badge;
+  };
 
   const renderDetailGroups = (groups: Array<{ label: string; items: string[] }>) => groups.map((group) => (
     <div key={`${group.label}-${group.items.join("|")}`} className="space-y-1">
@@ -112,15 +158,119 @@ function BuilderCardList({
     </div>
   ));
 
+  const renderActionButtons = (card: BuilderChatCard) => (card.actions.length > 0 && onAction ? (
+    <div className="flex flex-wrap gap-2">
+      {card.actions.map((action) => (
+        <button
+          key={`${card.id}-${action.id}`}
+          type="button"
+          disabled={disabled}
+          onClick={() => onAction(card.interactionId, action.id)}
+          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
+          style={{
+            borderColor: action.variant === "danger" ? "var(--danger)" : action.variant === "primary" ? "var(--warning)" : "var(--border)",
+            color: action.variant === "danger" ? "var(--danger)" : action.variant === "primary" ? "var(--warning)" : "var(--text-primary)",
+          }}
+        >
+          {action.label}
+        </button>
+      ))}
+    </div>
+  ) : null);
+
   return (
     <div className="space-y-3">
-      {cards.map((card) => (
+      {cards.map((card) => {
+        const requiresAction = isActionRequired(card);
+        const visibleBadges = card.kind === "task_execution" ? (card.badges ?? []).map(formatBadge) : [];
+        const hasGovernanceDetails = Boolean(
+          card.details?.preflightReview
+          || card.details?.mcpDrift
+          || card.details?.dependencyDrift
+          || card.details?.fileTopologyDrift,
+        );
+        const showAdvancedDetails = Boolean(card.details || card.recommendations.length > 0 || card.resolutionReason);
+
+        if (compact) {
+          return (
+            <details
+              key={card.id}
+              className="border px-3 py-2"
+              style={{
+                borderColor: requiresAction ? "var(--warning)" : "var(--border-sub)",
+                background: requiresAction ? "color-mix(in srgb, var(--warning) 6%, var(--bg-surface))" : "var(--bg-surface)",
+              }}
+              data-testid={`compact-builder-card-${card.id}`}
+            >
+              <summary className="cursor-pointer list-none">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                      builder • {card.projectName}
+                    </div>
+                    <div className="text-sm mt-1" style={{ color: "var(--text-primary)" }}>{card.title}</div>
+                    <div className="text-xs mt-1 line-clamp-2" style={{ color: "var(--text-dim)" }}>{card.summary}</div>
+                  </div>
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-right shrink-0" style={{ color: requiresAction ? "var(--warning)" : "var(--text-dim)" }}>
+                    {formatStatusLabel(card)}
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                  <span>{card.projectRelativePath}</span>
+                  {card.progress?.loopPhase ? <span>{card.progress.loopPhase.replaceAll("_", " ")}</span> : null}
+                  {card.progress?.currentIteration !== null && card.progress?.currentIteration !== undefined ? (
+                    <span>
+                      iteration {card.progress.currentIteration}
+                      {card.progress.maxIterations !== null ? ` of ${card.progress.maxIterations}` : ""}
+                    </span>
+                  ) : null}
+                </div>
+              </summary>
+              <div className="mt-3 space-y-3">
+                {requiresAction ? (
+                  <div className="text-xs" style={{ color: "var(--warning)" }}>
+                    Builder is paused here until you decide how to proceed.
+                  </div>
+                ) : null}
+                {card.progress?.latestLoopSummary ? (
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.progress.latestLoopSummary}</div>
+                ) : null}
+                {visibleBadges.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                    {visibleBadges.map((badge) => (
+                      <span key={`${card.id}-${badge}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {card.recommendations.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                    {card.recommendations.map((recommendation) => (
+                      <span key={`${card.id}-${recommendation}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                        {recommendation}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {showAdvancedDetails ? (
+                  <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+                    Expand the Builder inbox or dashboard for the full governance and verification history.
+                  </div>
+                ) : null}
+                {renderActionButtons(card)}
+              </div>
+            </details>
+          );
+        }
+
+        return (
         <div
           key={card.id}
           className="border p-3 space-y-3"
           style={{
-            borderColor: card.status === "pending" ? "var(--warning)" : "var(--border)",
-            background: card.status === "pending"
+            borderColor: requiresAction ? "var(--warning)" : "var(--border)",
+            background: requiresAction
               ? "color-mix(in srgb, var(--warning) 8%, var(--bg-raised))"
               : "var(--bg-raised)",
           }}
@@ -132,11 +282,16 @@ function BuilderCardList({
               </div>
               <div className="text-sm mt-1" style={{ color: "var(--text-primary)" }}>{card.title}</div>
             </div>
-            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: card.status === "pending" ? "var(--warning)" : "var(--text-dim)" }}>
-              {card.status.replaceAll("_", " ")}
+            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: requiresAction ? "var(--warning)" : "var(--text-dim)" }}>
+              {formatStatusLabel(card)}
             </div>
           </div>
           <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.summary}</div>
+          {requiresAction ? (
+            <div className="text-xs" style={{ color: "var(--warning)" }}>
+              Builder is paused here until you decide how to proceed.
+            </div>
+          ) : null}
           {card.progress ? (
             <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
               <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
@@ -153,33 +308,29 @@ function BuilderCardList({
               ) : null}
             </div>
           ) : null}
-          {card.badges && card.badges.length > 0 ? (
+          {visibleBadges.length > 0 ? (
             <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
-              {card.badges.map((badge) => (
+              {visibleBadges.map((badge) => (
                 <span key={`${card.id}-${badge}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
                   {badge}
                 </span>
               ))}
             </div>
           ) : null}
-          {card.recommendations.length > 0 ? (
-            <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
-              {card.recommendations.map((recommendation) => (
-                <span key={`${card.id}-${recommendation}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
-                  {recommendation}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {card.details ? (
+          {showAdvancedDetails ? (
             <details className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
               <summary className="text-[11px] uppercase tracking-[0.16em] cursor-pointer" style={{ color: "var(--text-muted)" }}>
-                {card.kind === "preflight_review" ? "preflight review" : "drift details"}
+                advanced details
               </summary>
               <div className="mt-3 space-y-3">
-                {card.details.preflightReview ? (
+                {hasGovernanceDetails ? (
+                  <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+                    Open the Builder dashboard for the full governance history and review context.
+                  </div>
+                ) : null}
+                {card.details?.preflightReview ? (
                   <div className="space-y-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>preflight surfaces</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>what changed</div>
                     {card.details.preflightReview.surfaces.map((surface) => (
                       <div key={`${card.id}-${surface.id}`} className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
                         <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
@@ -199,9 +350,9 @@ function BuilderCardList({
                     ))}
                   </div>
                 ) : null}
-                {card.details.mcpDrift ? (
+                {card.details?.mcpDrift ? (
                   <div className="space-y-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>mcp contract</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>tools and prompts</div>
                     <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
                       <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {card.details.mcpDrift.severity}</span>
                       <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>classification: {card.details.mcpDrift.classification.replaceAll("_", " ")}</span>
@@ -225,9 +376,9 @@ function BuilderCardList({
                     {renderDetailGroups(card.details.mcpDrift.resources)}
                   </div>
                 ) : null}
-                {card.details.dependencyDrift ? (
+                {card.details?.dependencyDrift ? (
                   <div className="space-y-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>dependency contract</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>packages and scripts</div>
                     <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
                       <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {card.details.dependencyDrift.severity}</span>
                       {(card.details.dependencyDrift.reasons ?? []).map((reason) => (
@@ -244,9 +395,9 @@ function BuilderCardList({
                     {renderDetailGroups(card.details.dependencyDrift.scripts)}
                   </div>
                 ) : null}
-                {card.details.fileTopologyDrift ? (
+                {card.details?.fileTopologyDrift ? (
                   <div className="space-y-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>file topology contract</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>files and folders</div>
                     <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
                       <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {card.details.fileTopologyDrift.severity}</span>
                       {(card.details.fileTopologyDrift.reasons ?? []).map((reason) => (
@@ -287,9 +438,9 @@ function BuilderCardList({
                     ) : null}
                   </div>
                 ) : null}
-                {card.details.taskExecution ? (
+                {card.details?.taskExecution ? (
                   <div className="space-y-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>task execution</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>execution details</div>
                     <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
                       <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>verification: {card.details.taskExecution.verificationStatus.replaceAll("_", " ")}</span>
                       {card.details.taskExecution.failingScript ? (
@@ -327,37 +478,34 @@ function BuilderCardList({
                     ) : null}
                   </div>
                 ) : null}
+                {card.recommendations.length > 0 ? (
+                  <div className="space-y-1">
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>suggestions</div>
+                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                      {card.recommendations.map((recommendation) => (
+                        <span key={`${card.id}-${recommendation}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+                          {recommendation}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {card.resolutionReason ? (
+                  <div className="space-y-1">
+                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>resolution note</div>
+                    <div className="text-xs" style={{ color: "var(--text-dim)" }}>{card.resolutionReason}</div>
+                  </div>
+                ) : null}
               </div>
             </details>
           ) : null}
           <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
             <span>{card.projectRelativePath}</span>
-            <span>state: {card.state.replaceAll("_", " ")}</span>
           </div>
-          {card.resolutionReason ? (
-            <div className="text-xs" style={{ color: "var(--text-dim)" }}>Reason: {card.resolutionReason}</div>
-          ) : null}
-          {card.actions.length > 0 && onAction ? (
-            <div className="flex flex-wrap gap-2">
-              {card.actions.map((action) => (
-                <button
-                  key={`${card.id}-${action.id}`}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onAction(card.interactionId, action.id)}
-                  className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                  style={{
-                    borderColor: action.variant === "danger" ? "var(--danger)" : action.variant === "primary" ? "var(--warning)" : "var(--border)",
-                    color: action.variant === "danger" ? "var(--danger)" : action.variant === "primary" ? "var(--warning)" : "var(--text-primary)",
-                  }}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          {renderActionButtons(card)}
         </div>
-      ))}
+      );
+      })}
     </div>
   );
 }
@@ -734,34 +882,61 @@ function MessageGroups({
   messages,
   onPromote,
   emptyHint,
+  isStreaming = false,
 }: {
   messages: ChatEntry[];
   onPromote?: (message: ChatEntry) => void;
   emptyHint?: string;
+  isStreaming?: boolean;
 }) {
-  const [expandedBadges, setExpandedBadges] = useState<Set<string>>(new Set());
+  const [expandedActivityGroups, setExpandedActivityGroups] = useState<Set<string>>(new Set());
 
   const grouped = useMemo(() => {
-    const groups: Array<{ kind: "message"; entry: ChatEntry } | { kind: "badges"; entries: ChatEntry[] }> = [];
+    const groups: Array<
+      | { kind: "user"; entry: ChatEntry }
+      | { kind: "response"; id: string; assistantEntries: ChatEntry[]; activityEntries: ChatEntry[] }
+    > = [];
+    let pendingResponse: { kind: "response"; id: string; assistantEntries: ChatEntry[]; activityEntries: ChatEntry[] } | null = null;
+
+    function flushPendingResponse() {
+      if (!pendingResponse) {
+        return;
+      }
+
+      groups.push(pendingResponse);
+      pendingResponse = null;
+    }
+
     for (const message of messages) {
-      if (message.role === "user" || message.role === "assistant") {
-        groups.push({ kind: "message", entry: message });
+      if (message.role === "user") {
+        flushPendingResponse();
+        groups.push({ kind: "user", entry: message });
         continue;
       }
 
-      const last = groups.at(-1);
-      if (last && last.kind === "badges") {
-        last.entries.push(message);
+      if (!pendingResponse) {
+        pendingResponse = {
+          kind: "response",
+          id: `response-${message.id}`,
+          assistantEntries: [],
+          activityEntries: [],
+        };
+      }
+
+      if (message.role === "assistant") {
+        pendingResponse.assistantEntries.push(message);
       } else {
-        groups.push({ kind: "badges", entries: [message] });
+        pendingResponse.activityEntries.push(message);
       }
     }
+
+    flushPendingResponse();
 
     return groups;
   }, [messages]);
 
-  function toggleBadge(id: string): void {
-    setExpandedBadges((current) => {
+  function toggleActivityGroup(id: string): void {
+    setExpandedActivityGroups((current) => {
       const next = new Set(current);
       if (next.has(id)) {
         next.delete(id);
@@ -772,29 +947,104 @@ function MessageGroups({
     });
   }
 
-  function renderExecutionChips(entry: ChatEntry) {
+  function renderExecutionMetadata(entry: ChatEntry) {
     const hasMetadata = Boolean(entry.chatMode || entry.chatPluginId || (entry.attachments && entry.attachments.length > 0));
     if (!hasMetadata) {
       return null;
     }
 
+    const summaryParts: string[] = [];
+    if (entry.chatMode) {
+      summaryParts.push(entry.chatMode);
+    }
+    if (entry.chatPluginId) {
+      summaryParts.push(entry.chatPluginId);
+    }
+    if (entry.attachments?.length) {
+      summaryParts.push(`${entry.attachments.length} attachment${entry.attachments.length === 1 ? "" : "s"}`);
+    }
+
     return (
-      <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
-        {entry.chatMode ? (
-          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
-            {entry.chatMode}
-          </span>
-        ) : null}
-        {entry.chatPluginId ? (
-          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
-            {entry.chatPluginId}
-          </span>
-        ) : null}
-        {entry.attachments?.map((attachment) => (
-          <span key={`${entry.id}-${attachment.path}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
-            doc: {attachment.label}
-          </span>
-        ))}
+      <details className="mt-2 text-xs" style={{ color: "var(--text-dim)" }}>
+        <summary className="cursor-pointer" style={{ color: "var(--text-muted)" }}>
+          context: {summaryParts.join(" • ")}
+        </summary>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {entry.chatMode ? (
+            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+              mode: {entry.chatMode}
+            </span>
+          ) : null}
+          {entry.chatPluginId ? (
+            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+              plugin: {entry.chatPluginId}
+            </span>
+          ) : null}
+          {entry.attachments?.map((attachment) => (
+            <span key={`${entry.id}-${attachment.path}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+              doc: {attachment.label}
+            </span>
+          ))}
+        </div>
+      </details>
+    );
+  }
+
+  function summarizeActivity(entries: ChatEntry[]) {
+    const toolCount = entries.filter((entry) => entry.role === "tool").length;
+    const statusCount = entries.filter((entry) => entry.role === "status").length;
+    const metaCount = entries.filter((entry) => entry.role === "meta").length;
+    const parts: string[] = [];
+
+    if (toolCount > 0) {
+      parts.push(`Used ${toolCount} tool${toolCount === 1 ? "" : "s"}`);
+    }
+    if (statusCount > 0) {
+      parts.push(`${statusCount} status update${statusCount === 1 ? "" : "s"}`);
+    }
+    if (metaCount > 0) {
+      parts.push(`${metaCount} routing note${metaCount === 1 ? "" : "s"}`);
+    }
+
+    return parts.join(" • ") || "Activity";
+  }
+
+  function renderActivityEntry(entry: ChatEntry) {
+    const accent = entry.role === "tool"
+      ? { bg: "rgba(56,189,248,0.08)", border: "rgba(56,189,248,0.22)", title: "rgb(125,211,252)" }
+      : entry.role === "status"
+        ? { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.10)", title: "var(--text-primary)" }
+        : { bg: "rgba(34,197,94,0.08)", border: "rgba(34,197,94,0.22)", title: "rgb(74,222,128)" };
+
+    const title = entry.role === "tool"
+      ? entry.phase === "result"
+        ? `${entry.name ?? "tool"} result`
+        : `${entry.name ?? "tool"} call`
+      : entry.role === "meta"
+        ? (entry.profileLabel ? `Routed to ${entry.profileLabel}` : "Routing")
+        : "Status";
+
+    const body = entry.role === "tool"
+      ? entry.phase === "result"
+        ? (entry.result ?? entry.content)
+        : (entry.args ?? entry.content)
+      : entry.content;
+
+    return (
+      <div
+        key={entry.id}
+        className="space-y-1.5 border px-3 py-2"
+        style={{
+          borderColor: accent.border,
+          background: accent.bg,
+        }}
+      >
+        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: accent.title }}>
+          {title}
+        </div>
+        <div className="text-xs whitespace-pre-wrap break-words" style={{ color: "var(--text-dim)" }}>
+          {body}
+        </div>
       </div>
     );
   }
@@ -807,14 +1057,14 @@ function MessageGroups({
         </div>
       )}
       {grouped.map((group, groupIndex) => (
-        group.kind === "message" ? (
+        group.kind === "user" ? (
           <div
             key={group.entry.id}
             data-testid={`chat-message-${group.entry.role}`}
-            className="border px-4 py-3"
+            className="group border px-4 py-3"
             style={{
-              borderColor: group.entry.role === "user" ? "var(--accent-dim)" : "var(--border)",
-              background: group.entry.role === "user" ? "rgba(56,189,248,0.08)" : "var(--bg-raised)",
+              borderColor: "var(--accent-dim)",
+              background: "rgba(56,189,248,0.08)",
             }}
           >
             <div className="flex items-center justify-between gap-3 mb-2">
@@ -825,73 +1075,104 @@ function MessageGroups({
                 <button
                   type="button"
                   onClick={() => onPromote(group.entry)}
-                  className="px-2 py-1 border text-xs uppercase tracking-[0.18em]"
+                  className="px-2 py-1 border text-xs uppercase tracking-[0.18em] opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto focus:opacity-100 focus:pointer-events-auto"
                   style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
                 >
                   promote to memory
                 </button>
               ) : null}
             </div>
-            {group.entry.role === "assistant"
-              ? <MessageMarkdown markdown={group.entry.content} />
-              : <div className="whitespace-pre-wrap text-sm" style={{ color: "var(--text-primary)" }}>{group.entry.content}</div>
-            }
-            {renderExecutionChips(group.entry)}
+            <div className="whitespace-pre-wrap text-sm" style={{ color: "var(--text-primary)" }}>{group.entry.content}</div>
+            {renderExecutionMetadata(group.entry)}
             {group.entry.builderCards && group.entry.builderCards.length > 0 ? (
               <div className="mt-3">
-                <BuilderCardList cards={group.entry.builderCards} />
+                <BuilderCardList cards={group.entry.builderCards} compact />
               </div>
             ) : null}
           </div>
         ) : (
-          <div key={`badge-group-${groupIndex}`} className="flex flex-wrap gap-1.5 py-1">
-            {group.entries.map((entry) => {
-              const isExpanded = expandedBadges.has(entry.id);
-              const badgeColor = entry.role === "meta"
-                ? { bg: "rgba(34,197,94,0.10)", border: "rgba(34,197,94,0.30)", dot: "rgb(34,197,94)" }
-                : entry.role === "tool"
-                  ? { bg: "rgba(56,189,248,0.08)", border: "rgba(56,189,248,0.22)", dot: "rgb(56,189,248)" }
-                  : { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.10)", dot: "rgba(255,255,255,0.35)" };
-              const label = entry.role === "meta"
-                ? (entry.profileLabel ? `Routed -> ${entry.profileLabel}` : "Routed")
-                : entry.role === "tool"
-                  ? (entry.name ?? "tool call")
-                  : entry.content;
-
-              return (
-                <div key={entry.id} className="inline-flex flex-col">
-                  <button
-                    type="button"
-                    onClick={() => toggleBadge(entry.id)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs"
-                    style={{
-                      background: badgeColor.bg,
-                      border: `1px solid ${badgeColor.border}`,
-                      color: "var(--text-dim)",
-                    }}
-                  >
-                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: badgeColor.dot }} />
-                    {label}
-                    <span className="text-[9px]" style={{ transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}>▾</span>
-                  </button>
-                  {isExpanded && (
-                    <div
-                      className="mt-1 px-3 py-2 rounded text-xs whitespace-pre-wrap overflow-auto max-h-48"
-                      style={{
-                        background: badgeColor.bg,
-                        border: `1px solid ${badgeColor.border}`,
-                        color: "var(--text-dim)",
-                      }}
-                    >
-                      {entry.content}
-                    </div>
-                  )}
+          <div
+            key={group.id}
+            data-testid="chat-message-assistant"
+            className="group border px-4 py-3 space-y-3"
+            style={{
+              borderColor: "var(--border)",
+              background: "var(--bg-raised)",
+            }}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
+                assistant
+              </div>
+            </div>
+            {group.activityEntries.length > 0 ? (
+              <details
+                open={expandedActivityGroups.has(group.id)}
+                onToggle={(event) => {
+                  const nextOpen = (event.currentTarget as HTMLDetailsElement).open;
+                  if (nextOpen === expandedActivityGroups.has(group.id)) {
+                    return;
+                  }
+                  toggleActivityGroup(group.id);
+                }}
+                className="border px-3 py-2"
+                style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}
+              >
+                <summary className="cursor-pointer text-xs" style={{ color: "var(--text-dim)" }}>
+                  {summarizeActivity(group.activityEntries)}
+                </summary>
+                <div className="mt-3 space-y-2">
+                  {group.activityEntries.map(renderActivityEntry)}
                 </div>
-              );
-            })}
+              </details>
+            ) : null}
+            {group.assistantEntries.map((entry, entryIndex) => (
+              <div key={entry.id} className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+                    BizBot
+                  </div>
+                  {onPromote ? (
+                    <button
+                      type="button"
+                      onClick={() => onPromote(entry)}
+                      className="px-2 py-1 border text-xs uppercase tracking-[0.18em] opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto focus:opacity-100 focus:pointer-events-auto"
+                      style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    >
+                      promote to memory
+                    </button>
+                  ) : null}
+                </div>
+                <MessageMarkdown
+                  markdown={entry.content}
+                  showStreamingCursor={isStreaming && groupIndex === grouped.length - 1 && entryIndex === group.assistantEntries.length - 1}
+                />
+                {renderExecutionMetadata(entry)}
+                {entry.builderCards && entry.builderCards.length > 0 ? (
+                  <div className="mt-3">
+                    <BuilderCardList cards={entry.builderCards} compact />
+                  </div>
+                ) : null}
+              </div>
+            ))}
+            {group.assistantEntries.length === 0 ? (
+              <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+                BizBot recorded activity for this turn but did not emit a final assistant message.
+                {isStreaming && groupIndex === grouped.length - 1 ? (
+                  <span data-testid="chat-streaming-cursor" className="inline-block ml-1 animate-pulse">▌</span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         )
       ))}
+      {isStreaming && grouped.at(-1)?.kind !== "response" ? (
+        <div data-testid="chat-message-assistant" className="border px-4 py-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+          <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+            BizBot <span data-testid="chat-streaming-cursor" className="inline-block ml-1 animate-pulse">▌</span>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -917,6 +1198,8 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   const [historyFromDraft, setHistoryFromDraft] = useState(chat.historyFilters.from ?? "");
   const [historyToDraft, setHistoryToDraft] = useState(chat.historyFilters.to ?? "");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const transcriptViewportRef = useRef<HTMLDivElement | null>(null);
+  const [isTranscriptPinned, setIsTranscriptPinned] = useState(true);
 
   const currentConversation = chat.currentConversation;
   const hasHistoryFilters = Boolean(chat.historyFilters.search || chat.historyFilters.from || chat.historyFilters.to);
@@ -961,15 +1244,73 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   const builderPluginActive = executionPluginId === "builder" && executionMode === "agent";
   const builderAskMode = executionPluginId === "builder" && executionMode === "ask";
   const builderOnboarding = chat.builderOnboarding;
+  const builderInboxNeedsInputCount = chat.builderInbox.filter((card) => card.status === "pending" && card.actions.length > 0).length;
+  const builderInboxRunningCount = chat.builderInbox.filter((card) => card.status === "running").length;
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
   const showBuilderWelcome = builderPluginActive && !builderOnboarding && chat.messages.length === 0 && !chat.isBootstrapping;
-
+  const latestMessage = chat.messages[chat.messages.length - 1];
+  const transcriptSignature = useMemo(
+    () => `${chat.conversationId ?? "new"}:${chat.messages.length}:${latestMessage?.id ?? "none"}:${latestMessage?.content.length ?? 0}:${chat.isPending ? "pending" : "idle"}`,
+    [chat.conversationId, chat.isPending, chat.messages.length, latestMessage?.content, latestMessage?.id],
+  );
+  const hasSecondaryRail = builderAskMode
+    || chat.builderInbox.length > 0
+    || Boolean(chat.activeBuilderProgress)
+    || showBuilderWelcome
+    || Boolean(builderOnboarding);
   useEffect(() => {
     setHistorySearchDraft(chat.historyFilters.search);
     setHistoryFromDraft(chat.historyFilters.from ?? "");
     setHistoryToDraft(chat.historyFilters.to ?? "");
   }, [chat.historyFilters]);
+
+  function updateTranscriptPinState(): void {
+    const viewport = transcriptViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    setIsTranscriptPinned(distanceFromBottom <= 80);
+  }
+
+  function scrollTranscriptToBottom(behavior: ScrollBehavior = "auto"): void {
+    const viewport = transcriptViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    if (typeof viewport.scrollTo === "function") {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+      return;
+    }
+
+    viewport.scrollTop = viewport.scrollHeight;
+  }
+
+  useEffect(() => {
+    if (panelMode !== "chat") {
+      return;
+    }
+
+    setIsTranscriptPinned(true);
+    const frame = requestAnimationFrame(() => scrollTranscriptToBottom("auto"));
+    return () => cancelAnimationFrame(frame);
+  }, [chat.conversationId, panelMode]);
+
+  useEffect(() => {
+    if (panelMode !== "chat") {
+      return;
+    }
+
+    if (!isTranscriptPinned) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => scrollTranscriptToBottom("auto"));
+    return () => cancelAnimationFrame(frame);
+  }, [isTranscriptPinned, panelMode, transcriptSignature]);
 
   async function loadKnowledgeFiles(): Promise<void> {
     setKnowledgeState("loading");
@@ -1215,7 +1556,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
 
   return (
     <>
-      <div className="grid gap-3 h-full" style={{ gridTemplateRows: "auto 1fr auto auto" }}>
+      <div className="grid gap-3 h-full min-h-0" style={{ gridTemplateRows: "auto 1fr auto auto" }}>
         <section className="flex flex-col gap-1.5 px-1">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -1228,45 +1569,6 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 </div>
               ) : null}
             </div>
-
-            {/* Plugin-contextual actions — shown between conversation label and chat buttons */}
-            {panelMode === "chat" && builderPluginActive ? (
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    chat.startBuilderOnboarding();
-                    setOnboardingError(null);
-                  }}
-                  className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:brightness-125 transition-colors"
-                  style={{ borderColor: activePlugin.accentBorder, color: activePlugin.accentColor, background: activePlugin.accentSurface }}
-                  data-testid="header-builder-new"
-                >
-                  New Build
-                </button>
-                {chat.selectedBuilderProjectId ? (
-                  <>
-                    <span
-                      className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border max-w-[140px] truncate"
-                      title={selectedBuilderProject?.name ?? chat.selectedBuilderProjectId}
-                      style={{ borderColor: activePlugin.accentBorder, color: activePlugin.accentColor, background: activePlugin.accentSurface }}
-                    >
-                      {selectedBuilderProject?.name ?? "project"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
-                      disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
-                      className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border disabled:opacity-50 hover:brightness-125 transition-colors"
-                      style={{ borderColor: activePlugin.accentBorder, color: activePlugin.accentColor, background: activePlugin.accentSurface }}
-                      data-testid="header-builder-archive"
-                    >
-                      Archive Build
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            ) : null}
 
             <div className="flex items-center gap-1">
               <button
@@ -1283,15 +1585,6 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
               </button>
               <button
                 type="button"
-                onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
-                disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
-                className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border disabled:opacity-50 hover:bg-[--bg-hover] transition-colors"
-                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-              >
-                Archive Chat
-              </button>
-              <button
-                type="button"
                 aria-label="Open history"
                 onClick={() => setPanelMode((current) => current === "chat" ? "history" : "chat")}
                 className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:bg-[--bg-hover] transition-colors"
@@ -1300,136 +1593,248 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 <HistoryIcon />
                 History
               </button>
+              <button
+                type="button"
+                onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
+                disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
+                className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border disabled:opacity-50 hover:bg-[--bg-hover] transition-colors"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                Archive
+              </button>
             </div>
           </div>
           {panelMode === "chat" ? (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]" style={{ color: "var(--text-dim)" }}>
-              <span><span style={{ color: "var(--text-muted)" }}>requests</span> {formatNumber(chat.activeRun.requestCount)}</span>
-              <span><span style={{ color: "var(--text-muted)" }}>tokens</span> {formatNumber(chat.activeRun.totalTokens)}</span>
-              <span><span style={{ color: "var(--text-muted)" }}>prompt</span> {formatNumber(chat.activeRun.promptTokens)}</span>
-              <span><span style={{ color: "var(--text-muted)" }}>completion</span> {formatNumber(chat.activeRun.completionTokens)}</span>
-              <span><span style={{ color: "var(--text-muted)" }}>cost</span> {formatUsd(activeRunCostEstimate)}</span>
-              {chat.activeRun.cachedPromptTokens > 0 ? <span><span style={{ color: "var(--text-muted)" }}>cached</span> {formatNumber(chat.activeRun.cachedPromptTokens)}</span> : null}
+            <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+              {builderPluginActive ? (
+                <details
+                  className="border px-2 py-1"
+                  style={{ borderColor: activePlugin.accentBorder, background: activePlugin.accentSurface, color: activePlugin.accentColor }}
+                  data-testid="header-builder-controls"
+                >
+                  <summary className="cursor-pointer list-none uppercase tracking-[0.14em]">
+                    builder{selectedBuilderProject ? ` • ${selectedBuilderProject.name}` : ""}
+                  </summary>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        chat.startBuilderOnboarding();
+                        setOnboardingError(null);
+                      }}
+                      className="px-2 py-1 text-[10px] uppercase tracking-[0.14em] border hover:brightness-125 transition-colors"
+                      style={{ borderColor: activePlugin.accentBorder, color: activePlugin.accentColor, background: "transparent" }}
+                    >
+                      New Build
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
+                      disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
+                      className="px-2 py-1 text-[10px] uppercase tracking-[0.14em] border disabled:opacity-50 hover:brightness-125 transition-colors"
+                      style={{ borderColor: activePlugin.accentBorder, color: activePlugin.accentColor, background: "transparent" }}
+                    >
+                      Archive Build
+                    </button>
+                  </div>
+                </details>
+              ) : null}
+              <details className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }} data-testid="header-session-summary">
+                <summary className="cursor-pointer list-none">
+                  <span style={{ color: "var(--text-muted)" }}>session</span>{" "}
+                  {formatNumber(chat.activeRun.totalTokens)} tokens • {formatUsd(activeRunCostEstimate)}
+                </summary>
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1" style={{ color: "var(--text-dim)" }}>
+                  <span><span style={{ color: "var(--text-muted)" }}>requests</span> {formatNumber(chat.activeRun.requestCount)}</span>
+                  <span><span style={{ color: "var(--text-muted)" }}>prompt</span> {formatNumber(chat.activeRun.promptTokens)}</span>
+                  <span><span style={{ color: "var(--text-muted)" }}>completion</span> {formatNumber(chat.activeRun.completionTokens)}</span>
+                  {chat.activeRun.cachedPromptTokens > 0 ? <span><span style={{ color: "var(--text-muted)" }}>cached</span> {formatNumber(chat.activeRun.cachedPromptTokens)}</span> : null}
+                </div>
+              </details>
             </div>
           ) : null}
         </section>
 
-        <section className="border p-4 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", minHeight: 500 }}>
+        <section className="border min-h-0 flex flex-col" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", minHeight: 500 }}>
           {panelMode === "chat" ? (
             <>
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
-                  agent console
+              {hasSecondaryRail ? (
+                <div className="border-b px-4 py-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }} data-testid="chat-secondary-rail">
+                  {builderAskMode ? (
+                    <div
+                      className="border px-4 py-3 text-xs leading-6"
+                      style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)", color: "var(--text-dim)" }}
+                      data-testid="builder-ask-hint"
+                    >
+                      <span className="uppercase tracking-[0.16em]" style={{ color: "#a78bfa" }}>Builder is in Ask mode</span>
+                      {" — chat will answer questions about building but won\u2019t execute tools or launch tasks. Switch to "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          chat.setExecutionMode("agent");
+                        }}
+                        className="underline"
+                        style={{ color: "#a78bfa" }}
+                      >
+                        Agent mode
+                      </button>
+                      {" to scaffold projects and run builds."}
+                    </div>
+                  ) : null}
+                  {chat.builderInbox.length > 0 ? (
+                    <details
+                      className="border px-4 py-3"
+                      style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}
+                      open={builderInboxNeedsInputCount > 0}
+                      data-testid="builder-inbox-panel"
+                    >
+                      <summary className="cursor-pointer list-none">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--warning)" }}>
+                              builder inbox
+                            </div>
+                            <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>
+                              {chat.builderInbox.length} item{chat.builderInbox.length === 1 ? "" : "s"}
+                              {builderInboxNeedsInputCount > 0 ? ` • ${builderInboxNeedsInputCount} need your input` : ""}
+                              {builderInboxRunningCount > 0 ? ` • ${builderInboxRunningCount} running` : ""}
+                            </div>
+                          </div>
+                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                            review
+                          </div>
+                        </div>
+                      </summary>
+                      <div className="mt-3">
+                        <BuilderCardList
+                          cards={chat.builderInbox}
+                          compact
+                          disabled={chat.isPending || chat.isBootstrapping}
+                          onAction={(interactionId, action) => {
+                            void handleBuilderInteraction(interactionId, action);
+                          }}
+                        />
+                      </div>
+                    </details>
+                  ) : null}
+                  {chat.activeBuilderProgress ? (
+                    <details className="border px-4 py-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }} open>
+                      <summary className="cursor-pointer list-none">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: activePlugin.accentColor }}>
+                              builder task running
+                            </div>
+                            <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>
+                              {chat.activeBuilderProgress.loopPhase ? chat.activeBuilderProgress.loopPhase.replaceAll("_", " ") : "Working"}
+                            </div>
+                          </div>
+                          {chat.activeBuilderProgress.currentIteration !== null ? (
+                            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                              iteration {chat.activeBuilderProgress.currentIteration}
+                              {chat.activeBuilderProgress.maxIterations !== null ? ` of ${chat.activeBuilderProgress.maxIterations}` : ""}
+                            </div>
+                          ) : null}
+                        </div>
+                      </summary>
+                      <div className="mt-3">
+                        <BuilderRunPanel progress={chat.activeBuilderProgress} />
+                      </div>
+                    </details>
+                  ) : null}
+                  {showBuilderWelcome ? (
+                    <div>
+                      <BuilderWelcome
+                        projects={builderProjects}
+                        onSelectProject={(id) => {
+                          chat.setSelectedBuilderProjectId(id);
+                        }}
+                        onNewProject={() => {
+                          chat.startBuilderOnboarding();
+                          setOnboardingError(null);
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  {builderOnboarding ? (
+                    <div>
+                      <BuilderOnboarding
+                        step={builderOnboarding.step}
+                        spec={builderOnboarding.spec}
+                        stackPresets={builderStackPresets}
+                        templates={builderTemplates}
+                        onUpdateSpec={chat.updateBuilderOnboardingSpec}
+                        onSetStep={chat.setBuilderOnboardingStep}
+                        onConfirm={() => {
+                          setOnboardingBusy(true);
+                          setOnboardingError(null);
+                          void chat.confirmBuilderOnboarding()
+                            .catch((error) => {
+                              setOnboardingError(error instanceof Error ? error.message : String(error));
+                            })
+                            .finally(() => setOnboardingBusy(false));
+                        }}
+                        onCancel={() => {
+                          chat.cancelBuilderOnboarding();
+                          setOnboardingError(null);
+                          setOnboardingBusy(false);
+                        }}
+                        disabled={onboardingBusy}
+                        error={onboardingError}
+                      />
+                    </div>
+                  ) : null}
                 </div>
-                {chat.isBootstrapping && (
-                  <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+              ) : null}
+              <div className="relative min-h-0 flex-1">
+                {chat.isBootstrapping ? (
+                  <div className="absolute right-4 top-3 z-10 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
                     loading chat
                   </div>
-                )}
-              </div>
-              {builderAskMode ? (
+                ) : null}
                 <div
-                  className="mb-4 border px-4 py-3 text-xs leading-6"
-                  style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)", color: "var(--text-dim)" }}
-                  data-testid="builder-ask-hint"
+                  ref={transcriptViewportRef}
+                  onScroll={updateTranscriptPinState}
+                  className="h-full overflow-y-auto px-4 py-4"
+                  data-testid="chat-transcript-viewport"
                 >
-                  <span className="uppercase tracking-[0.16em]" style={{ color: "#a78bfa" }}>Builder is in Ask mode</span>
-                  {" — chat will answer questions about building but won\u2019t execute tools or launch tasks. Switch to "}
+                  <MessageGroups
+                    messages={chat.messages}
+                    isStreaming={chat.isPending && !chat.isBootstrapping}
+                    emptyHint={builderPluginActive ? "Select a project and describe what to build. Builder will scaffold, generate, and run tasks in the workspace." : undefined}
+                    onPromote={(message) => {
+                      if (message.role !== "user" && message.role !== "assistant") {
+                        return;
+                      }
+
+                      setMemoryDraft({
+                        messageId: message.id,
+                        category: inferCategoryFromText(message.content),
+                        key: inferKeyFromText(message.content),
+                        value: message.content,
+                      });
+                      setMemoryState("idle");
+                      setMemoryError(null);
+                    }}
+                  />
+                </div>
+                {!isTranscriptPinned && chat.messages.length > 0 ? (
                   <button
                     type="button"
                     onClick={() => {
-                      chat.setExecutionMode("agent");
+                      scrollTranscriptToBottom("auto");
+                      setIsTranscriptPinned(true);
                     }}
-                    className="underline"
-                    style={{ color: "#a78bfa" }}
+                    className="absolute bottom-3 right-4 px-3 py-1.5 text-[11px] uppercase tracking-[0.14em] border"
+                    style={{ borderColor: composerAccentBorder, background: "var(--bg-surface)", color: composerAccent }}
                   >
-                    Agent mode
+                    Jump to latest
                   </button>
-                  {" to scaffold projects and run builds."}
-                </div>
-              ) : null}
-              {chat.builderInbox.length > 0 ? (
-                <div className="mb-4 space-y-3">
-                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--warning)" }}>
-                    builder inbox
-                  </div>
-                  <BuilderCardList
-                    cards={chat.builderInbox}
-                    disabled={chat.isPending || chat.isBootstrapping}
-                    onAction={(interactionId, action) => {
-                      void handleBuilderInteraction(interactionId, action);
-                    }}
-                  />
-                </div>
-              ) : null}
-              {showBuilderWelcome ? (
-                <div className="mb-4">
-                  <BuilderWelcome
-                    projects={builderProjects}
-                    onSelectProject={(id) => {
-                      chat.setSelectedBuilderProjectId(id);
-                    }}
-                    onNewProject={() => {
-                      chat.startBuilderOnboarding();
-                      setOnboardingError(null);
-                    }}
-                  />
-                </div>
-              ) : null}
-              {builderOnboarding ? (
-                <div className="mb-4">
-                  <BuilderOnboarding
-                    step={builderOnboarding.step}
-                    spec={builderOnboarding.spec}
-                    stackPresets={builderStackPresets}
-                    templates={builderTemplates}
-                    onUpdateSpec={chat.updateBuilderOnboardingSpec}
-                    onSetStep={chat.setBuilderOnboardingStep}
-                    onConfirm={() => {
-                      setOnboardingBusy(true);
-                      setOnboardingError(null);
-                      void chat.confirmBuilderOnboarding()
-                        .catch((error) => {
-                          setOnboardingError(error instanceof Error ? error.message : String(error));
-                        })
-                        .finally(() => setOnboardingBusy(false));
-                    }}
-                    onCancel={() => {
-                      chat.cancelBuilderOnboarding();
-                      setOnboardingError(null);
-                      setOnboardingBusy(false);
-                    }}
-                    disabled={onboardingBusy}
-                    error={onboardingError}
-                  />
-                </div>
-              ) : null}
-              <div className="space-y-3">
-                <MessageGroups
-                  messages={chat.messages}
-                  emptyHint={builderPluginActive ? "Select a project and describe what to build. Builder will scaffold, generate, and run tasks in the workspace." : undefined}
-                  onPromote={(message) => {
-                    if (message.role !== "user" && message.role !== "assistant") {
-                      return;
-                    }
-
-                    setMemoryDraft({
-                      messageId: message.id,
-                      category: inferCategoryFromText(message.content),
-                      key: inferKeyFromText(message.content),
-                      value: message.content,
-                    });
-                    setMemoryState("idle");
-                    setMemoryError(null);
-                  }}
-                />
-                {chat.activeBuilderProgress ? (
-                  <BuilderRunPanel progress={chat.activeBuilderProgress} />
                 ) : null}
               </div>
             </>
           ) : (
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] h-full">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] h-full min-h-0 p-4">
               <div className="space-y-4 min-w-0">
                 <form onSubmit={(event) => void handleApplyHistoryFilters(event)} className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
                   <div className="flex items-start justify-between gap-3">
@@ -1643,7 +2048,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 </div>
               </div>
 
-              <div className="border p-4 overflow-auto min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+              <div className="border p-4 overflow-auto min-w-0 min-h-0" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
                 {chat.isLoadingHistoryConversation ? (
                   <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading conversation...</div>
                 ) : chat.historyConversation ? (
@@ -1807,7 +2212,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 el.style.height = "auto";
                 el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
               }}
-              placeholder={builderPluginActive ? "Describe what to build or change in the selected project..." : "Draft a launch thread about our product update..."}
+              placeholder={builderPluginActive ? "Describe what to build or change in the selected project..." : "Ask BizBot anything..."}
               rows={1}
               className="w-full bg-transparent text-sm resize-none leading-relaxed px-1 py-1"
               style={{ color: "var(--text-primary)", minHeight: "2.5rem", outline: "none", border: "none" }}
@@ -1835,6 +2240,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   Builder project
                 </label>
                 <select
+                  aria-label="builder project"
                   value={selectedBuilderProjectId ?? ""}
                   onChange={(event) => setSelectedBuilderProjectId(event.target.value || null)}
                   disabled={chat.isPending || builderProjects.length === 0}
@@ -1860,10 +2266,18 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           </div>
 
           {attachmentMenuOpen ? (
-            <div className="border-t px-3 py-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+            <div className="border-t px-3 py-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }} data-testid="composer-options-panel">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>knowledge docs</div>
                 <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setAttachmentMenuOpen(false)}
+                    className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border"
+                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  >
+                    Close
+                  </button>
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1926,18 +2340,21 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
               type="button"
               onClick={toggleAttachmentMenu}
               disabled={panelMode === "history" || chat.isPending}
-              title="Attach knowledge doc"
+              aria-label={attachmentMenuOpen ? "Close knowledge docs" : "Open knowledge docs"}
+              title={attachmentMenuOpen ? "Close knowledge docs" : "Open knowledge docs"}
               className="inline-flex items-center justify-center w-7 h-7 disabled:opacity-40 hover:bg-[--bg-hover] transition-colors"
               style={{ color: "var(--text-dim)" }}
+              data-testid="composer-options-toggle"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                <path d="M8 3v10M3 8h10" />
+                {attachmentMenuOpen ? <path d="M4 4l8 8M12 4L4 12" /> : <path d="M8 3v10M3 8h10" />}
               </svg>
             </button>
 
             <div className="w-px h-4 mx-0.5" style={{ background: "var(--border)" }} />
 
             <select
+              aria-label="chat mode"
               value={executionMode}
               disabled={panelMode === "history" || chat.isPending}
               onChange={(event) => setExecutionMode(event.target.value as ChatExecutionMode)}
@@ -1951,6 +2368,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
             <div className="w-px h-4 mx-0.5" style={{ background: "var(--border)" }} />
 
             <select
+              aria-label="chat plugin"
               value={executionPluginId}
               disabled={panelMode === "history" || chat.isPending}
               onChange={(event) => {
@@ -1991,7 +2409,8 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   );
 }
 
-export function ChatWorkspace(props: Omit<ChatWorkspaceContentProps, "chat">) {
+export function ChatWorkspace({ setupOpen, closeSetupHref }: { setupOpen: boolean; closeSetupHref: string }) {
   const chat = useChat();
-  return <ChatWorkspaceContent {...props} chat={chat} />;
+
+  return <ChatWorkspaceContent chat={chat} setupOpen={setupOpen} closeSetupHref={closeSetupHref} />;
 }

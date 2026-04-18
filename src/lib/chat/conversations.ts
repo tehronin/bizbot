@@ -1,8 +1,10 @@
 import type { Prisma } from "@prisma/client";
+import type { LLMProvider } from "@/lib/agent/kernel";
 import { db } from "@/lib/db";
 import { getConversationUsageSummary } from "@/lib/agent/run-journal";
 import { parseUsageLedgerModelPricingSetting, USAGE_LEDGER_MODEL_PRICING_SETTING_KEY } from "@/lib/agent/usage-ledger-pricing";
 import { resolveAgentUserId } from "@/lib/agent/user-context";
+import { extractBuilderRunTelemetry } from "@/lib/builder/telemetry";
 import { listPendingBuilderInteractionCards } from "@/lib/builder/interactions";
 import { listBuilderProjects } from "@/lib/builder/projects";
 import { listBuilderStackPresets } from "@/lib/builder/stacks";
@@ -402,9 +404,115 @@ function emptyConversationUsageSummary(conversationId: string | null): ChatConve
   };
 }
 
+function normalizeUsageProvider(provider: string | null): LLMProvider | null {
+  switch (provider) {
+    case "openai":
+    case "anthropic":
+    case "ollama":
+    case "google":
+    case "minimax":
+      return provider;
+    default:
+      return null;
+  }
+}
+
+async function buildConversationUsageSummary(currentConversation: ChatConversationDetail | null): Promise<ChatConversationUsageSummary> {
+  const conversationId = currentConversation?.id ?? null;
+  const baseSummary = conversationId
+    ? getConversationUsageSummary(conversationId)
+    : emptyConversationUsageSummary(null);
+
+  if (!currentConversation) {
+    return baseSummary;
+  }
+
+  const runIds = new Set<string>();
+  const taskIds = new Set<string>();
+
+  for (const message of currentConversation.messages) {
+    for (const card of message.metadata?.builderCards ?? []) {
+      if (card.runId) {
+        runIds.add(card.runId);
+      }
+      if (card.taskId) {
+        taskIds.add(card.taskId);
+      }
+    }
+  }
+
+  if (runIds.size === 0 && taskIds.size === 0) {
+    return baseSummary;
+  }
+
+  const builderRuns = await db.builderRun.findMany({
+    where: {
+      OR: [
+        ...(runIds.size > 0 ? [{ id: { in: [...runIds] } }] : []),
+        ...(taskIds.size > 0 ? [{ taskId: { in: [...taskIds] } }] : []),
+      ],
+    },
+    orderBy: { startedAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      metadata: true,
+      startedAt: true,
+      finishedAt: true,
+    },
+  });
+
+  if (builderRuns.length === 0) {
+    return baseSummary;
+  }
+
+  const uniqueRuns = [...new Map(builderRuns.map((run) => [run.id, run])).values()];
+  const builderTelemetry = uniqueRuns.map((run) => ({
+    run,
+    telemetry: extractBuilderRunTelemetry(run),
+  }));
+
+  const builderTotals = builderTelemetry.reduce((accumulator, entry) => ({
+    requestCount: accumulator.requestCount + entry.telemetry.requestCount,
+    promptTokens: accumulator.promptTokens + entry.telemetry.promptTokens,
+    completionTokens: accumulator.completionTokens + entry.telemetry.completionTokens,
+    totalTokens: accumulator.totalTokens + entry.telemetry.totalTokens,
+    cachedPromptTokens: accumulator.cachedPromptTokens + entry.telemetry.cachedPromptTokens,
+  }), {
+    requestCount: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    cachedPromptTokens: 0,
+  });
+
+  const latestBuilderRun = builderTelemetry[0];
+  const shouldPreferBuilderIdentity = baseSummary.totalTokens === 0 && latestBuilderRun;
+  const latestBuilderProvider = latestBuilderRun
+    ? normalizeUsageProvider(latestBuilderRun.telemetry.provider)
+    : null;
+
+  return {
+    conversationId,
+    runId: shouldPreferBuilderIdentity ? latestBuilderRun.run.id : baseSummary.runId,
+    profile: baseSummary.profile,
+    profileLabel: shouldPreferBuilderIdentity ? "Builder" : baseSummary.profileLabel,
+    provider: shouldPreferBuilderIdentity ? latestBuilderProvider : baseSummary.provider,
+    model: shouldPreferBuilderIdentity ? latestBuilderRun.telemetry.model : baseSummary.model,
+    startedAt: shouldPreferBuilderIdentity ? latestBuilderRun.run.startedAt.toISOString() : baseSummary.startedAt,
+    requestCount: baseSummary.requestCount + builderTotals.requestCount,
+    promptTokens: baseSummary.promptTokens + builderTotals.promptTokens,
+    completionTokens: baseSummary.completionTokens + builderTotals.completionTokens,
+    totalTokens: baseSummary.totalTokens + builderTotals.totalTokens,
+    cachedPromptTokens: baseSummary.cachedPromptTokens + builderTotals.cachedPromptTokens,
+  };
+}
+
 function buildExecutionDefaults(mode: unknown, pluginId: unknown) {
+  const normalizedMode = typeof mode === "string" ? mode.toLowerCase() : null;
+
   return resolveChatExecutionSelection({
-    mode: mode === "AGENT" ? "agent" : mode === "ASK" ? "ask" : DEFAULT_CHAT_EXECUTION_MODE,
+    mode: normalizedMode === "agent" ? "agent" : normalizedMode === "ask" ? "ask" : DEFAULT_CHAT_EXECUTION_MODE,
     pluginId: typeof pluginId === "string" ? pluginId : DEFAULT_CHAT_EXECUTION_PLUGIN_ID,
   });
 }
@@ -524,9 +632,7 @@ export async function resolveChatBootstrap(options?: {
   const executionDefaults = currentConversation
     ? buildExecutionDefaults(currentConversation.defaultMode, currentConversation.defaultPluginId)
     : executionCatalog.defaults;
-  const activeRun = currentConversationId
-    ? getConversationUsageSummary(currentConversationId)
-    : emptyConversationUsageSummary(null);
+  const activeRun = await buildConversationUsageSummary(currentConversation);
 
   return {
     currentConversationId,

@@ -1,6 +1,50 @@
 import { FunctionCallingConfigMode } from "@google/genai";
 import { describe, expect, it } from "vitest";
-import { buildGoogleToolingConfig, extractOpenAICompatibleUsage, getProviderCapabilityFlags } from "@/lib/agent/kernel";
+import { buildGoogleToolingConfig, extractOpenAICompatibleUsage, getActiveProvider, getProviderCapabilityFlags } from "@/lib/agent/kernel";
+
+describe("active provider resolution", () => {
+  it("prefers a configured cloud provider when ACTIVE_LLM_PROVIDER is unset", () => {
+    const originalActiveProvider = process.env.ACTIVE_LLM_PROVIDER;
+    const originalGoogleApiKey = process.env.GOOGLE_AI_API_KEY;
+    const originalOpenAiKey = process.env.OPENAI_API_KEY;
+    const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    const originalMinimaxKey = process.env.MINIMAX_API_KEY;
+
+    delete process.env.ACTIVE_LLM_PROVIDER;
+    process.env.GOOGLE_AI_API_KEY = "google-key";
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.MINIMAX_API_KEY;
+
+    expect(getActiveProvider()).toBe("google");
+
+    if (typeof originalActiveProvider === "string") {
+      process.env.ACTIVE_LLM_PROVIDER = originalActiveProvider;
+    } else {
+      delete process.env.ACTIVE_LLM_PROVIDER;
+    }
+    if (typeof originalGoogleApiKey === "string") {
+      process.env.GOOGLE_AI_API_KEY = originalGoogleApiKey;
+    } else {
+      delete process.env.GOOGLE_AI_API_KEY;
+    }
+    if (typeof originalOpenAiKey === "string") {
+      process.env.OPENAI_API_KEY = originalOpenAiKey;
+    } else {
+      delete process.env.OPENAI_API_KEY;
+    }
+    if (typeof originalAnthropicKey === "string") {
+      process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+    } else {
+      delete process.env.ANTHROPIC_API_KEY;
+    }
+    if (typeof originalMinimaxKey === "string") {
+      process.env.MINIMAX_API_KEY = originalMinimaxKey;
+    } else {
+      delete process.env.MINIMAX_API_KEY;
+    }
+  });
+});
 
 describe("provider capability flags", () => {
   it("marks Google usage telemetry as verified", () => {

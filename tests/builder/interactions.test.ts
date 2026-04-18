@@ -255,7 +255,7 @@ describe("builder interactions", () => {
       kind: "task_execution",
       runId: "run-1",
       taskId: "task-1",
-      title: "Implement interaction sync",
+      title: "Builder is making changes",
     });
   });
 
@@ -416,7 +416,7 @@ describe("builder interactions", () => {
         preflightReview: {
           surfaces: [{
             id: "dependency",
-            label: "Dependency contract",
+            label: "Packages and scripts",
             severity: "notable",
           }],
         },
@@ -520,8 +520,8 @@ describe("builder interactions", () => {
       severity: "breaking",
       badges: ["severity: breaking", "3 preflight surfaces"],
       actions: [
-        { id: "approve", label: "approve all drift" },
-        { id: "reject", label: "reject all drift" },
+        { id: "approve", label: "continue with these changes" },
+        { id: "reject", label: "stop and review first" },
       ],
       details: {
         preflightReview: {

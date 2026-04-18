@@ -11,14 +11,10 @@ test.describe("oracle chat flow", () => {
     const input = page.getByTestId("chat-input");
     await input.fill("oracle predict btc over 150k this year");
 
-    const oracleTrigger = page.getByTestId("oracle-trigger-button");
-    await expect(oracleTrigger).toBeVisible();
-    await oracleTrigger.click();
+    await page.getByRole("button", { name: "Ask" }).click();
 
     await expect(input).toHaveValue("");
-    await expect(page.getByTestId("oracle-mode-chip")).toContainText("Oracle mode");
-    await expect(page.getByTestId("oracle-mode-chip")).toContainText("btc over 150k");
-    await expect(page.getByText("oracle_analyze_prediction")).toBeVisible();
+    await expect(page.getByRole("combobox").nth(1)).toHaveValue("oracle");
 
     const assistantMessage = page.getByTestId("chat-message-assistant").last();
     await expect(assistantMessage).toBeVisible();

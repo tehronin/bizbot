@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { launchBuilderTaskFromChat } from "@/lib/builder/interactions";
+import { formatBuilderUserFacingError } from "@/lib/builder/user-facing";
 import { resolveAgentUserId } from "@/lib/agent/user-context";
 
 function parseBody(value: unknown): {
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
 
     return Response.json(result, { status: 202 });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return Response.json({ error: formatBuilderUserFacingError(message) }, { status: 500 });
   }
 }

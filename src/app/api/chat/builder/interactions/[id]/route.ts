@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { resolveBuilderInteraction } from "@/lib/builder/interactions";
+import { formatBuilderUserFacingError } from "@/lib/builder/user-facing";
 
 function parseBody(value: unknown): {
   action: "approve" | "reject" | "reconcile";
@@ -38,6 +39,7 @@ export async function POST(
 
     return Response.json(result);
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return Response.json({ error: formatBuilderUserFacingError(message) }, { status: 500 });
   }
 }

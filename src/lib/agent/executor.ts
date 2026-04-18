@@ -10,7 +10,7 @@ import {
   shouldInjectRuntimeToolVisibilitySummary,
 } from "@/lib/agent/capabilities";
 import { formatMemoryFactsForPrompt, getRelevantMemoryFacts } from "@/lib/agent/memory/service";
-import { chatComplete, getModelForProvider, type ChatRequestOptions, type LLMProvider } from "@/lib/agent/kernel";
+import { chatComplete, getActiveProvider, getModelForProvider, type ChatRequestOptions, type LLMProvider } from "@/lib/agent/kernel";
 import { executeTool, getAllToolDefinitions } from "@/lib/agent/plugins";
 import { ensureMcpClientsInitialized } from "@/lib/mcp/client";
 import { buildAutonomySystemPrompt, getAgentRuntimeConfig } from "@/lib/agent/runtime";
@@ -399,7 +399,7 @@ export async function executeAgentConversation(
       };
   const profilePrompt = buildAgentProfilePrompt(profileDecision.profile, message);
   const profileDescriptor = getAgentProfileDescriptor(profileDecision.profile);
-  const resolvedProvider = provider ?? (process.env.ACTIVE_LLM_PROVIDER as LLMProvider | undefined) ?? "ollama";
+  const resolvedProvider = getActiveProvider(provider);
   const resolvedModel = getModelForProvider(resolvedProvider);
   await emitStatus(onEvent, `Resolved profile ${profileDecision.profile} via ${resolvedProvider}/${resolvedModel}.`);
   throwIfAborted(signal);

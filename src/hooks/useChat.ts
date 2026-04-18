@@ -150,6 +150,8 @@ export interface UseChatResult {
 }
 
 const SELECTED_CONVERSATION_STORAGE_KEY = "bizbot:selected-chat-conversation-id";
+const EXECUTION_MODE_STORAGE_KEY = "bizbot:chat-execution-mode";
+const EXECUTION_PLUGIN_STORAGE_KEY = "bizbot:chat-execution-plugin";
 
 interface InternalActiveRunState extends ActiveRunState {
   runBaseRequestCount: number;
@@ -157,6 +159,11 @@ interface InternalActiveRunState extends ActiveRunState {
   runBaseCompletionTokens: number;
   runBaseTotalTokens: number;
   runBaseCachedPromptTokens: number;
+}
+
+interface ExecutionSelection {
+  mode: ChatExecutionMode;
+  pluginId: string;
 }
 
 const IDLE_ACTIVE_RUN: InternalActiveRunState = {
@@ -228,6 +235,29 @@ function persistSelectedConversationId(nextConversationId: string | null): void 
   }
 
   window.localStorage.removeItem(SELECTED_CONVERSATION_STORAGE_KEY);
+}
+
+function getStoredExecutionPreference(): { mode: ChatExecutionMode; pluginId: string } | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const mode = window.localStorage.getItem(EXECUTION_MODE_STORAGE_KEY);
+  const pluginId = window.localStorage.getItem(EXECUTION_PLUGIN_STORAGE_KEY);
+  if ((mode !== "ask" && mode !== "agent") || !pluginId) {
+    return null;
+  }
+
+  return { mode, pluginId };
+}
+
+function persistExecutionPreference(preference: { mode: ChatExecutionMode; pluginId: string }): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(EXECUTION_MODE_STORAGE_KEY, preference.mode);
+  window.localStorage.setItem(EXECUTION_PLUGIN_STORAGE_KEY, preference.pluginId);
 }
 
 function toPublicActiveRun(state: InternalActiveRunState): ActiveRunState {
@@ -358,23 +388,49 @@ function parseSsePayload(buffer: string): {
 }
 
 function mapConversationMessageToEntry(message: ChatConversationMessage): ChatEntry {
+  const metadata = message.metadata ?? {};
+
   if (message.role === "USER") {
-    return createEntry("user", message.content, message.metadata ?? undefined);
+    return {
+      id: message.id,
+      role: "user",
+      content: message.content,
+      ...metadata,
+    };
   }
 
   if (message.role === "ASSISTANT") {
-    return createEntry("assistant", message.content, message.metadata ?? undefined);
+    return {
+      id: message.id,
+      role: "assistant",
+      content: message.content,
+      ...metadata,
+    };
   }
 
   if (message.role === "TOOL") {
-    return createEntry("tool", message.content);
+    return {
+      id: message.id,
+      role: "tool",
+      content: message.content,
+      ...metadata,
+    };
   }
 
-  return createEntry("meta", message.content);
+  return {
+    id: message.id,
+    role: "meta",
+    content: message.content,
+    ...metadata,
+  };
 }
 
 function mapConversationMessages(messages: ChatConversationMessage[]): ChatEntry[] {
   return messages.map(mapConversationMessageToEntry);
+}
+
+function haveEquivalentChatEntries(current: ChatEntry[], next: ChatEntry[]): boolean {
+  return JSON.stringify(current) === JSON.stringify(next);
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -427,24 +483,93 @@ export function useChat(): UseChatResult {
   const [activeRun, setActiveRun] = useState<InternalActiveRunState>(IDLE_ACTIVE_RUN);
   const [modelPricing, setModelPricing] = useState<Record<string, UsageLedgerModelPricing>>({});
   const [executionCatalog, setExecutionCatalog] = useState<ChatExecutionCatalog>(EMPTY_EXECUTION_CATALOG);
-  const [executionMode, setExecutionMode] = useState<ChatExecutionMode>(EMPTY_EXECUTION_CATALOG.defaults.mode);
-  const [executionPluginId, setExecutionPluginId] = useState<string>(EMPTY_EXECUTION_CATALOG.defaults.pluginId);
+  const [executionMode, setExecutionModeState] = useState<ChatExecutionMode>(EMPTY_EXECUTION_CATALOG.defaults.mode);
+  const [executionPluginId, setExecutionPluginIdState] = useState<string>(EMPTY_EXECUTION_CATALOG.defaults.pluginId);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [isExecutionPreferenceHydrated, setIsExecutionPreferenceHydrated] = useState(false);
   const [isLoadingHistoryConversation, setIsLoadingHistoryConversation] = useState(false);
   const [isLoadingHistoryLists, setIsLoadingHistoryLists] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [activeBuilderTaskId, setActiveBuilderTaskId] = useState<string | null>(null);
   const [activeBuilderProgress, setActiveBuilderProgress] = useState<BuilderChatCardProgress | null>(null);
   const isMountedRef = useRef(true);
+  const completionPublishedTaskIdsRef = useRef<Set<string>>(new Set());
+  const syncedExecutionDefaultsRef = useRef<string | null>(null);
+  const shouldSyncExecutionDefaultsRef = useRef(false);
   const bootstrapAbortControllerRef = useRef<AbortController | null>(null);
   const bootstrapRequestIdRef = useRef(0);
   const sidecarInteractionAbortControllerRef = useRef<AbortController | null>(null);
+
+  function applyExecutionSelection(nextSelection: ExecutionSelection, options?: {
+    syncConversation?: boolean;
+    conversationId?: string | null;
+  }): void {
+    shouldSyncExecutionDefaultsRef.current = options?.syncConversation ?? false;
+    syncedExecutionDefaultsRef.current = options?.conversationId
+      ? `${options.conversationId}:${nextSelection.mode}:${nextSelection.pluginId}`
+      : null;
+    setExecutionModeState(nextSelection.mode);
+    setExecutionPluginIdState(nextSelection.pluginId);
+  }
+
+  const setExecutionMode: React.Dispatch<React.SetStateAction<ChatExecutionMode>> = (value) => {
+    shouldSyncExecutionDefaultsRef.current = true;
+    syncedExecutionDefaultsRef.current = null;
+    setExecutionModeState(value);
+  };
+
+  const setExecutionPluginId: React.Dispatch<React.SetStateAction<string>> = (value) => {
+    shouldSyncExecutionDefaultsRef.current = true;
+    syncedExecutionDefaultsRef.current = null;
+    setExecutionPluginIdState(value);
+  };
 
   useEffect(() => () => {
     isMountedRef.current = false;
     bootstrapAbortControllerRef.current?.abort();
     sidecarInteractionAbortControllerRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    // Restore stored preference on client-only mount (SSR-safe: runs after hydration)
+    const stored = getStoredExecutionPreference();
+    if (stored) {
+      applyExecutionSelection(stored);
+    }
+    setIsExecutionPreferenceHydrated(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!isExecutionPreferenceHydrated) {
+      return;
+    }
+
+    persistExecutionPreference({ mode: executionMode, pluginId: executionPluginId });
+  }, [executionMode, executionPluginId, isExecutionPreferenceHydrated]);
+
+  useEffect(() => {
+    if (!conversationId || isBootstrapping || !shouldSyncExecutionDefaultsRef.current) {
+      return;
+    }
+
+    const key = `${conversationId}:${executionMode}:${executionPluginId}`;
+    if (syncedExecutionDefaultsRef.current === key) {
+      shouldSyncExecutionDefaultsRef.current = false;
+      return;
+    }
+
+    syncedExecutionDefaultsRef.current = key;
+    shouldSyncExecutionDefaultsRef.current = false;
+    void fetch(`/api/chat/conversations/${conversationId}/defaults`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: executionMode, pluginId: executionPluginId }),
+    }).catch(() => {
+      syncedExecutionDefaultsRef.current = null;
+      shouldSyncExecutionDefaultsRef.current = true;
+    });
+  }, [conversationId, executionMode, executionPluginId, isBootstrapping]);
 
   useEffect(() => {
     if (!activeBuilderTaskId) return;
@@ -472,6 +597,21 @@ export function useChat(): UseChatResult {
           });
           if (data.status !== "RUNNING") {
             setActiveBuilderTaskId(null);
+            setActiveBuilderProgress(null);
+            if (conversationId && !completionPublishedTaskIdsRef.current.has(data.taskId)) {
+              completionPublishedTaskIdsRef.current.add(data.taskId);
+              await fetch(`/api/chat/builder/tasks/${data.taskId}/complete`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ conversationId }),
+              }).catch(() => undefined);
+            }
+            if (conversationId) {
+              await loadBootstrap({
+                selectedConversationId: conversationId,
+                replaceCurrent: true,
+              });
+            }
           }
         }
       } catch {
@@ -485,7 +625,7 @@ export function useChat(): UseChatResult {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [activeBuilderTaskId]);
+  }, [activeBuilderTaskId, conversationId]);
 
   async function loadBootstrap(options?: {
     selectedConversationId?: string | null;
@@ -543,8 +683,13 @@ export function useChat(): UseChatResult {
       setHistoryFilters(payload.historyFilters);
       setModelPricing(payload.modelPricing);
       setExecutionCatalog(payload.executionCatalog);
-      setExecutionMode(payload.executionDefaults.mode);
-      setExecutionPluginId(payload.executionDefaults.pluginId);
+      const storedExecutionPreference = getStoredExecutionPreference();
+      const preferredExecutionDefaults = payload.currentConversation
+        ? payload.executionDefaults
+        : storedExecutionPreference ?? payload.executionDefaults;
+      applyExecutionSelection(preferredExecutionDefaults, {
+        conversationId: payload.currentConversationId,
+      });
       setBuilderProjects(payload.builderProjects);
       setBuilderStackPresets(payload.builderStackPresets ?? []);
       setBuilderTemplates(payload.builderTemplates ?? []);
@@ -559,7 +704,8 @@ export function useChat(): UseChatResult {
       persistSelectedConversationId(payload.currentConversationId);
 
       if (replaceCurrent) {
-        setMessages(payload.currentConversation ? mapConversationMessages(payload.currentConversation.messages) : []);
+        const nextMessages = payload.currentConversation ? mapConversationMessages(payload.currentConversation.messages) : [];
+        setMessages((current) => haveEquivalentChatEntries(current, nextMessages) ? current : nextMessages);
         setActiveRun(createInternalActiveRun(payload.activeRun));
       }
 
@@ -681,8 +827,6 @@ export function useChat(): UseChatResult {
     setMessages([]);
     setActiveRun(IDLE_ACTIVE_RUN);
     setHistoryConversation(null);
-    setExecutionMode(executionCatalog.defaults.mode);
-    setExecutionPluginId(executionCatalog.defaults.pluginId);
     persistSelectedConversationId(null);
   }
 
@@ -917,6 +1061,10 @@ export function useChat(): UseChatResult {
       throw new Error("Select a Builder project before launching a task from chat.");
     }
 
+    applyExecutionSelection({ mode: "agent", pluginId: "builder" }, {
+      conversationId,
+    });
+
     setMessages((current) => [...current, createEntry("user", trimmed, {
       chatMode: "agent",
       chatPluginId: "builder",
@@ -932,13 +1080,20 @@ export function useChat(): UseChatResult {
         retryFailed: options?.retryFailed ?? false,
       }),
     });
-    const payload = await readJson<{ error?: string; conversationId?: string }>(response);
+    const payload = await readJson<{ error?: string; conversationId?: string; execution?: { status?: string; taskId?: string | null } }>(response);
 
     if (!response.ok) {
       throw new Error(payload.error ?? "Failed to launch Builder task from chat.");
     }
 
     const nextConversationId = payload.conversationId ?? conversationId;
+    applyExecutionSelection({ mode: "agent", pluginId: "builder" }, {
+      conversationId: nextConversationId,
+    });
+    if (payload.execution?.status === "RUNNING" && typeof payload.execution.taskId === "string") {
+      setActiveBuilderTaskId(payload.execution.taskId);
+      setActiveBuilderProgress(null);
+    }
     await loadBootstrap({
       selectedConversationId: nextConversationId,
       replaceCurrent: true,

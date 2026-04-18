@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const builderInteractionMocks = vi.hoisted(() => ({
   resolveBuilderInteraction: vi.fn(),
   launchBuilderTaskFromChat: vi.fn(),
+  publishBuilderTaskCompletionToConversation: vi.fn(),
 }));
 
 const builderOnboardingMocks = vi.hoisted(() => ({
@@ -13,6 +14,7 @@ const builderOnboardingMocks = vi.hoisted(() => ({
 vi.mock("@/lib/builder/interactions", () => ({
   resolveBuilderInteraction: builderInteractionMocks.resolveBuilderInteraction,
   launchBuilderTaskFromChat: builderInteractionMocks.launchBuilderTaskFromChat,
+  publishBuilderTaskCompletionToConversation: builderInteractionMocks.publishBuilderTaskCompletionToConversation,
 }));
 
 vi.mock("@/lib/builder/onboarding", () => ({
@@ -25,6 +27,7 @@ vi.mock("@/lib/agent/user-context", () => ({
 
 import { POST as resolveInteraction } from "@/app/api/chat/builder/interactions/[id]/route";
 import { POST as launchTask } from "@/app/api/chat/builder/tasks/route";
+import { POST as completeTask } from "@/app/api/chat/builder/tasks/[taskId]/complete/route";
 import { POST as createOnboarding } from "@/app/api/chat/builder/onboarding/route";
 
 describe("chat Builder routes", () => {
@@ -144,6 +147,29 @@ describe("chat Builder routes", () => {
       { conversationId: "conv-3" },
     );
     expect(payload.projectId).toBe("project-new");
+  });
+
+  it("publishes a Builder task completion summary back into chat", async () => {
+    builderInteractionMocks.publishBuilderTaskCompletionToConversation.mockResolvedValue({
+      published: true,
+      summary: "Builder finished the requested step.",
+      card: null,
+    });
+
+    const response = await completeTask(new NextRequest("http://localhost/api/chat/builder/tasks/task-1/complete", {
+      method: "POST",
+      body: JSON.stringify({ conversationId: "conv-9" }),
+    }), {
+      params: Promise.resolve({ taskId: "task-1" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(builderInteractionMocks.publishBuilderTaskCompletionToConversation).toHaveBeenCalledWith({
+      taskId: "task-1",
+      conversationId: "conv-9",
+    });
+    expect(payload.published).toBe(true);
   });
 
   it("rejects onboarding without a project name", async () => {

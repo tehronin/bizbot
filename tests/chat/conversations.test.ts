@@ -22,6 +22,14 @@ type TestConversation = {
 
 const store = vi.hoisted(() => ({
   conversations: [] as TestConversation[],
+  builderRuns: [] as Array<{
+    id: string;
+    taskId: string | null;
+    status: string;
+    metadata?: unknown;
+    startedAt: Date;
+    finishedAt: Date | null;
+  }>,
 }));
 
 function cloneConversation(conversation: TestConversation) {
@@ -137,6 +145,30 @@ const dbMocks = vi.hoisted(() => ({
       };
     }),
   },
+  builderRun: {
+    findMany: vi.fn(async ({ where }: { where: { OR?: Array<Record<string, { in: string[] }>> } }) => {
+      const runIds = new Set<string>();
+      const taskIds = new Set<string>();
+
+      for (const clause of where.OR ?? []) {
+        if (clause.id?.in) {
+          for (const id of clause.id.in) {
+            runIds.add(id);
+          }
+        }
+        if (clause.taskId?.in) {
+          for (const taskId of clause.taskId.in) {
+            taskIds.add(taskId);
+          }
+        }
+      }
+
+      return store.builderRuns
+        .filter((run) => runIds.has(run.id) || (run.taskId ? taskIds.has(run.taskId) : false))
+        .sort((left, right) => right.startedAt.getTime() - left.startedAt.getTime())
+        .map((run) => ({ ...run }));
+    }),
+  },
   conversation: {
     count: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
       return store.conversations.filter((conversation) => matchConversation(conversation, where)).length;
@@ -179,6 +211,30 @@ const runJournalMocks = vi.hoisted(() => ({
   })),
 }));
 
+const builderTelemetryMocks = vi.hoisted(() => ({
+  extractBuilderRunTelemetry: vi.fn((run: { metadata?: unknown }) => {
+    const usage = run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata) && "usage" in run.metadata
+      ? (run.metadata as { usage?: Record<string, number | null | undefined> }).usage
+      : undefined;
+
+    return {
+      durationMs: 1_000,
+      mode: "implementation",
+      template: "node-cli",
+      provider: "openai",
+      model: "gpt-4o",
+      blockedReason: null,
+      verificationOutcome: "passed",
+      promptTokens: usage?.promptTokens ?? 0,
+      completionTokens: usage?.completionTokens ?? 0,
+      totalTokens: usage?.totalTokens ?? 0,
+      cachedPromptTokens: usage?.cachedPromptTokens ?? 0,
+      requestCount: usage?.requestCount ?? 0,
+      estimatedCostUsd: 0,
+    };
+  }),
+}));
+
 const builderInteractionMocks = vi.hoisted(() => ({
   listPendingBuilderInteractionCards: vi.fn(async () => []),
 }));
@@ -197,6 +253,10 @@ vi.mock("@/lib/agent/user-context", () => ({
 
 vi.mock("@/lib/agent/run-journal", () => ({
   getConversationUsageSummary: runJournalMocks.getConversationUsageSummary,
+}));
+
+vi.mock("@/lib/builder/telemetry", () => ({
+  extractBuilderRunTelemetry: builderTelemetryMocks.extractBuilderRunTelemetry,
 }));
 
 vi.mock("@/lib/builder/interactions", () => ({
@@ -326,6 +386,7 @@ describe("chat conversations service", () => {
         ],
       },
     ];
+    store.builderRuns = [];
     vi.clearAllMocks();
   });
 
@@ -344,6 +405,139 @@ describe("chat conversations service", () => {
         relativePath: "workspace/alpha",
       },
     ]);
+  });
+
+  it("preserves non-default execution defaults for the selected conversation", async () => {
+    store.conversations.unshift({
+      id: "builder-active",
+      title: "Builder work",
+      userId: "local-user",
+      defaultMode: "AGENT",
+      defaultPluginId: "builder",
+      archivedAt: null,
+      deletedAt: null,
+      lastMessageAt: new Date("2026-04-02T12:00:00.000Z"),
+      createdAt: new Date("2026-04-02T11:30:00.000Z"),
+      updatedAt: new Date("2026-04-02T12:00:00.000Z"),
+      messages: [
+        { id: "m-builder-1", role: "USER", content: "Build something", createdAt: new Date("2026-04-02T11:45:00.000Z") },
+      ],
+    });
+
+    const result = await resolveChatBootstrap({ selectedConversationId: "builder-active" });
+
+    expect(result.currentConversation?.defaultMode).toBe("agent");
+    expect(result.currentConversation?.defaultPluginId).toBe("builder");
+    expect(result.executionDefaults).toEqual({
+      mode: "agent",
+      pluginId: "builder",
+    });
+  });
+
+  it("includes Builder run usage in the active conversation summary", async () => {
+    store.conversations.unshift({
+      id: "builder-usage",
+      title: "Builder usage",
+      userId: "local-user",
+      defaultMode: "AGENT",
+      defaultPluginId: "builder",
+      archivedAt: null,
+      deletedAt: null,
+      lastMessageAt: new Date("2026-04-02T15:00:00.000Z"),
+      createdAt: new Date("2026-04-02T14:00:00.000Z"),
+      updatedAt: new Date("2026-04-02T15:00:00.000Z"),
+      messages: [
+        {
+          id: "m-builder-usage-1",
+          role: "ASSISTANT",
+          content: "Builder finished a step.",
+          createdAt: new Date("2026-04-02T14:30:00.000Z"),
+          metadata: {
+            chatMode: "agent",
+            chatPluginId: "builder",
+            builderCards: [{
+              id: "card-1",
+              interactionId: "card-1",
+              kind: "task_execution",
+              status: "succeeded",
+              projectId: "project-1",
+              projectName: "Alpha",
+              projectRelativePath: "workspace/alpha",
+              runId: "builder-run-1",
+              taskId: "builder-task-1",
+              title: "Builder finished a step",
+              summary: "Completed the requested Builder work.",
+              state: "done",
+              recommendations: [],
+              actions: [],
+              updatedAt: "2026-04-02T14:30:00.000Z",
+              resolvedAt: null,
+            }],
+          },
+        },
+      ],
+    });
+    store.builderRuns.push({
+      id: "builder-run-1",
+      taskId: "builder-task-1",
+      status: "SUCCEEDED",
+      metadata: {
+        usage: {
+          promptTokens: 210,
+          completionTokens: 90,
+          totalTokens: 300,
+          cachedPromptTokens: 25,
+          requestCount: 2,
+        },
+      },
+      startedAt: new Date("2026-04-02T14:05:00.000Z"),
+      finishedAt: new Date("2026-04-02T14:25:00.000Z"),
+    });
+    runJournalMocks.getConversationUsageSummary.mockImplementation((conversationId: string | null | undefined) => {
+      if (conversationId === "builder-usage") {
+        return {
+          conversationId,
+          runId: null,
+          profile: null,
+          profileLabel: null,
+          provider: null,
+          model: null,
+          startedAt: null,
+          requestCount: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          cachedPromptTokens: 0,
+        };
+      }
+
+      return {
+        conversationId: conversationId ?? null,
+        runId: conversationId ? `run-${conversationId}` : null,
+        profile: conversationId ? "general_operator" : null,
+        profileLabel: conversationId ? "General" : null,
+        provider: conversationId ? "google" : null,
+        model: conversationId ? "gemini-3-flash-preview" : null,
+        startedAt: conversationId ? "2026-04-01T12:00:00.000Z" : null,
+        requestCount: conversationId ? 2 : 0,
+        promptTokens: conversationId ? 120 : 0,
+        completionTokens: conversationId ? 45 : 0,
+        totalTokens: conversationId ? 165 : 0,
+        cachedPromptTokens: conversationId ? 5 : 0,
+      };
+    });
+
+    const result = await resolveChatBootstrap({ selectedConversationId: "builder-usage" });
+
+    expect(result.activeRun.conversationId).toBe("builder-usage");
+    expect(result.activeRun.profileLabel).toBe("Builder");
+    expect(result.activeRun.provider).toBe("openai");
+    expect(result.activeRun.model).toBe("gpt-4o");
+    expect(result.activeRun.requestCount).toBe(2);
+    expect(result.activeRun.promptTokens).toBe(210);
+    expect(result.activeRun.completionTokens).toBe(90);
+    expect(result.activeRun.totalTokens).toBe(300);
+    expect(result.activeRun.cachedPromptTokens).toBe(25);
   });
 
   it("falls back to the most recent active conversation when there is no stored selection", async () => {

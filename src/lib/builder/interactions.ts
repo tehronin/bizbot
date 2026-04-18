@@ -13,6 +13,13 @@ import { recordBuilderProjectCommand } from "@/lib/builder/commands";
 import { getBuilderProjectOverview, launchBuilderTask, type BuilderProjectOverview } from "@/lib/builder/orchestrator";
 import { getBuilderProject, listBuilderProjects } from "@/lib/builder/projects";
 import { getBuilderTask } from "@/lib/builder/tasks";
+import {
+  getBuilderInteractionSummary,
+  getBuilderInteractionTitle,
+  getBuilderPreflightSummary,
+  getBuilderReviewLabel,
+  getBuilderTaskCardTitle,
+} from "@/lib/builder/user-facing";
 import { normalizeBuilderTaskMetadata } from "@/lib/builder/types";
 import { db } from "@/lib/db";
 import type { BuilderChatCard, BuilderChatCardDetails, BuilderChatCardProgress } from "@/lib/chat/types";
@@ -307,7 +314,7 @@ function buildTaskCard(args: {
     projectRelativePath: args.project.relativePath,
     runId: args.runId ?? null,
     taskId: args.taskId ?? null,
-    title: args.title,
+    title: getBuilderTaskCardTitle({ status: args.status, state: args.state, title: args.title }),
     summary: args.summary,
     state: args.state,
     severity: undefined,
@@ -347,30 +354,30 @@ function buildCombinedPreflightReviewCard(args: {
   if (args.overview.mcpSnapshot.state === "drifted") {
     surfaces.push({
       id: "mcp",
-      label: "MCP contract",
+      label: getBuilderReviewLabel("mcp"),
       severity: args.overview.mcpSnapshot.severity,
       state: args.overview.mcpSnapshot.state,
-      summary: args.overview.mcpSnapshot.planning?.summary ?? "Builder MCP contract drift needs review.",
+      summary: getBuilderInteractionSummary("mcp_contract_drift", args.overview.mcpSnapshot.planning?.summary),
       recommendations: trimRecommendations(args.overview.mcpSnapshot.planning?.recommendations),
     });
   }
   if (args.overview.dependencyContract.state === "drifted") {
     surfaces.push({
       id: "dependency",
-      label: "Dependency contract",
+      label: getBuilderReviewLabel("dependency"),
       severity: args.overview.dependencyContract.severity,
       state: args.overview.dependencyContract.state,
-      summary: args.overview.dependencyContract.planning?.summary ?? "Builder dependency drift needs review.",
+      summary: getBuilderInteractionSummary("dependency_contract_drift", args.overview.dependencyContract.planning?.summary),
       recommendations: trimRecommendations(args.overview.dependencyContract.planning?.recommendations),
     });
   }
   if (args.overview.fileTopologyContract.state === "drifted") {
     surfaces.push({
       id: "file_topology",
-      label: "File topology contract",
+      label: getBuilderReviewLabel("file_topology"),
       severity: args.overview.fileTopologyContract.severity,
       state: args.overview.fileTopologyContract.state,
-      summary: args.overview.fileTopologyContract.planning?.summary ?? "Builder file topology drift needs review.",
+      summary: getBuilderInteractionSummary("file_topology_contract_drift", args.overview.fileTopologyContract.planning?.summary),
       recommendations: trimRecommendations(args.overview.fileTopologyContract.planning?.recommendations),
     });
   }
@@ -391,10 +398,8 @@ function buildCombinedPreflightReviewCard(args: {
     projectName: args.overview.project.name,
     projectRelativePath: args.overview.project.relativePath,
     runId: relevantInteractions[0]?.runId ?? null,
-    title: "Review Builder preflight drift",
-    summary: surfaces.length === 1
-      ? `${surfaces[0]?.label} requires review before Builder proceeds cleanly.`
-      : `${surfaces.length} Builder preflight surfaces require review before Builder proceeds cleanly.`,
+    title: getBuilderInteractionTitle("preflight_review"),
+    summary: getBuilderPreflightSummary(surfaces.length, surfaces[0]?.label),
     state: "preflight_review",
     severity: highestSeverity,
     details: {
@@ -406,8 +411,8 @@ function buildCombinedPreflightReviewCard(args: {
     badges,
     recommendations,
     actions: [
-      { id: "approve", label: "approve all drift", variant: "primary" },
-      { id: "reject", label: "reject all drift", variant: "danger" },
+      { id: "approve", label: "continue with these changes", variant: "primary" },
+      { id: "reject", label: "stop and review first", variant: "danger" },
     ],
     updatedAt: new Date().toISOString(),
     resolvedAt: null,
@@ -509,10 +514,10 @@ function serializeBuilderInteractionCard(
 
   const actions = interaction.status === "PENDING"
     ? interaction.kind === "MCP_POLICY_RECONCILIATION"
-      ? [{ id: "reconcile" as const, label: "reconcile baseline", variant: "primary" as const }]
+      ? [{ id: "reconcile" as const, label: "refresh baseline", variant: "primary" as const }]
       : [
-          { id: "approve" as const, label: "approve", variant: "primary" as const },
-          { id: "reject" as const, label: "reject", variant: "danger" as const },
+          { id: "approve" as const, label: "continue", variant: "primary" as const },
+          { id: "reject" as const, label: "stop", variant: "danger" as const },
         ]
     : [];
 
@@ -525,8 +530,8 @@ function serializeBuilderInteractionCard(
     projectName: interaction.project.name,
     projectRelativePath: interaction.project.relativePath,
     runId: interaction.runId ?? null,
-    title: interaction.title,
-    summary: interaction.summary,
+    title: getBuilderInteractionTitle(kind),
+    summary: getBuilderInteractionSummary(kind, interaction.summary),
     state: metadata.state,
     severity: metadata.severity,
     details: metadata.details,
@@ -547,9 +552,12 @@ function buildPendingInteractionCandidates(overview: Awaited<ReturnType<typeof g
       dedupeKey: `${overview.project.id}:mcp:drift:${overview.mcpSnapshot.currentHash ?? "none"}`,
       kind: "MCP_CONTRACT_DRIFT",
       runId: overview.mcpSnapshot.activeRunId,
-      title: "Approve Builder MCP contract rollover",
-      summary: overview.mcpSnapshot.planning?.summary
-        ?? "Builder MCP contract drift is blocking execution and needs an explicit decision.",
+      title: getBuilderInteractionTitle("mcp_contract_drift"),
+      summary: getBuilderInteractionSummary(
+        "mcp_contract_drift",
+        overview.mcpSnapshot.planning?.summary
+          ?? "Builder MCP contract drift is blocking execution and needs an explicit decision.",
+      ),
       metadata: {
         state: overview.mcpSnapshot.state,
         severity: overview.mcpSnapshot.severity,
@@ -564,9 +572,12 @@ function buildPendingInteractionCandidates(overview: Awaited<ReturnType<typeof g
       dedupeKey: `${overview.project.id}:dependency:drift:${overview.dependencyContract.currentHash ?? "none"}`,
       kind: "DEPENDENCY_CONTRACT_DRIFT",
       runId: overview.dependencyContract.runId,
-      title: "Approve Builder dependency contract rollover",
-      summary: overview.dependencyContract.planning?.summary
-        ?? "Builder dependency contract drift needs an explicit decision.",
+      title: getBuilderInteractionTitle("dependency_contract_drift"),
+      summary: getBuilderInteractionSummary(
+        "dependency_contract_drift",
+        overview.dependencyContract.planning?.summary
+          ?? "Builder dependency contract drift needs an explicit decision.",
+      ),
       metadata: {
         state: overview.dependencyContract.state,
         severity: overview.dependencyContract.severity,
@@ -584,9 +595,12 @@ function buildPendingInteractionCandidates(overview: Awaited<ReturnType<typeof g
       dedupeKey: `${overview.project.id}:file-topology:drift:${overview.fileTopologyContract.currentHash ?? "none"}`,
       kind: "FILE_TOPOLOGY_CONTRACT_DRIFT",
       runId: overview.fileTopologyContract.runId,
-      title: "Approve Builder file topology rollover",
-      summary: overview.fileTopologyContract.planning?.summary
-        ?? "Builder file topology contract drift needs an explicit decision.",
+      title: getBuilderInteractionTitle("file_topology_contract_drift"),
+      summary: getBuilderInteractionSummary(
+        "file_topology_contract_drift",
+        overview.fileTopologyContract.planning?.summary
+          ?? "Builder file topology contract drift needs an explicit decision.",
+      ),
       metadata: {
         state: overview.fileTopologyContract.state,
         severity: overview.fileTopologyContract.severity,
@@ -799,6 +813,74 @@ export async function launchBuilderTaskFromChat(options: {
   };
 }
 
+export async function publishBuilderTaskCompletionToConversation(options: {
+  taskId: string;
+  conversationId: string;
+}): Promise<{ published: boolean; summary: string; card: BuilderChatCard | null }> {
+  const task = await getBuilderTask(options.taskId);
+  if (task.status === "RUNNING" || task.status === "PENDING") {
+    return {
+      published: false,
+      summary: task.summary ?? "Builder task is still running.",
+      card: null,
+    };
+  }
+
+  const existingConversationMessage = await db.message.findFirst({
+    where: {
+      conversationId: options.conversationId,
+      role: "ASSISTANT",
+      content: { contains: `[builder-task:${task.id}]` },
+    },
+    select: { id: true },
+  });
+  if (existingConversationMessage) {
+    return {
+      published: false,
+      summary: task.summary ?? "Builder task already summarized.",
+      card: null,
+    };
+  }
+
+  const project = await getBuilderProject(task.projectId);
+  const run = await db.builderRun.findFirst({
+    where: { taskId: task.id },
+    orderBy: [{ startedAt: "desc" }],
+  });
+  const card = buildTaskCard({
+    id: `task-complete-${task.id}`,
+    project,
+    run,
+    taskId: task.id,
+    runId: run?.id ?? null,
+    title: task.title,
+    summary: task.summary ?? run?.summary ?? task.description,
+    status: normalizeTaskCardStatus(task.status),
+    state: task.stage.toLowerCase(),
+    updatedAt: task.updatedAt,
+    metadata: task.metadata,
+  });
+
+  const summary = task.summary ?? run?.summary ?? task.description;
+  const content = task.status === "SUCCEEDED"
+    ? `[builder-task:${task.id}] ${project.name}: Completed the requested step. ${summary}\n\nNext step: review the result or ask Builder for the next change.`
+    : task.status === "FAILED"
+      ? `[builder-task:${task.id}] ${project.name}: Builder could not finish the requested step. ${summary}\n\nNext step: review the details and retry with a narrower follow-up if needed.`
+      : `[builder-task:${task.id}] ${project.name}: Builder stopped this step. ${summary}\n\nNext step: adjust the request and run it again when ready.`;
+
+  await saveMessage(options.conversationId, "ASSISTANT", content, {
+    chatMode: "agent",
+    chatPluginId: "builder",
+    builderCards: [card],
+  } as unknown as JsonObject);
+
+  return {
+    published: true,
+    summary,
+    card,
+  };
+}
+
 export async function resolveBuilderInteraction(options: {
   interactionId: string;
   action: "approve" | "reject" | "reconcile";
@@ -857,7 +939,7 @@ export async function resolveBuilderInteraction(options: {
         projectName: pendingInteractions[0]!.project.name,
         projectRelativePath: pendingInteractions[0]!.project.relativePath,
         runId: pendingInteractions[0]!.runId ?? null,
-        title: "Review Builder preflight drift",
+        title: getBuilderInteractionTitle("preflight_review"),
         summary: lastSummary,
         state: "resolved",
         severity: maxSeverity(pendingInteractions.map((interaction) => toInteractionMetadata(interaction.metadata as Prisma.JsonValue | null | undefined).severity)),

@@ -197,14 +197,55 @@ function Harness() {
   }
 
   const chat: UseChatResult = {
-    messages: [{
-      id: "entry-1",
-      role: "assistant",
-      content: "Here is the live chat.",
-      chatMode: "agent",
-      chatPluginId: "content",
-      attachments: [{ type: "knowledge-doc", path: "knowledge/brief.md", label: "brief.md" }],
-    }],
+    messages: [
+      {
+        id: "entry-user-1",
+        role: "user",
+        content: "Review the release plan.",
+      },
+      {
+        id: "entry-meta-1",
+        role: "meta",
+        content: "Content agent routed this request.",
+        profileLabel: "Content",
+      },
+      {
+        id: "entry-status-1",
+        role: "status",
+        content: "Gathering campaign context...",
+      },
+      {
+        id: "entry-tool-1",
+        role: "tool",
+        content: "Calling planner",
+        name: "planner_lookup",
+        args: '{\n  "brief": "release-plan"\n}',
+        phase: "call",
+      },
+      {
+        id: "entry-1",
+        role: "assistant",
+        content: "Here is the live chat.",
+        chatMode: "agent",
+        chatPluginId: "content",
+        attachments: [{ type: "knowledge-doc", path: "knowledge/brief.md", label: "brief.md" }],
+        builderCards: [createBuilderCard({
+          kind: "task_execution",
+          status: "running",
+          title: "Retest the release plan",
+          summary: "Builder is validating the rollout checklist.",
+          state: "verifying",
+          progress: {
+            currentIteration: 1,
+            maxIterations: 3,
+            loopPhase: "verifying",
+            latestLoopSummary: "Checking the rollout checklist against the latest docs.",
+          },
+          recommendations: ["Review the final release notes"],
+          actions: [],
+        })],
+      },
+    ],
     builderInbox: [],
     builderProjects: [
       { id: "project-1", name: "Alpha", relativePath: "workspace/alpha" },
@@ -469,7 +510,7 @@ describe("chat workspace history panel", () => {
     render(<Harness />);
 
     expect(screen.getByText("active conversation")).toBeTruthy();
-    expect(screen.getByText(/tokens/i)).toBeTruthy();
+    expect(screen.getByTestId("header-session-summary")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open history" }));
     expect(screen.getByText("conversation history")).toBeTruthy();
 
@@ -497,7 +538,7 @@ describe("chat workspace history panel", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<Harness />);
 
-    expect(screen.getByRole("button", { name: "Archive Chat" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Open history" }));
     const recentSection = screen.getByText("Recent").closest("div");
@@ -561,10 +602,13 @@ describe("chat workspace history panel", () => {
   it("shows live run metrics in the active conversation header", async () => {
     render(<Harness />);
 
+    expect(screen.getByText(/session/i)).toBeTruthy();
+    expect(screen.getByText(/165 tokens/i)).toBeTruthy();
+    expect(screen.getByText(/\$0\.0021/)).toBeTruthy();
+
+    fireEvent.click(screen.getByText(/session/i));
+
     expect(screen.getByText(/requests/i)).toBeTruthy();
-    expect(screen.getByText(/tokens/i)).toBeTruthy();
-    expect(screen.getByText(/cost/i)).toBeTruthy();
-    expect(screen.getByText(/165/)).toBeTruthy();
     expect(screen.getByText(/120/)).toBeTruthy();
     expect(screen.getByText(/45/)).toBeTruthy();
     expect(screen.getByText(/\$0\.0021/)).toBeTruthy();
@@ -574,11 +618,11 @@ describe("chat workspace history panel", () => {
   it("auto-switches to Oracle plugin and sends via sendMessage when oracle intent is detected on submit", async () => {
     render(<Harness />);
 
-    fireEvent.change(screen.getByPlaceholderText("Draft a launch thread about our product update..."), {
+    fireEvent.change(screen.getByPlaceholderText("Ask BizBot anything..."), {
       target: { value: "oracle predict btc 150k" },
     });
 
-    const form = screen.getByPlaceholderText("Draft a launch thread about our product update...").closest("form")!;
+    const form = screen.getByPlaceholderText("Ask BizBot anything...").closest("form")!;
     fireEvent.submit(form);
 
     await waitFor(() => {
@@ -590,19 +634,128 @@ describe("chat workspace history panel", () => {
       }));
     });
 
-    expect((screen.getByPlaceholderText("Draft a launch thread about our product update...") as HTMLInputElement).value).toBe("");
+    expect((screen.getByPlaceholderText("Ask BizBot anything...") as HTMLInputElement).value).toBe("");
   });
 
-  it("shows per-message execution chips in the transcript", () => {
+  it("groups assistant activity into a single response block", () => {
     render(<Harness />);
 
-    expect(screen.getAllByText("content").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("agent").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("chat-transcript-viewport")).toBeTruthy();
+    expect(screen.getAllByTestId("chat-message-user").length).toBe(1);
+    expect(screen.getAllByTestId("chat-message-assistant").length).toBe(1);
+    expect(screen.getByText("Used 1 tool • 1 status update • 1 routing note")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Used 1 tool • 1 status update • 1 routing note"));
+
+    expect(screen.getByText("planner_lookup call")).toBeTruthy();
+    expect(screen.getByText("Routed to Content")).toBeTruthy();
+    expect(screen.getByText("Status")).toBeTruthy();
+    expect(screen.getByText("context: agent • content • 1 attachment")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("context: agent • content • 1 attachment"));
+
+    expect(screen.getByText("plugin: content")).toBeTruthy();
+    expect(screen.getByText("mode: agent")).toBeTruthy();
     expect(screen.getByText("doc: brief.md")).toBeTruthy();
+    expect(screen.getByTestId("compact-builder-card-interaction-1")).toBeTruthy();
+    expect(screen.getByText("Retest the release plan")).toBeTruthy();
+    expect(screen.getByText("verifying")).toBeTruthy();
+  });
+
+  it("shows a streaming cursor while the assistant is still generating", () => {
+    const chat: UseChatResult = {
+      messages: [
+        { id: "stream-user", role: "user", content: "Stream a draft." },
+        { id: "stream-assistant", role: "assistant", content: "Drafting the response" },
+      ],
+      builderInbox: [],
+      builderProjects: [],
+      builderStackPresets: [],
+      builderTemplates: [],
+      builderOnboarding: null,
+      selectedBuilderProjectId: null,
+      activeBuilderProgress: null,
+      conversationId: "stream-conv",
+      currentConversation: null,
+      recentConversations: [],
+      archivedConversations: [],
+      recentPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: 0, totalPages: 1 },
+      archivedPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: 0, totalPages: 1 },
+      historyFilters: { search: "", from: null, to: null },
+      historyConversation: null,
+      isPending: true,
+      isBootstrapping: false,
+      isLoadingHistoryConversation: false,
+      isLoadingHistoryLists: false,
+      activeRun: {
+        conversationId: "stream-conv",
+        runId: "run-stream",
+        profile: null,
+        profileLabel: null,
+        provider: "openai",
+        model: "gpt-4o",
+        startedAt: "2026-04-01T12:00:00.000Z",
+        requestCount: 1,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cachedPromptTokens: 0,
+      },
+      modelPricing: {},
+      executionCatalog: {
+        defaults: { mode: "ask", pluginId: "just-chatting" },
+        plugins: [{
+          id: "just-chatting",
+          displayName: "Just Chatting",
+          description: "Full-context chat and planning without tool execution.",
+          accentColor: "#38bdf8",
+          accentSurface: "rgba(56,189,248,0.12)",
+          accentBorder: "rgba(56,189,248,0.36)",
+          toollessInAsk: true,
+          toollessInAgent: true,
+        }],
+      },
+      executionMode: "ask",
+      executionPluginId: "just-chatting",
+      setExecutionMode: vi.fn(),
+      setExecutionPluginId: vi.fn(),
+      setSelectedBuilderProjectId: vi.fn(),
+      startBuilderOnboarding: vi.fn(),
+      updateBuilderOnboardingSpec: vi.fn(),
+      setBuilderOnboardingStep: vi.fn(),
+      cancelBuilderOnboarding: vi.fn(),
+      confirmBuilderOnboarding: vi.fn(async () => undefined),
+      resolveBuilderInteraction: vi.fn(async () => undefined),
+      launchBuilderTaskFromChat: vi.fn(async () => undefined),
+      sendMessage: vi.fn(async () => undefined),
+      sendOraclePrediction: vi.fn(async () => undefined),
+      startNewChat: vi.fn(),
+      loadConversation: vi.fn(async () => undefined),
+      archiveConversation: vi.fn(async () => undefined),
+      archiveCurrentConversation: vi.fn(async () => undefined),
+      openHistoryConversation: vi.fn(async () => undefined),
+      restoreConversation: vi.fn(async () => undefined),
+      deleteConversation: vi.fn(async () => undefined),
+      applyHistoryFilters: vi.fn(async () => undefined),
+      clearHistoryFilters: vi.fn(async () => undefined),
+      setRecentHistoryPage: vi.fn(),
+      setArchivedHistoryPage: vi.fn(),
+    };
+
+    render(<ChatWorkspaceContent chat={chat} setupOpen={false} closeSetupHref="/chat" />);
+
+    expect(screen.getByTestId("chat-streaming-cursor")).toBeTruthy();
   });
 
   it("resolves Builder inbox cards from chat", async () => {
     render(<BuilderHarness />);
+
+    expect(screen.getByTestId("header-builder-controls")).toBeTruthy();
+    expect(screen.getByTestId("header-builder-controls").textContent).toContain("builder • Alpha");
+    expect(screen.getByTestId("chat-secondary-rail")).toBeTruthy();
+    expect(screen.getByTestId("builder-inbox-panel")).toBeTruthy();
+    expect(screen.getByText("1 item • 1 need your input")).toBeTruthy();
+    expect(screen.getByTestId("compact-builder-card-interaction-1")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "approve" }));
 
@@ -617,7 +770,8 @@ describe("chat workspace history panel", () => {
     fireEvent.change(screen.getByPlaceholderText("Describe what to build or change in the selected project..."), {
       target: { value: "Implement archive and delete cards" },
     });
-    fireEvent.change(screen.getByDisplayValue("Alpha · workspace/alpha"), {
+
+    fireEvent.change(screen.getByLabelText("builder project"), {
       target: { value: "project-2" },
     });
 
@@ -630,6 +784,25 @@ describe("chat workspace history panel", () => {
     await waitFor(() => {
       expect(launchBuilderTaskFromChatSpy).toHaveBeenCalledWith("Implement archive and delete cards", { projectId: "project-1" });
     });
+  });
+
+  it("keeps composer routing controls visible in the composer", () => {
+    render(<Harness />);
+
+    expect(screen.getByLabelText("chat mode")).toBeTruthy();
+    expect(screen.getByLabelText("chat plugin")).toBeTruthy();
+  });
+
+  it("opens and closes the knowledge-doc drawer explicitly", () => {
+    render(<Harness />);
+
+    expect(screen.queryByTestId("composer-options-panel")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("composer-options-toggle"));
+    expect(screen.getByTestId("composer-options-panel")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByTestId("composer-options-panel")).toBeNull();
   });
 
   it("renders task progress without showing a null iteration denominator", () => {
@@ -655,7 +828,7 @@ describe("chat workspace history panel", () => {
     expect(screen.getByText("Re-running tests after repair.")).toBeTruthy();
   });
 
-  it("renders structured drift details when expanded", () => {
+  it("renders compact Builder inbox cards with summary context", () => {
     render(<BuilderHarness cards={[createBuilderCard({
       details: {
         dependencyDrift: {
@@ -674,13 +847,11 @@ describe("chat workspace history panel", () => {
       },
     })]} />);
 
-    fireEvent.click(screen.getByText("drift details"));
-
-    expect(screen.getByText("dependency contract")).toBeTruthy();
-    expect(screen.getByText("Lockfile changed.")).toBeTruthy();
-    expect(screen.getByText("packages added")).toBeTruthy();
-    expect(screen.getByText("zod")).toBeTruthy();
-    expect(screen.getByText("verify")).toBeTruthy();
+    expect(screen.getByTestId("builder-inbox-panel")).toBeTruthy();
+    expect(screen.getByText("Approve Builder contract rollover")).toBeTruthy();
+    expect(screen.getByText("Builder contract drift needs a decision.")).toBeTruthy();
+    expect(screen.getByText("Review API changes")).toBeTruthy();
+    expect(screen.getByText(/full governance and verification history/i)).toBeTruthy();
   });
 });
 

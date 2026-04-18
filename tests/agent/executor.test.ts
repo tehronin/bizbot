@@ -54,10 +54,14 @@ vi.mock("@/lib/agent/memory/service", () => ({
   formatMemoryFactsForPrompt: memoryServiceMocks.formatMemoryFactsForPrompt,
 }));
 
-vi.mock("@/lib/agent/kernel", () => ({
-  chatComplete: kernelMocks.chatComplete,
-  getModelForProvider: kernelMocks.getModelForProvider,
-}));
+vi.mock("@/lib/agent/kernel", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/agent/kernel")>();
+  return {
+    ...actual,
+    chatComplete: kernelMocks.chatComplete,
+    getModelForProvider: kernelMocks.getModelForProvider,
+  };
+});
 
 vi.mock("@/lib/agent/plugins", () => ({
   executeTool: pluginMocks.executeTool,

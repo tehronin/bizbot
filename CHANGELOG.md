@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-04-18
+
+- Hardened Builder chat execution persistence by restoring and syncing per-conversation Ask or Agent mode plus plugin defaults, preserving server message ids during bootstrap refresh, and publishing completed Builder task summaries back into the chat transcript with active Builder usage included in session totals.
+- Reworked the chat workspace toward a more continuous transcript model with grouped assistant activity, richer markdown rendering with inline formatting and code-copy actions, compact Builder cards and inbox surfaces, reduced per-message metadata chrome, hover-only memory promotion controls, a dedicated transcript viewport with bottom anchoring, and a secondary rail for Builder status and governance panels.
+- Added clearer Builder user-facing copy for task cards, preflight reviews, governance actions, and Builder route errors so chat-first Builder flows explain required review steps without leaking raw internal phrasing.
+- Improved Builder onboarding by creating an initial persisted project brief and plan during project creation, then refreshed Builder and chat regression coverage for execution defaults, onboarding planning, markdown rendering, conversation usage aggregation, and the updated chat and Builder end-to-end flows.
+
 ## 2026-04-17
 
 - Reworked Oracle swarm evidence collection to remove brittle Google scraping and replace it with adjacent market research plus Kalshi market-coverage signals, while surfacing explicit `evidenceGaps` when non-primary lanes fail.
