@@ -1,5 +1,6 @@
 import type { Job, Queue } from "bullmq";
 import { db } from "@/lib/db";
+import { isBullMqRedisAvailable } from "@/lib/queue/redis";
 import {
   getMcpCleanupQueue,
   getMcpEmbeddingsQueue,
@@ -95,12 +96,15 @@ function getQueues(): SupportedMcpQueue[] {
 }
 
 export async function getMcpQueueStatus(): Promise<McpWorkerStatus> {
-  const queues = getQueues();
+  const redisAvailable = await isBullMqRedisAvailable();
+  const queues = redisAvailable ? getQueues() : [];
   const [counts, settings] = await Promise.all([
-    Promise.all(queues.map(async (queue) => ({
-      queueName: queue.name,
-      counts: await queue.getJobCounts("waiting", "active", "delayed", "completed", "failed"),
-    }))),
+    redisAvailable
+      ? Promise.all(queues.map(async (queue) => ({
+        queueName: queue.name,
+        counts: await queue.getJobCounts("waiting", "active", "delayed", "completed", "failed"),
+      })))
+      : Promise.resolve([]),
     db.setting.findMany({
       where: {
         key: {
@@ -139,6 +143,10 @@ export async function listMcpJobs(
   statuses: McpJobStatus[] = ["waiting", "active", "delayed", "completed", "failed"],
   limit = 20,
 ): Promise<McpJobSummary[]> {
+  if (!(await isBullMqRedisAvailable())) {
+    return [];
+  }
+
   const normalizedLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
   const queues = getQueues();
   const jobs = await Promise.all(queues.map(async (queue) => {

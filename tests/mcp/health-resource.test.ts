@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { getBizBotResourceDefinition } from "@/lib/mcp/preview-catalog";
 
+function resetBullMqState() {
+  const globals = globalThis as typeof globalThis & {
+    bizbotBullMqConnection?: { disconnect: () => void };
+    bizbotMcpQueues?: object;
+    bizbotAgentHeartbeatQueue?: object;
+  };
+
+  globals.bizbotBullMqConnection?.disconnect();
+  delete globals.bizbotBullMqConnection;
+  delete globals.bizbotMcpQueues;
+  delete globals.bizbotAgentHeartbeatQueue;
+}
+
 describe("MCP health resource", () => {
   it("exposes a one-shot MCP health snapshot", async () => {
     const resource = getBizBotResourceDefinition("bizbot://debug/mcp-health");
@@ -35,5 +48,35 @@ describe("MCP health resource", () => {
     expect(sample.queues.activeQueueNames).toEqual(expect.arrayContaining([
       expect.any(String),
     ]));
+  });
+
+  it("degrades cleanly when Redis is unavailable", async () => {
+    const originalRedisUrl = process.env.REDIS_URL;
+    process.env.REDIS_URL = "redis://127.0.0.1:6390";
+    resetBullMqState();
+
+    try {
+      const resource = getBizBotResourceDefinition("bizbot://debug/mcp-health");
+      const sample = await resource!.read() as {
+        status: string;
+        queues: { pendingJobs: number; failedJobs: number; activeQueueNames: string[] };
+        trace: { persistence: { version: number } };
+      };
+
+      expect(sample.status).toEqual(expect.any(String));
+      expect(sample.queues.pendingJobs).toBe(0);
+      expect(sample.queues.failedJobs).toBe(0);
+      expect(sample.queues.activeQueueNames).toEqual(expect.arrayContaining([
+        expect.any(String),
+      ]));
+      expect(sample.trace.persistence.version).toBe(1);
+    } finally {
+      if (originalRedisUrl === undefined) {
+        delete process.env.REDIS_URL;
+      } else {
+        process.env.REDIS_URL = originalRedisUrl;
+      }
+      resetBullMqState();
+    }
   });
 });

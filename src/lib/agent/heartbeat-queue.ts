@@ -1,7 +1,7 @@
 import { Queue, type Job } from "bullmq";
 import { db } from "@/lib/db";
 import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
-import { getBullMqConnection, getRedisUrl } from "@/lib/queue/redis";
+import { getBullMqConnection, getRedisUrl, isBullMqRedisAvailable } from "@/lib/queue/redis";
 
 export const AGENT_HEARTBEAT_QUEUE_NAME = "bizbot-agent-heartbeat";
 export const AGENT_HEARTBEAT_SCHEDULER_ID = "primary";
@@ -140,6 +140,10 @@ export async function listAgentHeartbeatJobs(
   statuses: AgentHeartbeatJobStatus[] = ["waiting", "active", "delayed", "completed", "failed"],
   limit = 20,
 ): Promise<AgentHeartbeatJobSummary[]> {
+  if (!(await isBullMqRedisAvailable())) {
+    return [];
+  }
+
   const queue = getAgentHeartbeatQueue();
   const normalizedLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
   const jobs = await queue.getJobs(statuses, 0, normalizedLimit - 1, false);
@@ -171,12 +175,17 @@ export async function retryAgentHeartbeatJob(jobId: string): Promise<{ retried: 
 }
 
 export async function getAgentWorkerStatus(): Promise<AgentWorkerStatus> {
-  const queue = getAgentHeartbeatQueue();
   const heartbeatSeconds = Math.max(15, getAgentRuntimeConfig().heartbeatSeconds);
+  const redisAvailable = await isBullMqRedisAvailable();
+  const queue = redisAvailable ? getAgentHeartbeatQueue() : null;
 
   const [scheduler, counts, settings] = await Promise.all([
-    queue.getJobScheduler(AGENT_HEARTBEAT_SCHEDULER_ID),
-    queue.getJobCounts("waiting", "active", "delayed", "completed", "failed"),
+    queue
+      ? queue.getJobScheduler(AGENT_HEARTBEAT_SCHEDULER_ID)
+      : Promise.resolve(undefined),
+    queue
+      ? queue.getJobCounts("waiting", "active", "delayed", "completed", "failed")
+      : Promise.resolve({ waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 }),
     db.setting.findMany({
       where: {
         key: {
