@@ -10,6 +10,13 @@ import type {
 export const CHAT_PREVIEW_MAX_CHARS = 80;
 export const DEFAULT_CHAT_HISTORY_PAGE_SIZE = 6;
 export const MAX_CHAT_HISTORY_PAGE_SIZE = 50;
+export const CHAT_VERBOSITY_SETTING_KEY = "chat_verbosity";
+
+export type ChatVerbosity = "concise" | "detailed";
+
+export function parseChatVerbosity(value: string | null | undefined): ChatVerbosity {
+  return value === "detailed" ? "detailed" : "concise";
+}
 
 export interface ChatConversationHistoryFilters {
   search: string;
@@ -182,6 +189,9 @@ export interface ChatConversationSummary {
   title: string | null;
   label: string;
   preview: string | null;
+  builderProjectId: string | null;
+  builderProjectName: string | null;
+  builderProjectRelativePath: string | null;
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
@@ -218,9 +228,11 @@ export interface ChatConversationUsageSummary {
 export interface ChatConversationBootstrap {
   currentConversationId: string | null;
   currentConversation: ChatConversationDetail | null;
+  chatVerbosity: ChatVerbosity;
   executionDefaults: ChatExecutionDefaults;
   executionCatalog: ChatExecutionCatalog;
   builderProjects: ChatBuilderProjectSummary[];
+  builderProjectConversations: ChatConversationSummary[];
   builderStackPresets: ChatBuilderStackPresetSummary[];
   builderTemplates: ChatBuilderTemplateSummary[];
   activeRun: ChatConversationUsageSummary;

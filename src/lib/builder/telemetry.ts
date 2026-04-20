@@ -1,5 +1,6 @@
 import type { BuilderRun } from "@prisma/client";
 import { getDefaultUsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
+import { isFailureEnvelope, type FailureEnvelope } from "@/lib/failures";
 
 type BuilderRunLike = Pick<BuilderRun, "status" | "startedAt" | "finishedAt" | "metadata">;
 
@@ -10,6 +11,7 @@ export interface BuilderRunTelemetryState {
   provider: string | null;
   model: string | null;
   blockedReason: string | null;
+  failureEnvelope: FailureEnvelope | null;
   verificationOutcome: "passed" | "failed" | "skipped" | null;
   promptTokens: number;
   completionTokens: number;
@@ -190,7 +192,17 @@ function detectBlockedReason(metadata: Record<string, unknown> | null): string |
   return readString(lastIteration?.review && readObject(lastIteration.review)?.reason);
 }
 
-function detectUsage(metadata: Record<string, unknown> | null): Omit<BuilderRunTelemetryState, "durationMs" | "mode" | "template" | "provider" | "model" | "blockedReason" | "verificationOutcome" | "estimatedCostUsd"> {
+function detectFailureEnvelope(metadata: Record<string, unknown> | null): FailureEnvelope | null {
+  const telemetry = readObject(metadata?.telemetry);
+  const explicit = telemetry?.failureEnvelope;
+  if (isFailureEnvelope(explicit)) {
+    return explicit;
+  }
+
+  return null;
+}
+
+function detectUsage(metadata: Record<string, unknown> | null): Omit<BuilderRunTelemetryState, "durationMs" | "mode" | "template" | "provider" | "model" | "blockedReason" | "failureEnvelope" | "verificationOutcome" | "estimatedCostUsd"> {
   const telemetry = readObject(metadata?.telemetry);
   const usage = readObject(telemetry?.usage) ?? readObject(readObject(metadata?.loop)?.usage);
 
@@ -229,6 +241,7 @@ export function extractBuilderRunTelemetry(run: BuilderRunLike, fallbackTemplate
     provider: providerAndModel.provider,
     model: providerAndModel.model,
     blockedReason: detectBlockedReason(metadata),
+    failureEnvelope: detectFailureEnvelope(metadata),
     verificationOutcome: detectVerificationOutcome(metadata),
     ...usage,
     estimatedCostUsd: estimateCostUsd(providerAndModel.provider, providerAndModel.model, usage),

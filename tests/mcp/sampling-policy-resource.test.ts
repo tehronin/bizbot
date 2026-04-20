@@ -21,6 +21,8 @@ describe("MCP sampling policy resource", () => {
       generatedAt: string;
       intentCatalog: string[];
       samplingEnabledTransports: string[];
+      samplingToolCount: number;
+      samplingToolNames: string[];
       policies: {
         http: { advertiseSampling: boolean; allowTools: boolean };
         stdio: { advertiseSampling: boolean; allowTools: boolean; blockNestedSampling: boolean };
@@ -34,9 +36,12 @@ describe("MCP sampling policy resource", () => {
     expect(sample.generatedAt).toEqual(expect.any(String));
     expect(sample.intentCatalog).toContain("developer_devloop_status");
     expect(sample.samplingEnabledTransports).toEqual(["stdio"]);
+    expect(sample.samplingToolCount).toBeGreaterThan(0);
+    expect(sample.samplingToolNames).toContain("developer_list_agent_runs");
+    expect(sample.samplingToolNames).not.toContain("developer_invoke_imported_mcp_tool");
     expect(sample.policies.http.advertiseSampling).toBe(false);
     expect(sample.policies.stdio.advertiseSampling).toBe(true);
-    expect(sample.policies.stdio.allowTools).toBe(false);
+    expect(sample.policies.stdio.allowTools).toBe(true);
     expect(sample.policies.stdio.blockNestedSampling).toBe(true);
     expect(sample.telemetry.totalAttempts).toBe(0);
     expect(sample.telemetry.deterministicFallbacks).toBe(0);

@@ -1,6 +1,9 @@
 import type { ClientCapabilities, CreateMessageRequest, CreateMessageResult, CreateMessageResultWithTools } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod/v4";
-import type { McpSamplingSession } from "@/lib/agent/tools";
+import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { McpSamplingSession, ToolParametersSchema } from "@/lib/agent/tools";
+import { getAllToolDefinitions } from "@/lib/agent/plugins";
+import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import type { BuilderDevLoopContext } from "@/lib/mcp/devloop-context";
 import {
   getMcpSamplingBlockReason,
@@ -8,6 +11,7 @@ import {
   isMcpSamplingIntentAllowed,
   runWithMcpSamplingFlow,
 } from "@/lib/mcp/policy";
+import { isSamplingSafeTool, MCP_AGENT_PROFILE } from "@/lib/mcp/tool-presentation";
 
 const DEV_LOOP_SAMPLING_INTENT = "developer_devloop_status" as const;
 
@@ -48,6 +52,8 @@ interface DevLoopSamplingTelemetryState {
   unavailableReasonCounts: Record<string, number>;
   modelCounts: Record<string, number>;
   stopReasonCounts: Record<string, number>;
+  sampledToolCount: number;
+  sampledToolNames: string[];
   lastAttemptAt: string | null;
 }
 
@@ -70,6 +76,8 @@ const devLoopSamplingTelemetry: DevLoopSamplingTelemetryState = {
   unavailableReasonCounts: {},
   modelCounts: {},
   stopReasonCounts: {},
+  sampledToolCount: 0,
+  sampledToolNames: [],
   lastAttemptAt: null,
 };
 
@@ -139,6 +147,8 @@ export function resetDevLoopSamplingTelemetry(): void {
   for (const key of Object.keys(devLoopSamplingTelemetry.stopReasonCounts)) {
     delete devLoopSamplingTelemetry.stopReasonCounts[key];
   }
+  devLoopSamplingTelemetry.sampledToolCount = 0;
+  devLoopSamplingTelemetry.sampledToolNames = [];
 }
 
 export function getDevLoopSamplingTelemetrySnapshot(): DevLoopSamplingTelemetryState {
@@ -282,7 +292,8 @@ function buildSystemPrompt(): string {
   return [
     "You are analyzing a BizBot Builder MCP development loop.",
     "Use only the supplied evidence. Do not assume missing facts.",
-    "Do not request tools, do not delegate, and do not propose approval bypasses.",
+    "You may use the provided tools when they materially improve correctness.",
+    "Do not delegate and do not propose approval bypasses.",
     "Return a single JSON object with exactly these keys:",
     "summary, status, tripletHealth, latestFailure, likelyRootCause, suggestedFix, smallestNextFix, recommendedNextProbe, evidenceUsed, nextSteps, confidence.",
     "status must be one of: ok, warning, blocked, unknown.",
@@ -364,9 +375,49 @@ function buildDeterministicFallbackDiagnosis(
   };
 }
 
-export function buildDevLoopSamplingRequest(context: BuilderDevLoopContext): CreateMessageRequest["params"] {
+function toSamplingToolSchema(properties: ToolParametersSchema["properties"] | undefined): Record<string, object> | undefined {
+  if (!properties) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    Object.entries(properties).flatMap(([key, value]) => value ? [[key, value as object]] : []),
+  );
+}
+
+function getSamplingSafeToolDefinitions() {
+  return getAllToolDefinitions(getAgentRuntimeConfig(), { agentProfile: MCP_AGENT_PROFILE })
+    .filter((tool) => isSamplingSafeTool(tool.name));
+}
+
+function buildDevLoopSamplingTools(): Tool[] {
+  const safeTools = getSamplingSafeToolDefinitions();
+  devLoopSamplingTelemetry.sampledToolCount = safeTools.length;
+  devLoopSamplingTelemetry.sampledToolNames = safeTools.map((tool) => tool.name);
+
+  return safeTools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: {
+      type: "object",
+      ...(toSamplingToolSchema(tool.parameters.properties) ? { properties: toSamplingToolSchema(tool.parameters.properties) } : {}),
+      ...(tool.parameters.required ? { required: tool.parameters.required } : {}),
+    },
+  }));
+}
+
+export function getDevLoopSamplingToolDescriptors() {
+  return getSamplingSafeToolDefinitions();
+}
+
+export function buildDevLoopSamplingRequest(
+  context: BuilderDevLoopContext,
+  options?: { allowTools?: boolean; clientSupportsSamplingTools?: boolean },
+): CreateMessageRequest["params"] {
   const policy = getMcpSamplingPolicy(DEV_LOOP_SAMPLING_INTENT, "stdio", true);
   const contextPayload = trimSerializedContext(context, policy.maxContextChars);
+  const includeTools = Boolean(policy.allowTools && options?.allowTools && options?.clientSupportsSamplingTools);
+  const samplingTools = includeTools ? buildDevLoopSamplingTools() : undefined;
 
   return {
     systemPrompt: buildSystemPrompt(),
@@ -386,10 +437,14 @@ export function buildDevLoopSamplingRequest(context: BuilderDevLoopContext): Cre
     includeContext: "none",
     maxTokens: 900,
     temperature: 0,
+    ...(samplingTools ? {
+      tools: samplingTools,
+      toolChoice: { mode: "auto" as const },
+    } : {}),
     metadata: {
       bizbotIntent: DEV_LOOP_SAMPLING_INTENT,
       analysisMode: "read_only",
-      toolsAllowed: false,
+      toolsAllowed: includeTools,
     },
   };
 }
@@ -506,7 +561,10 @@ export async function requestDevLoopSampling(serverOrSession: McpSamplingSession
   }
 
   const response = await runWithMcpSamplingFlow(DEV_LOOP_SAMPLING_INTENT, serverOrSession.transportKind, async () => {
-    const request = buildDevLoopSamplingRequest(context);
+    const request = buildDevLoopSamplingRequest(context, {
+      allowTools: availability.allowTools,
+      clientSupportsSamplingTools: availability.clientSupportsSamplingTools,
+    });
     return serverOrSession.createMessage(request);
   });
 

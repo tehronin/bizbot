@@ -803,6 +803,7 @@ export async function chatComplete(
     case "google": {
       const client = new GoogleGenAI({
         apiKey: (await getSecretValue("GOOGLE_AI_API_KEY")) ?? process.env.GEMINI_API_KEY ?? "",
+        vertexai: false,
       });
       const model = getModelForProvider("google");
       const functionDeclarations = toGoogleFunctionDeclarations(tools);

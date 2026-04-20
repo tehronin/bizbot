@@ -4,6 +4,9 @@ type TestConversation = {
   id: string;
   title: string | null;
   userId: string;
+  builderProjectId?: string | null;
+  builderProjectName?: string | null;
+  builderProjectRelativePath?: string | null;
   defaultMode: "ASK" | "AGENT";
   defaultPluginId: string;
   archivedAt: Date | null;
@@ -35,6 +38,13 @@ const store = vi.hoisted(() => ({
 function cloneConversation(conversation: TestConversation) {
   return {
     ...conversation,
+    builderProject: conversation.builderProjectId
+      ? {
+          id: conversation.builderProjectId,
+          name: conversation.builderProjectName ?? null,
+          relativePath: conversation.builderProjectRelativePath ?? null,
+        }
+      : null,
     messages: conversation.messages.map((message) => ({ ...message })),
     _count: { messages: conversation.messages.length },
   };
@@ -58,6 +68,10 @@ function matchConversation(conversation: TestConversation, where: Record<string,
   }
 
   if (typeof where.userId === "string" && conversation.userId !== where.userId) {
+    return false;
+  }
+
+  if (typeof where.builderProjectId === "string" && conversation.builderProjectId !== where.builderProjectId) {
     return false;
   }
 
@@ -190,6 +204,15 @@ const dbMocks = vi.hoisted(() => ({
 
       Object.assign(target, data, { updatedAt: new Date("2026-04-01T15:00:00.000Z") });
       return cloneConversation(target);
+    }),
+    delete: vi.fn(async ({ where }: { where: { id: string } }) => {
+      const index = store.conversations.findIndex((conversation) => conversation.id === where.id);
+      if (index === -1) {
+        throw new Error("Conversation not found.");
+      }
+
+      const [removed] = store.conversations.splice(index, 1);
+      return cloneConversation(removed);
     }),
   },
 }));
@@ -412,6 +435,9 @@ describe("chat conversations service", () => {
       id: "builder-active",
       title: "Builder work",
       userId: "local-user",
+      builderProjectId: "project-1",
+      builderProjectName: "Alpha",
+      builderProjectRelativePath: "workspace/alpha",
       defaultMode: "AGENT",
       defaultPluginId: "builder",
       archivedAt: null,
@@ -439,6 +465,9 @@ describe("chat conversations service", () => {
       id: "builder-usage",
       title: "Builder usage",
       userId: "local-user",
+      builderProjectId: "project-1",
+      builderProjectName: "Alpha",
+      builderProjectRelativePath: "workspace/alpha",
       defaultMode: "AGENT",
       defaultPluginId: "builder",
       archivedAt: null,
@@ -564,7 +593,7 @@ describe("chat conversations service", () => {
     expect(result.archivedConversations.map((conversation) => conversation.id)).toEqual(["archived-conversation"]);
   });
 
-  it("archives, restores, and soft deletes conversations", async () => {
+  it("archives, restores, and hard deletes conversations", async () => {
     const archived = await archiveConversation("active-older");
     expect(archived.archivedAt).not.toBeNull();
 
@@ -576,7 +605,7 @@ describe("chat conversations service", () => {
     expect(archivedConversations.map((conversation) => conversation.id)).not.toContain("archived-conversation");
   });
 
-  it("can soft delete an active conversation directly", async () => {
+  it("can hard delete an active conversation directly", async () => {
     await deleteConversation("active-older");
 
     const result = await resolveChatBootstrap();
@@ -633,5 +662,71 @@ describe("chat conversations service", () => {
     expect(result.recentPagination.totalItems).toBe(1);
     expect(result.archivedPagination.totalItems).toBe(1);
     expect(result.historyFilters.search).toBe("campaign");
+  });
+
+  it("returns server-backed chat history for the selected Builder project", async () => {
+    store.conversations.push(
+      {
+        id: "builder-project-active",
+        title: "Alpha active",
+        userId: "local-user",
+        builderProjectId: "project-1",
+        builderProjectName: "Alpha",
+        builderProjectRelativePath: "workspace/alpha",
+        defaultMode: "AGENT",
+        defaultPluginId: "builder",
+        archivedAt: null,
+        deletedAt: null,
+        lastMessageAt: new Date("2026-04-05T12:00:00.000Z"),
+        createdAt: new Date("2026-04-05T11:00:00.000Z"),
+        updatedAt: new Date("2026-04-05T12:00:00.000Z"),
+        messages: [
+          { id: "m-8", role: "USER", content: "Alpha build thread", createdAt: new Date("2026-04-05T11:15:00.000Z") },
+        ],
+      },
+      {
+        id: "builder-project-archived",
+        title: "Alpha archived",
+        userId: "local-user",
+        builderProjectId: "project-1",
+        builderProjectName: "Alpha",
+        builderProjectRelativePath: "workspace/alpha",
+        defaultMode: "AGENT",
+        defaultPluginId: "builder",
+        archivedAt: new Date("2026-04-04T12:00:00.000Z"),
+        deletedAt: null,
+        lastMessageAt: new Date("2026-04-04T11:00:00.000Z"),
+        createdAt: new Date("2026-04-04T10:00:00.000Z"),
+        updatedAt: new Date("2026-04-04T12:00:00.000Z"),
+        messages: [
+          { id: "m-9", role: "USER", content: "Archived alpha build", createdAt: new Date("2026-04-04T10:15:00.000Z") },
+        ],
+      },
+      {
+        id: "builder-project-other",
+        title: "Beta active",
+        userId: "local-user",
+        builderProjectId: "project-2",
+        builderProjectName: "Beta",
+        builderProjectRelativePath: "workspace/beta",
+        defaultMode: "AGENT",
+        defaultPluginId: "builder",
+        archivedAt: null,
+        deletedAt: null,
+        lastMessageAt: new Date("2026-04-06T12:00:00.000Z"),
+        createdAt: new Date("2026-04-06T11:00:00.000Z"),
+        updatedAt: new Date("2026-04-06T12:00:00.000Z"),
+        messages: [
+          { id: "m-10", role: "USER", content: "Beta build thread", createdAt: new Date("2026-04-06T11:15:00.000Z") },
+        ],
+      },
+    );
+
+    const result = await resolveChatBootstrap({ selectedBuilderProjectId: "project-1" });
+
+    expect(result.builderProjectConversations.map((conversation) => conversation.id)).toEqual([
+      "builder-project-active",
+      "builder-project-archived",
+    ]);
   });
 });

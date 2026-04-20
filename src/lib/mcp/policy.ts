@@ -54,11 +54,13 @@ export function buildBizBotMcpCapabilities(options?: BizBotMcpServerOptions) {
 }
 
 export function getMcpSamplingPolicy(intent: McpSamplingIntent, transportKind: McpTransportKind, enableSampling = true): McpSamplingPolicy {
+  const advertiseSampling = canTransportAdvertiseSampling(transportKind, enableSampling);
+
   return {
     intent,
     transportKind,
-    advertiseSampling: canTransportAdvertiseSampling(transportKind, enableSampling),
-    allowTools: false,
+    advertiseSampling,
+    allowTools: advertiseSampling && transportKind === "stdio",
     maxDepth: DEFAULT_MCP_SAMPLING_MAX_DEPTH,
     maxContextChars: DEFAULT_MCP_SAMPLING_MAX_CONTEXT_CHARS,
     blockNestedSampling: true,

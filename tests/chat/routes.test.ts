@@ -31,6 +31,7 @@ describe("chat conversation routes", () => {
     conversationMocks.resolveChatBootstrap.mockResolvedValue({
       currentConversationId: "active-1",
       currentConversation: null,
+      chatVerbosity: "concise",
       executionDefaults: {
         mode: "ask",
         pluginId: "just-chatting",
@@ -74,6 +75,7 @@ describe("chat conversation routes", () => {
           relativePath: "workspace/alpha",
         },
       ],
+      builderProjectConversations: [],
       builderStackPresets: [],
       builderTemplates: [],
       builderInbox: [],
@@ -90,13 +92,14 @@ describe("chat conversation routes", () => {
       historyFilters: { search: "", from: null, to: null },
     });
 
-    const response = await getConversations(new NextRequest("http://localhost/api/chat/conversations?selectedId=active-1&recentPage=2&archivedPage=3&historyPageSize=8&historySearch=ops&historyFrom=2026-04-01&historyTo=2026-04-02"));
+    const response = await getConversations(new NextRequest("http://localhost/api/chat/conversations?selectedId=active-1&selectedBuilderProjectId=project-1&recentPage=2&archivedPage=3&historyPageSize=8&historySearch=ops&historyFrom=2026-04-01&historyTo=2026-04-02"));
     const payload = await response.json();
 
     expect(response.status).toBe(200);
     expect(conversationMocks.resolveChatBootstrap).toHaveBeenCalledWith({
       userId: undefined,
       selectedConversationId: "active-1",
+      selectedBuilderProjectId: "project-1",
       recentPage: 2,
       archivedPage: 3,
       pageSize: 8,

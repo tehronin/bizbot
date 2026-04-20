@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import os from "os";
+import path from "path";
 
 const mocks = vi.hoisted(() => ({
   getBuilderProject: vi.fn(),
@@ -96,6 +98,7 @@ import { planBuilderProject } from "@/lib/builder/orchestrator";
 describe("builder orchestrator planning", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = path.join(os.tmpdir(), "bizbot-builder-orchestrator-tests");
 
     mocks.getBuilderProject.mockResolvedValue({
       id: "project-1",

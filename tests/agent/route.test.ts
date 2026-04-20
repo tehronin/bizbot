@@ -160,4 +160,27 @@ describe("agent route sidecar stream", () => {
       attachments: [{ type: "knowledge-doc", path: "knowledge/brief.md", label: "brief.md" }],
     }));
   });
+
+  it("allows resuming a run without requiring a new message", async () => {
+    executorMocks.executeAgentConversation.mockResolvedValue({
+      reply: "resumed",
+      runId: "run-5",
+      conversationId: "conversation-5",
+      profile: "general_operator",
+      provider: "ollama",
+      model: "model-1",
+    });
+
+    const response = await POST(new Request("http://localhost:3000/api/agent", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ resumeRunId: "run-old" }),
+    }) as never);
+
+    expect(response.status).toBe(200);
+    expect(executorMocks.executeAgentConversation).toHaveBeenCalledWith(expect.objectContaining({
+      message: "Resume agent run run-old",
+      resumeRunId: "run-old",
+    }));
+  });
 });

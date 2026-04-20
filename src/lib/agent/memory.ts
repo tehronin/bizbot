@@ -641,13 +641,18 @@ export async function getOrCreateScopedConversation(
 export async function getOrCreateConversation(
   conversationId?: string,
   userId = DEFAULT_USER_ID,
+  options?: { builderProjectId?: string | null },
 ): Promise<string> {
   if (conversationId) {
     const existing = await db.conversation.findFirst({
       where: { id: conversationId, userId, archivedAt: null, deletedAt: null },
-      select: { id: true },
+      select: { id: true, builderProjectId: true },
     });
-    if (existing) return existing.id;
+    if (existing) {
+      if (!options?.builderProjectId || existing.builderProjectId === options.builderProjectId) {
+        return existing.id;
+      }
+    }
   }
 
   await db.user.upsert({
@@ -657,7 +662,11 @@ export async function getOrCreateConversation(
   });
 
   const conversation = await db.conversation.create({
-    data: { userId, title: `Chat ${new Date().toLocaleString()}` },
+    data: {
+      userId,
+      title: `Chat ${new Date().toLocaleString()}`,
+      ...(options?.builderProjectId ? { builderProjectId: options.builderProjectId } : {}),
+    },
   });
   return conversation.id;
 }

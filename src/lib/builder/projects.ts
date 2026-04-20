@@ -534,6 +534,7 @@ export async function deleteBuilderProject(projectId: string, options?: { delete
     }
   }
 
+  await db.conversation.deleteMany({ where: { builderProjectId: projectId } });
   await db.builderProject.delete({ where: { id: projectId } });
   return { project, deletedFiles: options?.deleteFiles ?? false };
 }

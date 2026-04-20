@@ -10,6 +10,7 @@
     "worker": "node scripts/run-worker.mjs",
     "mcp:stdio": "tsx scripts/mcp-stdio.mjs",
     "mcp:stdio:smoke": "tsx scripts/mcp-stdio-sampling-smoke.mjs",
+    "inspect:mcp-devloop": "tsx scripts/inspect-mcp-devloop.ts",
     "plugin:new": "node scripts/new-plugin.mjs",
     "build:web": "next build && node scripts/prepare-standalone.mjs",
     "build": "next build && node scripts/prepare-standalone.mjs",

@@ -373,7 +373,13 @@ describe("builder runtime orchestration", () => {
       "    image: postgres:16",
     ].join("\n"));
     mocks.listBuilderManagedProcesses.mockReturnValue({ processes: [], total: 0, returned: 0 });
-    mocks.spawnSync.mockReturnValue({ status: 0, stdout: "[]", stderr: "" });
+    mocks.spawnSync
+      .mockReturnValueOnce({ status: 0, stdout: "[]", stderr: "" })
+      .mockReturnValue({
+        status: 0,
+        stdout: JSON.stringify([{ Service: "db", State: "running", Health: "healthy", ID: "container-1", Publishers: [] }]),
+        stderr: "",
+      });
     mocks.runBuilderCommand.mockResolvedValue({
       ok: true,
       command: "docker",

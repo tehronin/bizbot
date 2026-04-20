@@ -5,7 +5,7 @@ import { AgenticSetupDrawer } from "@/components/chat/AgenticSetupDrawer";
 import { BuilderRunPanel } from "@/components/chat/BuilderRunPanel";
 import { MessageMarkdown } from "@/components/chat/MessageMarkdown";
 import { PaginationControls } from "@/components/layout/PaginationControls";
-import { useChat, type ChatEntry, type UseChatResult } from "@/hooks/useChat";
+import { useChat, type ChatEntry, type PendingAssistantTurn, type UseChatResult } from "@/hooks/useChat";
 import type {
   BuilderChatCard,
   BuilderOnboardingSpec,
@@ -15,6 +15,7 @@ import type {
   ChatBuilderTemplateSummary,
   ChatExecutionMode,
   ChatMessageAttachment,
+  ChatVerbosity,
 } from "@/lib/chat/types";
 import { MEMORY_FACT_CATEGORIES, type MemoryFactCategory } from "@/lib/agent/memory/facts";
 import { getResolvedUsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
@@ -57,6 +58,27 @@ function inferKeyFromText(content: string): string {
     .slice(0, 48) || "remembered_fact";
 }
 
+function getResumeDecision(input: string): "resume" | "dismiss" | null {
+  const trimmed = input.trim().toLowerCase();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (["yes", "y", "resume", "continue", "ok", "okay", "sure", "do it", "go ahead"].includes(trimmed)) {
+    return "resume";
+  }
+
+  if (["no", "n", "skip", "cancel", "stop", "dont resume", "don't resume", "do not resume"].includes(trimmed)) {
+    return "dismiss";
+  }
+
+  return null;
+}
+
+function buildPendingResumeNotice(summary: string): string {
+  return `I can try to resume the last run from its last stable checkpoint. It stopped because ${summary}. Reply yes to resume or no to skip.`;
+}
+
 function formatTimestamp(value: string | null): string {
   if (!value) {
     return "No messages yet";
@@ -67,6 +89,63 @@ function formatTimestamp(value: string | null): string {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function getRelativePathLeaf(relativePath: string | null): string | null {
+  if (!relativePath) {
+    return null;
+  }
+
+  const segments = relativePath.split(/[\\/]+/).filter(Boolean);
+  return segments.at(-1) ?? relativePath;
+}
+
+function truncateSelectLabel(value: string, maxLength = 44): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function formatBuilderProjectSelectLabel(project: ChatBuilderProjectSummary): string {
+  const pathLeaf = getRelativePathLeaf(project.relativePath);
+  if (!pathLeaf || pathLeaf === project.name) {
+    return project.name;
+  }
+
+  return `${project.name} · ${pathLeaf}`;
+}
+
+function formatBuilderConversationSelectLabel(conversation: {
+  label: string;
+  archivedAt: string | null;
+  lastMessageAt: string | null;
+  updatedAt: string;
+}): string {
+  const timestamp = new Date(conversation.lastMessageAt ?? conversation.updatedAt).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+  const statusLabel = conversation.archivedAt ? "Archived" : "Active";
+
+  return truncateSelectLabel(`${conversation.label} · ${statusLabel} · ${timestamp}`, 52);
+}
+
+function renderConversationProjectBadge(conversation: {
+  builderProjectName: string | null;
+  builderProjectRelativePath: string | null;
+}) {
+  if (!conversation.builderProjectName) {
+    return null;
+  }
+
+  return (
+    <span className="border px-2 py-1" style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.08)", color: "#c4b5fd" }}>
+      {conversation.builderProjectName}
+      {conversation.builderProjectRelativePath ? ` • ${conversation.builderProjectRelativePath}` : ""}
+    </span>
+  );
 }
 
 function formatUsd(value: number): string {
@@ -127,11 +206,13 @@ function BuilderCardList({
   disabled,
   onAction,
   compact = false,
+  verbosity = "concise",
 }: {
   cards: BuilderChatCard[];
   disabled?: boolean;
   onAction?: (interactionId: string, action: "approve" | "reject" | "reconcile") => void;
   compact?: boolean;
+  verbosity?: ChatVerbosity;
 }) {
   if (cards.length === 0) {
     return null;
@@ -224,6 +305,7 @@ function BuilderCardList({
           || card.details?.fileTopologyDrift,
         );
         const showAdvancedDetails = Boolean(card.details || card.recommendations.length > 0 || card.resolutionReason);
+        const showCompactSupportingDetails = verbosity === "detailed";
 
         if (compact) {
           return (
@@ -266,10 +348,10 @@ function BuilderCardList({
                     Builder is paused here until you decide how to proceed.
                   </div>
                 ) : null}
-                {card.progress?.latestLoopSummary ? (
+                {showCompactSupportingDetails && card.progress?.latestLoopSummary ? (
                   <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.progress.latestLoopSummary}</div>
                 ) : null}
-                {visibleBadges.length > 0 ? (
+                {showCompactSupportingDetails && visibleBadges.length > 0 ? (
                   <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
                     {visibleBadges.map((badge) => (
                       <span key={`${card.id}-${badge}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
@@ -278,7 +360,7 @@ function BuilderCardList({
                     ))}
                   </div>
                 ) : null}
-                {card.recommendations.length > 0 ? (
+                {showCompactSupportingDetails && card.recommendations.length > 0 ? (
                   <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
                     {card.recommendations.map((recommendation) => (
                       <span key={`${card.id}-${recommendation}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
@@ -287,7 +369,7 @@ function BuilderCardList({
                     ))}
                   </div>
                 ) : null}
-                {showAdvancedDetails ? (
+                {showCompactSupportingDetails && showAdvancedDetails ? (
                   <div className="text-xs" style={{ color: "var(--text-dim)" }}>
                     Expand the Builder inbox or dashboard for the full governance and verification history.
                   </div>
@@ -914,23 +996,27 @@ function BuilderOnboarding({
 
 function MessageGroups({
   messages,
+  pendingAssistantTurn,
   onPromote,
   emptyHint,
   isStreaming = false,
+  verbosity = "concise",
 }: {
   messages: ChatEntry[];
+  pendingAssistantTurn?: PendingAssistantTurn | null;
   onPromote?: (message: ChatEntry) => void;
   emptyHint?: string;
   isStreaming?: boolean;
+  verbosity?: ChatVerbosity;
 }) {
   const [expandedActivityGroups, setExpandedActivityGroups] = useState<Set<string>>(new Set());
 
   const grouped = useMemo(() => {
     const groups: Array<
       | { kind: "user"; entry: ChatEntry }
-      | { kind: "response"; id: string; assistantEntries: ChatEntry[]; activityEntries: ChatEntry[] }
+      | { kind: "response"; id: string; assistantEntries: ChatEntry[]; activityEntries: ChatEntry[]; pendingTurn?: PendingAssistantTurn | null }
     > = [];
-    let pendingResponse: { kind: "response"; id: string; assistantEntries: ChatEntry[]; activityEntries: ChatEntry[] } | null = null;
+    let pendingResponse: { kind: "response"; id: string; assistantEntries: ChatEntry[]; activityEntries: ChatEntry[]; pendingTurn?: PendingAssistantTurn | null } | null = null;
 
     function flushPendingResponse() {
       if (!pendingResponse) {
@@ -966,8 +1052,26 @@ function MessageGroups({
 
     flushPendingResponse();
 
+    if (pendingAssistantTurn) {
+      groups.push({
+        kind: "response",
+        id: pendingAssistantTurn.id,
+        assistantEntries: pendingAssistantTurn.content
+          ? [{
+            id: `${pendingAssistantTurn.id}-assistant`,
+            role: "assistant",
+            content: pendingAssistantTurn.content,
+            chatMode: pendingAssistantTurn.chatMode,
+            chatPluginId: pendingAssistantTurn.chatPluginId,
+          }]
+          : [],
+        activityEntries: pendingAssistantTurn.activityEntries,
+        pendingTurn: pendingAssistantTurn,
+      });
+    }
+
     return groups;
-  }, [messages]);
+  }, [messages, pendingAssistantTurn]);
 
   function toggleActivityGroup(id: string): void {
     setExpandedActivityGroups((current) => {
@@ -1026,7 +1130,7 @@ function MessageGroups({
     );
   }
 
-  function summarizeActivity(entries: ChatEntry[]) {
+  function summarizeActivity(entries: ChatEntry[], pendingTurn?: PendingAssistantTurn | null) {
     const toolCount = entries.filter((entry) => entry.role === "tool").length;
     const statusCount = entries.filter((entry) => entry.role === "status").length;
     const metaCount = entries.filter((entry) => entry.role === "meta").length;
@@ -1040,6 +1144,27 @@ function MessageGroups({
     }
     if (metaCount > 0) {
       parts.push(`${metaCount} routing note${metaCount === 1 ? "" : "s"}`);
+    }
+    if (pendingTurn?.builderProgress) {
+      parts.push("builder progress");
+    }
+
+    if (verbosity === "concise") {
+      const compactParts: string[] = [];
+
+      if (pendingTurn?.builderProgress) {
+        compactParts.push("builder working");
+      }
+      if (toolCount > 0) {
+        compactParts.push(`${toolCount} tool step${toolCount === 1 ? "" : "s"}`);
+      } else if (statusCount > 0) {
+        compactParts.push(`${statusCount} update${statusCount === 1 ? "" : "s"}`);
+      }
+      if (compactParts.length === 0 && metaCount > 0) {
+        compactParts.push(metaCount === 1 ? "routing" : `${metaCount} routing notes`);
+      }
+
+      return compactParts.length > 0 ? `Activity • ${compactParts.join(" • ")}` : "Activity";
     }
 
     return parts.length > 0 ? `Behind the scenes • ${parts.join(" • ")}` : "Behind the scenes";
@@ -1102,7 +1227,7 @@ function MessageGroups({
 
   return (
     <div className="space-y-3">
-      {messages.length === 0 && (
+      {messages.length === 0 && !pendingAssistantTurn && (
         <div className="text-sm" style={{ color: "var(--text-muted)" }}>
           {emptyHint ?? "Ask BizBot to draft, schedule, inspect analytics, or recall brand context."}
         </div>
@@ -1149,10 +1274,10 @@ function MessageGroups({
                   <div className="mt-3 space-y-3">
                     {metadata}
                     {builderCards.actionable.length > 0 ? (
-                      <BuilderCardList cards={builderCards.actionable} compact />
+                      <BuilderCardList cards={builderCards.actionable} compact verbosity={verbosity} />
                     ) : null}
-                    {builderCards.passive.length > 0 ? (
-                      <BuilderCardList cards={builderCards.passive} compact />
+                    {verbosity === "detailed" && builderCards.passive.length > 0 ? (
+                      <BuilderCardList cards={builderCards.passive} compact verbosity={verbosity} />
                     ) : null}
                   </div>
                 </details>
@@ -1180,7 +1305,7 @@ function MessageGroups({
                   <div className="text-xs" style={{ color: "var(--text-dim)" }}>
                     BizBot
                   </div>
-                  {onPromote ? (
+                  {onPromote && !group.pendingTurn ? (
                     <button
                       type="button"
                       onClick={() => onPromote(entry)}
@@ -1195,20 +1320,23 @@ function MessageGroups({
                   markdown={entry.content}
                   showStreamingCursor={isStreaming && groupIndex === grouped.length - 1 && entryIndex === group.assistantEntries.length - 1}
                 />
-                    {splitBuilderCards(entry.builderCards).actionable.length > 0 ? (
-                      <div className="mt-3">
-                        <BuilderCardList cards={splitBuilderCards(entry.builderCards).actionable} compact />
-                      </div>
-                    ) : null}
+                {splitBuilderCards(entry.builderCards).actionable.length > 0 ? (
+                  <div className="mt-3">
+                    <BuilderCardList cards={splitBuilderCards(entry.builderCards).actionable} compact verbosity={verbosity} />
+                  </div>
+                ) : null}
               </div>
             ))}
-                {(() => {
+            {(() => {
                   const passiveCards = group.assistantEntries.flatMap((entry) => splitBuilderCards(entry.builderCards).passive);
-                  const metadataEntries = group.assistantEntries.flatMap((entry) => {
+                  const metadataEntries = verbosity === "detailed" ? group.assistantEntries.flatMap((entry) => {
                     const metadata = renderExecutionMetadata(entry);
                     return metadata ? [{ entry, metadata }] : [];
-                  });
-                  const hasDetails = group.activityEntries.length > 0 || metadataEntries.length > 0 || passiveCards.length > 0;
+                  }) : [];
+                  const hasDetails = group.activityEntries.length > 0
+                    || metadataEntries.length > 0
+                    || passiveCards.length > 0
+                    || Boolean(group.pendingTurn?.builderProgress);
                   if (!hasDetails) {
                     return null;
                   }
@@ -1227,9 +1355,17 @@ function MessageGroups({
                       style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}
                     >
                       <summary className="cursor-pointer text-xs" style={{ color: "var(--text-dim)" }}>
-                        {summarizeActivity(group.activityEntries)}
+                        {summarizeActivity(group.activityEntries, group.pendingTurn)}
                       </summary>
                       <div className="mt-3 space-y-3">
+                        {group.pendingTurn?.builderProgress ? (
+                          <div className="space-y-2">
+                            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                              {verbosity === "detailed" ? "builder progress" : "working details"}
+                            </div>
+                            <BuilderRunPanel progress={group.pendingTurn.builderProgress} />
+                          </div>
+                        ) : null}
                         {group.activityEntries.length > 0 ? (
                           <div className="space-y-2">
                             {group.activityEntries.map(renderActivityEntry)}
@@ -1252,9 +1388,9 @@ function MessageGroups({
                         {passiveCards.length > 0 ? (
                           <div className="space-y-2">
                             <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
-                              work details
+                              {verbosity === "detailed" ? "work details" : `${passiveCards.length} work detail${passiveCards.length === 1 ? "" : "s"}`}
                             </div>
-                            <BuilderCardList cards={passiveCards} compact />
+                            <BuilderCardList cards={passiveCards} compact verbosity={verbosity} />
                           </div>
                         ) : null}
                       </div>
@@ -1288,7 +1424,6 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   const [panelMode, setPanelMode] = useState<PanelMode>("chat");
   const [actionError, setActionError] = useState<string | null>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
-  const [capabilitiesMenuOpen, setCapabilitiesMenuOpen] = useState(false);
   const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeDashboardFile[]>([]);
   const [knowledgeState, setKnowledgeState] = useState<"idle" | "loading" | "ready" | "error" | "uploading">("idle");
   const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
@@ -1348,6 +1483,10 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   const builderTemplates = chat.builderTemplates ?? [];
   const selectedBuilderProjectId = chat.selectedBuilderProjectId;
   const selectedBuilderProject = selectedBuilderProjectId ? (builderProjects.find((p) => p.id === selectedBuilderProjectId) ?? null) : null;
+  const builderProjectHistoryConversations = chat.builderProjectConversations ?? [];
+  const selectedBuilderHistoryConversationId = currentConversation?.builderProjectId === selectedBuilderProjectId
+    ? currentConversation.id
+    : "";
   const builderPluginActive = executionPluginId === "builder" && executionMode === "agent";
   const builderAskMode = executionPluginId === "builder" && executionMode === "ask";
   const builderOnboarding = chat.builderOnboarding;
@@ -1565,10 +1704,22 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
     setActionError(null);
     try {
       await chat.loadConversation(nextConversationId);
+      setInput("");
+      clearSelectedAttachments();
+      setAttachmentMenuOpen(false);
       setPanelMode("chat");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  function handleStartNewConversation(): void {
+    setActionError(null);
+    chat.startNewChat();
+    setInput("");
+    clearSelectedAttachments();
+    setAttachmentMenuOpen(false);
+    setPanelMode("chat");
   }
 
   async function handleOpenArchivedConversation(nextConversationId: string): Promise<void> {
@@ -1649,21 +1800,6 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   const composerAccentSurface = activePlugin.accentSurface;
   const composerAccentBorder = activePlugin.accentBorder;
 
-  const builderProgressNarration = chat.activeBuilderProgress
-    ? chat.activeBuilderProgress.loopPhase
-      ? `I'm working in ${selectedBuilderProjectName} and I'm currently ${chat.activeBuilderProgress.loopPhase.replaceAll("_", " ")}.`
-      : `I'm working in ${selectedBuilderProjectName} right now.`
-    : null;
-
-  const builderProgressDetails = chat.activeBuilderProgress
-    ? [
-        chat.activeBuilderProgress.currentIteration !== null
-          ? `Iteration ${chat.activeBuilderProgress.currentIteration}${chat.activeBuilderProgress.maxIterations !== null ? ` of ${chat.activeBuilderProgress.maxIterations}` : ""}.`
-          : null,
-        chat.activeBuilderProgress.latestLoopSummary,
-      ].filter((value): value is string => Boolean(value)).join(" ")
-    : null;
-
   return (
     <>
       <div className="grid gap-3 h-full min-h-0" style={{ gridTemplateRows: "auto 1fr auto auto" }}>
@@ -1683,12 +1819,13 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
             <div className="flex items-center gap-1">
               <button
                 type="button"
+                disabled={chat.isPending || chat.isBootstrapping}
                 onClick={() => {
                   chat.startNewChat();
                   setPanelMode("chat");
                   setActionError(null);
                 }}
-                className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:bg-[--bg-hover] transition-colors"
+                className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:bg-[--bg-hover] transition-colors disabled:opacity-40 disabled:pointer-events-none"
                 style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
               >
                 New Chat
@@ -1786,21 +1923,32 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   {builderAskMode ? (
                     <InlineAssistantNotice
                       title="I can help think through the build, but I won't change the project yet."
-                      body="If you want me to actually scaffold files, run tasks, or make changes, open Capabilities and switch Builder into agent mode."
+                      body="If you want me to scaffold files, run tasks, or make changes, switch Builder from ask to agent mode in the composer."
                       tone="accent"
                     />
                   ) : null}
                   {actionableBuilderInboxCards.length > 0 ? (
                     <InlineAssistantNotice
-                      title={actionableBuilderInboxCards.length === 1 ? "I need your input before I continue." : "I need your input on a few project decisions before I continue."}
-                      body={actionableBuilderInboxCards.length === 1
-                        ? `There's one review waiting in ${actionableBuilderInboxCards[0]?.projectName ?? selectedBuilderProjectName}.`
-                        : `${actionableBuilderInboxCards.length} review items are waiting across the current Builder work.`}
+                      title={chat.chatVerbosity === "detailed"
+                        ? actionableBuilderInboxCards.length === 1
+                          ? "I need your input before I continue."
+                          : "I need your input on a few project decisions before I continue."
+                        : actionableBuilderInboxCards.length === 1
+                          ? "Builder review waiting"
+                          : `${actionableBuilderInboxCards.length} Builder reviews waiting`}
+                      body={chat.chatVerbosity === "detailed"
+                        ? actionableBuilderInboxCards.length === 1
+                          ? `There's one review waiting in ${actionableBuilderInboxCards[0]?.projectName ?? selectedBuilderProjectName}.`
+                          : `${actionableBuilderInboxCards.length} review items are waiting across the current Builder work.`
+                        : actionableBuilderInboxCards.length === 1
+                          ? `${actionableBuilderInboxCards[0]?.projectName ?? selectedBuilderProjectName} is paused for a decision.`
+                          : "Builder is paused until you resolve these reviews."}
                       tone="attention"
                     >
                       <BuilderCardList
                         cards={actionableBuilderInboxCards}
                         compact
+                        verbosity={chat.chatVerbosity}
                         disabled={chat.isPending || chat.isBootstrapping}
                         onAction={(interactionId, action) => {
                           void handleBuilderInteraction(interactionId, action);
@@ -1808,22 +1956,12 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       />
                     </InlineAssistantNotice>
                   ) : null}
-                  {builderProgressNarration ? (
+                  {chat.pendingResumePrompt ? (
                     <InlineAssistantNotice
-                      title={builderProgressNarration}
-                      body={builderProgressDetails ?? "I'll keep going in the background and surface anything that needs your attention."}
-                    >
-                      {chat.activeBuilderProgress ? (
-                        <details className="border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
-                          <summary className="cursor-pointer text-xs" style={{ color: "var(--text-dim)" }}>
-                            Working details
-                          </summary>
-                          <div className="mt-3">
-                            <BuilderRunPanel progress={chat.activeBuilderProgress} />
-                          </div>
-                        </details>
-                      ) : null}
-                    </InlineAssistantNotice>
+                      title="Resume available"
+                      body={buildPendingResumeNotice(chat.pendingResumePrompt.summary)}
+                      tone="attention"
+                    />
                   ) : null}
                   {showBuilderWelcome ? (
                     <div>
@@ -1869,7 +2007,9 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   ) : null}
                   <MessageGroups
                     messages={chat.messages}
-                    isStreaming={chat.isPending && !chat.isBootstrapping}
+                    pendingAssistantTurn={chat.pendingAssistantTurn}
+                    isStreaming={(chat.isPending && !chat.isBootstrapping) || Boolean(chat.pendingAssistantTurn)}
+                    verbosity={chat.chatVerbosity}
                     emptyHint={builderPluginActive ? "Select a project and describe what to build. Builder will scaffold, generate, and run tasks in the workspace." : undefined}
                     onPromote={(message) => {
                       if (message.role !== "user" && message.role !== "assistant") {
@@ -1991,59 +2131,60 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{chat.recentPagination.totalItems} total</div>
                     </div>
                     <div className="space-y-2">
-                    {chat.recentPagination.totalItems === 0 ? (
-                      <div className="border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
-                        {hasHistoryFilters ? "No active chats match the current filters." : "No active chats yet."}
-                      </div>
-                    ) : chat.recentConversations.map((conversation) => (
-                      <div key={conversation.id} className="border p-3" style={{ borderColor: conversation.id === chat.conversationId ? "var(--accent)" : "var(--border)" }}>
-                        <div className="text-sm" style={{ color: "var(--text-primary)" }}>{conversation.label}</div>
-                        <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{conversation.preview ?? "No messages yet"}</div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
-                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultMode}</span>
-                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultPluginId}</span>
+                      {chat.recentPagination.totalItems === 0 ? (
+                        <div className="border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+                          {hasHistoryFilters ? "No active chats match the current filters." : "No active chats yet."}
                         </div>
-                        <div className="text-[11px] mt-2 flex items-center justify-between gap-3" style={{ color: "var(--text-muted)" }}>
-                          <span>{formatTimestamp(conversation.lastMessageAt)}</span>
-                          <span>{conversation.messageCount} messages</span>
+                      ) : chat.recentConversations.map((conversation) => (
+                        <div key={conversation.id} className="border p-3" style={{ borderColor: conversation.id === chat.conversationId ? "var(--accent)" : "var(--border)" }}>
+                          <div className="text-sm" style={{ color: "var(--text-primary)" }}>{conversation.label}</div>
+                          <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{conversation.preview ?? "No messages yet"}</div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultMode}</span>
+                            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultPluginId}</span>
+                            {renderConversationProjectBadge(conversation)}
+                          </div>
+                          <div className="text-[11px] mt-2 flex items-center justify-between gap-3" style={{ color: "var(--text-muted)" }}>
+                            <span>{formatTimestamp(conversation.lastMessageAt)}</span>
+                            <span>{conversation.messageCount} messages</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenArchivedConversation(conversation.id)}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                            >
+                              Preview
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleSwitchConversation(conversation.id)}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                            >
+                              Open Chat
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleArchiveConversation(conversation.id)}
+                              disabled={chat.isPending || chat.isBootstrapping}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
+                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                            >
+                              Archive
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteConversation(conversation.id)}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                              style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 mt-3">
-                          <button
-                            type="button"
-                            onClick={() => void handleOpenArchivedConversation(conversation.id)}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                          >
-                            Preview
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleSwitchConversation(conversation.id)}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                          >
-                            Open Chat
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleArchiveConversation(conversation.id)}
-                            disabled={chat.isPending || chat.isBootstrapping}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                          >
-                            Archive
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteConversation(conversation.id)}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
                     </div>
                     <PaginationControls
                       currentPage={chat.recentPagination.currentPage}
@@ -2061,49 +2202,50 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{chat.archivedPagination.totalItems} total</div>
                     </div>
                     <div className="space-y-2">
-                    {chat.archivedPagination.totalItems === 0 ? (
-                      <div className="border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
-                        {hasHistoryFilters ? "No archived chats match the current filters." : "No archived chats yet."}
-                      </div>
-                    ) : chat.archivedConversations.map((conversation) => (
-                      <div key={conversation.id} className="border p-3" style={{ borderColor: chat.historyConversation?.id === conversation.id ? "var(--accent)" : "var(--border)" }}>
-                        <div className="text-sm" style={{ color: "var(--text-primary)" }}>{conversation.label}</div>
-                        <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{conversation.preview ?? "No messages yet"}</div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
-                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultMode}</span>
-                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultPluginId}</span>
+                      {chat.archivedPagination.totalItems === 0 ? (
+                        <div className="border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+                          {hasHistoryFilters ? "No archived chats match the current filters." : "No archived chats yet."}
                         </div>
-                        <div className="text-[11px] mt-2" style={{ color: "var(--text-muted)" }}>
-                          Archived {formatTimestamp(conversation.archivedAt)}
+                      ) : chat.archivedConversations.map((conversation) => (
+                        <div key={conversation.id} className="border p-3" style={{ borderColor: chat.historyConversation?.id === conversation.id ? "var(--accent)" : "var(--border)" }}>
+                          <div className="text-sm" style={{ color: "var(--text-primary)" }}>{conversation.label}</div>
+                          <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{conversation.preview ?? "No messages yet"}</div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultMode}</span>
+                            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultPluginId}</span>
+                            {renderConversationProjectBadge(conversation)}
+                          </div>
+                          <div className="text-[11px] mt-2" style={{ color: "var(--text-muted)" }}>
+                            Archived {formatTimestamp(conversation.archivedAt)}
+                          </div>
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenArchivedConversation(conversation.id)}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                            >
+                              Preview
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleRestoreConversation(conversation.id)}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                            >
+                              Restore
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteConversation(conversation.id)}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
+                              style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 mt-3">
-                          <button
-                            type="button"
-                            onClick={() => void handleOpenArchivedConversation(conversation.id)}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                          >
-                            Preview
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleRestoreConversation(conversation.id)}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                          >
-                            Restore
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteConversation(conversation.id)}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
                     </div>
                     <PaginationControls
                       currentPage={chat.archivedPagination.currentPage}
@@ -2131,6 +2273,11 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>
                         {chat.historyConversation.messageCount} messages · last updated {formatTimestamp(chat.historyConversation.lastMessageAt)}
                       </div>
+                      {chat.historyConversation.builderProjectName ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                          {renderConversationProjectBadge(chat.historyConversation)}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {chat.historyConversation.archivedAt ? (
@@ -2173,7 +2320,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                         </>
                       )}
                     </div>
-                    <MessageGroups messages={chat.historyConversation.messages.map((message) => (
+                    <MessageGroups verbosity={chat.chatVerbosity} messages={chat.historyConversation.messages.map((message) => (
                       message.role === "USER"
                         ? { id: message.id, role: "user", content: message.content }
                         : message.role === "ASSISTANT"
@@ -2243,6 +2390,17 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           onSubmit={(event) => {
             event.preventDefault();
             setActionError(null);
+            const resumeDecision = chat.pendingResumePrompt ? getResumeDecision(input) : null;
+            if (resumeDecision) {
+              void chat.resolvePendingResumePrompt(resumeDecision)
+                .then(() => {
+                  setInput("");
+                })
+                .catch((error) => {
+                  setActionError(error instanceof Error ? error.message : String(error));
+                });
+              return;
+            }
             const oracleIntent = getOraclePredictionIntent(input);
             const useOraclePlugin = oracleIntent.matched && executionPluginId !== "oracle";
             if (useOraclePlugin) {
@@ -2270,6 +2428,107 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           }}
         >
           <div className="p-3">
+            <div className="mb-3 flex flex-wrap items-end gap-3">
+              <label className="space-y-1.5 min-w-[7rem]">
+                <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>mode</span>
+                <select
+                  aria-label="chat mode"
+                  value={executionMode}
+                  disabled={panelMode === "history" || chat.isPending}
+                  onChange={(event) => setExecutionMode(event.target.value as ChatExecutionMode)}
+                  className="w-full bg-transparent border px-3 py-2 text-sm"
+                  style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                >
+                  <option value="ask">Ask</option>
+                  <option value="agent">Agent</option>
+                </select>
+              </label>
+              <label className="space-y-1.5 w-[11rem] md:w-[13rem] shrink-0">
+                <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>capability</span>
+                <select
+                  aria-label="chat plugin"
+                  value={executionPluginId}
+                  disabled={panelMode === "history" || chat.isPending}
+                  onChange={(event) => {
+                    setExecutionPluginId(event.target.value);
+                    setActionError(null);
+                  }}
+                  title={activePlugin.description}
+                  className="w-full bg-transparent border px-3 py-2 text-sm"
+                  style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                >
+                  {executionCatalog.plugins.map((plugin) => (
+                    <option key={plugin.id} value={plugin.id}>{plugin.displayName}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1.5 w-[8.5rem] shrink-0">
+                <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>reply style</span>
+                <select
+                  aria-label="chat verbosity"
+                  value={chat.chatVerbosity}
+                  disabled={chat.isPending}
+                  onChange={(event) => {
+                    const nextValue = event.target.value as ChatVerbosity;
+                    setActionError(null);
+                    void chat.setChatVerbosity(nextValue).catch((error) => {
+                      setActionError(error instanceof Error ? error.message : String(error));
+                    });
+                  }}
+                  className="w-full bg-transparent border px-3 py-2 text-sm"
+                  style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                >
+                  <option value="concise">Concise</option>
+                  <option value="detailed">Detailed</option>
+                </select>
+              </label>
+              {executionPluginId === "builder" ? (
+                <label className="space-y-1.5 w-[14rem] md:w-[16rem] shrink-0">
+                  <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>builder project</span>
+                  <select
+                    aria-label="builder project"
+                    value={selectedBuilderProjectId ?? ""}
+                    onChange={(event) => setSelectedBuilderProjectId(event.target.value || null)}
+                    disabled={chat.isPending || builderProjects.length === 0}
+                    className="w-full bg-transparent border px-3 py-2 text-sm"
+                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    title={selectedBuilderProject ? `${selectedBuilderProject.name}${selectedBuilderProject.relativePath ? ` · ${selectedBuilderProject.relativePath}` : ""}` : ""}
+                  >
+                    {builderProjects.length === 0 ? <option value="">No active Builder projects</option> : null}
+                    {builderProjects.map((project) => (
+                      <option key={project.id} value={project.id}>{formatBuilderProjectSelectLabel(project)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {executionPluginId === "builder" ? (
+                <label className="space-y-1.5 min-w-[15rem] flex-1">
+                  <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>project chat</span>
+                  <select
+                    aria-label="builder project chat history"
+                    value={selectedBuilderHistoryConversationId}
+                    onChange={(event) => {
+                      const nextConversationId = event.target.value;
+                      if (!nextConversationId) {
+                        handleStartNewConversation();
+                        return;
+                      }
+
+                      void handleSwitchConversation(nextConversationId);
+                    }}
+                    disabled={chat.isPending || !selectedBuilderProjectId}
+                    className="w-full bg-transparent border px-3 py-2 text-sm"
+                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    title={currentConversation?.builderProjectId === selectedBuilderProjectId ? currentConversation.label : ""}
+                  >
+                    <option value="">{selectedBuilderProject ? `New chat in ${selectedBuilderProject.name}` : "Select a Builder project"}</option>
+                    {builderProjectHistoryConversations.map((conversation) => (
+                      <option key={conversation.id} value={conversation.id}>{formatBuilderConversationSelectLabel(conversation)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
             <textarea
               data-testid="chat-input"
               value={input}
@@ -2305,7 +2564,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
             ) : null}
           </div>
 
-          {attachmentMenuOpen || capabilitiesMenuOpen ? (
+          {attachmentMenuOpen ? (
             <div className="border-t px-3 py-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
               {attachmentMenuOpen ? (
                 <div data-testid="composer-options-panel" className="space-y-2">
@@ -2376,86 +2635,6 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
               </div>
                 </div>
               ) : null}
-              {capabilitiesMenuOpen ? (
-                <div className="space-y-3" data-testid="composer-capabilities-panel">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>advanced capabilities</div>
-                      <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>
-                        Choose how this message should run and where Builder should work.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCapabilitiesMenuOpen(false)}
-                      className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border"
-                      style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                    >
-                      Close
-                    </button>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>mode</span>
-                      <select
-                        aria-label="chat mode"
-                        value={executionMode}
-                        disabled={panelMode === "history" || chat.isPending}
-                        onChange={(event) => setExecutionMode(event.target.value as ChatExecutionMode)}
-                        className="w-full bg-transparent border px-3 py-2 text-sm"
-                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                      >
-                        <option value="ask">Ask</option>
-                        <option value="agent">Agent</option>
-                      </select>
-                    </label>
-                    <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>capability</span>
-                      <select
-                        aria-label="chat plugin"
-                        value={executionPluginId}
-                        disabled={panelMode === "history" || chat.isPending}
-                        onChange={(event) => {
-                          setExecutionPluginId(event.target.value);
-                          setActionError(null);
-                        }}
-                        title={activePlugin.description}
-                        className="w-full bg-transparent border px-3 py-2 text-sm"
-                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                      >
-                        {executionCatalog.plugins.map((plugin) => (
-                          <option key={plugin.id} value={plugin.id}>{plugin.displayName}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  {executionPluginId === "builder" ? (
-                    <div className="space-y-1.5">
-                      <label className="space-y-1.5 block">
-                        <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>builder project</span>
-                        <select
-                          aria-label="builder project"
-                          value={selectedBuilderProjectId ?? ""}
-                          onChange={(event) => setSelectedBuilderProjectId(event.target.value || null)}
-                          disabled={chat.isPending || builderProjects.length === 0}
-                          className="w-full bg-transparent border px-3 py-2 text-sm"
-                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                        >
-                          {builderProjects.length === 0 ? <option value="">No active Builder projects</option> : null}
-                          {builderProjects.map((project) => (
-                            <option key={project.id} value={project.id}>{project.name} · {project.relativePath}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <div className="text-xs" style={{ color: builderProjects.length === 0 ? "var(--warning)" : "var(--text-dim)" }}>
-                        {builderProjects.length === 0
-                          ? "Create a project first with New Build in the conversation."
-                          : "Builder tasks will run in the selected project when you send the message in agent mode."}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           ) : null}
 
@@ -2473,20 +2652,6 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
                 {attachmentMenuOpen ? <path d="M4 4l8 8M12 4L4 12" /> : <path d="M8 3v10M3 8h10" />}
               </svg>
-            </button>
-
-            <div className="w-px h-4 mx-0.5" style={{ background: "var(--border)" }} />
-
-            <button
-              type="button"
-              onClick={() => setCapabilitiesMenuOpen((current) => !current)}
-              disabled={panelMode === "history" || chat.isPending}
-              className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-40"
-              style={{ borderColor: capabilitiesMenuOpen ? composerAccentBorder : "var(--border)", color: capabilitiesMenuOpen ? composerAccent : "var(--text-dim)" }}
-              aria-expanded={capabilitiesMenuOpen}
-              aria-label="advanced capabilities"
-            >
-              Capabilities
             </button>
 
             <div className="flex-1" />

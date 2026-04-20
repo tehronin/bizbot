@@ -2,6 +2,14 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 
 export const MCP_AGENT_PROFILE = "mcp_operator";
 export const MCP_BLOCKED_TOOLS = new Set(["agent_delegate_run"]);
+export const MCP_SAMPLING_BLOCKED_TOOLS = new Set([
+  "sidecar_open",
+  "sidecar_update",
+  "sidecar_close",
+  "browser_navigate",
+  "developer_invoke_imported_mcp_tool",
+  "developer_accept_imported_mcp_catalog_baseline",
+]);
 
 export function getToolTitle(name: string): string {
   if (name.startsWith("social_")) return `Social: ${name.replace("social_", "").replaceAll("_", " ")}`;
@@ -58,9 +66,25 @@ export function getToolAnnotations(name: string): ToolAnnotations {
     "developer_preview_resource",
     "developer_preview_ontology_context",
     "developer_preview_tool_descriptor",
+    "developer_search_tools",
+    "developer_get_tool_bundle",
+    "developer_recommend_toolset_for_goal",
+    "developer_search_resources",
+    "developer_search_prompts",
     "developer_search_ontology_entities",
     "developer_suggest_plugin_tests",
     "developer_check_mcp_contract_impact",
+    "developer_prepare_plugin_design_review",
+    "developer_summarize_builder_repair",
+    "developer_audit_imported_mcp_servers",
+    "developer_diff_imported_mcp_catalog",
+    "developer_read_imported_mcp_resource",
+    "developer_get_imported_mcp_prompt",
+    "developer_get_builder_task_lifecycle",
+    "developer_get_builder_task_events",
+    "developer_inspect_mcp_health",
+    "developer_list_mcp_trace_events",
+    "developer_get_task_recipe",
     "developer_plan_plugin",
     "developer_suggest_tool_schemas",
     "social_get_mentions",
@@ -94,8 +118,11 @@ export function getToolAnnotations(name: string): ToolAnnotations {
     "crm_sync_contact",
     "crm_create_activity",
     "crm_sync_activity",
+    "developer_resume_agent_run",
     "developer_retry_worker_job",
     "developer_enqueue_heartbeat",
+    "developer_accept_imported_mcp_catalog_baseline",
+    "developer_invoke_imported_mcp_tool",
     "commerce_upsert_product",
     "commerce_create_order",
     "agent_delegate_run",
@@ -140,9 +167,25 @@ export function getToolAnnotations(name: string): ToolAnnotations {
     "developer_preview_resource",
     "developer_preview_ontology_context",
     "developer_preview_tool_descriptor",
+    "developer_search_tools",
+    "developer_get_tool_bundle",
+    "developer_recommend_toolset_for_goal",
+    "developer_search_resources",
+    "developer_search_prompts",
     "developer_search_ontology_entities",
     "developer_suggest_plugin_tests",
     "developer_check_mcp_contract_impact",
+    "developer_prepare_plugin_design_review",
+    "developer_summarize_builder_repair",
+    "developer_audit_imported_mcp_servers",
+    "developer_diff_imported_mcp_catalog",
+    "developer_read_imported_mcp_resource",
+    "developer_get_imported_mcp_prompt",
+    "developer_get_builder_task_lifecycle",
+    "developer_get_builder_task_events",
+    "developer_inspect_mcp_health",
+    "developer_list_mcp_trace_events",
+    "developer_get_task_recipe",
     "developer_plan_plugin",
     "developer_suggest_tool_schemas",
     "commerce_get_status",
@@ -180,6 +223,7 @@ export function getToolAnnotations(name: string): ToolAnnotations {
     "browser_extract_text",
     "browser_extract_links",
     "competitor_watch_check",
+    "developer_invoke_imported_mcp_tool",
   ];
 
   return {
@@ -236,4 +280,13 @@ export function getToolDescription(name: string, description: string): string {
   }
 
   return `${description} ${hints.join(" ")}`.trim();
+}
+
+export function isSamplingSafeTool(name: string): boolean {
+  if (MCP_BLOCKED_TOOLS.has(name) || MCP_SAMPLING_BLOCKED_TOOLS.has(name)) {
+    return false;
+  }
+
+  const annotations = getToolAnnotations(name);
+  return annotations.readOnlyHint === true && annotations.destructiveHint !== true && annotations.openWorldHint !== true;
 }

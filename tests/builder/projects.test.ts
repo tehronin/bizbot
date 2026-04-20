@@ -13,6 +13,9 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/lib/db", () => ({
   db: {
+    conversation: {
+      deleteMany: async () => ({ count: 0 }),
+    },
     builderProject: {
       findFirst: async ({ where }: { where: { OR: Array<Record<string, string>> } }) =>
         state.projects.find((project) =>

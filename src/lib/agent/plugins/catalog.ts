@@ -3,11 +3,15 @@ import { db } from "@/lib/db";
 import { readEnv, writeEnv } from "@/lib/env";
 import {
   getConfiguredMcpServerConfigs,
+  getMcpClientPrompts,
+  getMcpClientResources,
   getMcpClientStatus,
   getMcpClientToolCatalog,
   reconnectMcpClients,
   type McpServerConfig,
 } from "@/lib/mcp/client";
+import { buildImportedMcpServerSummaries, getImportedMcpCatalogDiff, type ImportedMcpAuditState } from "@/lib/mcp/imported-catalog";
+import { listBizBotResourceDefinitions, listMcpDiscoveryBundles, listMcpTaskRecipes } from "@/lib/mcp/preview-catalog";
 import { getBuiltinPluginToggle, isBuiltinPluginEnabled } from "./settings";
 import { getBuiltinPlugins } from "./registry";
 
@@ -30,6 +34,13 @@ export interface PluginCatalogEntry {
   url?: string;
   envKey?: string;
   hasAuthToken?: boolean;
+  promptCount?: number;
+  resourceCount?: number;
+  destructiveToolCount?: number;
+  openWorldToolCount?: number;
+  latencyClass?: "unknown" | "fast" | "moderate" | "slow";
+  auditState?: ImportedMcpAuditState;
+  lastSeenAt?: string | null;
 }
 
 export interface ExternalPluginConfigInput {
@@ -45,6 +56,22 @@ export interface PluginCatalogSection {
   available: PluginCatalogEntry[];
 }
 
+export interface PluginDiscoveryBundleSummary {
+  bundleId: string;
+  title: string;
+  description: string;
+  toolCount: number;
+  resourceCount: number;
+  promptCount: number;
+}
+
+export interface PluginSkillResourceSummary {
+  name: string;
+  title: string;
+  uri: string;
+  description: string;
+}
+
 export interface PluginCatalog {
   generatedAt: string;
   summary: {
@@ -56,6 +83,29 @@ export interface PluginCatalog {
   };
   builtin: PluginCatalogSection;
   external: PluginCatalogSection;
+  discovery: {
+    bundles: PluginDiscoveryBundleSummary[];
+    skillResources: PluginSkillResourceSummary[];
+    importedCatalog: {
+      promptCount: number;
+      resourceCount: number;
+      driftState: ImportedMcpAuditState;
+      driftedServerCount: number;
+    };
+    taskRecipes: Array<{
+      recipeId: string;
+      title: string;
+      description: string;
+      bundleCount: number;
+    }>;
+    devLoop: {
+      preferredAppCommand: string;
+      preferredMcpCommand: string;
+      reviewResourceUri: string;
+      optimizationPromptName: string;
+      traceResourceUri: string;
+    };
+  };
 }
 
 function sortEntries(entries: PluginCatalogEntry[]): PluginCatalogEntry[] {
@@ -171,16 +221,19 @@ export async function getPluginCatalog(): Promise<PluginCatalog> {
 
   const configuredExternal = await getConfiguredMcpServerConfigs();
   const externalStatus = new Map(getMcpClientStatus().map((status) => [status.name, status]));
+  const externalServerSummaries = new Map(buildImportedMcpServerSummaries().map((entry) => [entry.name, entry]));
   const externalTools = new Map<string, string[]>();
   for (const tool of getMcpClientToolCatalog()) {
     const current = externalTools.get(tool.serverName) ?? [];
     current.push(tool.prefixedName);
     externalTools.set(tool.serverName, current);
   }
+  const importedDrift = await getImportedMcpCatalogDiff();
 
   const externalEntries = sortEntries(configuredExternal.map((config) => {
     const enabled = config.enabled !== false;
     const status = externalStatus.get(config.name);
+    const serverSummary = externalServerSummaries.get(config.name);
     return {
       id: config.name,
       kind: "external" as const,
@@ -202,6 +255,13 @@ export async function getPluginCatalog(): Promise<PluginCatalog> {
       tags: ["mcp", "integration"],
       url: config.url,
       hasAuthToken: typeof config.authToken === "string" && config.authToken.trim().length > 0,
+      promptCount: serverSummary?.promptCount ?? status?.promptCount ?? 0,
+      resourceCount: serverSummary?.resourceCount ?? status?.resourceCount ?? 0,
+      destructiveToolCount: serverSummary?.destructiveToolCount ?? 0,
+      openWorldToolCount: serverSummary?.openWorldToolCount ?? 0,
+      latencyClass: serverSummary?.latencyClass ?? status?.latencyClass ?? "unknown",
+      auditState: serverSummary?.auditState ?? "unaudited",
+      lastSeenAt: serverSummary?.lastSeenAt ?? status?.lastSeenAt ?? null,
     } satisfies PluginCatalogEntry;
   }));
 
@@ -209,6 +269,28 @@ export async function getPluginCatalog(): Promise<PluginCatalog> {
   const builtinAvailable = builtinEntries.filter((entry) => !entry.installed);
   const externalInstalled = externalEntries.filter((entry) => entry.installed);
   const externalAvailable = externalEntries.filter((entry) => !entry.installed);
+  const discoveryBundles = listMcpDiscoveryBundles().map((bundle) => ({
+    bundleId: bundle.bundleId,
+    title: bundle.title,
+    description: bundle.description,
+    toolCount: bundle.tools.length,
+    resourceCount: bundle.resources.length,
+    promptCount: bundle.prompts.length,
+  }));
+  const skillResources = listBizBotResourceDefinitions()
+    .filter((resource) => resource.uri.startsWith("bizbot://skills/"))
+    .map((resource) => ({
+      name: resource.name,
+      title: resource.title,
+      uri: resource.uri,
+      description: resource.description,
+    }));
+  const taskRecipes = listMcpTaskRecipes().map((recipe) => ({
+    recipeId: recipe.recipeId,
+    title: recipe.title,
+    description: recipe.description,
+    bundleCount: recipe.bundleIds.length,
+  }));
 
   return {
     generatedAt: new Date().toISOString(),
@@ -226,6 +308,24 @@ export async function getPluginCatalog(): Promise<PluginCatalog> {
     external: {
       installed: externalInstalled,
       available: externalAvailable,
+    },
+    discovery: {
+      bundles: discoveryBundles,
+      skillResources,
+      importedCatalog: {
+        promptCount: getMcpClientPrompts().length,
+        resourceCount: getMcpClientResources().length,
+        driftState: importedDrift.auditState as ImportedMcpAuditState,
+        driftedServerCount: importedDrift.servers.filter((entry) => entry.auditState === "drifted").length,
+      },
+      taskRecipes,
+      devLoop: {
+        preferredAppCommand: "npm run dev:vscode",
+        preferredMcpCommand: "npm run mcp:stdio",
+        reviewResourceUri: "bizbot://debug/vscode-mcp-devloop",
+        optimizationPromptName: "optimize-vscode-mcp-devloop",
+        traceResourceUri: "bizbot://debug/mcp-trace",
+      },
     },
   };
 }

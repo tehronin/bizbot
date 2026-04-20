@@ -14,6 +14,20 @@ describe("builder telemetry", () => {
           provider: "google",
           model: "gemini-3-flash-preview",
           blockedReason: "build failed during verification",
+          failureEnvelope: {
+            version: 1,
+            fingerprint: "builder-failure-1",
+            layer: "semantic",
+            kind: "repeated_failure",
+            retryable: false,
+            resumeSafe: false,
+            suggestedNextAction: "inspect_stuck_loop",
+            operatorSummary: "Builder loop is repeating the same failure.",
+            raw: "build failed during verification",
+            errorName: null,
+            code: null,
+            statusCode: null,
+          },
           usage: {
             promptTokens: 1000,
             completionTokens: 250,
@@ -31,6 +45,10 @@ describe("builder telemetry", () => {
     expect(telemetry.provider).toBe("google");
     expect(telemetry.model).toBe("gemini-3-flash-preview");
     expect(telemetry.blockedReason).toBe("build failed during verification");
+    expect(telemetry.failureEnvelope).toEqual(expect.objectContaining({
+      kind: "repeated_failure",
+      suggestedNextAction: "inspect_stuck_loop",
+    }));
     expect(telemetry.totalTokens).toBe(1250);
     expect(telemetry.estimatedCostUsd).toBeGreaterThan(0);
   });

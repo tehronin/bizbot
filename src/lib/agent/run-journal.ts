@@ -7,7 +7,9 @@ import {
   getAgentProfileDescriptor,
   type AgentProfile,
 } from "@/lib/agent/profiles";
-import type { JsonObject } from "@/lib/agent/tools";
+import type { ChatMessage, JsonObject } from "@/lib/agent/tools";
+import { normalizeFailure, type FailureEnvelope } from "@/lib/failures";
+import { createToolCallResumeSignature, isToolExecutionResumeSafe } from "@/lib/agent/resume";
 
 const RUNS_DIR = path.join(".bizbot", "agent-runs");
 const RESULT_PREVIEW_MAX_CHARS = 1_200;
@@ -23,6 +25,7 @@ export interface AgentRunToolEvent {
   args?: JsonObject;
   resultPreview?: string;
   isError?: boolean;
+  failure?: FailureEnvelope;
 }
 
 export interface AgentRunRetrievalDecision {
@@ -170,6 +173,36 @@ export interface AgentRunRecord {
   usage: AgentRunUsageTotals;
   reply?: string;
   error?: string;
+  failure?: FailureEnvelope;
+  snapshot: AgentRunResumeSnapshot;
+  resumedFromRunId?: string;
+}
+
+export type AgentRunResumePendingStatus = "idle" | "awaiting_model" | "awaiting_tool_results" | "interrupted" | "completed";
+
+export interface AgentRunSnapshotToolCall {
+  signature: string;
+  round: number;
+  toolCallId: string;
+  name: string;
+  args: JsonObject;
+  result: string;
+  isError: boolean;
+  failure?: FailureEnvelope;
+  resumeSafe: boolean;
+}
+
+export interface AgentRunResumeSnapshot {
+  version: 1;
+  lastStableRound: number;
+  pendingRound: number | null;
+  pendingRoundStatus: AgentRunResumePendingStatus;
+  stableMessages: ChatMessage[];
+  completedToolCalls: AgentRunSnapshotToolCall[];
+  resumeEligible: boolean;
+  resumeBlockedReason: string | null;
+  finalFailure?: FailureEnvelope;
+  resumedFromRunId?: string;
 }
 
 export interface UsageLedgerEntry {
@@ -253,6 +286,103 @@ export interface StartAgentRunInput {
   parentRunId?: string;
   delegationReason?: string;
   delegatedByProfile?: AgentProfile;
+  resumedFromRunId?: string;
+}
+
+function normalizeSnapshotToolCall(value: unknown): AgentRunSnapshotToolCall | null {
+  const candidate = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+
+  if (!candidate || typeof candidate.name !== "string" || typeof candidate.toolCallId !== "string") {
+    return null;
+  }
+
+  const args = candidate.args && typeof candidate.args === "object" && !Array.isArray(candidate.args)
+    ? candidate.args as JsonObject
+    : {};
+  const failure = candidate.failure;
+
+  return {
+    signature: typeof candidate.signature === "string"
+      ? candidate.signature
+      : createToolCallResumeSignature(candidate.name, args),
+    round: typeof candidate.round === "number" && Number.isFinite(candidate.round) ? candidate.round : 0,
+    toolCallId: candidate.toolCallId,
+    name: candidate.name,
+    args,
+    result: typeof candidate.result === "string" ? candidate.result : "",
+    isError: candidate.isError === true,
+    ...(failure ? { failure: failure as FailureEnvelope } : {}),
+    resumeSafe: typeof candidate.resumeSafe === "boolean"
+      ? candidate.resumeSafe
+      : isToolExecutionResumeSafe(candidate.name, failure as FailureEnvelope | undefined),
+  };
+}
+
+function buildResumeBlockedReason(snapshot: AgentRunResumeSnapshot): string | null {
+  if (snapshot.pendingRoundStatus === "completed") {
+    return "Run already completed; resume is not needed.";
+  }
+
+  if (snapshot.finalFailure?.kind === "max_rounds") {
+    return "Run exhausted the maximum tool rounds and cannot auto-resume safely.";
+  }
+
+  if (snapshot.stableMessages.length === 0) {
+    return "Run has no stable checkpointed message state.";
+  }
+
+  const unsafeTool = snapshot.completedToolCalls.find((entry) => !entry.resumeSafe);
+  if (unsafeTool) {
+    return `Completed tool '${unsafeTool.name}' is not marked resume-safe.`;
+  }
+
+  return null;
+}
+
+function normalizeResumeSnapshot(record: AgentRunRecord): AgentRunResumeSnapshot {
+  const candidate = record.snapshot && typeof record.snapshot === "object" && !Array.isArray(record.snapshot)
+    ? record.snapshot as Partial<AgentRunResumeSnapshot>
+    : {};
+  const completedToolCalls = Array.isArray(candidate.completedToolCalls)
+    ? candidate.completedToolCalls.map((entry) => normalizeSnapshotToolCall(entry)).filter((entry): entry is AgentRunSnapshotToolCall => Boolean(entry))
+    : [];
+  const stableMessages = Array.isArray(candidate.stableMessages)
+    ? candidate.stableMessages as ChatMessage[]
+    : [];
+
+  const snapshot: AgentRunResumeSnapshot = {
+    version: 1,
+    lastStableRound: typeof candidate.lastStableRound === "number" && Number.isFinite(candidate.lastStableRound)
+      ? candidate.lastStableRound
+      : 0,
+    pendingRound: typeof candidate.pendingRound === "number" && Number.isFinite(candidate.pendingRound)
+      ? candidate.pendingRound
+      : null,
+    pendingRoundStatus: candidate.pendingRoundStatus === "awaiting_model"
+      || candidate.pendingRoundStatus === "awaiting_tool_results"
+      || candidate.pendingRoundStatus === "interrupted"
+      || candidate.pendingRoundStatus === "completed"
+      || candidate.pendingRoundStatus === "idle"
+      ? candidate.pendingRoundStatus
+      : record.status === "completed"
+        ? "completed"
+        : "idle",
+    stableMessages,
+    completedToolCalls,
+    resumeEligible: false,
+    resumeBlockedReason: null,
+    ...(record.failure ? { finalFailure: record.failure } : {}),
+    ...(typeof candidate.resumedFromRunId === "string" ? { resumedFromRunId: candidate.resumedFromRunId } : {}),
+  };
+
+  const blockedReason = buildResumeBlockedReason(snapshot);
+  return {
+    ...snapshot,
+    resumeEligible: blockedReason === null,
+    resumeBlockedReason: blockedReason,
+  };
 }
 
 function truncate(text: string): string {
@@ -334,9 +464,35 @@ function normalizeUsageTotals(record: AgentRunRecord): AgentRunUsageTotals {
 }
 
 function normalizeRunRecord(record: AgentRunRecord): AgentRunRecord {
+  const normalizedToolEvents = record.toolEvents.map((event) => {
+    if (event.failure || event.phase !== "result" || !event.isError || !event.resultPreview) {
+      return event;
+    }
+
+    return {
+      ...event,
+      failure: normalizeFailure(event.resultPreview, {
+        component: "agent_run_journal",
+        operation: "tool_result",
+        toolName: event.name,
+        layer: "tool",
+      }),
+    };
+  });
+
   return {
     ...record,
+    toolEvents: normalizedToolEvents,
     usage: normalizeUsageTotals(record),
+    snapshot: normalizeResumeSnapshot(record),
+    ...(record.failure || !record.error ? {} : {
+      failure: normalizeFailure(record.error, {
+        component: "agent_run_journal",
+        operation: record.status === "cancelled" ? "run_cancelled" : record.status === "max_tool_rounds" ? "max_tool_rounds" : "run_failed",
+        layer: record.status === "max_tool_rounds" ? "semantic" : record.status === "cancelled" ? "infra" : "unknown",
+        ...(record.status === "max_tool_rounds" ? { kind: "max_rounds" as const } : {}),
+      }),
+    }),
   };
 }
 
@@ -455,6 +611,18 @@ export function startAgentRun(input: StartAgentRunInput): AgentRunRecord {
       cachedPromptTokens: 0,
       rounds: [],
     },
+    snapshot: {
+      version: 1,
+      lastStableRound: 0,
+      pendingRound: null,
+      pendingRoundStatus: "idle",
+      stableMessages: [],
+      completedToolCalls: [],
+      resumeEligible: false,
+      resumeBlockedReason: "Run has no stable checkpointed message state.",
+      ...(input.resumedFromRunId ? { resumedFromRunId: input.resumedFromRunId } : {}),
+    },
+    ...(input.resumedFromRunId ? { resumedFromRunId: input.resumedFromRunId } : {}),
   };
 
   writeRun(record);
@@ -501,7 +669,7 @@ export function recordAgentRunToolCall(
 
 export function recordAgentRunToolResult(
   runId: string,
-  params: { round: number; toolCallId: string; name: string; result: string; isError?: boolean },
+  params: { round: number; toolCallId: string; name: string; result: string; isError?: boolean; failure?: FailureEnvelope },
 ): AgentRunRecord {
   return mutateRun(runId, (record) => ({
     ...record,
@@ -517,6 +685,7 @@ export function recordAgentRunToolResult(
         name: params.name,
         resultPreview: truncate(params.result),
         isError: params.isError ?? false,
+        ...(params.failure ? { failure: params.failure } : {}),
       },
     ],
   }));
@@ -594,9 +763,48 @@ export function recordAgentRunSwarm(
   }));
 }
 
+export function recordAgentRunResumeSnapshot(
+  runId: string,
+  params: {
+    lastStableRound: number;
+    pendingRound: number | null;
+    pendingRoundStatus: AgentRunResumePendingStatus;
+    stableMessages: ChatMessage[];
+    completedToolCalls: AgentRunSnapshotToolCall[];
+    finalFailure?: FailureEnvelope | null;
+    resumedFromRunId?: string | null;
+  },
+): AgentRunRecord {
+  return mutateRun(runId, (record) => {
+    const snapshot = normalizeResumeSnapshot({
+      ...record,
+      snapshot: {
+        version: 1,
+        lastStableRound: params.lastStableRound,
+        pendingRound: params.pendingRound,
+        pendingRoundStatus: params.pendingRoundStatus,
+        stableMessages: params.stableMessages,
+        completedToolCalls: params.completedToolCalls,
+        resumeEligible: false,
+        resumeBlockedReason: null,
+        ...(params.finalFailure ? { finalFailure: params.finalFailure } : {}),
+        ...(params.resumedFromRunId ? { resumedFromRunId: params.resumedFromRunId } : {}),
+      },
+      ...(params.finalFailure ? { failure: params.finalFailure } : {}),
+    });
+
+    return {
+      ...record,
+      updatedAt: new Date().toISOString(),
+      snapshot,
+      ...(params.resumedFromRunId ? { resumedFromRunId: params.resumedFromRunId } : {}),
+    };
+  });
+}
+
 export function completeAgentRun(
   runId: string,
-  params: { status: Exclude<AgentRunStatus, "running">; reply?: string; error?: string; roundsCompleted: number },
+  params: { status: Exclude<AgentRunStatus, "running">; reply?: string; error?: string; roundsCompleted: number; failure?: FailureEnvelope },
 ): AgentRunRecord {
   const finishedAt = new Date().toISOString();
   return mutateRun(runId, (record) => ({
@@ -607,11 +815,16 @@ export function completeAgentRun(
     roundsCompleted: Math.max(record.roundsCompleted, params.roundsCompleted),
     ...(params.reply !== undefined ? { reply: truncate(params.reply) } : {}),
     ...(params.error !== undefined ? { error: truncate(params.error) } : {}),
+    ...(params.failure !== undefined ? { failure: params.failure } : {}),
   }));
 }
 
 export function getAgentRun(runId: string): AgentRunRecord {
   return readRun(runId);
+}
+
+export function getAgentRunResumeSnapshot(runId: string): AgentRunResumeSnapshot {
+  return readRun(runId).snapshot;
 }
 
 export function listAgentRuns(): AgentRunRecord[] {

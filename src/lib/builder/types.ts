@@ -643,6 +643,20 @@ export interface BuilderTaskMetadataState {
   latestLoopSummary: string | null;
   resumeFromIteration: number | null;
   lastRunId: string | null;
+  events: BuilderTaskEventState[];
+}
+
+export interface BuilderTaskEventState {
+  id: string;
+  timestamp: string;
+  type: "created" | "stage_changed" | "execution_state" | "resumed" | "status_changed" | "summary_updated";
+  status: string | null;
+  stage: string | null;
+  summary: string | null;
+  error: string | null;
+  iteration: number | null;
+  loopPhase: string | null;
+  runId: string | null;
 }
 
 export interface BuilderStructuredValidationSummary {
@@ -961,6 +975,60 @@ export function defaultBuilderTaskMetadata(): BuilderTaskMetadataState {
     latestLoopSummary: null,
     resumeFromIteration: null,
     lastRunId: null,
+    events: [],
+  };
+}
+
+const BUILDER_TASK_EVENT_LIMIT = 60;
+
+export function normalizeBuilderTaskEvents(value: unknown): BuilderTaskEventState[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return [];
+    }
+
+    const candidate = entry as Record<string, unknown>;
+    const id = typeof candidate.id === "string" && candidate.id.trim() ? candidate.id.trim() : null;
+    const timestamp = typeof candidate.timestamp === "string" && candidate.timestamp.trim() ? candidate.timestamp.trim() : null;
+    const type = typeof candidate.type === "string" && candidate.type.trim() ? candidate.type.trim() : null;
+    if (!id || !timestamp || !type) {
+      return [];
+    }
+
+    return [{
+      id,
+      timestamp,
+      type: type as BuilderTaskEventState["type"],
+      status: typeof candidate.status === "string" && candidate.status.trim() ? candidate.status.trim() : null,
+      stage: typeof candidate.stage === "string" && candidate.stage.trim() ? candidate.stage.trim() : null,
+      summary: typeof candidate.summary === "string" && candidate.summary.trim() ? candidate.summary.trim() : null,
+      error: typeof candidate.error === "string" && candidate.error.trim() ? candidate.error.trim() : null,
+      iteration: typeof candidate.iteration === "number" && Number.isFinite(candidate.iteration) && candidate.iteration > 0
+        ? Math.trunc(candidate.iteration)
+        : null,
+      loopPhase: typeof candidate.loopPhase === "string" && candidate.loopPhase.trim() ? candidate.loopPhase.trim() : null,
+      runId: typeof candidate.runId === "string" && candidate.runId.trim() ? candidate.runId.trim() : null,
+    } satisfies BuilderTaskEventState];
+  }).slice(0, BUILDER_TASK_EVENT_LIMIT);
+}
+
+export function appendBuilderTaskEvent(
+  metadata: BuilderTaskMetadataState,
+  event: Omit<BuilderTaskEventState, "id" | "timestamp">,
+): BuilderTaskMetadataState {
+  const nextEvent: BuilderTaskEventState = {
+    id: `builder-task-event-${crypto.randomUUID()}`,
+    timestamp: new Date().toISOString(),
+    ...event,
+  };
+
+  return {
+    ...metadata,
+    events: [nextEvent, ...metadata.events].slice(0, BUILDER_TASK_EVENT_LIMIT),
   };
 }
 
@@ -1339,6 +1407,7 @@ export function normalizeBuilderTaskMetadata(value: unknown): BuilderTaskMetadat
     latestLoopSummary: typeof candidate.latestLoopSummary === "string" && candidate.latestLoopSummary.trim() ? candidate.latestLoopSummary.trim() : null,
     resumeFromIteration: readPositiveInteger(candidate.resumeFromIteration),
     lastRunId: typeof candidate.lastRunId === "string" && candidate.lastRunId.trim() ? candidate.lastRunId.trim() : null,
+    events: normalizeBuilderTaskEvents(candidate.events),
   };
 }
 

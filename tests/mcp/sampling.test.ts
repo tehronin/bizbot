@@ -1,6 +1,47 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuilderDevLoopContext } from "@/lib/mcp/devloop-context";
-import { buildDevLoopSamplingRequest, getDevLoopSamplingTelemetrySnapshot, requestDevLoopSampling, resetDevLoopSamplingTelemetry } from "@/lib/mcp/sampling";
+import { buildDevLoopSamplingRequest, getDevLoopSamplingTelemetrySnapshot, getDevLoopSamplingToolDescriptors, requestDevLoopSampling, resetDevLoopSamplingTelemetry } from "@/lib/mcp/sampling";
+
+vi.mock("@/lib/agent/runtime", () => ({
+  getAgentRuntimeConfig: vi.fn(() => ({ provider: "openai" })),
+}));
+
+vi.mock("@/lib/agent/plugins", () => ({
+  getAllToolDefinitions: vi.fn(() => [
+    {
+      name: "developer_list_agent_runs",
+      description: "List recent BizBot agent runs.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", default: 20 },
+        },
+      },
+    },
+    {
+      name: "developer_invoke_imported_mcp_tool",
+      description: "Invoke an imported MCP tool directly.",
+      parameters: {
+        type: "object",
+        properties: {
+          serverName: { type: "string" },
+        },
+        required: ["serverName"],
+      },
+    },
+    {
+      name: "browser_navigate",
+      description: "Navigate a browser page.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+        },
+        required: ["url"],
+      },
+    },
+  ]),
+}));
 
 function buildContext(): BuilderDevLoopContext {
   return {
@@ -115,13 +156,40 @@ describe("MCP sampling bridge", () => {
     resetDevLoopSamplingTelemetry();
   });
 
-  it("builds an analysis-only request without tools", () => {
-    const request = buildDevLoopSamplingRequest(buildContext());
+  it("builds a tool-enabled request when stdio sampling tools are available", () => {
+    const request = buildDevLoopSamplingRequest(buildContext(), {
+      allowTools: true,
+      clientSupportsSamplingTools: true,
+    });
 
     expect(request.includeContext).toBe("none");
+    expect(request.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "developer_list_agent_runs" }),
+    ]));
+    expect(request.tools).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "developer_invoke_imported_mcp_tool" }),
+      expect.objectContaining({ name: "browser_navigate" }),
+    ]));
+    expect(request.toolChoice).toEqual({ mode: "auto" });
+    expect(request.temperature).toBe(0);
+    expect(request.metadata).toEqual(expect.objectContaining({ toolsAllowed: true }));
+  });
+
+  it("publishes only the sampling-safe read-only tool subset", () => {
+    expect(getDevLoopSamplingToolDescriptors().map((tool) => tool.name)).toEqual([
+      "developer_list_agent_runs",
+    ]);
+  });
+
+  it("keeps the request tool-free when the client does not advertise sampling tools", () => {
+    const request = buildDevLoopSamplingRequest(buildContext(), {
+      allowTools: true,
+      clientSupportsSamplingTools: false,
+    });
+
     expect(request.tools).toBeUndefined();
     expect(request.toolChoice).toBeUndefined();
-    expect(request.temperature).toBe(0);
+    expect(request.metadata).toEqual(expect.objectContaining({ toolsAllowed: false }));
   });
 
   it("returns unavailable when the connected client does not advertise sampling", async () => {
@@ -171,10 +239,17 @@ describe("MCP sampling bridge", () => {
     const result = await requestDevLoopSampling({
       transportKind: "stdio",
       createMessage,
-      getClientCapabilities: () => ({ sampling: {} }),
+      getClientCapabilities: () => ({ sampling: { tools: {} } }),
     }, buildContext());
 
     expect(createMessage).toHaveBeenCalledTimes(1);
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "developer_list_agent_runs" }),
+      ]),
+      toolChoice: { mode: "auto" },
+      metadata: expect.objectContaining({ toolsAllowed: true }),
+    }));
     expect(result.status).toBe("warning");
     expect(result.diagnosisSource).toBe("sampled");
     expect(result.tripletHealth).toEqual({
@@ -197,6 +272,8 @@ describe("MCP sampling bridge", () => {
       sampledSuccesses: 1,
       structuredParseSuccesses: 1,
       deterministicFallbacks: 0,
+      sampledToolCount: 1,
+      sampledToolNames: ["developer_list_agent_runs"],
       modelCounts: { "gpt-5.4": 1 },
       stopReasonCounts: { endTurn: 1 },
     }));

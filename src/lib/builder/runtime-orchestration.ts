@@ -27,6 +27,7 @@ const FOLLOW_POLL_INTERVAL_MS = 1000;
 const DEFAULT_CONTAINER_FILE_MAX_BYTES = 4096;
 const DEFAULT_CONTAINER_LIST_MAX_ENTRIES = 100;
 const MANAGED_CONTAINER_INSPECT_BATCH_SIZE = 1;
+const COMPOSE_START_WAIT_TIMEOUT_MS = 15_000;
 const BIZBOT_BUILDER_CONTAINER_MANAGED_LABEL = "bizbot.builder.managed";
 const BIZBOT_BUILDER_CONTAINER_PROJECT_ID_LABEL = "bizbot.builder.project_id";
 const BIZBOT_BUILDER_CONTAINER_RELATIVE_PATH_LABEL = "bizbot.builder.relative_path";
@@ -1082,6 +1083,22 @@ async function runComposeControl(service: ResolvedRuntimeService, subcommand: st
   });
 }
 
+async function waitForComposeServiceStatus(
+  context: BuilderRuntimeServiceControlArgs,
+  expectedStatuses: BuilderRuntimeServiceStatus[],
+  timeoutMs = COMPOSE_START_WAIT_TIMEOUT_MS,
+): Promise<BuilderRuntimeServiceSummary> {
+  const deadline = Date.now() + timeoutMs;
+  let current = resolveBuilderRuntimeService(context);
+
+  while (!expectedStatuses.includes(current.status) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, FOLLOW_POLL_INTERVAL_MS));
+    current = resolveBuilderRuntimeService(context);
+  }
+
+  return current;
+}
+
 async function runComposeExecCommand(service: ResolvedRuntimeService, command: string, args: string[], timeoutSeconds = DEFAULT_CONTROL_TIMEOUT_SECONDS): Promise<BuilderCommandResult> {
   return runComposeControl(service, ["exec", "-T", service.compose!.serviceName, command, ...args], timeoutSeconds);
 }
@@ -1332,17 +1349,25 @@ export async function startBuilderRuntimeService(args: BuilderRuntimeServiceCont
   const service = resolveRuntimeServiceOrThrow(args);
   if (service.summary.runner === "compose_service") {
     const commandResult = await runComposeControl(service, ["up", "-d", service.compose!.serviceName]);
-    const current = resolveBuilderRuntimeService(args);
+    const current = commandResult.ok
+      ? await waitForComposeServiceStatus(args, ["running", "failed", "stopped"])
+      : resolveBuilderRuntimeService(args);
     const auditPath = auditRuntimeAction({
       context: args,
       service: current,
       operation: "start_service",
-      outcomeStatus: commandResult.ok ? "succeeded" : commandResult.timedOut ? "timed_out" : "failed",
-      metadata: { exitCode: commandResult.exitCode },
+      outcomeStatus: commandResult.ok && current.status === "running"
+        ? "succeeded"
+        : commandResult.timedOut
+          ? "timed_out"
+          : "failed",
+      metadata: { exitCode: commandResult.exitCode, finalStatus: current.status, healthStatus: current.healthStatus },
     });
     return {
-      status: commandResult.ok ? "completed" : "blocked",
-      message: commandResult.ok ? `Started service ${current.label}.` : `Failed to start service ${current.label}.`,
+      status: commandResult.ok && current.status === "running" ? "completed" : "blocked",
+      message: commandResult.ok && current.status === "running"
+        ? `Started service ${current.label}.`
+        : `Failed to start service ${current.label}.`,
       service: current,
       commandResult,
       auditPath,

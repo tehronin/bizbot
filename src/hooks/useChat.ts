@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import type {
   BuilderChatCard,
   BuilderChatCardProgress,
@@ -19,7 +19,9 @@ import type {
   ChatConversationPagination,
   ChatConversationSummary,
   ChatConversationUsageSummary,
+  ChatVerbosity,
 } from "@/lib/chat/types";
+import { CHAT_VERBOSITY_SETTING_KEY } from "@/lib/chat/types";
 import type { UsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
 import {
   BIZBOT_SIDECAR_EVENT,
@@ -50,6 +52,19 @@ export interface ChatEntry {
   round?: number;
   phase?: "call" | "result";
   builderCards?: BuilderChatCard[];
+}
+
+export interface PendingAssistantTurn {
+  id: string;
+  conversationId: string | null;
+  runId: string | null;
+  chatMode?: ChatExecutionMode;
+  chatPluginId?: string;
+  builderProjectId: string | null;
+  builderTaskId: string | null;
+  content: string;
+  activityEntries: ChatEntry[];
+  builderProgress: BuilderChatCardProgress | null;
 }
 
 interface AgentResponse {
@@ -98,10 +113,20 @@ export interface ActiveRunState {
   cachedPromptTokens: number;
 }
 
+export interface PendingResumePrompt {
+  runId: string;
+  summary: string;
+  mode: ChatExecutionMode;
+  pluginId: string;
+}
+
 export interface UseChatResult {
   messages: ChatEntry[];
+  pendingResumePrompt: PendingResumePrompt | null;
+  pendingAssistantTurn: PendingAssistantTurn | null;
   builderInbox: BuilderChatCard[];
   builderProjects: ChatBuilderProjectSummary[];
+  builderProjectConversations: ChatConversationSummary[];
   builderStackPresets: ChatBuilderStackPresetSummary[];
   builderTemplates: ChatBuilderTemplateSummary[];
   builderOnboarding: { step: BuilderOnboardingStep; spec: BuilderOnboardingSpec } | null;
@@ -124,8 +149,10 @@ export interface UseChatResult {
   executionCatalog: ChatExecutionCatalog;
   executionMode: ChatExecutionMode;
   executionPluginId: string;
+  chatVerbosity: ChatVerbosity;
   setExecutionMode: React.Dispatch<React.SetStateAction<ChatExecutionMode>>;
   setExecutionPluginId: React.Dispatch<React.SetStateAction<string>>;
+  setChatVerbosity: (value: ChatVerbosity) => Promise<void>;
   setSelectedBuilderProjectId: React.Dispatch<React.SetStateAction<string | null>>;
   startBuilderOnboarding: () => void;
   updateBuilderOnboardingSpec: (updates: Partial<BuilderOnboardingSpec>) => void;
@@ -136,6 +163,7 @@ export interface UseChatResult {
   launchBuilderTaskFromChat: (request: string, options?: { projectId?: string | null; retryFailed?: boolean }) => Promise<void>;
   sendMessage: (input: string, options?: { mode?: ChatExecutionMode; pluginId?: string; attachments?: ChatMessageAttachment[] }) => Promise<void>;
   sendOraclePrediction: (input: string, options?: { attachments?: ChatMessageAttachment[] }) => Promise<void>;
+  resolvePendingResumePrompt: (decision: "resume" | "dismiss") => Promise<void>;
   startNewChat: () => void;
   loadConversation: (nextConversationId: string) => Promise<void>;
   archiveConversation: (nextConversationId: string) => Promise<void>;
@@ -165,6 +193,44 @@ interface ExecutionSelection {
   mode: ChatExecutionMode;
   pluginId: string;
 }
+
+type PendingAssistantTurnAction =
+  | {
+    type: "start";
+    conversationId?: string | null;
+    runId?: string | null;
+    chatMode?: ChatExecutionMode;
+    chatPluginId?: string;
+    builderProjectId?: string | null;
+  }
+  | {
+    type: "append-activity";
+    entry: ChatEntry;
+    conversationId?: string | null;
+    runId?: string | null;
+  }
+  | {
+    type: "set-content";
+    content: string;
+    conversationId?: string | null;
+    runId?: string | null;
+  }
+  | {
+    type: "set-builder-progress";
+    progress: BuilderChatCardProgress | null;
+    taskId?: string | null;
+    builderProjectId?: string | null;
+    conversationId?: string | null;
+  }
+  | {
+    type: "sync";
+    conversationId?: string | null;
+    runId?: string | null;
+    chatMode?: ChatExecutionMode;
+    chatPluginId?: string;
+    builderProjectId?: string | null;
+  }
+  | { type: "clear" };
 
 const IDLE_ACTIVE_RUN: InternalActiveRunState = {
   conversationId: null,
@@ -217,7 +283,7 @@ const EMPTY_EXECUTION_CATALOG: ChatExecutionCatalog = {
 };
 
 function getStoredSelectedConversationId(): string | null {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || typeof window.localStorage?.getItem !== "function") {
     return null;
   }
 
@@ -225,7 +291,11 @@ function getStoredSelectedConversationId(): string | null {
 }
 
 function persistSelectedConversationId(nextConversationId: string | null): void {
-  if (typeof window === "undefined") {
+  if (
+    typeof window === "undefined"
+    || typeof window.localStorage?.setItem !== "function"
+    || typeof window.localStorage?.removeItem !== "function"
+  ) {
     return;
   }
 
@@ -238,7 +308,7 @@ function persistSelectedConversationId(nextConversationId: string | null): void 
 }
 
 function getStoredExecutionPreference(): { mode: ChatExecutionMode; pluginId: string } | null {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || typeof window.localStorage?.getItem !== "function") {
     return null;
   }
 
@@ -252,7 +322,7 @@ function getStoredExecutionPreference(): { mode: ChatExecutionMode; pluginId: st
 }
 
 function persistExecutionPreference(preference: { mode: ChatExecutionMode; pluginId: string }): void {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || typeof window.localStorage?.setItem !== "function") {
     return;
   }
 
@@ -305,59 +375,130 @@ function createEntry(
   };
 }
 
-function appendStreamEntries(
-  current: ChatEntry[],
-  event: AgentStreamEvent,
-): ChatEntry[] {
+function createPendingAssistantTurn(options?: {
+  conversationId?: string | null;
+  runId?: string | null;
+  chatMode?: ChatExecutionMode;
+  chatPluginId?: string;
+  builderProjectId?: string | null;
+}): PendingAssistantTurn {
+  return {
+    id: `pending-assistant-${crypto.randomUUID()}`,
+    conversationId: options?.conversationId ?? null,
+    runId: options?.runId ?? null,
+    chatMode: options?.chatMode,
+    chatPluginId: options?.chatPluginId,
+    builderProjectId: options?.builderProjectId ?? null,
+    builderTaskId: null,
+    content: "",
+    activityEntries: [],
+    builderProgress: null,
+  };
+}
+
+function ensurePendingAssistantTurn(
+  state: PendingAssistantTurn | null,
+  options?: {
+    conversationId?: string | null;
+    runId?: string | null;
+    chatMode?: ChatExecutionMode;
+    chatPluginId?: string;
+    builderProjectId?: string | null;
+  },
+): PendingAssistantTurn {
+  if (!state) {
+    return createPendingAssistantTurn(options);
+  }
+
+  return {
+    ...state,
+    conversationId: options?.conversationId ?? state.conversationId,
+    runId: options?.runId ?? state.runId,
+    chatMode: options?.chatMode ?? state.chatMode,
+    chatPluginId: options?.chatPluginId ?? state.chatPluginId,
+    builderProjectId: options?.builderProjectId ?? state.builderProjectId,
+  };
+}
+
+function pendingAssistantTurnReducer(
+  state: PendingAssistantTurn | null,
+  action: PendingAssistantTurnAction,
+): PendingAssistantTurn | null {
+  switch (action.type) {
+    case "start":
+      return createPendingAssistantTurn(action);
+    case "append-activity": {
+      const next = ensurePendingAssistantTurn(state, action);
+      return {
+        ...next,
+        activityEntries: [...next.activityEntries, action.entry],
+      };
+    }
+    case "set-content": {
+      const next = ensurePendingAssistantTurn(state, action);
+      return {
+        ...next,
+        content: action.content,
+      };
+    }
+    case "set-builder-progress": {
+      const next = ensurePendingAssistantTurn(state, {
+        conversationId: action.conversationId,
+        builderProjectId: action.builderProjectId,
+        chatPluginId: "builder",
+      });
+      return {
+        ...next,
+        builderTaskId: action.taskId ?? next.builderTaskId,
+        builderProgress: action.progress,
+      };
+    }
+    case "sync":
+      return ensurePendingAssistantTurn(state, action);
+    case "clear":
+      return null;
+    default:
+      return state;
+  }
+}
+
+function mapStreamEventToActivityEntry(event: AgentStreamEvent): ChatEntry | null {
   switch (event.type) {
     case "meta":
-      return [
-        ...current,
-        {
-          id: `meta-${event.runId ?? crypto.randomUUID()}`,
-          role: "meta",
-          content: `${event.profileLabel ?? event.profile ?? "Agent"} routed this request.`,
-          runId: event.runId,
-          profile: event.profile,
-          profileLabel: event.profileLabel,
-          provider: event.provider,
-          model: event.model,
-        },
-      ];
+      return {
+        id: `meta-${event.runId ?? crypto.randomUUID()}`,
+        role: "meta",
+        content: `${event.profileLabel ?? event.profile ?? "Agent"} routed this request.`,
+        runId: event.runId,
+        profile: event.profile,
+        profileLabel: event.profileLabel,
+        provider: event.provider,
+        model: event.model,
+      };
     case "status":
-      return [...current, createEntry("status", event.message ?? "Working...")];
+      return createEntry("status", event.message ?? "Working...");
     case "tool_call":
-      return [
-        ...current,
-        {
-          id: `tool-call-${event.runId ?? crypto.randomUUID()}-${event.name ?? "tool"}-${event.round ?? 0}`,
-          role: "tool",
-          content: `Calling ${event.name ?? "tool"}`,
-          name: event.name,
-          args: event.args ? JSON.stringify(event.args, null, 2) : undefined,
-          round: event.round,
-          phase: "call",
-        },
-      ];
+      return {
+        id: `tool-call-${event.runId ?? crypto.randomUUID()}-${event.name ?? "tool"}-${event.round ?? 0}`,
+        role: "tool",
+        content: `Calling ${event.name ?? "tool"}`,
+        name: event.name,
+        args: event.args ? JSON.stringify(event.args, null, 2) : undefined,
+        round: event.round,
+        phase: "call",
+      };
     case "tool_result":
-      return [
-        ...current,
-        {
-          id: `tool-result-${event.runId ?? crypto.randomUUID()}-${event.name ?? "tool"}-${event.round ?? 0}`,
-          role: "tool",
-          content: `${event.name ?? "tool"} completed.`,
-          name: event.name,
-          result: event.result,
-          round: event.round,
-          phase: "result",
-        },
-      ];
-    case "assistant_message":
-      return [...current, createEntry("assistant", event.content ?? "")];
-    case "error":
-      return [...current, createEntry("assistant", `Request failed: ${event.error ?? "Unknown error"}`)];
+      return {
+        id: `tool-result-${event.runId ?? crypto.randomUUID()}-${event.name ?? "tool"}-${event.round ?? 0}`,
+        role: "tool",
+        content: `${event.name ?? "tool"} completed.`,
+        name: event.name,
+        result: event.result,
+        round: event.round,
+        phase: "result",
+      };
     default:
-      return current;
+      return null;
   }
 }
 
@@ -464,14 +605,51 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+function summarizeResumeFailure(message: string): string {
+  const normalized = message.replace(/^Request failed:\s*/i, "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "the run stopped unexpectedly";
+  }
+
+  return normalized.length > 160 ? `${normalized.slice(0, 157).trimEnd()}...` : normalized;
+}
+
+function buildResumePromptMessage(summary: string): string {
+  return `I can try to resume the last run from its last stable checkpoint. It stopped because ${summary}. Reply yes to resume or no to skip.`;
+}
+
+function mergeBootstrapMessages(
+  current: ChatEntry[],
+  next: ChatEntry[],
+  pendingPrompt: PendingResumePrompt | null,
+): ChatEntry[] {
+  if (!pendingPrompt) {
+    return next;
+  }
+
+  const promptMessage = buildResumePromptMessage(pendingPrompt.summary);
+  const nextAlreadyHasPrompt = next.some((entry) => entry.role === "assistant" && entry.content === promptMessage);
+  if (nextAlreadyHasPrompt) {
+    return next;
+  }
+
+  const existingPrompt = current.find((entry) => entry.role === "assistant" && entry.content === promptMessage)
+    ?? createEntry("assistant", promptMessage);
+
+  return [...next, existingPrompt];
+}
+
 export function useChat(): UseChatResult {
   const [messages, setMessages] = useState<ChatEntry[]>([]);
+  const [pendingResumePrompt, setPendingResumePrompt] = useState<PendingResumePrompt | null>(null);
+  const [pendingAssistantTurn, dispatchPendingAssistantTurn] = useReducer(pendingAssistantTurnReducer, null);
   const [builderInbox, setBuilderInbox] = useState<BuilderChatCard[]>([]);
   const [builderProjects, setBuilderProjects] = useState<ChatBuilderProjectSummary[]>([]);
+  const [builderProjectConversations, setBuilderProjectConversations] = useState<ChatConversationSummary[]>([]);
   const [builderStackPresets, setBuilderStackPresets] = useState<ChatBuilderStackPresetSummary[]>([]);
   const [builderTemplates, setBuilderTemplates] = useState<ChatBuilderTemplateSummary[]>([]);
   const [builderOnboarding, setBuilderOnboarding] = useState<{ step: BuilderOnboardingStep; spec: BuilderOnboardingSpec } | null>(null);
-  const [selectedBuilderProjectId, setSelectedBuilderProjectId] = useState<string | null>(null);
+  const [selectedBuilderProjectId, setSelectedBuilderProjectIdState] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [currentConversation, setCurrentConversation] = useState<ChatConversationDetail | null>(null);
   const [recentConversations, setRecentConversations] = useState<ChatConversationSummary[]>([]);
@@ -485,13 +663,13 @@ export function useChat(): UseChatResult {
   const [executionCatalog, setExecutionCatalog] = useState<ChatExecutionCatalog>(EMPTY_EXECUTION_CATALOG);
   const [executionMode, setExecutionModeState] = useState<ChatExecutionMode>(EMPTY_EXECUTION_CATALOG.defaults.mode);
   const [executionPluginId, setExecutionPluginIdState] = useState<string>(EMPTY_EXECUTION_CATALOG.defaults.pluginId);
+  const [chatVerbosity, setChatVerbosityState] = useState<ChatVerbosity>("concise");
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isExecutionPreferenceHydrated, setIsExecutionPreferenceHydrated] = useState(false);
   const [isLoadingHistoryConversation, setIsLoadingHistoryConversation] = useState(false);
   const [isLoadingHistoryLists, setIsLoadingHistoryLists] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [activeBuilderTaskId, setActiveBuilderTaskId] = useState<string | null>(null);
-  const [activeBuilderProgress, setActiveBuilderProgress] = useState<BuilderChatCardProgress | null>(null);
   const isMountedRef = useRef(true);
   const completionPublishedTaskIdsRef = useRef<Set<string>>(new Set());
   const syncedExecutionDefaultsRef = useRef<string | null>(null);
@@ -499,6 +677,15 @@ export function useChat(): UseChatResult {
   const bootstrapAbortControllerRef = useRef<AbortController | null>(null);
   const bootstrapRequestIdRef = useRef(0);
   const sidecarInteractionAbortControllerRef = useRef<AbortController | null>(null);
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
+  const pendingResumePromptRef = useRef(pendingResumePrompt);
+  pendingResumePromptRef.current = pendingResumePrompt;
+  const activeRunRef = useRef(activeRun);
+  activeRunRef.current = activeRun;
+  const selectedBuilderProjectIdRef = useRef(selectedBuilderProjectId);
+  selectedBuilderProjectIdRef.current = selectedBuilderProjectId;
+  const previousBuilderProjectIdRef = useRef(selectedBuilderProjectId);
 
   function applyExecutionSelection(nextSelection: ExecutionSelection, options?: {
     syncConversation?: boolean;
@@ -523,6 +710,23 @@ export function useChat(): UseChatResult {
     syncedExecutionDefaultsRef.current = null;
     setExecutionPluginIdState(value);
   };
+
+  const setSelectedBuilderProjectId: React.Dispatch<React.SetStateAction<string | null>> = (value) => {
+    setSelectedBuilderProjectIdState(value);
+  };
+
+  // Trigger bootstrap reload whenever the selected builder project changes (after initial render).
+  useEffect(() => {
+    if (previousBuilderProjectIdRef.current === selectedBuilderProjectId) {
+      return;
+    }
+    previousBuilderProjectIdRef.current = selectedBuilderProjectId;
+    void loadBootstrap({
+      selectedConversationId: conversationIdRef.current,
+      selectedBuilderProjectId,
+    }).catch(() => undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBuilderProjectId]);
 
   useEffect(() => () => {
     isMountedRef.current = false;
@@ -589,28 +793,38 @@ export function useChat(): UseChatResult {
           latestLoopSummary: string | null;
         };
         if (!cancelled && isMountedRef.current) {
-          setActiveBuilderProgress({
-            currentIteration: data.currentIteration ?? null,
-            maxIterations: data.maxIterations ?? null,
-            loopPhase: data.loopPhase ?? null,
-            latestLoopSummary: data.latestLoopSummary ?? null,
+          const currentConvId = conversationIdRef.current;
+          const currentProjectId = selectedBuilderProjectIdRef.current;
+          dispatchPendingAssistantTurn({
+            type: "set-builder-progress",
+            progress: {
+              currentIteration: data.currentIteration ?? null,
+              maxIterations: data.maxIterations ?? null,
+              loopPhase: data.loopPhase ?? null,
+              latestLoopSummary: data.latestLoopSummary ?? null,
+            },
+            taskId: data.taskId,
+            builderProjectId: currentProjectId,
+            conversationId: currentConvId,
           });
           if (data.status !== "RUNNING") {
             setActiveBuilderTaskId(null);
-            setActiveBuilderProgress(null);
-            if (conversationId && !completionPublishedTaskIdsRef.current.has(data.taskId)) {
+            if (currentConvId && !completionPublishedTaskIdsRef.current.has(data.taskId)) {
               completionPublishedTaskIdsRef.current.add(data.taskId);
               await fetch(`/api/chat/builder/tasks/${data.taskId}/complete`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ conversationId }),
+                body: JSON.stringify({ conversationId: currentConvId }),
               }).catch(() => undefined);
             }
-            if (conversationId) {
+            if (currentConvId) {
               await loadBootstrap({
-                selectedConversationId: conversationId,
+                selectedConversationId: currentConvId,
                 replaceCurrent: true,
               });
+            }
+            if (isMountedRef.current) {
+              dispatchPendingAssistantTurn({ type: "clear" });
             }
           }
         }
@@ -625,10 +839,11 @@ export function useChat(): UseChatResult {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [activeBuilderTaskId, conversationId]);
+  }, [activeBuilderTaskId]);
 
   async function loadBootstrap(options?: {
     selectedConversationId?: string | null;
+    selectedBuilderProjectId?: string | null;
     replaceCurrent?: boolean;
     recentPage?: number;
     archivedPage?: number;
@@ -642,12 +857,18 @@ export function useChat(): UseChatResult {
 
     const replaceCurrent = options?.replaceCurrent ?? false;
     const nextConversationId = options?.selectedConversationId ?? conversationId;
+    const nextBuilderProjectId = options?.selectedBuilderProjectId !== undefined
+      ? options.selectedBuilderProjectId
+      : selectedBuilderProjectId;
     const nextRecentPage = options?.recentPage ?? recentPagination.currentPage;
     const nextArchivedPage = options?.archivedPage ?? archivedPagination.currentPage;
     const nextFilters = options?.historyFilters ?? historyFilters;
     const params = new URLSearchParams();
     if (nextConversationId) {
       params.set("selectedId", nextConversationId);
+    }
+    if (nextBuilderProjectId) {
+      params.set("selectedBuilderProjectId", nextBuilderProjectId);
     }
     params.set("recentPage", String(nextRecentPage));
     params.set("archivedPage", String(nextArchivedPage));
@@ -682,6 +903,7 @@ export function useChat(): UseChatResult {
       setArchivedPagination(payload.archivedPagination);
       setHistoryFilters(payload.historyFilters);
       setModelPricing(payload.modelPricing);
+      setChatVerbosityState(payload.chatVerbosity);
       setExecutionCatalog(payload.executionCatalog);
       const storedExecutionPreference = getStoredExecutionPreference();
       const preferredExecutionDefaults = payload.currentConversation
@@ -691,13 +913,22 @@ export function useChat(): UseChatResult {
         conversationId: payload.currentConversationId,
       });
       setBuilderProjects(payload.builderProjects);
+      setBuilderProjectConversations(payload.builderProjectConversations ?? []);
       setBuilderStackPresets(payload.builderStackPresets ?? []);
       setBuilderTemplates(payload.builderTemplates ?? []);
-      setSelectedBuilderProjectId((current) => (
-        current && payload.builderProjects.some((project) => project.id === current)
-          ? current
-          : payload.builderProjects[0]?.id ?? null
-      ));
+      setSelectedBuilderProjectIdState((current) => {
+        if (options?.selectedBuilderProjectId !== undefined) {
+          return options.selectedBuilderProjectId && payload.builderProjects.some((project) => project.id === options.selectedBuilderProjectId)
+            ? options.selectedBuilderProjectId
+            : payload.builderProjects[0]?.id ?? null;
+        }
+
+        return payload.currentConversation?.builderProjectId && payload.builderProjects.some((project) => project.id === payload.currentConversation?.builderProjectId)
+          ? payload.currentConversation.builderProjectId
+          : current && payload.builderProjects.some((project) => project.id === current)
+            ? current
+            : payload.builderProjects[0]?.id ?? null;
+      });
       setBuilderInbox(payload.builderInbox);
       setConversationId(payload.currentConversationId);
       setCurrentConversation(payload.currentConversation);
@@ -705,8 +936,14 @@ export function useChat(): UseChatResult {
 
       if (replaceCurrent) {
         const nextMessages = payload.currentConversation ? mapConversationMessages(payload.currentConversation.messages) : [];
-        setMessages((current) => haveEquivalentChatEntries(current, nextMessages) ? current : nextMessages);
+        setMessages((current) => {
+          const mergedMessages = mergeBootstrapMessages(current, nextMessages, pendingResumePromptRef.current);
+          return haveEquivalentChatEntries(current, mergedMessages) ? current : mergedMessages;
+        });
         setActiveRun(createInternalActiveRun(payload.activeRun));
+        if (!activeBuilderTaskId) {
+          dispatchPendingAssistantTurn({ type: "clear" });
+        }
       }
 
       setHistoryConversation((current) => {
@@ -798,6 +1035,7 @@ export function useChat(): UseChatResult {
         }
         console.error("[chat bootstrap]", error);
         if (isMountedRef.current) {
+          dispatchPendingAssistantTurn({ type: "clear" });
           setMessages([
             createEntry("assistant", `Chat bootstrap failed: ${error instanceof Error ? error.message : "Unknown error."}`),
           ]);
@@ -815,6 +1053,7 @@ export function useChat(): UseChatResult {
   async function loadConversation(nextConversationId: string): Promise<void> {
     setIsBootstrapping(true);
     try {
+      dispatchPendingAssistantTurn({ type: "clear" });
       await loadBootstrap({ selectedConversationId: nextConversationId, replaceCurrent: true });
     } finally {
       setIsBootstrapping(false);
@@ -826,6 +1065,7 @@ export function useChat(): UseChatResult {
     setCurrentConversation(null);
     setMessages([]);
     setActiveRun(IDLE_ACTIVE_RUN);
+    dispatchPendingAssistantTurn({ type: "clear" });
     setHistoryConversation(null);
     persistSelectedConversationId(null);
   }
@@ -1069,6 +1309,18 @@ export function useChat(): UseChatResult {
       chatMode: "agent",
       chatPluginId: "builder",
     })]);
+    dispatchPendingAssistantTurn({
+      type: "start",
+      conversationId,
+      chatMode: "agent",
+      chatPluginId: "builder",
+      builderProjectId: projectId,
+    });
+    dispatchPendingAssistantTurn({
+      type: "append-activity",
+      entry: createEntry("status", "Builder task started."),
+      conversationId,
+    });
 
     const response = await fetch("/api/chat/builder/tasks", {
       method: "POST",
@@ -1092,7 +1344,13 @@ export function useChat(): UseChatResult {
     });
     if (payload.execution?.status === "RUNNING" && typeof payload.execution.taskId === "string") {
       setActiveBuilderTaskId(payload.execution.taskId);
-      setActiveBuilderProgress(null);
+      dispatchPendingAssistantTurn({
+        type: "set-builder-progress",
+        progress: null,
+        taskId: payload.execution.taskId,
+        builderProjectId: projectId,
+        conversationId: nextConversationId,
+      });
     }
     await loadBootstrap({
       selectedConversationId: nextConversationId,
@@ -1100,31 +1358,56 @@ export function useChat(): UseChatResult {
     });
   }
 
+  function publishResumePrompt(runId: string | null | undefined, reason: string, mode: ChatExecutionMode, pluginId: string): boolean {
+    if (!runId) {
+      return false;
+    }
+
+    const summary = summarizeResumeFailure(reason);
+    setPendingResumePrompt({ runId, summary, mode, pluginId });
+    setMessages((current) => [...current, createEntry("assistant", buildResumePromptMessage(summary))]);
+    return true;
+  }
+
   async function streamAgentRequest(input: string, options?: {
     oraclePrediction?: boolean;
     mode?: ChatExecutionMode;
     pluginId?: string;
     attachments?: ChatMessageAttachment[];
+    resumeRunId?: string;
   }): Promise<void> {
     const trimmed = input.trim();
-    if (!trimmed) return;
+    const resumeRunId = options?.resumeRunId;
+    if (!trimmed && !resumeRunId) return;
 
     const mode = options?.mode ?? executionMode;
     const pluginId = options?.pluginId ?? executionPluginId;
     const attachments = options?.attachments ?? [];
 
-    setMessages((current) => [...current, createEntry("user", trimmed, {
+    setPendingResumePrompt(null);
+
+    if (trimmed) {
+      setMessages((current) => [...current, createEntry("user", trimmed, {
+        chatMode: mode,
+        chatPluginId: pluginId,
+        attachments,
+      })]);
+    }
+    dispatchPendingAssistantTurn({
+      type: "start",
+      conversationId,
       chatMode: mode,
       chatPluginId: pluginId,
-      attachments,
-    })]);
+      builderProjectId: pluginId === "builder" ? selectedBuilderProjectId : null,
+    });
 
     startTransition(() => {
       fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: trimmed,
+          message: trimmed || undefined,
+          resumeRunId,
           conversationId: conversationId ?? undefined,
           mode,
           pluginId,
@@ -1135,6 +1418,7 @@ export function useChat(): UseChatResult {
       })
         .then(async (res) => {
           let nextConversationId = conversationId;
+          let builderTaskIdFromStream: string | null = null;
 
           if (!res.ok || !res.body) {
             const payload = await readJson<Partial<AgentResponse> & { error?: string }>(res);
@@ -1161,6 +1445,10 @@ export function useChat(): UseChatResult {
                 if (isMountedRef.current) {
                   setConversationId(event.conversationId);
                   persistSelectedConversationId(event.conversationId);
+                  dispatchPendingAssistantTurn({
+                    type: "sync",
+                    conversationId: event.conversationId,
+                  });
                 }
               }
               if (event.type === "meta") {
@@ -1184,6 +1472,23 @@ export function useChat(): UseChatResult {
                       runBaseTotalTokens: baseline.totalTokens,
                       runBaseCachedPromptTokens: baseline.cachedPromptTokens,
                     };
+                  });
+                  const metaEntry = mapStreamEventToActivityEntry(event);
+                  if (metaEntry) {
+                    dispatchPendingAssistantTurn({
+                      type: "append-activity",
+                      entry: metaEntry,
+                      conversationId: event.conversationId ?? nextConversationId,
+                      runId: event.runId,
+                    });
+                  }
+                  dispatchPendingAssistantTurn({
+                    type: "sync",
+                    conversationId: event.conversationId ?? nextConversationId,
+                    runId: event.runId,
+                    chatMode: mode,
+                    chatPluginId: pluginId,
+                    builderProjectId: pluginId === "builder" ? selectedBuilderProjectId : null,
                   });
                 }
               } else if (event.type === "usage") {
@@ -1215,8 +1520,15 @@ export function useChat(): UseChatResult {
                   try {
                     const parsed = event.result ? (JSON.parse(event.result) as { status?: string; taskId?: string }) : null;
                     if (parsed?.status === "RUNNING" && typeof parsed?.taskId === "string") {
+                      builderTaskIdFromStream = parsed.taskId;
                       setActiveBuilderTaskId(parsed.taskId);
-                      setActiveBuilderProgress(null);
+                      dispatchPendingAssistantTurn({
+                        type: "set-builder-progress",
+                        progress: null,
+                        taskId: parsed.taskId,
+                        builderProjectId: selectedBuilderProjectId,
+                        conversationId: event.conversationId ?? nextConversationId,
+                      });
                     }
                   } catch {
                     // ignore malformed result
@@ -1224,23 +1536,57 @@ export function useChat(): UseChatResult {
                 }
               }
               if (isMountedRef.current) {
-                setMessages((current) => appendStreamEntries(current, event));
+                if (event.type === "assistant_message") {
+                  dispatchPendingAssistantTurn({
+                    type: "set-content",
+                    content: event.content ?? "",
+                    conversationId: event.conversationId ?? nextConversationId,
+                    runId: event.runId,
+                  });
+                } else if (event.type === "meta") {
+                  // Meta events are already appended above when active-run state is initialized.
+                } else if (event.type === "error") {
+                  dispatchPendingAssistantTurn({ type: "clear" });
+                  if (!publishResumePrompt(event.runId ?? activeRunRef.current.runId, event.error ?? "Unknown error", mode, pluginId)) {
+                    setMessages((current) => [
+                      ...current,
+                      createEntry("assistant", `Request failed: ${event.error ?? "Unknown error"}`),
+                    ]);
+                  }
+                } else {
+                  const activityEntry = mapStreamEventToActivityEntry(event);
+                  if (activityEntry) {
+                    dispatchPendingAssistantTurn({
+                      type: "append-activity",
+                      entry: activityEntry,
+                      conversationId: event.conversationId ?? nextConversationId,
+                      runId: event.runId,
+                    });
+                  }
+                }
               }
             }
           }
 
           if (nextConversationId) {
-            await loadBootstrap({ selectedConversationId: nextConversationId, replaceCurrent: false });
+            await loadBootstrap({ selectedConversationId: nextConversationId, replaceCurrent: true });
+          }
+
+          if (!builderTaskIdFromStream && isMountedRef.current) {
+            dispatchPendingAssistantTurn({ type: "clear" });
           }
         })
         .catch((error: Error) => {
           if (isAbortError(error) || !isMountedRef.current) {
             return;
           }
-          setMessages((current) => [
-            ...current,
-            createEntry("assistant", `Request failed: ${error.message}`),
-          ]);
+          dispatchPendingAssistantTurn({ type: "clear" });
+          if (!publishResumePrompt(activeRunRef.current.runId, error.message, mode, pluginId)) {
+            setMessages((current) => [
+              ...current,
+              createEntry("assistant", `Request failed: ${error.message}`),
+            ]);
+          }
         });
     });
   }
@@ -1262,10 +1608,60 @@ export function useChat(): UseChatResult {
     });
   }
 
+  async function resolvePendingResumePrompt(decision: "resume" | "dismiss"): Promise<void> {
+    const prompt = pendingResumePrompt;
+    if (!prompt) {
+      return;
+    }
+
+    setPendingResumePrompt(null);
+    setMessages((current) => [...current, createEntry("user", decision === "resume" ? "yes" : "no")]);
+
+    if (decision === "dismiss") {
+      setMessages((current) => [...current, createEntry("assistant", "Okay. I won't resume that run.")]);
+      return;
+    }
+
+    await streamAgentRequest("", {
+      mode: prompt.mode,
+      pluginId: prompt.pluginId,
+      resumeRunId: prompt.runId,
+    });
+  }
+
+  async function setChatVerbosity(value: ChatVerbosity): Promise<void> {
+    if (value === chatVerbosity) {
+      return;
+    }
+
+    const previous = chatVerbosity;
+    setChatVerbosityState(value);
+
+    const response = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: [{
+          key: CHAT_VERBOSITY_SETTING_KEY,
+          value,
+        }],
+      }),
+    });
+    const payload = await readJson<{ error?: string }>(response);
+
+    if (!response.ok) {
+      setChatVerbosityState(previous);
+      throw new Error(payload.error ?? "Failed to save chat verbosity.");
+    }
+  }
+
   return {
     messages,
+    pendingResumePrompt,
+    pendingAssistantTurn,
     builderInbox,
     builderProjects,
+    builderProjectConversations,
     builderStackPresets,
     builderTemplates,
     builderOnboarding,
@@ -1283,13 +1679,15 @@ export function useChat(): UseChatResult {
     isLoadingHistoryConversation,
     isLoadingHistoryLists,
     activeRun: toPublicActiveRun(activeRun),
-    activeBuilderProgress,
+    activeBuilderProgress: pendingAssistantTurn?.builderProgress ?? null,
     modelPricing,
     executionCatalog,
     executionMode,
     executionPluginId,
+    chatVerbosity,
     setExecutionMode,
     setExecutionPluginId,
+    setChatVerbosity,
     setSelectedBuilderProjectId,
     startBuilderOnboarding,
     updateBuilderOnboardingSpec,
@@ -1300,6 +1698,7 @@ export function useChat(): UseChatResult {
     launchBuilderTaskFromChat,
     sendMessage,
     sendOraclePrediction,
+    resolvePendingResumePrompt,
     startNewChat,
     loadConversation,
     archiveConversation,

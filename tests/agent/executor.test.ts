@@ -34,7 +34,10 @@ const ontologyMocks = vi.hoisted(() => ({
 const runJournalMocks = vi.hoisted(() => ({
   startAgentRun: vi.fn(),
   completeAgentRun: vi.fn(),
+  getAgentRun: vi.fn(),
+  getAgentRunResumeSnapshot: vi.fn(),
   recordAgentRunPromptAssembly: vi.fn(),
+  recordAgentRunResumeSnapshot: vi.fn(),
   recordAgentRunRoundUsage: vi.fn(),
   recordAgentRunSwarm: vi.fn(),
   recordAgentRunToolCall: vi.fn(),
@@ -85,7 +88,10 @@ vi.mock("@/lib/ontology/prompt", () => ({
 vi.mock("@/lib/agent/run-journal", () => ({
   startAgentRun: runJournalMocks.startAgentRun,
   completeAgentRun: runJournalMocks.completeAgentRun,
+  getAgentRun: runJournalMocks.getAgentRun,
+  getAgentRunResumeSnapshot: runJournalMocks.getAgentRunResumeSnapshot,
   recordAgentRunPromptAssembly: runJournalMocks.recordAgentRunPromptAssembly,
+  recordAgentRunResumeSnapshot: runJournalMocks.recordAgentRunResumeSnapshot,
   recordAgentRunRoundUsage: runJournalMocks.recordAgentRunRoundUsage,
   recordAgentRunSwarm: runJournalMocks.recordAgentRunSwarm,
   recordAgentRunToolCall: runJournalMocks.recordAgentRunToolCall,
@@ -95,6 +101,7 @@ vi.mock("@/lib/agent/run-journal", () => ({
 }));
 
 import { executeAgentConversation } from "@/lib/agent/executor";
+import { createToolCallResumeSignature } from "@/lib/agent/resume";
 
 describe("agent executor explicit memory", () => {
   beforeEach(() => {
@@ -169,6 +176,23 @@ describe("agent executor explicit memory", () => {
     });
     ontologyMocks.buildOntologyPromptBlock.mockResolvedValue({ block: "", lines: [], omitted: true, reason: "empty" });
     runJournalMocks.startAgentRun.mockReturnValue({ runId: "run-1" });
+    runJournalMocks.getAgentRun.mockReturnValue({
+      runId: "run-0",
+      conversationId: "conversation-1",
+      profile: "general_operator",
+      provider: "ollama",
+      userMessage: "Draft a reply",
+    });
+    runJournalMocks.getAgentRunResumeSnapshot.mockReturnValue({
+      version: 1,
+      lastStableRound: 0,
+      pendingRound: null,
+      pendingRoundStatus: "idle",
+      stableMessages: [],
+      completedToolCalls: [],
+      resumeEligible: false,
+      resumeBlockedReason: "Run has no stable checkpointed message state.",
+    });
     runJournalMocks.recordAgentRunSwarm.mockReturnValue({ runId: "run-1", swarm: { activated: true } });
     runJournalMocks.recordAgentRunRoundUsage.mockImplementation((_runId, params) => ({
       usage: {
@@ -687,5 +711,260 @@ describe("agent executor explicit memory", () => {
     }));
     expect(toolResultEvent).not.toHaveProperty("action");
     expect(toolResultEvent).not.toHaveProperty("panel");
+  });
+
+  it("normalizes thrown tool failures into structured envelopes", async () => {
+    pluginMocks.getAllToolDefinitions.mockReturnValue([
+      {
+        name: "developer_list_agent_runs",
+        description: "List runs.",
+        parameters: { type: "object", properties: {} },
+      },
+    ]);
+    kernelMocks.chatComplete
+      .mockResolvedValueOnce({
+        content: "",
+        toolCalls: [
+          {
+            id: "tool-1",
+            name: "developer_list_agent_runs",
+            arguments: {},
+          },
+        ],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      })
+      .mockResolvedValueOnce({
+        content: "reply",
+        toolCalls: [],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      });
+    pluginMocks.executeTool.mockRejectedValue(new Error("Request timed out while reading runs"));
+
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+
+    await executeAgentConversation({
+      message: "Check recent runs",
+      forcedProfile: "general_operator",
+      onEvent: (event) => {
+        events.push(event as { type: string; [key: string]: unknown });
+      },
+    });
+
+    const toolResultEvent = events.find((event) => event.type === "tool_result");
+
+    expect(toolResultEvent).toEqual(expect.objectContaining({
+      type: "tool_result",
+      name: "developer_list_agent_runs",
+      failure: expect.objectContaining({
+        layer: "tool",
+        kind: "timeout",
+        retryable: true,
+        resumeSafe: false,
+        suggestedNextAction: "retry_with_backoff",
+      }),
+    }));
+    expect(runJournalMocks.recordAgentRunToolResult).toHaveBeenCalledWith("run-1", expect.objectContaining({
+      name: "developer_list_agent_runs",
+      isError: true,
+      failure: expect.objectContaining({
+        kind: "timeout",
+      }),
+    }));
+  });
+
+  it("normalizes returned tool error payloads into structured envelopes", async () => {
+    pluginMocks.getAllToolDefinitions.mockReturnValue([
+      {
+        name: "browser_navigate",
+        description: "Navigate.",
+        parameters: { type: "object", properties: {} },
+      },
+    ]);
+    kernelMocks.chatComplete
+      .mockResolvedValueOnce({
+        content: "",
+        toolCalls: [
+          {
+            id: "tool-1",
+            name: "browser_navigate",
+            arguments: {},
+          },
+        ],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      })
+      .mockResolvedValueOnce({
+        content: "reply",
+        toolCalls: [],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      });
+    pluginMocks.executeTool.mockResolvedValue({ error: "Missing required tool argument: url" });
+
+    await executeAgentConversation({
+      message: "Go somewhere",
+      forcedProfile: "general_operator",
+    });
+
+    expect(runJournalMocks.recordAgentRunToolResult).toHaveBeenCalledWith("run-1", expect.objectContaining({
+      name: "browser_navigate",
+      isError: true,
+      failure: expect.objectContaining({
+        layer: "validation",
+        kind: "bad_input",
+        retryable: false,
+        resumeSafe: true,
+        suggestedNextAction: "fix_input",
+      }),
+    }));
+  });
+
+  it("resumes from the last stable round and reuses cached safe tool results", async () => {
+    const cachedSignature = createToolCallResumeSignature("developer_list_agent_runs", {});
+
+    runJournalMocks.getAgentRun.mockReturnValue({
+      runId: "run-previous",
+      conversationId: "conversation-1",
+      profile: "general_operator",
+      provider: "ollama",
+      userMessage: "Check recent runs",
+    });
+    runJournalMocks.getAgentRunResumeSnapshot.mockReturnValue({
+      version: 1,
+      lastStableRound: 1,
+      pendingRound: 2,
+      pendingRoundStatus: "interrupted",
+      stableMessages: [
+        { role: "system", content: "system prompt" },
+        { role: "user", content: "Check recent runs" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "tool-old", name: "developer_list_agent_runs", arguments: {} }],
+        },
+        { role: "tool", name: "developer_list_agent_runs", content: "{\n  \"runs\": []\n}", toolCallId: "tool-old" },
+      ],
+      completedToolCalls: [{
+        signature: cachedSignature,
+        round: 1,
+        toolCallId: "tool-old",
+        name: "developer_list_agent_runs",
+        args: {},
+        result: "{\n  \"runs\": []\n}",
+        isError: false,
+        resumeSafe: true,
+      }],
+      resumeEligible: true,
+      resumeBlockedReason: null,
+    });
+    runJournalMocks.startAgentRun.mockReturnValue({ runId: "run-2" });
+    pluginMocks.getAllToolDefinitions.mockReturnValue([
+      {
+        name: "developer_list_agent_runs",
+        description: "List runs.",
+        parameters: { type: "object", properties: {} },
+      },
+    ]);
+    kernelMocks.chatComplete
+      .mockResolvedValueOnce({
+        content: "",
+        toolCalls: [{ id: "tool-new", name: "developer_list_agent_runs", arguments: {} }],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      })
+      .mockResolvedValueOnce({
+        content: "reply",
+        toolCalls: [],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      });
+
+    await executeAgentConversation({
+      message: "continue",
+      resumeRunId: "run-previous",
+      forcedProfile: "general_operator",
+    });
+
+    expect(pluginMocks.executeTool).not.toHaveBeenCalled();
+    expect(runJournalMocks.startAgentRun).toHaveBeenCalledWith(expect.objectContaining({
+      userMessage: "Check recent runs",
+      resumedFromRunId: "run-previous",
+    }));
+    expect(runJournalMocks.recordAgentRunResumeSnapshot).toHaveBeenCalledWith("run-2", expect.objectContaining({
+      lastStableRound: 2,
+      completedToolCalls: expect.arrayContaining([
+        expect.objectContaining({
+          signature: cachedSignature,
+          name: "developer_list_agent_runs",
+          resumeSafe: true,
+        }),
+      ]),
+    }));
+  });
+
+  it("fails closed when a resume snapshot is blocked", async () => {
+    runJournalMocks.getAgentRun.mockReturnValue({
+      runId: "run-old",
+      conversationId: "conversation-1",
+      profile: "general_operator",
+      provider: "ollama",
+      userMessage: "Investigate",
+    });
+    runJournalMocks.getAgentRunResumeSnapshot.mockReturnValue({
+      version: 1,
+      lastStableRound: 8,
+      pendingRound: null,
+      pendingRoundStatus: "interrupted",
+      stableMessages: [{ role: "system", content: "system" }],
+      completedToolCalls: [],
+      resumeEligible: false,
+      resumeBlockedReason: "Run exhausted the maximum tool rounds and cannot auto-resume safely.",
+    });
+
+    await expect(executeAgentConversation({
+      message: "resume",
+      resumeRunId: "run-old",
+    })).rejects.toThrow("maximum tool rounds");
+  });
+
+  it("rejects resume attempts across conversations", async () => {
+    memoryMocks.getOrCreateConversation.mockResolvedValue("conversation-new");
+    runJournalMocks.getAgentRun.mockReturnValue({
+      runId: "run-old",
+      conversationId: "conversation-1",
+      profile: "general_operator",
+      provider: "ollama",
+      userMessage: "Investigate",
+    });
+    runJournalMocks.getAgentRunResumeSnapshot.mockReturnValue({
+      version: 1,
+      lastStableRound: 1,
+      pendingRound: 2,
+      pendingRoundStatus: "interrupted",
+      stableMessages: [{ role: "system", content: "system" }],
+      completedToolCalls: [],
+      resumeEligible: true,
+      resumeBlockedReason: null,
+    });
+
+    await expect(executeAgentConversation({
+      message: "resume",
+      resumeRunId: "run-old",
+      conversationId: "conversation-new",
+    })).rejects.toThrow("different conversation");
   });
 });

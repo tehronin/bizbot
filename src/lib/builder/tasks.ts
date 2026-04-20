@@ -1,6 +1,6 @@
 import type { BuilderTask, BuilderTaskStage, BuilderTaskStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { defaultBuilderTaskMetadata, normalizeBuilderTaskMetadata, type BuilderPlanStep } from "@/lib/builder/types";
+import { appendBuilderTaskEvent, defaultBuilderTaskMetadata, normalizeBuilderTaskMetadata, type BuilderPlanStep } from "@/lib/builder/types";
 
 export interface BuilderTaskCreateInput {
   projectId: string;
@@ -120,6 +120,20 @@ export async function createBuilderTask(input: BuilderTaskCreateInput): Promise<
     throw new Error("Builder tasks require a title and description.");
   }
 
+  const metadata = appendBuilderTaskEvent(
+    normalizeBuilderTaskMetadata(input.metadata),
+    {
+      type: "created",
+      status: "PENDING",
+      stage: "REQUESTED",
+      summary: `Created task: ${title}`,
+      error: null,
+      iteration: null,
+      loopPhase: null,
+      runId: null,
+    },
+  );
+
   return db.builderTask.create({
     data: {
       projectId: input.projectId,
@@ -128,7 +142,7 @@ export async function createBuilderTask(input: BuilderTaskCreateInput): Promise<
       description,
       acceptanceCriteria: input.acceptanceCriteria as never,
       parentTaskId: input.parentTaskId,
-      metadata: input.metadata as never,
+      metadata: toInputJsonValue(metadata) as never,
     },
   });
 }
@@ -174,7 +188,16 @@ export async function updateBuilderTaskStage(taskId: string, input: {
     stage: input.stage,
     ...(input.status ? { status: input.status } : {}),
     metadata: toInputJsonValue({
-      ...metadata,
+      ...appendBuilderTaskEvent(metadata, {
+        type: "stage_changed",
+        status: input.status ?? task.status,
+        stage: input.stage,
+        summary: input.error ?? `Stage moved to ${input.stage}.`,
+        error: input.error ?? null,
+        iteration: metadata.currentIteration,
+        loopPhase: metadata.loopPhase,
+        runId: metadata.lastRunId,
+      }),
       ...(input.error !== undefined ? { lastStageError: input.error } : {}),
       lastAttemptedStage: input.stage,
       ...(input.planSteps ? { planSteps: input.planSteps } : {}),
@@ -206,7 +229,16 @@ export async function updateBuilderTaskExecutionState(taskId: string, input: {
     ...(input.status !== undefined ? { status: input.status } : {}),
     ...(input.stage !== undefined ? { stage: input.stage } : {}),
     metadata: toInputJsonValue({
-      ...metadata,
+      ...appendBuilderTaskEvent(metadata, {
+        type: input.status !== undefined ? "status_changed" : input.summary !== undefined ? "summary_updated" : "execution_state",
+        status: input.status ?? task.status,
+        stage: input.stage ?? task.stage,
+        summary: input.summary ?? input.latestLoopSummary ?? metadata.latestLoopSummary,
+        error: input.error ?? null,
+        iteration: input.currentIteration ?? metadata.currentIteration,
+        loopPhase: input.loopPhase ?? metadata.loopPhase,
+        runId: input.lastRunId ?? metadata.lastRunId,
+      }),
       ...(input.error !== undefined ? { lastStageError: input.error } : {}),
       ...(input.currentIteration !== undefined ? { currentIteration: input.currentIteration } : {}),
       ...(input.maxIterations !== undefined ? { maxIterations: input.maxIterations } : {}),
@@ -235,7 +267,18 @@ export async function resumeBuilderTask(taskId: string, input: ResumeBuilderTask
       ? `Resuming builder task from iteration ${resumeFromIteration} using the current workspace state.`
       : "Resuming builder task using the current workspace state.",
     metadata: toInputJsonValue({
-      ...metadata,
+      ...appendBuilderTaskEvent(metadata, {
+        type: "resumed",
+        status: "RUNNING",
+        stage: metadata.lastAttemptedStage ?? task.stage,
+        summary: resumeFromIteration
+          ? `Resume requested from iteration ${resumeFromIteration}.`
+          : "Resume requested.",
+        error: null,
+        iteration: resumeFromIteration ?? null,
+        loopPhase: "planning",
+        runId: null,
+      }),
       retryCount: metadata.retryCount + 1,
       lastStageError: null,
       lastUserRequest: input.request.trim(),

@@ -120,6 +120,8 @@ model Conversation {
   title         String?
   user          User      @relation(fields: [userId], references: [id])
   userId        String
+  builderProject   BuilderProject? @relation(fields: [builderProjectId], references: [id], onDelete: Cascade)
+  builderProjectId String?
   defaultMode   ChatExecutionMode @default(ASK)
   defaultPluginId String  @default("just-chatting")
   promptSummary String?
@@ -134,6 +136,7 @@ model Conversation {
   builderInteractions BuilderInteraction[]
 
   @@index([userId, archivedAt, deletedAt, lastMessageAt])
+  @@index([builderProjectId, archivedAt, deletedAt, lastMessageAt])
 }
 
 model OraclePrediction {
@@ -693,6 +696,7 @@ model BuilderProject {
   mcpSnapshots   BuilderMcpSnapshot[]
   tasks          BuilderTask[]
   taskSpecs      BuilderTaskSpec[]
+  conversations  Conversation[]
 
   @@index([template, createdAt])
   @@index([archivedAt, updatedAt])

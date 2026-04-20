@@ -28,13 +28,17 @@ import { buildOntologyPromptBlock } from "@/lib/ontology/prompt";
 import {
   completeAgentRun,
   countDelegationDepth,
+  getAgentRun,
+  getAgentRunResumeSnapshot,
   getDelegationChain,
   recordAgentRunPromptAssembly,
+  recordAgentRunResumeSnapshot,
   recordAgentRunRoundUsage,
   recordAgentRunSwarm,
   recordAgentRunToolCall,
   recordAgentRunToolResult,
   startAgentRun,
+  type AgentRunSnapshotToolCall,
 } from "@/lib/agent/run-journal";
 import type { ChatMessage, JsonObject, ToolExecutionResult } from "@/lib/agent/tools";
 import {
@@ -56,6 +60,8 @@ import { auditChatSwarmDraft, buildChatSwarmSynthesisPacket, executeChatSwarmWor
 import { executeSwarmPlan } from "@/lib/swarm/runtime";
 import { summarizeSwarmExecution, summarizeSwarmPlan, summarizeSwarmWorkerResults } from "@/lib/swarm/telemetry";
 import { validateSwarmResults } from "@/lib/swarm/validation";
+import { getToolResultFailure, normalizeFailure, type FailureEnvelope } from "@/lib/failures";
+import { createToolCallResumeSignature, isToolExecutionResumeSafe } from "@/lib/agent/resume";
 
 export type AgentExecutionEvent =
   | {
@@ -80,7 +86,7 @@ export type AgentExecutionEvent =
     }
   | { type: "status"; message: string; round?: number }
   | { type: "tool_call"; round: number; toolCallId: string; name: string; args: object }
-  | { type: "tool_result"; round: number; toolCallId: string; name: string; result: string }
+  | { type: "tool_result"; round: number; toolCallId: string; name: string; result: string; failure?: FailureEnvelope }
   | {
       type: "swarm_plan";
       runId: string;
@@ -124,7 +130,7 @@ export type AgentExecutionEvent =
   | { type: "assistant_message"; content: string }
   | { type: "builder_iteration"; taskId: string; currentIteration: number | null; maxIterations: number | null; loopPhase: string | null; latestLoopSummary: string | null }
   | { type: "done"; conversationId: string; reply: string }
-  | { type: "error"; error: string };
+  | { type: "error"; error: string; failure?: FailureEnvelope };
 
 export interface AgentExecutionParams {
   message: string;
@@ -140,6 +146,7 @@ export interface AgentExecutionParams {
   delegationReason?: string;
   delegatedByProfile?: AgentProfile;
   allowedToolNames?: string[];
+  resumeRunId?: string;
   builderMcpContext?: {
     projectId: string;
     builderRunId: string;
@@ -231,6 +238,15 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   }
 }
 
+function normalizeToolFailure(toolName: string, error: unknown): FailureEnvelope {
+  return normalizeFailure(error, {
+    component: "agent_executor",
+    operation: "tool_execution",
+    toolName,
+    layer: "tool",
+  });
+}
+
 async function finalizeAssistantReply({
   reply,
   round,
@@ -242,6 +258,7 @@ async function finalizeAssistantReply({
   model,
   onEvent,
   metadata,
+  resumeSnapshot,
 }: {
   reply: string;
   round: number;
@@ -253,6 +270,11 @@ async function finalizeAssistantReply({
   model: string;
   onEvent?: AgentExecutionParams["onEvent"];
   metadata?: Record<string, unknown>;
+  resumeSnapshot?: {
+    stableMessages: ChatMessage[];
+    completedToolCalls: AgentRunSnapshotToolCall[];
+    resumedFromRunId?: string | null;
+  };
 }): Promise<AgentExecutionResult> {
   await saveMessage(resolvedConversationId, "ASSISTANT", reply, {
     userId: resolvedUserId,
@@ -263,6 +285,17 @@ async function finalizeAssistantReply({
     llmModel: model,
     ...(metadata ?? {}),
   });
+
+  if (resumeSnapshot) {
+    recordAgentRunResumeSnapshot(runId, {
+      lastStableRound: round,
+      pendingRound: null,
+      pendingRoundStatus: "completed",
+      stableMessages: resumeSnapshot.stableMessages,
+      completedToolCalls: resumeSnapshot.completedToolCalls,
+      ...(resumeSnapshot.resumedFromRunId ? { resumedFromRunId: resumeSnapshot.resumedFromRunId } : {}),
+    });
+  }
 
   completeAgentRun(runId, {
     status: "completed",
@@ -285,6 +318,27 @@ async function finalizeAssistantReply({
     provider,
     model,
   };
+}
+
+function cloneChatMessages(messages: ChatMessage[]): ChatMessage[] {
+  return JSON.parse(JSON.stringify(messages)) as ChatMessage[];
+}
+
+function mergeCompletedToolCalls(
+  existing: AgentRunSnapshotToolCall[],
+  additions: AgentRunSnapshotToolCall[],
+): AgentRunSnapshotToolCall[] {
+  const merged = new Map(existing.map((entry) => [entry.signature, entry]));
+  for (const entry of additions) {
+    merged.set(entry.signature, entry);
+  }
+
+  return [...merged.values()].sort((left, right) => {
+    if (left.round !== right.round) {
+      return left.round - right.round;
+    }
+    return left.name.localeCompare(right.name);
+  });
 }
 
 async function buildAttachmentContextBlock(attachments: ChatMessageAttachment[]): Promise<string> {
@@ -333,6 +387,7 @@ export async function executeAgentConversation(
     delegationReason,
     delegatedByProfile,
     allowedToolNames: explicitAllowedToolNames,
+    resumeRunId,
     builderMcpContext,
     onEvent,
   } = params;
@@ -361,23 +416,37 @@ export async function executeAgentConversation(
     // Older tests partially mock the memory module without this helper.
   }
   await emitStatus(onEvent, `Using conversation ${resolvedConversationId}.`);
-  const routedProfileDecision = routeAgentProfile(message);
+  const resumeSourceRun = resumeRunId ? getAgentRun(resumeRunId) : null;
+  if (resumeSourceRun && resumeSourceRun.conversationId !== resolvedConversationId) {
+    throw new Error(`Cannot resume agent run ${resumeRunId} because it belongs to a different conversation.`);
+  }
+  const resumeSnapshot = resumeRunId ? getAgentRunResumeSnapshot(resumeRunId) : null;
+  if (resumeRunId && (!resumeSnapshot || !resumeSnapshot.resumeEligible)) {
+    throw new Error(resumeSnapshot?.resumeBlockedReason ?? `Agent run ${resumeRunId} is not resumable.`);
+  }
+  const effectiveMessage = resumeSourceRun?.userMessage ?? message;
+  const routedProfileDecision = routeAgentProfile(effectiveMessage);
   const isOraclePlugin = isOracleChatExecutionSelection(executionSelection);
-  const oracleIntent = (oraclePrediction || isOraclePlugin) ? getOraclePredictionIntent(message) : { matched: false, query: "" };
+  const oracleIntent = (oraclePrediction || isOraclePlugin) ? getOraclePredictionIntent(effectiveMessage) : { matched: false, query: "" };
   // When Oracle is explicitly selected via dropdown but the message doesn't contain
   // "oracle predict" keywords, only force Oracle if the message parses into a
   // meaningful prediction target. Conversational follow-ups like "are you sure?"
   // should fall through to the normal agent path.
-  const oracleExplicitTarget = (isOraclePlugin && !oracleIntent.matched) ? parseOraclePredictionTarget(message) : null;
+  const oracleExplicitTarget = (isOraclePlugin && !oracleIntent.matched) ? parseOraclePredictionTarget(effectiveMessage) : null;
   const oracleExplicitQualified = isMeaningfulOraclePredictionTarget(oracleExplicitTarget);
   const effectiveOracleIntent = oracleIntent.matched
     ? oracleIntent
     : oracleExplicitQualified
-      ? { matched: true as const, query: message.trim() }
+      ? { matched: true as const, query: effectiveMessage.trim() }
       : oracleIntent;
   const oracleWillRunPrediction = effectiveOracleIntent.matched && effectiveOracleIntent.query.trim().length > 0;
   const selectedProfile = oracleWillRunPrediction ? "research_operator" : getChatExecutionProfile(executionSelection);
-  const profileDecision = oracleWillRunPrediction
+  const profileDecision = resumeSourceRun
+    ? {
+        profile: resumeSourceRun.profile,
+        reason: `resuming agent run ${resumeSourceRun.runId} from stable round ${resumeSnapshot?.lastStableRound ?? 0}`,
+      }
+    : oracleWillRunPrediction
     ? {
         profile: selectedProfile,
         reason: "Oracle prediction was explicitly triggered from the Oracle chat plugin.",
@@ -397,9 +466,12 @@ export async function executeAgentConversation(
           ? `chat plugin '${executionSelection.pluginId}' keeps the request in the general chat lane`
           : `chat plugin '${executionSelection.pluginId}' selected the ${selectedProfile} lane instead of message-based routing (${routedProfileDecision.profile})`,
       };
-  const profilePrompt = buildAgentProfilePrompt(profileDecision.profile, message);
+  if (resumeSourceRun && oracleWillRunPrediction) {
+    throw new Error("Resume is only supported for the general chat tool loop.");
+  }
+  const profilePrompt = buildAgentProfilePrompt(profileDecision.profile, effectiveMessage);
   const profileDescriptor = getAgentProfileDescriptor(profileDecision.profile);
-  const resolvedProvider = getActiveProvider(provider);
+  const resolvedProvider = getActiveProvider(provider ?? resumeSourceRun?.provider);
   const resolvedModel = getModelForProvider(resolvedProvider);
   await emitStatus(onEvent, `Resolved profile ${profileDecision.profile} via ${resolvedProvider}/${resolvedModel}.`);
   throwIfAborted(signal);
@@ -409,9 +481,9 @@ export async function executeAgentConversation(
   });
   throwIfAborted(signal);
   await emitStatus(onEvent, "Loading explicit memory facts.");
-  const explicitMemoryFacts = await getRelevantMemoryFacts({ userId: resolvedUserId, query: message });
+  const explicitMemoryFacts = await getRelevantMemoryFacts({ userId: resolvedUserId, query: effectiveMessage });
   await emitStatus(onEvent, "Building prompt context.");
-  const contextResult = await buildContextForPrompt(message, resolvedConversationId, resolvedUserId);
+  const contextResult = await buildContextForPrompt(effectiveMessage, resolvedConversationId, resolvedUserId);
   await emitStatus(onEvent, "Loading ontology context.");
   const ontologyPrompt = await buildOntologyPromptBlock(resolvedUserId).catch((error) => {
     console.warn("[agent executor] ontology context skipped:", error);
@@ -421,7 +493,7 @@ export async function executeAgentConversation(
   const ontologyBlock = ontologyPrompt.omitted ? "" : ontologyPrompt.block;
   const contextBlock = contextResult.text;
   const attachmentContextBlock = await buildAttachmentContextBlock(attachments);
-  const capabilitySummaryBlock = shouldInjectBizBotCapabilitySummary(message)
+  const capabilitySummaryBlock = shouldInjectBizBotCapabilitySummary(effectiveMessage)
     ? buildBizBotCapabilitySummary()
     : "";
   const attachmentMetadata = attachments.map((attachment) => ({
@@ -437,7 +509,7 @@ export async function executeAgentConversation(
     chatPluginId: executionSelection.pluginId,
     allowedToolNames,
   });
-  const runtimeToolVisibilityBlock = shouldInjectRuntimeToolVisibilitySummary(message)
+  const runtimeToolVisibilityBlock = shouldInjectRuntimeToolVisibilitySummary(effectiveMessage)
     ? buildRuntimeToolVisibilitySummary({
         profile: profileDecision.profile,
         tools,
@@ -453,11 +525,12 @@ export async function executeAgentConversation(
     profile: profileDecision.profile,
     provider: resolvedProvider,
     model: resolvedModel,
-    userMessage: message,
+    userMessage: effectiveMessage,
     availableTools: tools.map((tool) => tool.name),
     ...(parentRunId ? { parentRunId } : {}),
     ...(delegationReason ? { delegationReason } : {}),
     ...(delegatedByProfile ? { delegatedByProfile } : {}),
+    ...(resumeSourceRun ? { resumedFromRunId: resumeSourceRun.runId } : {}),
   });
   await emitStatus(onEvent, `Agent run ${run.runId} created.`);
   const delegationDepth = parentRunId ? countDelegationDepth(parentRunId) + 1 : 0;
@@ -496,27 +569,35 @@ export async function executeAgentConversation(
       knowledgeDocsChars: contextResult.blocks.knowledgeDocs.length,
       contextChars: contextBlock.length,
       systemPromptChars: systemPrompt.length,
-      userMessageChars: message.length,
+      userMessageChars: effectiveMessage.length,
     },
     retrieval: contextResult.retrieval,
   });
 
-  const messages: ChatMessage[] = [
+  const initialMessages: ChatMessage[] = [
     {
       role: "system",
       content: systemPrompt,
     },
-    { role: "user", content: message },
+    { role: "user", content: effectiveMessage },
   ];
 
-  await saveMessage(resolvedConversationId, "USER", message, {
-    userId: resolvedUserId,
-    agentRunId: run.runId,
-    agentProfile: profileDecision.profile,
-    chatMode: executionSelection.mode,
-    chatPluginId: executionSelection.pluginId,
-    attachments: attachmentMetadata,
-  });
+  let messages: ChatMessage[] = resumeSnapshot
+    ? cloneChatMessages(resumeSnapshot.stableMessages)
+    : initialMessages;
+  let completedToolCalls = [...(resumeSnapshot?.completedToolCalls ?? [])];
+  const resumeToolCache = new Map(completedToolCalls.map((entry) => [entry.signature, entry]));
+
+  if (!resumeSourceRun) {
+    await saveMessage(resolvedConversationId, "USER", effectiveMessage, {
+      userId: resolvedUserId,
+      agentRunId: run.runId,
+      agentProfile: profileDecision.profile,
+      chatMode: executionSelection.mode,
+      chatPluginId: executionSelection.pluginId,
+      attachments: attachmentMetadata,
+    });
+  }
 
   await emit(onEvent, {
     type: "meta",
@@ -532,7 +613,20 @@ export async function executeAgentConversation(
     message: `Routed to ${profilePrompt.streamLabel}. ${profileDecision.reason}.`,
   });
 
-  let round = 0;
+  let round = resumeSnapshot?.lastStableRound ?? 0;
+
+  recordAgentRunResumeSnapshot(run.runId, {
+    lastStableRound: round,
+    pendingRound: round + 1,
+    pendingRoundStatus: "awaiting_model",
+    stableMessages: messages,
+    completedToolCalls,
+    ...(resumeSourceRun ? { resumedFromRunId: resumeSourceRun.runId } : {}),
+  });
+
+  if (resumeSourceRun) {
+    await emitStatus(onEvent, `Resuming from run ${resumeSourceRun.runId} at stable round ${round}.`);
+  }
 
   try {
     if (oracleWillRunPrediction) {
@@ -570,18 +664,25 @@ export async function executeAgentConversation(
           },
         });
 
-        if (isSidecarToolResult(result)) {
+        const normalizedResult = getToolResultFailure(result, {
+          component: "agent_executor",
+          operation: "tool_execution",
+          toolName,
+          layer: "tool",
+        });
+
+        if (isSidecarToolResult(normalizedResult.result)) {
           syncActiveSidecarPanel({
-            action: result.action,
-            panel: result.panel,
+            action: normalizedResult.result.action,
+            panel: normalizedResult.result.panel,
             conversationId: resolvedConversationId,
             runId: run.runId,
             userId: resolvedUserId,
             toolName,
           });
           await emit(onEvent, buildSidecarStreamEvent({
-            action: result.action,
-            panel: result.panel,
+            action: normalizedResult.result.action,
+            panel: normalizedResult.result.panel,
             runId: run.runId,
             conversationId: resolvedConversationId,
             round,
@@ -590,13 +691,14 @@ export async function executeAgentConversation(
           }));
         }
 
-        const resultText = stringifyToolResult(result, runtimeConfig.toolResultMaxChars);
+        const resultText = stringifyToolResult(normalizedResult.result, runtimeConfig.toolResultMaxChars);
         recordAgentRunToolResult(run.runId, {
           round,
           toolCallId,
           name: toolName,
           result: resultText,
-          isError: false,
+          isError: normalizedResult.isError,
+          ...(normalizedResult.failure ? { failure: normalizedResult.failure } : {}),
         });
         await emit(onEvent, {
           type: "tool_result",
@@ -604,9 +706,10 @@ export async function executeAgentConversation(
           toolCallId,
           name: toolName,
           result: resultText,
+          ...(normalizedResult.failure ? { failure: normalizedResult.failure } : {}),
         });
 
-        return result;
+        return normalizedResult.result;
       };
 
       await emit(onEvent, {
@@ -616,7 +719,7 @@ export async function executeAgentConversation(
       });
 
       const analysisResult = await executeOracleTool("oracle_analyze_prediction", {
-        prompt: message,
+        prompt: effectiveMessage,
         limit: 12,
       }) as {
         target: { canonicalQuestion: string };
@@ -693,9 +796,9 @@ export async function executeAgentConversation(
       });
     }
 
-    const swarmSources = collectChatSwarmSources({ message, context: contextResult });
+    const swarmSources = collectChatSwarmSources({ message: effectiveMessage, context: contextResult });
     const swarmClassification = classifyChatSwarmRequest({
-      message,
+      message: effectiveMessage,
       profile: profileDecision.profile,
       context: contextResult,
     });
@@ -703,7 +806,7 @@ export async function executeAgentConversation(
 
     if (shouldRunSwarm) {
       const swarmPlan = buildChatSwarmPlan({
-        message,
+        message: effectiveMessage,
         classification: swarmClassification,
         sources: swarmSources,
       });
@@ -804,7 +907,7 @@ export async function executeAgentConversation(
           {
             role: "user",
             content: [
-              `Original request:\n${message}`,
+              `Original request:\n${effectiveMessage}`,
               `Swarm evidence packet:\n${JSON.stringify(swarmPacket, null, 2)}`,
             ].join("\n\n"),
           },
@@ -860,7 +963,7 @@ export async function executeAgentConversation(
               {
                 role: "user",
                 content: [
-                  `Original request:\n${message}`,
+                  `Original request:\n${effectiveMessage}`,
                   `Current draft:\n${finalReply}`,
                   `Audit issues:\n${JSON.stringify(auditResult, null, 2)}`,
                   `Swarm evidence packet:\n${JSON.stringify(swarmPacket, null, 2)}`,
@@ -958,6 +1061,14 @@ export async function executeAgentConversation(
     while (round < maxToolRounds) {
       throwIfAborted(signal);
       round += 1;
+      recordAgentRunResumeSnapshot(run.runId, {
+        lastStableRound: round - 1,
+        pendingRound: round,
+        pendingRoundStatus: "awaiting_model",
+        stableMessages: messages,
+        completedToolCalls,
+        ...(resumeSourceRun ? { resumedFromRunId: resumeSourceRun.runId } : {}),
+      });
       await emit(onEvent, {
         type: "status",
         message: `Planning step ${round} with ${tools.length} available tools.`,
@@ -1003,6 +1114,14 @@ export async function executeAgentConversation(
       }
 
       if (response.toolCalls.length > 0) {
+        recordAgentRunResumeSnapshot(run.runId, {
+          lastStableRound: round - 1,
+          pendingRound: round,
+          pendingRoundStatus: "awaiting_tool_results",
+          stableMessages: messages,
+          completedToolCalls,
+          ...(resumeSourceRun ? { resumedFromRunId: resumeSourceRun.runId } : {}),
+        });
         messages.push({
           role: "assistant",
           content: response.content,
@@ -1010,7 +1129,7 @@ export async function executeAgentConversation(
           providerState: response.providerState,
         });
 
-        const toolMessages = await Promise.all(
+        const toolOutputs = await Promise.all(
           response.toolCalls.map(async (toolCall) => {
             throwIfAborted(signal);
             await emit(onEvent, {
@@ -1027,82 +1146,105 @@ export async function executeAgentConversation(
               args: toolCall.arguments,
             });
 
+            const signature = createToolCallResumeSignature(toolCall.name, toolCall.arguments);
+            const cachedToolResult = resumeToolCache.get(signature);
             let result: ToolExecutionResult;
+            let toolFailure: FailureEnvelope | null = null;
             let isError = false;
-            try {
-              result = await executeTool(toolCall.name, toolCall.arguments, {
-                config: runtimeConfig,
-                access: {
-                  agentProfile: profileDecision.profile,
-                  chatMode: executionSelection.mode,
-                  chatPluginId: executionSelection.pluginId,
-                  allowedToolNames,
-                  conversationId: resolvedConversationId,
-                  runId: run.runId,
-                  userId: resolvedUserId,
-                  provider: resolvedProvider,
-                  signal,
-                  builderContext: builderMcpContext,
-                },
-              });
-            } catch (error) {
-              isError = true;
-              result = { error: String(error) };
-            }
-            throwIfAborted(signal);
+            let resultText: string;
+            if (cachedToolResult?.resumeSafe) {
+              isError = cachedToolResult.isError;
+              toolFailure = cachedToolResult.failure ?? null;
+              resultText = cachedToolResult.result;
+            } else {
+              try {
+                result = await executeTool(toolCall.name, toolCall.arguments, {
+                  config: runtimeConfig,
+                  access: {
+                    agentProfile: profileDecision.profile,
+                    chatMode: executionSelection.mode,
+                    chatPluginId: executionSelection.pluginId,
+                    allowedToolNames,
+                    conversationId: resolvedConversationId,
+                    runId: run.runId,
+                    userId: resolvedUserId,
+                    provider: resolvedProvider,
+                    signal,
+                    builderContext: builderMcpContext,
+                  },
+                });
+                const normalizedResult = getToolResultFailure(result, {
+                  component: "agent_executor",
+                  operation: "tool_execution",
+                  toolName: toolCall.name,
+                  layer: "tool",
+                });
+                result = normalizedResult.result;
+                toolFailure = normalizedResult.failure;
+                isError = normalizedResult.isError;
+              } catch (error) {
+                isError = true;
+                toolFailure = normalizeToolFailure(toolCall.name, error);
+                result = { error: toolFailure.raw, failure: toolFailure };
+              }
+              throwIfAborted(signal);
 
-            if (!isError && isSidecarToolResult(result)) {
-              syncActiveSidecarPanel({
-                action: result.action,
-                panel: result.panel,
-                conversationId: resolvedConversationId,
-                runId: run.runId,
-                userId: resolvedUserId,
-                toolName: toolCall.name,
-              });
-              await emit(onEvent, buildSidecarStreamEvent({
-                action: result.action,
-                panel: result.panel,
-                runId: run.runId,
-                conversationId: resolvedConversationId,
-                round,
-                toolCallId: toolCall.id,
-                name: toolCall.name,
-              }));
-            } else if (!isError && result && typeof result === "object" && !Array.isArray(result)) {
-              const embedded = (result as Record<string, unknown>)["_sidecar"];
-              if (isSidecarToolResult(embedded)) {
+              if (!isError && isSidecarToolResult(result)) {
                 syncActiveSidecarPanel({
-                  action: embedded.action,
-                  panel: embedded.panel,
+                  action: result.action,
+                  panel: result.panel,
                   conversationId: resolvedConversationId,
                   runId: run.runId,
                   userId: resolvedUserId,
                   toolName: toolCall.name,
                 });
                 await emit(onEvent, buildSidecarStreamEvent({
-                  action: embedded.action,
-                  panel: embedded.panel,
+                  action: result.action,
+                  panel: result.panel,
                   runId: run.runId,
                   conversationId: resolvedConversationId,
                   round,
                   toolCallId: toolCall.id,
                   name: toolCall.name,
                 }));
+              } else if (!isError && result && typeof result === "object" && !Array.isArray(result)) {
+                const embedded = (result as Record<string, unknown>)["_sidecar"];
+                if (isSidecarToolResult(embedded)) {
+                  syncActiveSidecarPanel({
+                    action: embedded.action,
+                    panel: embedded.panel,
+                    conversationId: resolvedConversationId,
+                    runId: run.runId,
+                    userId: resolvedUserId,
+                    toolName: toolCall.name,
+                  });
+                  await emit(onEvent, buildSidecarStreamEvent({
+                    action: embedded.action,
+                    panel: embedded.panel,
+                    runId: run.runId,
+                    conversationId: resolvedConversationId,
+                    round,
+                    toolCallId: toolCall.id,
+                    name: toolCall.name,
+                  }));
+                }
               }
+
+              const resultForLLM =
+                result && typeof result === "object" && !Array.isArray(result) && "_sidecar" in (result as Record<string, unknown>)
+                  ? Object.fromEntries(Object.entries(result as Record<string, unknown>).filter(([k]) => k !== "_sidecar"))
+                  : result;
+              resultText = stringifyToolResult(resultForLLM, runtimeConfig.toolResultMaxChars);
             }
 
-            const resultForLLM =
-              result && typeof result === "object" && !Array.isArray(result) && "_sidecar" in (result as Record<string, unknown>)
-                ? Object.fromEntries(Object.entries(result as Record<string, unknown>).filter(([k]) => k !== "_sidecar"))
-                : result;
-            const resultText = stringifyToolResult(resultForLLM, runtimeConfig.toolResultMaxChars);
+            const resumeSafe = cachedToolResult?.resumeSafe ?? isToolExecutionResumeSafe(toolCall.name, toolFailure);
             recordAgentRunToolResult(run.runId, {
               round,
               toolCallId: toolCall.id,
               name: toolCall.name,
               result: resultText,
               isError,
+              ...(toolFailure ? { failure: toolFailure } : {}),
             });
             await emit(onEvent, {
               type: "tool_result",
@@ -1110,18 +1252,48 @@ export async function executeAgentConversation(
               toolCallId: toolCall.id,
               name: toolCall.name,
               result: resultText,
+              ...(toolFailure ? { failure: toolFailure } : {}),
             });
 
             return {
-              role: "tool" as const,
-              name: toolCall.name,
-              content: resultText,
-              toolCallId: toolCall.id,
+              toolMessage: {
+                role: "tool" as const,
+                name: toolCall.name,
+                content: resultText,
+                toolCallId: toolCall.id,
+              },
+              completedToolCall: {
+                signature,
+                round,
+                toolCallId: toolCall.id,
+                name: toolCall.name,
+                args: toolCall.arguments,
+                result: resultText,
+                isError,
+                ...(toolFailure ? { failure: toolFailure } : {}),
+                resumeSafe,
+              } satisfies AgentRunSnapshotToolCall,
             };
           }),
         );
 
+        const toolMessages = toolOutputs.map((entry) => entry.toolMessage);
+        const roundCompletedToolCalls = toolOutputs.map((entry) => entry.completedToolCall);
+        completedToolCalls = mergeCompletedToolCalls(completedToolCalls, roundCompletedToolCalls);
+        for (const entry of roundCompletedToolCalls) {
+          if (entry.resumeSafe) {
+            resumeToolCache.set(entry.signature, entry);
+          }
+        }
         messages.push(...toolMessages);
+        recordAgentRunResumeSnapshot(run.runId, {
+          lastStableRound: round,
+          pendingRound: null,
+          pendingRoundStatus: "idle",
+          stableMessages: messages,
+          completedToolCalls,
+          ...(resumeSourceRun ? { resumedFromRunId: resumeSourceRun.runId } : {}),
+        });
         continue;
       }
 
@@ -1135,6 +1307,7 @@ export async function executeAgentConversation(
         chatMode: executionSelection.mode,
         chatPluginId: executionSelection.pluginId,
         attachments: attachmentMetadata,
+        ...(resumeSourceRun ? { resumedFromRunId: resumeSourceRun.runId } : {}),
         llmProvider: response.provider,
         llmModel: response.model,
         ...(response.metadata ? { llmMetadata: response.metadata } : {}),
@@ -1150,6 +1323,11 @@ export async function executeAgentConversation(
         model: response.model,
         onEvent,
         metadata: assistantMetadata,
+        resumeSnapshot: {
+          stableMessages: [...messages, { role: "assistant", content: assistantContent }],
+          completedToolCalls,
+          ...(resumeSourceRun ? { resumedFromRunId: resumeSourceRun.runId } : {}),
+        },
       });
     }
 
@@ -1164,10 +1342,26 @@ export async function executeAgentConversation(
       chatPluginId: executionSelection.pluginId,
       attachments: attachmentMetadata,
     });
+    const failure = normalizeFailure(fallback, {
+      component: "agent_executor",
+      operation: "max_tool_rounds",
+      kind: "max_rounds",
+      layer: "semantic",
+    });
+    recordAgentRunResumeSnapshot(run.runId, {
+      lastStableRound: round,
+      pendingRound: null,
+      pendingRoundStatus: "interrupted",
+      stableMessages: messages,
+      completedToolCalls,
+      finalFailure: failure,
+      ...(resumeSourceRun ? { resumedFromRunId: resumeSourceRun.runId } : {}),
+    });
     completeAgentRun(run.runId, {
       status: "max_tool_rounds",
       reply: fallback,
       roundsCompleted: maxToolRounds,
+      failure,
     });
     await emit(onEvent, { type: "assistant_message", content: fallback });
     await emit(onEvent, { type: "done", conversationId: resolvedConversationId, reply: fallback });
@@ -1182,12 +1376,27 @@ export async function executeAgentConversation(
     };
   } catch (error) {
     const aborted = signal?.aborted;
+    const failure = normalizeFailure(error, {
+      component: "agent_executor",
+      operation: aborted ? "run_cancelled" : "run_failed",
+      layer: aborted ? "infra" : "unknown",
+    });
+    recordAgentRunResumeSnapshot(run.runId, {
+      lastStableRound: round,
+      pendingRound: round > 0 ? round : 1,
+      pendingRoundStatus: "interrupted",
+      stableMessages: messages,
+      completedToolCalls,
+      finalFailure: failure,
+      ...(resumeSourceRun ? { resumedFromRunId: resumeSourceRun.runId } : {}),
+    });
     completeAgentRun(run.runId, {
       status: aborted ? "cancelled" : "failed",
-      error: String(error),
+      error: failure.raw,
       roundsCompleted: round,
+      failure,
     });
-    await emit(onEvent, { type: "error", error: String(error) });
+    await emit(onEvent, { type: "error", error: failure.raw, failure });
     throw error;
   }
 }

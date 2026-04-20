@@ -16,13 +16,31 @@ vi.mock("@/lib/env", () => ({
 
 vi.mock("@/lib/mcp/client", () => ({
   getConfiguredMcpServerConfigs: vi.fn(),
+  getMcpClientPrompts: vi.fn(),
+  getMcpClientResources: vi.fn(),
   getMcpClientStatus: vi.fn(),
+  getMcpClientTools: vi.fn(() => []),
   getMcpClientToolCatalog: vi.fn(),
   reconnectMcpClients: vi.fn(),
 }));
 
+vi.mock("@/lib/mcp/imported-catalog", () => ({
+  buildImportedMcpServerSummaries: vi.fn(),
+  getImportedMcpCatalogDiff: vi.fn(),
+  listImportedMcpPromptCatalog: vi.fn(() => []),
+  listImportedMcpResourceCatalog: vi.fn(() => []),
+}));
+
 vi.mock("@/lib/agent/plugins/registry", () => ({
   getBuiltinPlugins: vi.fn(),
+  getEnabledBuiltinPlugins: vi.fn(() => []),
+  createPluginRegistry: vi.fn((plugins = [], importedTools = []) => ({
+    plugins,
+    tools: [
+      ...plugins.flatMap((plugin: { tools: unknown[] }) => plugin.tools),
+      ...importedTools,
+    ],
+  })),
 }));
 
 vi.mock("@/lib/agent/plugins/settings", () => ({
@@ -34,10 +52,13 @@ import { db } from "@/lib/db";
 import { readEnv, writeEnv } from "@/lib/env";
 import {
   getConfiguredMcpServerConfigs,
+  getMcpClientPrompts,
+  getMcpClientResources,
   getMcpClientStatus,
   getMcpClientToolCatalog,
   reconnectMcpClients,
 } from "@/lib/mcp/client";
+import { buildImportedMcpServerSummaries, getImportedMcpCatalogDiff } from "@/lib/mcp/imported-catalog";
 import { getBuiltinPlugins } from "@/lib/agent/plugins/registry";
 import { getBuiltinPluginToggle, isBuiltinPluginEnabled } from "@/lib/agent/plugins/settings";
 import {
@@ -52,9 +73,13 @@ import {
 const mockedReadEnv = vi.mocked(readEnv);
 const mockedWriteEnv = vi.mocked(writeEnv);
 const mockedGetConfiguredMcpServerConfigs = vi.mocked(getConfiguredMcpServerConfigs);
+const mockedGetMcpClientPrompts = vi.mocked(getMcpClientPrompts);
+const mockedGetMcpClientResources = vi.mocked(getMcpClientResources);
 const mockedGetMcpClientStatus = vi.mocked(getMcpClientStatus);
 const mockedGetMcpClientToolCatalog = vi.mocked(getMcpClientToolCatalog);
 const mockedReconnectMcpClients = vi.mocked(reconnectMcpClients);
+const mockedBuildImportedMcpServerSummaries = vi.mocked(buildImportedMcpServerSummaries);
+const mockedGetImportedMcpCatalogDiff = vi.mocked(getImportedMcpCatalogDiff);
 const mockedGetBuiltinPlugins = vi.mocked(getBuiltinPlugins);
 const mockedGetBuiltinPluginToggle = vi.mocked(getBuiltinPluginToggle);
 const mockedIsBuiltinPluginEnabled = vi.mocked(isBuiltinPluginEnabled);
@@ -118,6 +143,29 @@ describe("plugin catalog", () => {
     });
 
     mockedIsBuiltinPluginEnabled.mockImplementation((id: string) => id === "social");
+    mockedGetMcpClientPrompts.mockReturnValue([]);
+    mockedGetMcpClientResources.mockReturnValue([]);
+    mockedBuildImportedMcpServerSummaries.mockReturnValue([]);
+    mockedGetImportedMcpCatalogDiff.mockResolvedValue({
+      generatedAt: new Date().toISOString(),
+      baselinePresent: false,
+      baselineAcceptedAt: null,
+      auditState: "unaudited",
+      serverName: null,
+      summary: {
+        toolChanges: 0,
+        promptChanges: 0,
+        resourceChanges: 0,
+        serverChanges: 0,
+      },
+      servers: [],
+      diff: {
+        tools: { added: [], removed: [], changed: [] },
+        prompts: { added: [], removed: [], changed: [] },
+        resources: { added: [], removed: [], changed: [] },
+        servers: { added: [], removed: [], changed: [] },
+      },
+    });
   });
 
   it("groups builtin and external plugins into installed and available sections", async () => {
@@ -126,7 +174,7 @@ describe("plugin catalog", () => {
       { name: "slack", url: "http://localhost:4200/mcp", enabled: false },
     ]);
     mockedGetMcpClientStatus.mockReturnValue([
-      { name: "github", url: "http://localhost:4100/mcp", connected: true, toolCount: 2 },
+      { name: "github", url: "http://localhost:4100/mcp", connected: true, toolCount: 2, promptCount: 1, resourceCount: 1, hasAuthToken: false, lastSeenAt: null, latencyClass: "fast" },
     ]);
     mockedGetMcpClientToolCatalog.mockReturnValue([
       {
@@ -136,6 +184,43 @@ describe("plugin catalog", () => {
         description: "List PRs",
       },
     ]);
+    mockedBuildImportedMcpServerSummaries.mockReturnValue([
+      {
+        name: "github",
+        url: "http://localhost:4100/mcp",
+        connected: true,
+        toolCount: 1,
+        promptCount: 1,
+        resourceCount: 1,
+        hasAuthToken: false,
+        destructiveToolCount: 0,
+        readOnlyToolCount: 1,
+        openWorldToolCount: 0,
+        lastSeenAt: "2026-04-19T12:00:00.000Z",
+        latencyClass: "fast",
+        auditState: "audited",
+      },
+    ]);
+    mockedGetImportedMcpCatalogDiff.mockResolvedValue({
+      generatedAt: new Date().toISOString(),
+      baselinePresent: true,
+      baselineAcceptedAt: "2026-04-19T11:59:00.000Z",
+      auditState: "audited",
+      serverName: null,
+      summary: {
+        toolChanges: 0,
+        promptChanges: 0,
+        resourceChanges: 0,
+        serverChanges: 0,
+      },
+      servers: [{ name: "github", auditState: "audited" }],
+      diff: {
+        tools: { added: [], removed: [], changed: [] },
+        prompts: { added: [], removed: [], changed: [] },
+        resources: { added: [], removed: [], changed: [] },
+        servers: { added: [], removed: [], changed: [] },
+      },
+    });
 
     const catalog = await getPluginCatalog();
 
@@ -153,11 +238,33 @@ describe("plugin catalog", () => {
       expect.objectContaining({ id: "conversation-bridge", enabled: false }),
     ]);
     expect(catalog.external.installed).toEqual([
-      expect.objectContaining({ id: "github", connected: true, toolNames: ["mcp_github_list_prs"] }),
+      expect.objectContaining({ id: "github", connected: true, toolNames: ["mcp_github_list_prs"], promptCount: 1, resourceCount: 1, auditState: "audited", latencyClass: "fast" }),
     ]);
     expect(catalog.external.available).toEqual([
       expect.objectContaining({ id: "slack", enabled: false, connected: false }),
     ]);
+    expect(catalog.discovery).toEqual(expect.objectContaining({
+      bundles: expect.arrayContaining([
+        expect.objectContaining({ bundleId: "plugin-authoring" }),
+      ]),
+      skillResources: expect.arrayContaining([
+        expect.objectContaining({ uri: "bizbot://skills/plugin-authoring" }),
+      ]),
+      importedCatalog: {
+        promptCount: 0,
+        resourceCount: 0,
+        driftState: "audited",
+        driftedServerCount: 0,
+      },
+      taskRecipes: expect.arrayContaining([
+        expect.objectContaining({ recipeId: "debug-imported-mcp-server" }),
+      ]),
+      devLoop: expect.objectContaining({
+        preferredAppCommand: "npm run dev:vscode",
+        preferredMcpCommand: "npm run mcp:stdio",
+        traceResourceUri: "bizbot://debug/mcp-trace",
+      }),
+    }));
   });
 
   it("writes builtin enablement to env-backed plugin flags", () => {

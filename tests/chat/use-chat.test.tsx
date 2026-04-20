@@ -7,10 +7,53 @@ import type { ChatConversationBootstrap } from "@/lib/chat/types";
 
 let latestChat: UseChatResult | null = null;
 
+function ensureLocalStorage(): Storage {
+  const existing = window.localStorage as Storage | undefined;
+  if (
+    existing
+    && typeof existing.getItem === "function"
+    && typeof existing.setItem === "function"
+    && typeof existing.removeItem === "function"
+    && typeof existing.clear === "function"
+  ) {
+    return existing;
+  }
+
+  const store = new Map<string, string>();
+  const storage = {
+    get length() {
+      return store.size;
+    },
+    clear() {
+      store.clear();
+    },
+    getItem(key: string) {
+      return store.has(key) ? store.get(key) ?? null : null;
+    },
+    key(index: number) {
+      return Array.from(store.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+  } satisfies Storage;
+
+  Object.defineProperty(window, "localStorage", {
+    value: storage,
+    configurable: true,
+  });
+
+  return storage;
+}
+
 function createBootstrap(overrides: Partial<ChatConversationBootstrap> = {}): ChatConversationBootstrap {
   return {
     currentConversationId: null,
     currentConversation: null,
+    chatVerbosity: "concise",
     executionDefaults: {
       mode: "ask",
       pluginId: "just-chatting",
@@ -44,6 +87,7 @@ function createBootstrap(overrides: Partial<ChatConversationBootstrap> = {}): Ch
       ],
     },
     builderProjects: [],
+    builderProjectConversations: [],
     builderStackPresets: [],
     builderTemplates: [],
     builderInbox: [],
@@ -93,17 +137,17 @@ function UseChatHarness() {
 describe("useChat execution preference behavior", () => {
   beforeEach(() => {
     latestChat = null;
-    window.localStorage.clear();
+    ensureLocalStorage().clear();
   });
 
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
-    window.localStorage.clear();
+    ensureLocalStorage().clear();
   });
 
   it("does not sync bootstrap execution defaults back to the conversation", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/chat/conversations")) {
         return {
@@ -115,6 +159,9 @@ describe("useChat execution preference behavior", () => {
               title: "Builder chat",
               label: "Builder chat",
               preview: "Builder is in Ask mode",
+              builderProjectId: null,
+              builderProjectName: null,
+              builderProjectRelativePath: null,
               createdAt: "2026-04-18T15:56:27.430Z",
               updatedAt: "2026-04-18T15:57:07.042Z",
               lastMessageAt: "2026-04-18T15:57:07.042Z",
@@ -155,10 +202,11 @@ describe("useChat execution preference behavior", () => {
   });
 
   it("restores stored execution preference before persisting it", async () => {
-    window.localStorage.setItem("bizbot:chat-execution-mode", "agent");
-    window.localStorage.setItem("bizbot:chat-execution-plugin", "builder");
+    const storage = ensureLocalStorage();
+    storage.setItem("bizbot:chat-execution-mode", "agent");
+    storage.setItem("bizbot:chat-execution-plugin", "builder");
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/chat/conversations")) {
         return {
@@ -180,7 +228,79 @@ describe("useChat execution preference behavior", () => {
       expect(latestChat?.executionPluginId).toBe("builder");
     });
 
-    expect(window.localStorage.getItem("bizbot:chat-execution-mode")).toBe("agent");
-    expect(window.localStorage.getItem("bizbot:chat-execution-plugin")).toBe("builder");
+    expect(storage.getItem("bizbot:chat-execution-mode")).toBe("agent");
+    expect(storage.getItem("bizbot:chat-execution-plugin")).toBe("builder");
+  });
+
+  it("offers a conversational resume prompt after a streamed run failure with a resumable run id", async () => {
+    const encoder = new TextEncoder();
+    let bootstrapCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/chat/conversations")) {
+        bootstrapCount += 1;
+        return {
+          ok: true,
+          json: async () => createBootstrap(bootstrapCount > 1 ? {
+            currentConversationId: "conversation-1",
+            currentConversation: {
+              id: "conversation-1",
+              title: "Resume test",
+              label: "Resume test",
+              preview: "No persisted recovery prompt yet",
+              builderProjectId: null,
+              builderProjectName: null,
+              builderProjectRelativePath: null,
+              createdAt: "2026-04-20T12:00:00.000Z",
+              updatedAt: "2026-04-20T12:01:00.000Z",
+              lastMessageAt: "2026-04-20T12:01:00.000Z",
+              archivedAt: null,
+              messageCount: 1,
+              defaultMode: "ask",
+              defaultPluginId: "just-chatting",
+              messages: [],
+            },
+          } : {}),
+        } as Response;
+      }
+
+      if (url === "/api/agent") {
+        expect(init?.method).toBe("POST");
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode("event: meta\ndata: {\"type\":\"meta\",\"conversationId\":\"conversation-1\",\"runId\":\"run-1\",\"profile\":\"general_operator\",\"profileLabel\":\"General Operator\",\"provider\":\"openai\",\"model\":\"gpt-4o\"}\n\n"));
+            controller.enqueue(encoder.encode("event: error\ndata: {\"type\":\"error\",\"conversationId\":\"conversation-1\",\"runId\":\"run-1\",\"error\":\"tool timeout while reading MCP status\"}\n\n"));
+            controller.close();
+          },
+        });
+
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<UseChatHarness />);
+
+    await waitFor(() => {
+      expect(latestChat?.isBootstrapping).toBe(false);
+    });
+
+    await latestChat!.sendMessage("check the MCP status");
+
+    await waitFor(() => {
+      expect(latestChat?.pendingResumePrompt).toEqual(expect.objectContaining({
+        runId: "run-1",
+        summary: "tool timeout while reading MCP status",
+        mode: "ask",
+        pluginId: "just-chatting",
+      }));
+    });
+
   });
 });

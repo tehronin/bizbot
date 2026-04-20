@@ -10,13 +10,14 @@ import type { ChatConversationBootstrap } from "@/lib/chat/types";
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
-  window.localStorage.clear();
+  window.localStorage?.clear?.();
 });
 
 function createBootstrap(): ChatConversationBootstrap {
   return {
     currentConversationId: "conversation-1",
     currentConversation: null,
+    chatVerbosity: "concise",
     executionDefaults: {
       mode: "ask",
       pluginId: "just-chatting",
@@ -50,6 +51,7 @@ function createBootstrap(): ChatConversationBootstrap {
       ],
     },
     builderProjects: [],
+    builderProjectConversations: [],
     builderStackPresets: [],
     builderTemplates: [],
     builderInbox: [],

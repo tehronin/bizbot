@@ -99,7 +99,7 @@ BizBot is set up so feature work can move through a plugin-shaped path instead o
 
 - `npm run plugin:new -- <plugin-name>` scaffolds a starter plugin file and a matching test file.
 - `developer_*` tools expose plugin inspection, contract validation, naming checks, test suggestions, prompt/resource previews, and MCP catalog impact reports.
-- `bizbot://plugins/*` resources expose registry reports, naming rules, authoring checklists, and MCP surface previews for plugin authors.
+- `bizbot://plugins/*` resources expose registry reports, naming rules, authoring checklists, MCP surface previews, imported MCP drift baselines, and task recipes for plugin authors.
 - Builder Mode adds a second path for feature work: create a project in `/builder`, bootstrap a preset, then iterate in a dedicated external workspace instead of inside the BizBot repo.
 - `src/lib/agent/plugins/contracts.ts` defines the formal BizBot plugin contract used by builtin and future external-style plugins.
 - `src/lib/agent/plugins/registry.ts` centralizes plugin registration, duplicate detection, and tool-to-plugin ownership mapping.
@@ -134,8 +134,9 @@ BizBot's MCP surface is intentionally broad and optimized for advanced users, no
 - Use `developer_plan_plugin` to turn a plugin goal into a suggested boundary and starter tool set.
 - Use `developer_check_tool_naming`, `developer_validate_plugin_contract`, and `developer_inspect_plugin_registry` before relying on a new namespace.
 - Use `developer_preview_tool_descriptor`, `developer_preview_prompt`, and `developer_preview_resource` to inspect the MCP-facing surface without digging through the codebase manually.
-- Use `developer_check_mcp_contract_impact` and `developer_suggest_plugin_tests` before updating builtin registry wiring or MCP snapshots.
-- Use `bizbot://plugins/registry-report`, `bizbot://plugins/mcp-surface-preview`, and `bizbot://plugins/contracts-status` when you want the current control-plane state as structured JSON.
+- Use `developer_check_mcp_contract_impact`, `developer_diff_imported_mcp_catalog`, `developer_list_mcp_trace_events`, and `developer_suggest_plugin_tests` before updating builtin registry wiring or MCP snapshots.
+- Use `developer_get_task_recipe`, `developer_get_builder_task_events`, and `developer_invoke_imported_mcp_tool` when you need a repeatable dev-loop workflow instead of point-in-time inspection only.
+- Use `bizbot://plugins/registry-report`, `bizbot://plugins/mcp-surface-preview`, `bizbot://plugins/imported-mcp-drift`, `bizbot://plugins/task-recipes`, `bizbot://debug/mcp-trace`, and `bizbot://plugins/contracts-status` when you want the current control-plane state as structured JSON.
 
 ## Builder Mode
 
@@ -177,7 +178,7 @@ Builder Mode is BizBot's safe build lane for generating new projects, plugin pac
 - `BuilderRun.summary` stays compact, while `BuilderRun.metadata.review` stores the canonical structured review.
 - Builder synthesizes compact prompts from task state plus selected instruction fragments instead of injecting whole files into every run.
 - Task metadata persists loop iteration, loop phase, latest loop summary, retry timing, and resume targets so the UI and orchestration loop can continue from the current workspace state.
-- Builder inspection is now exposed through stable MCP resources under `bizbot://builder/*`.
+- Builder inspection is now exposed through stable MCP resources under `bizbot://builder/*`, including task lifecycle state plus bounded task-event history for long-running work.
 - See `docs/builder-mode.md` for the v2 model and authority rules.
 
 ### Builder Mode v3.1 Hardening
@@ -464,10 +465,14 @@ The MCP surface now doubles as a plugin authoring lab for power users:
 - Workspace config is checked in at `.vscode/mcp.json`
 - Local stdio entry point is `npm run mcp:stdio`
 - HTTP endpoint is `/api/mcp`
+- VS Code stdio config now enables source maps and quiets query logs by default for a cleaner local debugging loop
 - Exposes tools, resources, and prompts
 - Exposes core `sidecar_open`, `sidecar_update`, and `sidecar_close` tools as part of the BizBot MCP surface
 - Includes runtime-oriented resources for inspection and debugging
 - Exposes plugin discovery resources so developers can inspect exported plugin metadata and tool ownership
+- Exposes MCP discovery bundles and skill resources so agents can narrow the surface before calling tools
+- Exposes imported MCP drift, task recipes, Builder task events, and runtime MCP trace resources alongside the existing discovery surfaces
+- Surfaces discovery bundles, skill resources, imported catalog drift and trust state, task recipes, and VS Code dev-loop guidance inside the Plugins page so discovery is visible in-app
 - Exposes Builder Mode tools for bounded project scaffolding and build-lane automation
 - Conformance coverage now exercises tools, resources, prompts, auth handling, and negative-path transport behavior
 
@@ -476,7 +481,7 @@ The MCP surface now doubles as a plugin authoring lab for power users:
 - Sampling is currently enabled only on the stdio MCP transport.
 - The HTTP MCP route stays stateless and does not advertise sampling.
 - BizBot uses sampling only for one bounded intent today: Builder dev-loop diagnosis through `developer_vscode_loop_assist`.
-- Sampling requests are analysis-only: BizBot does not allow tool execution inside the sampled model turn.
+- For local stdio clients that advertise `sampling.tools`, BizBot now allows tool-capable sampling for that bounded dev-loop assist path.
 - Nested sampling is blocked by policy.
 - The current sampling policy is inspectable through `bizbot://debug/mcp-sampling-policy`.
 
@@ -521,9 +526,20 @@ Interactive selections do not create synthetic user chat turns. The dashboard di
 
 - External MCP servers can be imported via `MCP_SERVERS`
 - Imported tools are surfaced through BizBot’s runtime
-- Imported resource and prompt catalogs are cached and integration-tested for future surfacing
+- Imported resource and prompt catalogs are cached and now exposed through BizBot discovery resources for provenance-aware inspection
 - MCP execution is bounded to the dedicated `mcp_operator` profile
 - Imported MCP tools are integration-tested through the registry merge path
+
+Current discovery-oriented MCP additions:
+
+- `developer_search_tools`, `developer_search_resources`, and `developer_search_prompts` provide progressive discovery over the MCP surface
+- `developer_get_tool_bundle` and `developer_recommend_toolset_for_goal` provide curated workflow bundles for Builder, plugin authoring, debug/ops, CRM, commerce, local business, Oracle, and imported MCP
+- `developer_read_imported_mcp_resource` and `developer_get_imported_mcp_prompt` provide explicit wrapper reads over imported MCP resources and prompts instead of only inventory inspection
+- `developer_get_builder_task_lifecycle` and `bizbot://builder/task-lifecycle` expose current Builder task progression as lifecycle state for long-running work
+- `bizbot://plugins/mcp-discovery-bundles` exposes the same bundle metadata as a machine-readable resource
+- `bizbot://skills/*` resources provide short procedural guidance for Builder drift repair, plugin authoring, MCP-loop debugging, imported MCP audits, and Sidecar usage
+- `bizbot://plugins/imported-mcp-prompts` and `bizbot://plugins/imported-mcp-resources` expose imported external MCP inventories with provenance
+- `bizbot://debug/vscode-mcp-devloop` and `optimize-vscode-mcp-devloop` provide a checked-in VS Code MCP connection review path for improving the local BizBot dev loop
 
 ### External MCP Compatibility
 

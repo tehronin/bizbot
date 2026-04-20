@@ -201,6 +201,24 @@ describe("MCP HTTP route", () => {
       expect.objectContaining({ name: "developer_inspect_plugin_registry" }),
       expect.objectContaining({ name: "developer_inspect_ontology_schema" }),
       expect.objectContaining({ name: "developer_preview_ontology_context" }),
+      expect.objectContaining({ name: "developer_search_tools" }),
+      expect.objectContaining({ name: "developer_get_tool_bundle" }),
+      expect.objectContaining({ name: "developer_recommend_toolset_for_goal" }),
+      expect.objectContaining({ name: "developer_search_resources" }),
+      expect.objectContaining({ name: "developer_search_prompts" }),
+      expect.objectContaining({ name: "developer_audit_imported_mcp_servers" }),
+      expect.objectContaining({ name: "developer_diff_imported_mcp_catalog" }),
+      expect.objectContaining({ name: "developer_inspect_mcp_health" }),
+      expect.objectContaining({ name: "developer_list_mcp_trace_events" }),
+      expect.objectContaining({ name: "developer_read_imported_mcp_resource" }),
+      expect.objectContaining({ name: "developer_get_imported_mcp_prompt" }),
+      expect.objectContaining({ name: "developer_get_builder_task_events" }),
+      expect.objectContaining({ name: "developer_invoke_imported_mcp_tool" }),
+      expect.objectContaining({ name: "developer_get_task_recipe" }),
+      expect.objectContaining({ name: "developer_prepare_plugin_design_review" }),
+      expect.objectContaining({ name: "developer_resume_agent_run" }),
+      expect.objectContaining({ name: "developer_summarize_builder_repair" }),
+      expect.objectContaining({ name: "developer_get_builder_task_lifecycle" }),
       expect.objectContaining({ name: "developer_list_agent_runs" }),
       expect.objectContaining({ name: "developer_vscode_loop_assist" }),
       expect.objectContaining({ name: "crm_list_contacts" }),
@@ -685,8 +703,63 @@ describe("MCP HTTP route", () => {
         mimeType: "application/json",
       }),
       expect.objectContaining({
+        uri: "bizbot://plugins/mcp-discovery-bundles",
+        name: "plugins-mcp-discovery-bundles",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://plugins/task-recipes",
+        name: "plugins-task-recipes",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://plugins/imported-mcp-drift",
+        name: "plugins-imported-mcp-drift",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://plugins/imported-mcp-prompts",
+        name: "plugins-imported-mcp-prompts",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://plugins/imported-mcp-resources",
+        name: "plugins-imported-mcp-resources",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://skills/plugin-authoring",
+        name: "skills-plugin-authoring",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
         uri: "bizbot://debug/system-status",
         name: "debug-system-status",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://debug/vscode-mcp-devloop",
+        name: "debug-vscode-mcp-devloop",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://debug/mcp-trace",
+        name: "debug-mcp-trace",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://debug/mcp-health",
+        name: "debug-mcp-health",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://builder/task-lifecycle",
+        name: "builder-task-lifecycle",
+        mimeType: "application/json",
+      }),
+      expect.objectContaining({
+        uri: "bizbot://builder/task-events",
+        name: "builder-task-events",
         mimeType: "application/json",
       }),
       expect.objectContaining({
@@ -794,6 +867,10 @@ describe("MCP HTTP route", () => {
         arguments: expect.arrayContaining([
           expect.objectContaining({ name: "runId", required: true }),
         ]),
+      }),
+      expect.objectContaining({
+        name: "optimize-vscode-mcp-devloop",
+        title: "Optimize VS Code MCP Dev Loop",
       }),
     ]));
   });

@@ -79,6 +79,7 @@ import {
   type BuilderStructuredReview,
   type BuilderTaskSpecState,
 } from "@/lib/builder/types";
+import { normalizeFailure, type FailureEnvelope } from "@/lib/failures";
 
 export interface BuilderOrchestrationInput {
   request: string;
@@ -262,6 +263,7 @@ function buildRunTelemetryMetadata(args: {
   mode?: "analysis_only" | "scaffold" | "implementation" | "verification" | null;
   loop?: Record<string, unknown> | null;
   blockedReason?: string | null;
+  failure?: FailureEnvelope | null;
   verificationOutcome?: "passed" | "failed" | "skipped";
 }): Record<string, unknown> {
   const iterations = Array.isArray(args.loop?.iterations) ? args.loop.iterations : [];
@@ -276,6 +278,7 @@ function buildRunTelemetryMetadata(args: {
     ...(typeof lastIteration?.provider === "string" ? { provider: lastIteration.provider } : {}),
     ...(typeof lastIteration?.model === "string" ? { model: lastIteration.model } : {}),
     ...(args.blockedReason ? { blockedReason: args.blockedReason } : {}),
+    ...(args.failure ? { failureEnvelope: args.failure } : {}),
     verificationOutcome: args.verificationOutcome
       ?? (args.loop?.verificationSkipped === true ? "skipped" : "failed"),
     ...(args.loop?.usage && typeof args.loop.usage === "object" && !Array.isArray(args.loop.usage)
@@ -1078,6 +1081,17 @@ export async function orchestrateBuilderTask(
         mode: adherence.mode,
         loop: loopResult.loop as unknown as Record<string, unknown>,
         blockedReason: taskStatus === "SUCCEEDED" ? null : containerStage?.status === "failed" || containerStage?.status === "blocked" ? containerStage.summary : loopResult.loop.iterations.at(-1)?.review.reason ?? review.summary,
+        failure: taskStatus === "SUCCEEDED"
+          ? null
+          : normalizeFailure(
+              containerStage?.status === "failed" || containerStage?.status === "blocked"
+                ? containerStage.summary
+                : loopResult.loop.iterations.at(-1)?.review.reason ?? review.summary,
+              {
+                component: "builder_orchestrator",
+                operation: "complete_builder_run",
+              },
+            ),
         verificationOutcome: loopResult.loop.verificationSkipped ? "skipped" : taskStatus === "SUCCEEDED" ? "passed" : "failed",
       }),
       template: project.template,
@@ -1209,6 +1223,11 @@ export async function launchBuilderTask(projectId: string, input: BuilderOrchest
           project,
           run,
           blockedReason: errorText,
+          failure: normalizeFailure(errorText, {
+            component: "builder_orchestrator",
+            operation: cancelled ? "builder_run_cancelled" : "builder_run_failed",
+            layer: cancelled ? "infra" : "unknown",
+          }),
           verificationOutcome: "failed",
         }),
         template: project.template,

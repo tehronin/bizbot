@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
       message?: unknown;
+      resumeRunId?: unknown;
       conversationId?: unknown;
       userId?: unknown;
       provider?: unknown;
@@ -69,8 +70,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const resumeRunId = typeof body.resumeRunId === "string" ? body.resumeRunId : undefined;
     const message = typeof body.message === "string" ? body.message.trim() : "";
-    if (!message) {
+    if (!message && !resumeRunId) {
       return Response.json({ error: "A non-empty message is required." }, { status: 400 });
     }
 
@@ -108,7 +110,7 @@ export async function POST(req: NextRequest) {
           void (async () => {
             try {
               await executeAgentConversation({
-                message,
+                message: message || `Resume agent run ${resumeRunId}`,
                 conversationId,
                 userId,
                 provider: provider as LLMProvider | undefined,
@@ -116,6 +118,7 @@ export async function POST(req: NextRequest) {
                 pluginId: executionSelection.pluginId,
                 attachments,
                 oraclePrediction,
+                resumeRunId,
                 signal: executionAbortController.signal,
                 onEvent: async (event: AgentExecutionEvent) => {
                   if (executionAbortController.signal.aborted) {
@@ -155,7 +158,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await executeAgentConversation({
-      message,
+      message: message || `Resume agent run ${resumeRunId}`,
       conversationId,
       userId,
       provider: provider as LLMProvider | undefined,
@@ -163,6 +166,7 @@ export async function POST(req: NextRequest) {
       pluginId: executionSelection.pluginId,
       attachments,
       oraclePrediction,
+      resumeRunId,
     });
 
     return Response.json({

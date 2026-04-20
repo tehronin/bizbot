@@ -4,6 +4,7 @@ import { completeBuilderRun, updateBuilderRun } from "@/lib/builder/projects";
 import { hasBuilderRunController } from "@/lib/builder/session";
 import { updateBuilderTask } from "@/lib/builder/tasks";
 import { normalizeBuilderTaskMetadata } from "@/lib/builder/types";
+import { normalizeFailure, type FailureEnvelope } from "@/lib/failures";
 
 const STALE_RUNNING_THRESHOLD_MS = 15 * 60 * 1000;
 const NO_PROGRESS_THRESHOLD_MS = 5 * 60 * 1000;
@@ -23,6 +24,7 @@ export interface BuilderOperationalAlert {
   summary: string;
   autoFixable: boolean;
   triggeredAt: string;
+  failure?: FailureEnvelope;
 }
 
 export interface BuilderReconciliationAuditEntry {
@@ -167,38 +169,59 @@ export function inspectBuilderOperationalState(args: {
     const hasOutput = Boolean((run.stdout?.trim().length ?? 0) > 0 || (run.stderr?.trim().length ?? 0) > 0);
 
     if (run.status === "RUNNING" && task && isTerminalTaskStatus(task.status) && taskMetadata?.lastRunId === run.id) {
+      const summary = "Run is still RUNNING even though the paired task already reached a terminal state.";
       alerts.push({
         code: "task_run_status_mismatch",
         runId: run.id,
         taskId: task.id,
         severity: "danger",
-        summary: "Run is still RUNNING even though the paired task already reached a terminal state.",
+        summary,
         autoFixable: !hasBuilderRunController(run.id),
         triggeredAt: now.toISOString(),
+        failure: normalizeFailure(summary, {
+          component: "builder_reconciliation",
+          operation: "task_run_status_mismatch",
+          layer: "infra",
+          suggestedNextAction: "reconcile_run_state",
+        }),
       });
     }
 
     if (run.status === "RUNNING" && ageMs >= STALE_RUNNING_THRESHOLD_MS) {
+      const summary = `Run has remained RUNNING for ${Math.round(ageMs / 60000)} minutes.`;
       alerts.push({
         code: "stale_running_state",
         runId: run.id,
         taskId: run.taskId ?? null,
         severity: "danger",
-        summary: `Run has remained RUNNING for ${Math.round(ageMs / 60000)} minutes.`,
+        summary,
         autoFixable: !hasBuilderRunController(run.id),
         triggeredAt: now.toISOString(),
+        failure: normalizeFailure(summary, {
+          component: "builder_reconciliation",
+          operation: "stale_running_state",
+          layer: "infra",
+          suggestedNextAction: "inspect_stale_run",
+        }),
       });
     }
 
     if (run.status === "RUNNING" && !hasOutput && ageMs >= NO_PROGRESS_THRESHOLD_MS) {
+      const summary = `Run has produced no stdout/stderr for ${Math.round(ageMs / 60000)} minutes.`;
       alerts.push({
         code: "running_without_progress",
         runId: run.id,
         taskId: run.taskId ?? null,
         severity: "warning",
-        summary: `Run has produced no stdout/stderr for ${Math.round(ageMs / 60000)} minutes.`,
+        summary,
         autoFixable: false,
         triggeredAt: now.toISOString(),
+        failure: normalizeFailure(summary, {
+          component: "builder_reconciliation",
+          operation: "running_without_progress",
+          layer: "infra",
+          suggestedNextAction: "inspect_stale_run",
+        }),
       });
     }
   }
@@ -220,14 +243,21 @@ export function inspectBuilderOperationalState(args: {
     }
     const identicalFailures = orderedRuns.filter((run) => getFailureSignature(run) === signature);
     if (identicalFailures.length >= IDENTICAL_FAILURE_THRESHOLD) {
+      const summary = `Task has repeated the same failure ${identicalFailures.length} times without changing the outcome.`;
       alerts.push({
         code: "repeated_identical_verification_failure",
         runId: orderedRuns[0]!.id,
         taskId,
         severity: "warning",
-        summary: `Task has repeated the same failure ${identicalFailures.length} times without changing the outcome.`,
+        summary,
         autoFixable: false,
         triggeredAt: now.toISOString(),
+        failure: normalizeFailure(summary, {
+          component: "builder_reconciliation",
+          operation: "repeated_identical_verification_failure",
+          kind: "repeated_failure",
+          suggestedNextAction: "inspect_stuck_loop",
+        }),
       });
     }
   }

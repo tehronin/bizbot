@@ -72,6 +72,7 @@ export async function createProjectFromOnboarding(
   const conversationId = await getOrCreateConversation(
     options?.conversationId ?? undefined,
     userId,
+    { builderProjectId: project.id },
   );
 
   const descriptionLine = spec.description ? ` — ${spec.description}` : "";

@@ -12,13 +12,17 @@ import {
   deleteAgentRun,
   deleteUsageLedgerEntry,
   getConversationUsageSummary,
+  getAgentRunResumeSnapshot,
   getUsageLedgerSnapshot,
   listAgentRuns,
   listUsageLedgerRuns,
+  recordAgentRunResumeSnapshot,
+  recordAgentRunToolResult,
   startAgentRun,
   completeAgentRun,
   recordAgentRunRoundUsage,
 } from "@/lib/agent/run-journal";
+import { normalizeFailure } from "@/lib/failures";
 
 function resetRunsDir(): void {
   fs.rmSync(path.join(tempWorkspaceRoot, ".bizbot"), { recursive: true, force: true });
@@ -288,5 +292,171 @@ describe("run journal usage ledger", () => {
     expect(summary.completionTokens).toBe(60);
     expect(summary.totalTokens).toBe(250);
     expect(summary.cachedPromptTokens).toBe(4);
+  });
+
+  it("stores normalized failure envelopes on tool events and failed runs", () => {
+    const run = startAgentRun({
+      conversationId: "conversation-1",
+      profile: "general_operator",
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      userMessage: "inspect failures",
+      availableTools: ["developer_list_agent_runs"],
+    });
+
+    const failure = normalizeFailure("Request timed out while reading runs", {
+      component: "agent_executor",
+      operation: "tool_execution",
+      toolName: "developer_list_agent_runs",
+      layer: "tool",
+    });
+
+    recordAgentRunToolResult(run.runId, {
+      round: 1,
+      toolCallId: "tool-1",
+      name: "developer_list_agent_runs",
+      result: JSON.stringify({ error: failure.raw, failure }),
+      isError: true,
+      failure,
+    });
+    completeAgentRun(run.runId, {
+      status: "failed",
+      roundsCompleted: 1,
+      error: failure.raw,
+      failure,
+    });
+
+    const stored = listAgentRuns()[0];
+    expect(stored?.failure).toEqual(expect.objectContaining({
+      kind: "timeout",
+      layer: "tool",
+      fingerprint: expect.any(String),
+    }));
+    expect(stored?.toolEvents[0]).toEqual(expect.objectContaining({
+      phase: "result",
+      isError: true,
+      failure: expect.objectContaining({
+        kind: "timeout",
+        suggestedNextAction: "retry_with_backoff",
+      }),
+    }));
+  });
+
+  it("persists resumable checkpoints and blocks unsafe completed tool steps", () => {
+    const safeRun = startAgentRun({
+      conversationId: "conversation-safe",
+      profile: "general_operator",
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      userMessage: "inspect state",
+      availableTools: ["developer_list_agent_runs"],
+    });
+
+    recordAgentRunResumeSnapshot(safeRun.runId, {
+      lastStableRound: 1,
+      pendingRound: 2,
+      pendingRoundStatus: "interrupted",
+      stableMessages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "inspect state" },
+      ],
+      completedToolCalls: [{
+        signature: "safe-sig",
+        round: 1,
+        toolCallId: "tool-1",
+        name: "developer_list_agent_runs",
+        args: {},
+        result: "{}",
+        isError: false,
+        resumeSafe: true,
+      }],
+    });
+
+    const safeSnapshot = getAgentRunResumeSnapshot(safeRun.runId);
+    expect(safeSnapshot.resumeEligible).toBe(true);
+    expect(safeSnapshot.lastStableRound).toBe(1);
+
+    const unsafeRun = startAgentRun({
+      conversationId: "conversation-unsafe",
+      profile: "general_operator",
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      userMessage: "show sidecar",
+      availableTools: ["sidecar_open"],
+    });
+
+    recordAgentRunResumeSnapshot(unsafeRun.runId, {
+      lastStableRound: 1,
+      pendingRound: 2,
+      pendingRoundStatus: "interrupted",
+      stableMessages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "show sidecar" },
+      ],
+      completedToolCalls: [{
+        signature: "unsafe-sig",
+        round: 1,
+        toolCallId: "tool-2",
+        name: "sidecar_open",
+        args: { title: "Brief" },
+        result: "{}",
+        isError: false,
+        resumeSafe: false,
+      }],
+    });
+
+    const unsafeSnapshot = getAgentRunResumeSnapshot(unsafeRun.runId);
+    expect(unsafeSnapshot.resumeEligible).toBe(false);
+    expect(unsafeSnapshot.resumeBlockedReason).toContain("sidecar_open");
+  });
+
+  it("fails closed when persisted resume state is malformed", () => {
+    const runsDir = path.join(tempWorkspaceRoot, ".bizbot", "agent-runs");
+    fs.mkdirSync(runsDir, { recursive: true });
+
+    fs.writeFileSync(path.join(runsDir, "corrupt-run.json"), JSON.stringify({
+      runId: "corrupt-run",
+      conversationId: "conversation-corrupt",
+      profile: "general_operator",
+      profileLabel: "General",
+      profileMission: "Test",
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      status: "failed",
+      startedAt: "2026-04-01T10:00:00.000Z",
+      updatedAt: "2026-04-01T10:05:00.000Z",
+      finishedAt: "2026-04-01T10:05:00.000Z",
+      userMessage: "resume me",
+      availableTools: ["developer_list_agent_runs"],
+      childRunIds: [],
+      toolPolicy: {
+        allowedPrefixes: [],
+        allowedTools: [],
+        deniedTools: [],
+      },
+      roundsCompleted: 1,
+      toolCallCount: 1,
+      toolEvents: [],
+      usage: {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cachedPromptTokens: 0,
+        rounds: [],
+      },
+      snapshot: {
+        version: 1,
+        lastStableRound: 1,
+        pendingRound: 2,
+        pendingRoundStatus: "interrupted",
+        stableMessages: "not-an-array",
+        completedToolCalls: [{ name: "developer_list_agent_runs" }],
+      },
+      error: "bad state",
+    }, null, 2), "utf8");
+
+    const snapshot = getAgentRunResumeSnapshot("corrupt-run");
+    expect(snapshot.resumeEligible).toBe(false);
+    expect(snapshot.resumeBlockedReason).toBe("Run has no stable checkpointed message state.");
   });
 });

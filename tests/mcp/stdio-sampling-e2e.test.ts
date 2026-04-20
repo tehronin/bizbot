@@ -152,10 +152,20 @@ describe("stdio MCP sampling e2e", () => {
     const server = createBizBotMcpServer(getStdioMcpServerOptions());
     const client = new Client(
       { name: "vitest-sampling-client", version: "1.0.0" },
-      { capabilities: { sampling: {} } },
+      { capabilities: { sampling: { tools: {} } } },
     );
     client.setRequestHandler(CreateMessageRequestSchema, async (request) => {
-      void request.params;
+      expect(request.params).toEqual(expect.objectContaining({
+        tools: expect.arrayContaining([
+          expect.objectContaining({ name: "developer_list_agent_runs" }),
+        ]),
+        toolChoice: { mode: "auto" },
+        metadata: expect.objectContaining({ toolsAllowed: true }),
+      }));
+      expect(request.params.tools).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "developer_vscode_loop_assist" }),
+        expect.objectContaining({ name: "developer_invoke_imported_mcp_tool" }),
+      ]));
       return samplingHandler();
     });
 
@@ -176,7 +186,9 @@ describe("stdio MCP sampling e2e", () => {
       sampling: expect.objectContaining({
         available: true,
         transportKind: "stdio",
+        allowTools: true,
         clientSupportsSampling: true,
+        clientSupportsSamplingTools: true,
       }),
       result: expect.objectContaining({
         diagnosisSource: "sampled",

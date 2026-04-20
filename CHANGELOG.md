@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-04-20
+
+- Stabilized the latest imported MCP and Builder discovery additions by fixing strict TypeScript regressions across plugin catalog drift typing, developer prompt and resource discovery helpers, MCP client tool-result unwrapping, imported-catalog aggregation, MCP health and trace helpers, and sampling schema wiring, keeping the production build green after the recent MCP snapshot work.
+- Fixed Builder project conversation bootstrap typing so project-scoped chat history summaries can be serialized from the lighter conversation-list query shape without requiring full message records.
+- Refreshed Builder regression coverage for the latest planning and runtime changes by updating builder project deletion mocks, isolating orchestrator tests to a temporary Builder workspace outside the repo, and correcting compose-service polling fixtures in runtime orchestration tests.
+
+## 2026-04-19
+
+- Added imported MCP drift tracking with persisted baseline acceptance, the `developer_diff_imported_mcp_catalog` and `developer_accept_imported_mcp_catalog_baseline` tools, plus the `bizbot://plugins/imported-mcp-drift` resource so external MCP inventory changes are reviewable instead of only observed live.
+- Added runtime imported-MCP tracing with the `developer_list_mcp_trace_events` tool and `bizbot://debug/mcp-trace` resource, capturing connect, inventory, tool, prompt, and resource operations for MCP dev-loop diagnosis.
+- Added task-oriented MCP workflow recipes and direct imported-tool debugging wrappers through `developer_get_task_recipe`, `developer_invoke_imported_mcp_tool`, and the `bizbot://plugins/task-recipes` resource so diagnosis can follow repeatable workflows instead of raw catalog browsing only.
+- Added Builder task event history in persisted task metadata, surfaced through `developer_get_builder_task_events` and `bizbot://builder/task-events`, making long-running Builder work inspectable as lifecycle state between polls.
+- Extended the Plugins catalog payload and in-app UI with imported MCP trust and drift posture, latency and capability chips, task recipe discovery, and MCP trace guidance so operator discovery is visible in the app as well as over MCP.
+- Added explicit imported MCP wrapper tools for reading connected external resources and prompts through BizBot's client layer (`developer_read_imported_mcp_resource`, `developer_get_imported_mcp_prompt`) so imported MCP is callable as first-class dev-loop surface area instead of only inspectable through inventories.
+- Added a task-oriented Builder lifecycle layer with `developer_get_builder_task_lifecycle` plus the new `bizbot://builder/task-lifecycle` resource, making current task progression, recent transitions, run linkage, and next-step posture visible for long-running Builder work.
+- Added a checked-in VS Code dev-loop diagnostic path with `bizbot://debug/vscode-mcp-devloop`, the `optimize-vscode-mcp-devloop` prompt, and a tuned `.vscode/mcp.json` stdio config that enables source maps and suppresses query logs for a cleaner local MCP loop.
+- Surfaced MCP discovery inside the app by extending the Plugins page payload and UI to show discovery bundles, skill resources, imported catalog counts, and preferred VS Code/BizBot dev-loop commands instead of keeping discovery only in raw MCP catalogs.
+- Added server-backed builder project chat history by introducing a `listBuilderProjectConversations` server query, a `selectedBuilderProjectId` parameter on the `/api/chat/conversations` bootstrap route, and a `builderProjectConversations` field on `ChatConversationBootstrap`, so the project chat dropdown in the composer reflects persisted history rather than only the in-memory conversation window.
+- Wired the builder project chat history dropdown through the shared `handleSwitchConversation` handler so selecting a previous project chat correctly swaps the active transcript, clears composer state, and resets panel mode.
+- Added a dedicated `handleStartNewConversation` handler for the blank-option selection in the project chat dropdown, keeping new-chat flow consistent with the header button.
+- Changed the `Conversation → BuilderProject` relation to `onDelete: Cascade` with a new migration (`20260419163000_builder_project_conversation_cascade`), and added an explicit `conversation.deleteMany` before builder project deletion in `deleteBuilderProject` as belt-and-suspenders, so all chat history scoped to a removed project is cleaned up as dependent data.
+- Fixed `normalizeMessageMetadata` in `conversations.ts` to include `preflight_review` in the valid builder card kind allowlist, preventing those cards from being silently dropped when rehydrating messages from the database.
+- Fixed `listBuilderProjectConversations` to fetch messages in descending order so `serializeSummary` uses the latest message content for the conversation preview instead of the first.
+- Guarded the "New Chat" header button against active streaming and bootstrap state by adding `disabled={chat.isPending || chat.isBootstrapping}` with disabled styling, preventing silent discard of an in-flight assistant turn.
+- Moved the `loadBootstrap` side-effect out of the `setSelectedBuilderProjectId` state updater into a dedicated `useEffect` keyed on `selectedBuilderProjectId` with a `previousBuilderProjectIdRef` skip-guard, eliminating anti-pattern double-fire in React Strict Mode.
+- Added `conversationIdRef` and `selectedBuilderProjectIdRef` mirrors (synced on every render) and rewrote the builder task polling `useEffect` to read live ref values instead of stale closure captures, preventing the polling closure from dispatching progress against a conversation or project that has already changed; removed `conversationId` and `selectedBuilderProjectId` from the polling `useEffect` dependency array so the interval no longer restarts on every project or conversation switch.
+
 ## 2026-04-18
 
 - Hardened Builder chat execution persistence by restoring and syncing per-conversation Ask or Agent mode plus plugin defaults, preserving server message ids during bootstrap refresh, and publishing completed Builder task summaries back into the chat transcript with active Builder usage included in session totals.

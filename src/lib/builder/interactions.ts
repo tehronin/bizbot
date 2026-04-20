@@ -767,7 +767,9 @@ export async function launchBuilderTaskFromChat(options: {
     throw new Error("Builder task request is required.");
   }
 
-  const conversationId = await getOrCreateConversation(options.conversationId ?? undefined, options.userId);
+  const conversationId = await getOrCreateConversation(options.conversationId ?? undefined, options.userId, {
+    builderProjectId: options.projectId,
+  });
   await updateConversationExecutionDefaults(conversationId, { mode: "agent", pluginId: "builder" });
 
   await saveMessage(conversationId, "USER", request, {
@@ -863,10 +865,10 @@ export async function publishBuilderTaskCompletionToConversation(options: {
 
   const summary = task.summary ?? run?.summary ?? task.description;
   const content = task.status === "SUCCEEDED"
-    ? `[builder-task:${task.id}] I finished that step in ${project.name}. ${summary}\n\nIf you want, I can keep going from here or walk you through what changed.`
+    ? `[builder-task:${task.id}] Done in ${project.name}. ${summary}\n\nNext I can continue the plan or review what changed.`
     : task.status === "FAILED"
-      ? `[builder-task:${task.id}] I ran into a blocker in ${project.name}. ${summary}\n\nIf you want, I can retry with a narrower approach or we can inspect the details together.`
-      : `[builder-task:${task.id}] I stopped that step in ${project.name}. ${summary}\n\nWhen you're ready, I can pick it back up with an adjusted request.`;
+      ? `[builder-task:${task.id}] Blocked in ${project.name}. ${summary}\n\nNext I can retry or inspect the failure details.`
+      : `[builder-task:${task.id}] Stopped in ${project.name}. ${summary}\n\nNext I can resume when you're ready.`;
 
   await saveMessage(options.conversationId, "ASSISTANT", content, {
     chatMode: "agent",

@@ -12,9 +12,11 @@ const sendMessageSpy = vi.fn(async () => undefined);
 const sendOraclePredictionSpy = vi.fn(async () => undefined);
 const resolveBuilderInteractionSpy = vi.fn(async () => undefined);
 const launchBuilderTaskFromChatSpy = vi.fn(async () => undefined);
+const resolvePendingResumePromptSpy = vi.fn(async () => undefined);
 const setSelectedBuilderProjectIdSpy = vi.fn();
 const setExecutionPluginIdSpy = vi.fn();
 const setExecutionModeSpy = vi.fn();
+const setChatVerbositySpy = vi.fn(async () => undefined);
 const startBuilderOnboardingSpy = vi.fn();
 const updateBuilderOnboardingSpecSpy = vi.fn();
 const setBuilderOnboardingStepSpy = vi.fn();
@@ -30,9 +32,11 @@ afterEach(() => {
   sendOraclePredictionSpy.mockClear();
   resolveBuilderInteractionSpy.mockClear();
   launchBuilderTaskFromChatSpy.mockClear();
+  resolvePendingResumePromptSpy.mockClear();
   setSelectedBuilderProjectIdSpy.mockClear();
   setExecutionPluginIdSpy.mockClear();
   setExecutionModeSpy.mockClear();
+  setChatVerbositySpy.mockClear();
   startBuilderOnboardingSpy.mockClear();
   updateBuilderOnboardingSpecSpy.mockClear();
   setBuilderOnboardingStepSpy.mockClear();
@@ -72,6 +76,9 @@ function createSummary(overrides?: Partial<ChatConversationSummary>): ChatConver
     title: "Ops triage",
     label: "Ops triage",
     preview: "Latest assistant reply",
+    builderProjectId: null,
+    builderProjectName: null,
+    builderProjectRelativePath: null,
     createdAt: "2026-04-01T10:00:00.000Z",
     updatedAt: "2026-04-01T12:00:00.000Z",
     lastMessageAt: "2026-04-01T12:00:00.000Z",
@@ -205,6 +212,7 @@ function Harness() {
       },
       {
         id: "entry-meta-1",
+    pendingAssistantTurn: null,
         role: "meta",
         content: "Content agent routed this request.",
         profileLabel: "Content",
@@ -250,6 +258,7 @@ function Harness() {
     builderProjects: [
       { id: "project-1", name: "Alpha", relativePath: "workspace/alpha" },
     ],
+    builderProjectConversations: [],
     builderStackPresets: [],
     builderTemplates: [],
     builderOnboarding: null,
@@ -303,8 +312,10 @@ function Harness() {
     },
     executionMode: "ask",
     executionPluginId: "just-chatting",
+    chatVerbosity: "detailed",
     setExecutionMode: setExecutionModeSpy,
     setExecutionPluginId: setExecutionPluginIdSpy,
+    setChatVerbosity: setChatVerbositySpy,
     setSelectedBuilderProjectId: setSelectedBuilderProjectIdSpy,
     startBuilderOnboarding: startBuilderOnboardingSpy,
     updateBuilderOnboardingSpec: updateBuilderOnboardingSpecSpy,
@@ -313,6 +324,7 @@ function Harness() {
     confirmBuilderOnboarding: confirmBuilderOnboardingSpy,
     resolveBuilderInteraction: resolveBuilderInteractionSpy,
     launchBuilderTaskFromChat: launchBuilderTaskFromChatSpy,
+    pendingResumePrompt: null,
     activeRun: {
       conversationId,
       runId: "run-live-1",
@@ -329,6 +341,7 @@ function Harness() {
     },
     sendMessage: sendMessageSpy,
     sendOraclePrediction: sendOraclePredictionSpy,
+    resolvePendingResumePrompt: resolvePendingResumePromptSpy,
     startNewChat: vi.fn(() => {
       setConversationId(null);
       setCurrentConversation(null);
@@ -419,18 +432,105 @@ function BuilderHarness({
   cards = [createBuilderCard()],
   messages = [],
   activeBuilderProgress = null,
+  pendingAssistantTurn,
 }: {
   cards?: BuilderChatCard[];
   messages?: UseChatResult["messages"];
   activeBuilderProgress?: UseChatResult["activeBuilderProgress"];
+  pendingAssistantTurn?: UseChatResult["pendingAssistantTurn"];
 } = {}) {
+  const [selectedBuilderProjectId, setSelectedBuilderProjectId] = useState<string | null>("project-1");
+  const [conversationId, setConversationId] = useState<string | null>("conv-builder");
+  const [currentConversation, setCurrentConversation] = useState<ChatConversationDetail | null>(createDetail({
+    id: "conv-builder",
+    label: "Builder chat",
+    title: "Builder chat",
+    archivedAt: null,
+    builderProjectId: "project-1",
+    builderProjectName: "Alpha",
+    builderProjectRelativePath: "workspace/alpha",
+  }));
+  const [recentConversations] = useState<ChatConversationSummary[]>([
+    createSummary({
+      id: "conv-builder",
+      label: "Builder chat",
+      title: "Builder chat",
+      builderProjectId: "project-1",
+      builderProjectName: "Alpha",
+      builderProjectRelativePath: "workspace/alpha",
+      defaultMode: "agent",
+      defaultPluginId: "builder",
+    }),
+    createSummary({
+      id: "conv-builder-2",
+      label: "Refactor queue worker",
+      title: "Refactor queue worker",
+      builderProjectId: "project-1",
+      builderProjectName: "Alpha",
+      builderProjectRelativePath: "workspace/alpha",
+      updatedAt: "2026-04-03T12:00:00.000Z",
+      lastMessageAt: "2026-04-03T12:00:00.000Z",
+      defaultMode: "agent",
+      defaultPluginId: "builder",
+    }),
+    createSummary({
+      id: "conv-builder-beta",
+      label: "Beta deploy notes",
+      title: "Beta deploy notes",
+      builderProjectId: "project-2",
+      builderProjectName: "Beta",
+      builderProjectRelativePath: "workspace/beta",
+      updatedAt: "2026-04-02T12:00:00.000Z",
+      lastMessageAt: "2026-04-02T12:00:00.000Z",
+      defaultMode: "agent",
+      defaultPluginId: "builder",
+    }),
+  ]);
+  const [archivedConversations] = useState<ChatConversationSummary[]>([
+    createSummary({
+      id: "conv-builder-archived",
+      label: "Archived Alpha audit",
+      title: "Archived Alpha audit",
+      archivedAt: "2026-04-04T12:00:00.000Z",
+      builderProjectId: "project-1",
+      builderProjectName: "Alpha",
+      builderProjectRelativePath: "workspace/alpha",
+      updatedAt: "2026-04-04T12:00:00.000Z",
+      lastMessageAt: "2026-04-04T12:00:00.000Z",
+      defaultMode: "agent",
+      defaultPluginId: "builder",
+    }),
+  ]);
+
+  const effectivePendingAssistantTurn = pendingAssistantTurn ?? (activeBuilderProgress
+    ? {
+      id: "pending-builder-turn",
+      conversationId: conversationId ?? "conv-builder",
+      runId: "run-builder",
+      chatMode: "agent",
+      chatPluginId: "builder",
+      builderProjectId: selectedBuilderProjectId,
+      builderTaskId: "task-builder-1",
+      content: "",
+      activityEntries: [],
+      builderProgress: activeBuilderProgress,
+    }
+    : null);
+
   const chat: UseChatResult = {
     messages,
+    pendingResumePrompt: null,
+    pendingAssistantTurn: effectivePendingAssistantTurn,
     builderInbox: cards,
     builderProjects: [
       { id: "project-1", name: "Alpha", relativePath: "workspace/alpha" },
       { id: "project-2", name: "Beta", relativePath: "workspace/beta" },
     ],
+    builderProjectConversations: [currentConversation, ...recentConversations, ...archivedConversations].filter(
+      (conversation, index, conversations) => Boolean(conversation)
+        && conversation.builderProjectId === selectedBuilderProjectId
+        && conversations.findIndex((candidate) => candidate?.id === conversation.id) === index,
+    ),
     builderStackPresets: [
       { key: "next-tailwind", displayName: "Next.js + Tailwind", description: "App Router with Tailwind.", template: "next-app", packageManager: "NPM", tags: ["react", "nextjs", "tailwind"] },
     ],
@@ -439,14 +539,14 @@ function BuilderHarness({
       { key: "next-app", displayName: "Next App", description: "Next.js App Router app.", defaultPackageManager: "NPM" },
     ],
     builderOnboarding: null,
-    selectedBuilderProjectId: "project-1",
+    selectedBuilderProjectId,
     activeBuilderProgress,
-    conversationId: "conv-builder",
-    currentConversation: createDetail({ id: "conv-builder", label: "Builder chat", title: "Builder chat", archivedAt: null }),
-    recentConversations: [createSummary({ id: "conv-builder", label: "Builder chat", title: "Builder chat" })],
-    archivedConversations: [],
-    recentPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: 1, totalPages: 1 },
-    archivedPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: 0, totalPages: 1 },
+    conversationId,
+    currentConversation,
+    recentConversations,
+    archivedConversations,
+    recentPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: recentConversations.length, totalPages: 1 },
+    archivedPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: archivedConversations.length, totalPages: 1 },
     historyFilters: { search: "", from: null, to: null },
     historyConversation: null,
     isPending: false,
@@ -485,9 +585,14 @@ function BuilderHarness({
     },
     executionMode: "agent",
     executionPluginId: "builder",
+    chatVerbosity: "detailed",
     setExecutionMode: vi.fn(),
     setExecutionPluginId: vi.fn(),
-    setSelectedBuilderProjectId: setSelectedBuilderProjectIdSpy,
+    setChatVerbosity: vi.fn(async () => undefined),
+    setSelectedBuilderProjectId: ((value) => {
+      setSelectedBuilderProjectIdSpy(value);
+      setSelectedBuilderProjectId((current) => typeof value === "function" ? value(current) : value);
+    }) as UseChatResult["setSelectedBuilderProjectId"],
     startBuilderOnboarding: startBuilderOnboardingSpy,
     updateBuilderOnboardingSpec: updateBuilderOnboardingSpecSpy,
     setBuilderOnboardingStep: setBuilderOnboardingStepSpy,
@@ -497,8 +602,25 @@ function BuilderHarness({
     launchBuilderTaskFromChat: launchBuilderTaskFromChatSpy,
     sendMessage: sendMessageSpy,
     sendOraclePrediction: sendOraclePredictionSpy,
-    startNewChat: vi.fn(),
-    loadConversation: vi.fn(async () => undefined),
+    resolvePendingResumePrompt: resolvePendingResumePromptSpy,
+    startNewChat: vi.fn(() => {
+      setConversationId(null);
+      setCurrentConversation(null);
+    }),
+    loadConversation: vi.fn(async (nextConversationId: string) => {
+      const nextConversation = recentConversations.find((entry) => entry.id === nextConversationId)
+        ?? archivedConversations.find((entry) => entry.id === nextConversationId);
+      if (!nextConversation) {
+        return;
+      }
+
+      setConversationId(nextConversationId);
+      setSelectedBuilderProjectId(nextConversation.builderProjectId);
+      setCurrentConversation(createDetail({
+        ...nextConversation,
+        title: nextConversation.title,
+      }));
+    }),
     archiveConversation: vi.fn(async () => undefined),
     archiveCurrentConversation: vi.fn(async () => undefined),
     openHistoryConversation: vi.fn(async () => undefined),
@@ -511,6 +633,100 @@ function BuilderHarness({
   };
 
   return <ChatWorkspaceContent chat={chat} setupOpen={false} closeSetupHref="/chat" />;
+}
+
+function createResumePromptChat(options?: { includeTranscriptPrompt?: boolean }): UseChatResult {
+  const includeTranscriptPrompt = options?.includeTranscriptPrompt ?? true;
+  return {
+    messages: includeTranscriptPrompt
+      ? [
+          { id: "assistant-1", role: "assistant", content: "I can try to resume the last run from its last stable checkpoint. It stopped because a tool timed out. Reply yes to resume or no to skip." },
+        ]
+      : [],
+    pendingResumePrompt: {
+      runId: "run-resume-1",
+      summary: "a tool timed out",
+      mode: "agent",
+      pluginId: "just-chatting",
+    },
+    pendingAssistantTurn: null,
+    builderInbox: [],
+    builderProjects: [],
+    builderProjectConversations: [],
+    builderStackPresets: [],
+    builderTemplates: [],
+    builderOnboarding: null,
+    selectedBuilderProjectId: null,
+    conversationId: "active-1",
+    currentConversation: createDetail({ id: "active-1", label: "Ops triage", title: "Ops triage", archivedAt: null }),
+    recentConversations: [createSummary()],
+    archivedConversations: [],
+    recentPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: 1, totalPages: 1 },
+    archivedPagination: { currentPage: 1, pageSize: PAGE_SIZE, totalItems: 0, totalPages: 1 },
+    historyFilters: { search: "", from: null, to: null },
+    historyConversation: null,
+    isPending: false,
+    isBootstrapping: false,
+    isLoadingHistoryConversation: false,
+    isLoadingHistoryLists: false,
+    activeRun: {
+      conversationId: "active-1",
+      runId: "run-live-1",
+      profile: null,
+      profileLabel: null,
+      provider: "openai",
+      model: "gpt-4o",
+      startedAt: "2026-04-01T12:00:00.000Z",
+      requestCount: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cachedPromptTokens: 0,
+    },
+    activeBuilderProgress: null,
+    modelPricing: {},
+    executionCatalog: {
+      defaults: { mode: "ask", pluginId: "just-chatting" },
+      plugins: [{
+        id: "just-chatting",
+        displayName: "Just Chatting",
+        description: "Full-context chat and planning without tool execution.",
+        accentColor: "#38bdf8",
+        accentSurface: "rgba(56,189,248,0.12)",
+        accentBorder: "rgba(56,189,248,0.36)",
+        toollessInAsk: true,
+        toollessInAgent: true,
+      }],
+    },
+    executionMode: "ask",
+    executionPluginId: "just-chatting",
+    chatVerbosity: "detailed",
+    setExecutionMode: vi.fn(),
+    setExecutionPluginId: vi.fn(),
+    setChatVerbosity: vi.fn(async () => undefined),
+    setSelectedBuilderProjectId: vi.fn(),
+    startBuilderOnboarding: vi.fn(),
+    updateBuilderOnboardingSpec: vi.fn(),
+    setBuilderOnboardingStep: vi.fn(),
+    cancelBuilderOnboarding: vi.fn(),
+    confirmBuilderOnboarding: vi.fn(async () => undefined),
+    resolveBuilderInteraction: vi.fn(async () => undefined),
+    launchBuilderTaskFromChat: vi.fn(async () => undefined),
+    sendMessage: sendMessageSpy,
+    sendOraclePrediction: vi.fn(async () => undefined),
+    resolvePendingResumePrompt: resolvePendingResumePromptSpy,
+    startNewChat: vi.fn(),
+    loadConversation: vi.fn(async () => undefined),
+    archiveConversation: vi.fn(async () => undefined),
+    archiveCurrentConversation: vi.fn(async () => undefined),
+    openHistoryConversation: vi.fn(async () => undefined),
+    restoreConversation: vi.fn(async () => undefined),
+    deleteConversation: vi.fn(async () => undefined),
+    applyHistoryFilters: vi.fn(async () => undefined),
+    clearHistoryFilters: vi.fn(async () => undefined),
+    setRecentHistoryPage: vi.fn(),
+    setArchivedHistoryPage: vi.fn(),
+  };
 }
 
 describe("chat workspace history panel", () => {
@@ -646,6 +862,43 @@ describe("chat workspace history panel", () => {
     expect((screen.getByPlaceholderText("Ask BizBot anything...") as HTMLInputElement).value).toBe("");
   });
 
+  it("intercepts an affirmative resume reply instead of sending it to the model", async () => {
+    render(<ChatWorkspaceContent chat={createResumePromptChat()} setupOpen={false} closeSetupHref="/chat" />);
+
+    fireEvent.change(screen.getByPlaceholderText("Ask BizBot anything..."), {
+      target: { value: "yes" },
+    });
+
+    fireEvent.submit(screen.getByPlaceholderText("Ask BizBot anything...").closest("form")!);
+
+    await waitFor(() => {
+      expect(resolvePendingResumePromptSpy).toHaveBeenCalledWith("resume");
+    });
+    expect(sendMessageSpy).not.toHaveBeenCalled();
+  });
+
+  it("intercepts a negative resume reply instead of sending it to the model", async () => {
+    render(<ChatWorkspaceContent chat={createResumePromptChat()} setupOpen={false} closeSetupHref="/chat" />);
+
+    fireEvent.change(screen.getByPlaceholderText("Ask BizBot anything..."), {
+      target: { value: "no" },
+    });
+
+    fireEvent.submit(screen.getByPlaceholderText("Ask BizBot anything...").closest("form")!);
+
+    await waitFor(() => {
+      expect(resolvePendingResumePromptSpy).toHaveBeenCalledWith("dismiss");
+    });
+    expect(sendMessageSpy).not.toHaveBeenCalled();
+  });
+
+  it("shows the pending resume notice even when the transcript does not contain the prompt message", () => {
+    render(<ChatWorkspaceContent chat={createResumePromptChat({ includeTranscriptPrompt: false })} setupOpen={false} closeSetupHref="/chat" />);
+
+    expect(screen.getByText("Resume available")).toBeTruthy();
+    expect(screen.getByText(/Reply yes to resume or no to skip\./i)).toBeTruthy();
+  });
+
   it("groups assistant activity into a single response block", () => {
     render(<Harness />);
 
@@ -675,8 +928,10 @@ describe("chat workspace history panel", () => {
         { id: "stream-user", role: "user", content: "Stream a draft." },
         { id: "stream-assistant", role: "assistant", content: "Drafting the response" },
       ],
+      pendingAssistantTurn: null,
       builderInbox: [],
       builderProjects: [],
+      builderProjectConversations: [],
       builderStackPresets: [],
       builderTemplates: [],
       builderOnboarding: null,
@@ -724,8 +979,10 @@ describe("chat workspace history panel", () => {
       },
       executionMode: "ask",
       executionPluginId: "just-chatting",
+      chatVerbosity: "detailed",
       setExecutionMode: vi.fn(),
       setExecutionPluginId: vi.fn(),
+      setChatVerbosity: vi.fn(async () => undefined),
       setSelectedBuilderProjectId: vi.fn(),
       startBuilderOnboarding: vi.fn(),
       updateBuilderOnboardingSpec: vi.fn(),
@@ -779,7 +1036,6 @@ describe("chat workspace history panel", () => {
       target: { value: "Implement archive and delete cards" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "advanced capabilities" }));
     fireEvent.change(screen.getByLabelText("builder project"), {
       target: { value: "project-2" },
     });
@@ -791,21 +1047,46 @@ describe("chat workspace history panel", () => {
     fireEvent.submit(composer!);
 
     await waitFor(() => {
-      expect(launchBuilderTaskFromChatSpy).toHaveBeenCalledWith("Implement archive and delete cards", { projectId: "project-1" });
+      expect(launchBuilderTaskFromChatSpy).toHaveBeenCalledWith("Implement archive and delete cards", { projectId: "project-2" });
     });
   });
 
-  it("moves composer routing controls into advanced capabilities", () => {
+  it("filters project chat history by the selected Builder project", async () => {
+    render(<BuilderHarness />);
+
+    const historySelect = screen.getByLabelText("builder project chat history") as HTMLSelectElement;
+    expect(historySelect.textContent).toContain("Builder chat");
+    expect(historySelect.textContent).toContain("Refactor queue worker");
+    expect(historySelect.textContent).toContain("Archived Alpha audit");
+    expect(historySelect.textContent).not.toContain("Beta deploy notes");
+
+    fireEvent.change(screen.getByLabelText("builder project"), {
+      target: { value: "project-2" },
+    });
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("builder project chat history") as HTMLSelectElement).textContent).toContain("Beta deploy notes");
+    });
+
+    expect((screen.getByLabelText("builder project chat history") as HTMLSelectElement).textContent).not.toContain("Builder chat");
+
+    fireEvent.change(screen.getByLabelText("builder project chat history"), {
+      target: { value: "conv-builder-beta" },
+    });
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("builder project chat history") as HTMLSelectElement).value).toBe("conv-builder-beta");
+    });
+
+    expect(screen.getByText("Beta deploy notes")).toBeTruthy();
+  });
+
+  it("shows composer routing controls inline", () => {
     render(<Harness />);
 
-    expect(screen.queryByLabelText("chat mode")).toBeNull();
-    expect(screen.queryByLabelText("chat plugin")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "advanced capabilities" }));
-
-    expect(screen.getByTestId("composer-capabilities-panel")).toBeTruthy();
     expect(screen.getByLabelText("chat mode")).toBeTruthy();
     expect(screen.getByLabelText("chat plugin")).toBeTruthy();
+    expect(screen.getByLabelText("chat verbosity")).toBeTruthy();
   });
 
   it("opens and closes the knowledge-doc drawer explicitly", () => {
@@ -843,8 +1124,8 @@ describe("chat workspace history panel", () => {
       activeBuilderProgress={progressCard.progress ?? null}
     />);
 
-    expect(screen.getByText("I'm working in Alpha and I'm currently verifying.")).toBeTruthy();
-    fireEvent.click(screen.getByText("Working details"));
+    expect(screen.getByText("I'm still working on this.")).toBeTruthy();
+    fireEvent.click(screen.getByText("Behind the scenes • builder progress"));
     expect(screen.getByText("Verifying")).toBeTruthy();
     expect(screen.queryByText(/Iteration 2 \/ null/i)).toBeNull();
     expect(screen.getByText("Re-running tests after repair.")).toBeTruthy();
@@ -882,10 +1163,12 @@ describe("chat workspace history panel", () => {
 function OnboardingHarness({ onboarding }: { onboarding?: UseChatResult["builderOnboarding"] }) {
   const chat: UseChatResult = {
     messages: [],
+    pendingAssistantTurn: null,
     builderInbox: [],
     builderProjects: [
       { id: "project-1", name: "Alpha", relativePath: "workspace/alpha" },
     ],
+    builderProjectConversations: [],
     builderStackPresets: [
       { key: "next-tailwind", displayName: "Next.js + Tailwind", description: "App Router with Tailwind.", template: "next-app", packageManager: "NPM", tags: ["react", "nextjs", "tailwind"] },
     ],
@@ -940,8 +1223,10 @@ function OnboardingHarness({ onboarding }: { onboarding?: UseChatResult["builder
     },
     executionMode: "agent",
     executionPluginId: "builder",
+    chatVerbosity: "detailed",
     setExecutionMode: vi.fn(),
     setExecutionPluginId: vi.fn(),
+    setChatVerbosity: vi.fn(async () => undefined),
     setSelectedBuilderProjectId: setSelectedBuilderProjectIdSpy,
     startBuilderOnboarding: startBuilderOnboardingSpy,
     updateBuilderOnboardingSpec: updateBuilderOnboardingSpecSpy,
@@ -950,8 +1235,10 @@ function OnboardingHarness({ onboarding }: { onboarding?: UseChatResult["builder
     confirmBuilderOnboarding: confirmBuilderOnboardingSpy,
     resolveBuilderInteraction: resolveBuilderInteractionSpy,
     launchBuilderTaskFromChat: launchBuilderTaskFromChatSpy,
+    pendingResumePrompt: null,
     sendMessage: sendMessageSpy,
     sendOraclePrediction: sendOraclePredictionSpy,
+    resolvePendingResumePrompt: resolvePendingResumePromptSpy,
     startNewChat: vi.fn(),
     loadConversation: vi.fn(async () => undefined),
     archiveConversation: vi.fn(async () => undefined),

@@ -16,7 +16,9 @@ import {
   resolveChatExecutionSelection,
 } from "@/lib/chat/execution";
 import {
+  CHAT_VERBOSITY_SETTING_KEY,
   buildConversationLabel,
+  parseChatVerbosity,
   truncateChatPreview,
   DEFAULT_CHAT_HISTORY_PAGE_SIZE,
   MAX_CHAT_HISTORY_PAGE_SIZE,
@@ -36,6 +38,13 @@ import {
 
 type ConversationRow = Prisma.ConversationGetPayload<{
   include: {
+    builderProject: {
+      select: {
+        id: true;
+        name: true;
+        relativePath: true;
+      };
+    };
     _count: {
       select: { messages: true };
     };
@@ -50,6 +59,28 @@ type ConversationRow = Prisma.ConversationGetPayload<{
     };
   };
 }>;
+
+type ConversationSummaryRow = Prisma.ConversationGetPayload<{
+  include: {
+    builderProject: {
+      select: {
+        id: true;
+        name: true;
+        relativePath: true;
+      };
+    };
+    _count: {
+      select: { messages: true };
+    };
+    messages: {
+      select: {
+        role: true;
+        content: true;
+      };
+    };
+  };
+}>;
+
 type ConversationState = "active" | "archived" | "any";
 type ConversationPageQuery = {
   page?: number;
@@ -94,7 +125,8 @@ function normalizeMessageMetadata(value: unknown): ChatConversationMessage["meta
             && kind !== "mcp_contract_drift"
             && kind !== "dependency_contract_drift"
             && kind !== "file_topology_contract_drift"
-            && kind !== "task_execution")
+            && kind !== "task_execution"
+            && kind !== "preflight_review")
           || (status !== "pending"
             && status !== "approved"
             && status !== "rejected"
@@ -181,10 +213,9 @@ function serializeMessage(row: { id: string; role: "USER" | "ASSISTANT" | "SYSTE
   };
 }
 
-function serializeSummary(row: ConversationRow): ChatConversationSummary {
-  const messages = row.messages.map(serializeMessage);
-  const firstUserMessage = messages.find((message) => message.role === "USER")?.content ?? null;
-  const previewSource = messages.at(-1)?.content ?? null;
+function serializeSummary(row: ConversationSummaryRow): ChatConversationSummary {
+  const firstUserMessage = row.messages.find((message) => message.role === "USER")?.content ?? null;
+  const previewSource = row.messages.at(-1)?.content ?? null;
 
   return {
     id: row.id,
@@ -194,6 +225,9 @@ function serializeSummary(row: ConversationRow): ChatConversationSummary {
       firstUserMessage,
     }),
     preview: previewSource ? truncateChatPreview(previewSource) : null,
+    builderProjectId: row.builderProject?.id ?? null,
+    builderProjectName: row.builderProject?.name ?? null,
+    builderProjectRelativePath: row.builderProject?.relativePath ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lastMessageAt: row.lastMessageAt ? row.lastMessageAt.toISOString() : null,
@@ -321,6 +355,13 @@ async function fetchConversationRows(
     take: options?.take,
     skip: options?.skip,
     include: {
+      builderProject: {
+        select: {
+          id: true,
+          name: true,
+          relativePath: true,
+        },
+      },
       _count: {
         select: { messages: true },
       },
@@ -535,6 +576,53 @@ export async function listArchivedConversations(userIdInput?: string): Promise<C
   return page.conversations;
 }
 
+export async function listBuilderProjectConversations(
+  builderProjectId: string | null | undefined,
+  userIdInput?: string,
+): Promise<ChatConversationSummary[]> {
+  if (!builderProjectId) {
+    return [];
+  }
+
+  const userId = resolveAgentUserId(userIdInput);
+  await ensureConversationUser(userId);
+
+  const rows = await db.conversation.findMany({
+    where: {
+      userId,
+      builderProjectId,
+      deletedAt: null,
+    },
+    include: {
+      builderProject: {
+        select: {
+          id: true,
+          name: true,
+          relativePath: true,
+        },
+      },
+      messages: {
+        select: {
+          content: true,
+          role: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+      _count: {
+        select: { messages: true },
+      },
+    },
+    orderBy: [
+      { lastMessageAt: "desc" },
+      { updatedAt: "desc" },
+      { createdAt: "desc" },
+    ],
+  });
+
+  return rows.map(serializeSummary);
+}
+
 export async function getConversationDetail(
   conversationId: string,
   userIdInput?: string,
@@ -549,6 +637,13 @@ export async function getConversationDetail(
       ...buildStateWhere(userId, state),
     },
     include: {
+      builderProject: {
+        select: {
+          id: true,
+          name: true,
+          relativePath: true,
+        },
+      },
       _count: {
         select: { messages: true },
       },
@@ -571,6 +666,7 @@ export async function getConversationDetail(
 export async function resolveChatBootstrap(options?: {
   userId?: string;
   selectedConversationId?: string | null;
+  selectedBuilderProjectId?: string | null;
   recentPage?: number;
   archivedPage?: number;
   pageSize?: number;
@@ -579,7 +675,7 @@ export async function resolveChatBootstrap(options?: {
   const userId = resolveAgentUserId(options?.userId);
   await ensureConversationUser(userId);
 
-  const [recentPage, archivedPage, preferredConversation, fallbackConversation, pricingSetting, builderProjects, builderInbox] = await Promise.all([
+  const [recentPage, archivedPage, preferredConversation, fallbackConversation, pricingSetting, chatVerbositySetting, builderProjects, builderInbox] = await Promise.all([
     fetchConversationPage(userId, "active", {
       page: options?.recentPage,
       pageSize: options?.pageSize,
@@ -596,6 +692,10 @@ export async function resolveChatBootstrap(options?: {
     fetchFirstActiveConversation(userId),
     db.setting.findUnique({
       where: { key: USAGE_LEDGER_MODEL_PRICING_SETTING_KEY },
+      select: { value: true },
+    }),
+    db.setting.findUnique({
+      where: { key: CHAT_VERBOSITY_SETTING_KEY },
       select: { value: true },
     }),
     listBuilderProjects(),
@@ -633,6 +733,15 @@ export async function resolveChatBootstrap(options?: {
     ? buildExecutionDefaults(currentConversation.defaultMode, currentConversation.defaultPluginId)
     : executionCatalog.defaults;
   const activeRun = await buildConversationUsageSummary(currentConversation);
+  const requestedBuilderProjectId = typeof options?.selectedBuilderProjectId === "string"
+    ? options.selectedBuilderProjectId
+    : null;
+  const effectiveBuilderProjectId = requestedBuilderProjectId && builderProjectOptions.some((project) => project.id === requestedBuilderProjectId)
+    ? requestedBuilderProjectId
+    : currentConversation?.builderProjectId && builderProjectOptions.some((project) => project.id === currentConversation.builderProjectId)
+      ? currentConversation.builderProjectId
+      : builderProjectOptions[0]?.id ?? null;
+  const builderProjectConversations = await listBuilderProjectConversations(effectiveBuilderProjectId, userId);
 
   return {
     currentConversationId,
@@ -640,6 +749,8 @@ export async function resolveChatBootstrap(options?: {
     executionDefaults,
     executionCatalog,
     builderProjects: builderProjectOptions,
+    builderProjectConversations,
+    chatVerbosity: parseChatVerbosity(chatVerbositySetting?.value),
     builderStackPresets,
     builderTemplates,
     activeRun,
@@ -712,9 +823,8 @@ export async function deleteConversation(conversationId: string, userIdInput?: s
   await ensureConversationUser(userId);
   await requireConversation(conversationId, userId, "any");
 
-  await db.conversation.update({
+  await db.conversation.delete({
     where: { id: conversationId },
-    data: { deletedAt: new Date() },
   });
 }
 

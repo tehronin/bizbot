@@ -99,6 +99,10 @@ describe("builder reconciliation", () => {
 
     expect(summary.alerts.some((alert) => alert.code === "stale_running_state")).toBe(true);
     expect(summary.alerts.some((alert) => alert.code === "repeated_identical_verification_failure")).toBe(true);
+    expect(summary.alerts.find((alert) => alert.code === "repeated_identical_verification_failure")?.failure).toEqual(expect.objectContaining({
+      kind: "repeated_failure",
+      suggestedNextAction: "inspect_stuck_loop",
+    }));
   });
 
   it("auto-reconciles a stale RUNNING run when the paired task is already terminal", async () => {

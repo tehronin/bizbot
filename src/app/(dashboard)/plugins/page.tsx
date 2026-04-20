@@ -19,6 +19,13 @@ interface PluginCatalogEntry {
   url?: string;
   envKey?: string;
   hasAuthToken?: boolean;
+  promptCount?: number;
+  resourceCount?: number;
+  destructiveToolCount?: number;
+  openWorldToolCount?: number;
+  latencyClass?: "unknown" | "fast" | "moderate" | "slow";
+  auditState?: "unaudited" | "audited" | "drifted";
+  lastSeenAt?: string | null;
 }
 
 interface PluginCatalogSection {
@@ -37,6 +44,41 @@ interface PluginCatalogResponse {
   };
   builtin: PluginCatalogSection;
   external: PluginCatalogSection;
+  discovery: {
+    bundles: Array<{
+      bundleId: string;
+      title: string;
+      description: string;
+      toolCount: number;
+      resourceCount: number;
+      promptCount: number;
+    }>;
+    skillResources: Array<{
+      name: string;
+      title: string;
+      uri: string;
+      description: string;
+    }>;
+    importedCatalog: {
+      promptCount: number;
+      resourceCount: number;
+      driftState: "unaudited" | "audited" | "drifted";
+      driftedServerCount: number;
+    };
+    taskRecipes: Array<{
+      recipeId: string;
+      title: string;
+      description: string;
+      bundleCount: number;
+    }>;
+    devLoop: {
+      preferredAppCommand: string;
+      preferredMcpCommand: string;
+      reviewResourceUri: string;
+      optimizationPromptName: string;
+      traceResourceUri: string;
+    };
+  };
   error?: string;
 }
 
@@ -66,6 +108,15 @@ function SummaryCard({ label, value, detail }: { label: string; value: string; d
       <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{label}</div>
       <div className="text-lg" style={{ color: "var(--text-primary)" }}>{value}</div>
       <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>{detail}</div>
+    </div>
+  );
+}
+
+function DiscoveryChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="px-3 py-2 border text-xs" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)", color: "var(--text-dim)" }}>
+      <span style={{ color: "var(--text-muted)" }}>{label}: </span>
+      <span style={{ color: "var(--text-primary)" }}>{value}</span>
     </div>
   );
 }
@@ -117,6 +168,17 @@ function PluginCard({
           {entry.envKey ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Controlled by {entry.envKey}</div> : null}
           {entry.version ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Version {entry.version}</div> : null}
           {entry.tags.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Tags: {entry.tags.join(", ")}</div> : null}
+          {entry.kind === "external" ? (
+            <div className="flex flex-wrap gap-2">
+              <DiscoveryChip label="prompts" value={String(entry.promptCount ?? 0)} />
+              <DiscoveryChip label="resources" value={String(entry.resourceCount ?? 0)} />
+              <DiscoveryChip label="destructive" value={String(entry.destructiveToolCount ?? 0)} />
+              <DiscoveryChip label="open-world" value={String(entry.openWorldToolCount ?? 0)} />
+              <DiscoveryChip label="latency" value={entry.latencyClass ?? "unknown"} />
+              <DiscoveryChip label="audit" value={entry.auditState ?? "unaudited"} />
+            </div>
+          ) : null}
+          {entry.kind === "external" && entry.lastSeenAt ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Last seen {new Date(entry.lastSeenAt).toLocaleString()}</div> : null}
         </div>
 
         <div className="flex items-start justify-end gap-2">
@@ -367,6 +429,81 @@ export default function PluginsPage() {
 
         <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
           Last refresh: {data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : "not loaded"}
+        </div>
+      </section>
+
+      <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+        <div>
+          <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>mcp discovery</div>
+          <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+            Discovery bundles, skill resources, and VS Code dev-loop guidance are surfaced here so MCP authoring and debugging paths are visible inside the app.
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <DiscoveryChip label="imported prompts" value={String(data?.discovery.importedCatalog.promptCount ?? 0)} />
+          <DiscoveryChip label="imported resources" value={String(data?.discovery.importedCatalog.resourceCount ?? 0)} />
+          <DiscoveryChip label="imported drift" value={data?.discovery.importedCatalog.driftState ?? "unaudited"} />
+          <DiscoveryChip label="drifted servers" value={String(data?.discovery.importedCatalog.driftedServerCount ?? 0)} />
+          <DiscoveryChip label="task recipes" value={String(data?.discovery.taskRecipes.length ?? 0)} />
+          <DiscoveryChip label="app loop" value={data?.discovery.devLoop.preferredAppCommand ?? "npm run dev:vscode"} />
+          <DiscoveryChip label="mcp loop" value={data?.discovery.devLoop.preferredMcpCommand ?? "npm run mcp:stdio"} />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-3">
+          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+            <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>recommended bundles</div>
+            {(data?.discovery.bundles ?? []).map((bundle) => (
+              <div key={bundle.bundleId} className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-primary)" }}>{bundle.title}</div>
+                  <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>{bundle.description}</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <DiscoveryChip label="bundle" value={bundle.bundleId} />
+                  <DiscoveryChip label="tools" value={String(bundle.toolCount)} />
+                  <DiscoveryChip label="resources" value={String(bundle.resourceCount)} />
+                  <DiscoveryChip label="prompts" value={String(bundle.promptCount)} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+            <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>skill resources</div>
+            {(data?.discovery.skillResources ?? []).map((resource) => (
+              <div key={resource.uri} className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-primary)" }}>{resource.title}</div>
+                  <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>{resource.description}</div>
+                </div>
+                <div className="text-xs leading-6 break-all" style={{ color: "var(--text-dim)" }}>{resource.uri}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+            <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>task recipes</div>
+            {(data?.discovery.taskRecipes ?? []).map((recipe) => (
+              <div key={recipe.recipeId} className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-primary)" }}>{recipe.title}</div>
+                  <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>{recipe.description}</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <DiscoveryChip label="recipe" value={recipe.recipeId} />
+                  <DiscoveryChip label="bundles" value={String(recipe.bundleCount)} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border p-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+          <div className="text-xs uppercase tracking-[0.18em] mb-2" style={{ color: "var(--text-muted)" }}>vs code dev loop</div>
+          <div className="text-sm leading-6" style={{ color: "var(--text-dim)" }}>
+            Review {data?.discovery.devLoop.reviewResourceUri ?? "bizbot://debug/vscode-mcp-devloop"} for the checked-in MCP connection, inspect {data?.discovery.devLoop.traceResourceUri ?? "bizbot://debug/mcp-trace"} when discovery and execution disagree, and use {data?.discovery.devLoop.optimizationPromptName ?? "optimize-vscode-mcp-devloop"} when you want a guided pass on the VS Code to BizBot loop.
+          </div>
         </div>
       </section>
 

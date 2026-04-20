@@ -13,6 +13,7 @@ import {
   getMcpClientStatus,
   getMcpClientTools,
   initMcpClients,
+  invokeMcpClientTool,
   readMcpClientResource,
   resetMcpClientLogger,
   setMcpClientLogger,
@@ -281,12 +282,17 @@ describe("external MCP client integration", () => {
       expect(registry.toolToPluginId.get("mcp_fixture_echo")).toBe("external-mcp");
       expect(registry.tools.some((tool) => tool.name === "mcp_fixture_echo")).toBe(true);
       expect(getMcpClientStatus()).toEqual([
-        {
+        expect.objectContaining({
           name: "fixture",
           url: fixture.url,
           connected: true,
           toolCount: 3,
-        },
+          promptCount: 1,
+          resourceCount: 1,
+          hasAuthToken: false,
+          latencyClass: expect.any(String),
+          lastSeenAt: expect.any(String),
+        }),
       ]);
     } finally {
       await closeMcpClients();
@@ -315,12 +321,17 @@ describe("external MCP client integration", () => {
         source: "fixture-mcp",
       });
       expect(getMcpClientStatus()).toEqual([
-        {
+        expect.objectContaining({
           name: "fixture-sse",
           url: fixture.url,
           connected: true,
           toolCount: 3,
-        },
+          promptCount: 1,
+          resourceCount: 1,
+          hasAuthToken: false,
+          latencyClass: expect.any(String),
+          lastSeenAt: expect.any(String),
+        }),
       ]);
     } finally {
       await closeMcpClients();
@@ -349,6 +360,28 @@ describe("external MCP client integration", () => {
 
       await expect(failTool!.execute({ message: "remote exploded" }, {})).rejects.toThrow("remote exploded");
       await expect(plainTextTool!.execute({ value: "hello" }, {})).resolves.toEqual({ result: "plain:hello" });
+    } finally {
+      await closeMcpClients();
+      await new Promise<void>((resolve, reject) => {
+        fixture.server.close((error) => error ? reject(error) : resolve());
+      });
+    }
+  });
+
+  it("invokes imported MCP tools directly by server and original tool name", async () => {
+    const fixture = await startStreamableFixtureMcpServer();
+
+    try {
+      process.env.MCP_SERVERS = JSON.stringify([
+        { name: "fixture", url: fixture.url },
+      ]);
+
+      await initMcpClients();
+
+      await expect(invokeMcpClientTool("fixture", "echo", { name: "direct" })).resolves.toEqual({
+        echoed: "direct",
+        source: "fixture-mcp",
+      });
     } finally {
       await closeMcpClients();
       await new Promise<void>((resolve, reject) => {

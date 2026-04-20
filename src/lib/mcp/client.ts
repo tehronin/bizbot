@@ -6,7 +6,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import type { RegisteredToolDefinition, ToolParametersSchema, ToolSchemaProperties } from "@/lib/agent/tools";
+import type { RegisteredToolDefinition, ToolExecutionResult, ToolParametersSchema, ToolSchemaProperties } from "@/lib/agent/tools";
 import type {
   GetPromptResult,
   Prompt,
@@ -15,6 +15,7 @@ import type {
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "@/lib/db";
+import { createMcpTraceCorrelationId, getMcpTraceServerSummary, recordMcpTraceEvent } from "@/lib/mcp/trace";
 
 function isTextContentPart(value: unknown): value is { type: "text"; text: string } {
   return typeof value === "object" && value !== null && "type" in value && "text" in value
@@ -37,6 +38,8 @@ interface ConnectedServer {
   resources: Resource[];
   prompts: Prompt[];
   connected: boolean;
+  connectedAt: string;
+  lastInventorySyncAt: string;
 }
 
 type McpClientLogger = Pick<typeof console, "info" | "warn" | "error">;
@@ -73,6 +76,98 @@ function normalizeServerConfigs(configs: McpServerConfig[]): McpServerConfig[] {
     ...config,
     enabled: config.enabled ?? true,
   }));
+}
+
+function getConnectedServer(serverName: string): ConnectedServer {
+  const server = connectedServers.get(serverName);
+  if (!server) {
+    throw new Error(`No connected MCP server named ${serverName}`);
+  }
+  return server;
+}
+
+function summarizeToolResult(result: unknown): string {
+  if (result === null || result === undefined) {
+    return "empty result";
+  }
+  if (Array.isArray(result)) {
+    return `${result.length} item(s)`;
+  }
+  if (typeof result === "object") {
+    return `${Object.keys(result as Record<string, unknown>).length} field(s)`;
+  }
+  return typeof result;
+}
+
+function unwrapToolResult(result: Awaited<ReturnType<Client["callTool"]>>): ToolExecutionResult {
+  const content = Array.isArray(result.content) ? result.content : [];
+
+  if (result.isError) {
+    const errorText = content
+      .filter(isTextContentPart)
+      .map((entry) => entry.text)
+      .join("\n") || "Unknown MCP tool error";
+    throw new Error(errorText);
+  }
+
+  const texts = content.filter(isTextContentPart).map((entry) => entry.text);
+  if (texts.length === 1) {
+    try {
+      return JSON.parse(texts[0]);
+    } catch {
+      return { result: texts[0] };
+    }
+  }
+
+  return { result: texts.join("\n") };
+}
+
+async function executeImportedTool(
+  server: ConnectedServer,
+  originalName: string,
+  args: Record<string, unknown>,
+  prefixedName?: string,
+): Promise<ToolExecutionResult> {
+  const startedAt = Date.now();
+  const correlationId = createMcpTraceCorrelationId();
+
+  try {
+    const rawResult = await server.client.callTool({ name: originalName, arguments: args });
+    const parsedResult = unwrapToolResult(rawResult);
+    recordMcpTraceEvent({
+      correlationId,
+      serverName: server.config.name,
+      serverUrl: server.config.url,
+      operation: "tool_call",
+      target: originalName,
+      success: true,
+      durationMs: Date.now() - startedAt,
+      requestKeys: Object.keys(args ?? {}),
+      resultSummary: summarizeToolResult(parsedResult),
+      provenance: {
+        ...(prefixedName ? { prefixedToolName: prefixedName } : {}),
+        originalToolName: originalName,
+      },
+    });
+    return parsedResult;
+  } catch (error) {
+    recordMcpTraceEvent({
+      correlationId,
+      serverName: server.config.name,
+      serverUrl: server.config.url,
+      operation: "tool_call",
+      target: originalName,
+      success: false,
+      durationMs: Date.now() - startedAt,
+      requestKeys: Object.keys(args ?? {}),
+      error: error instanceof Error ? error.message : String(error),
+      provenance: {
+        ...(prefixedName ? { prefixedToolName: prefixedName } : {}),
+        originalToolName: originalName,
+      },
+    });
+    throw error;
+  }
 }
 
 export async function getConfiguredMcpServerConfigs(): Promise<McpServerConfig[]> {
@@ -117,25 +212,7 @@ function mcpToolToRegistered(serverName: string, tool: Tool, client: Client): Re
     name: prefixedName,
     description: `[${serverName}] ${tool.description ?? tool.name}`,
     parameters,
-    execute: async (args) => {
-      const result = await client.callTool({ name: tool.name, arguments: args });
-      const content = Array.isArray(result.content) ? result.content : [];
-
-      if (result.isError) {
-        const errorText = content
-          .filter(isTextContentPart)
-          .map((c) => c.text)
-          .join("\n") ?? "Unknown MCP tool error";
-        throw new Error(errorText);
-      }
-      const texts = content
-        .filter(isTextContentPart)
-        .map((c) => c.text) ?? [];
-      if (texts.length === 1) {
-        try { return JSON.parse(texts[0]); } catch { return { result: texts[0] }; }
-      }
-      return { result: texts.join("\n") };
-    },
+    execute: async (args) => executeImportedTool(getConnectedServer(serverName), tool.name, args as Record<string, unknown>, prefixedName),
   };
 }
 
@@ -143,6 +220,7 @@ function mcpToolToRegistered(serverName: string, tool: Tool, client: Client): Re
  * Connect to a single MCP server with Streamable HTTP, falling back to SSE.
  */
 async function connectToServer(config: McpServerConfig): Promise<ConnectedServer | null> {
+  const correlationId = createMcpTraceCorrelationId();
   const url = new URL(config.url);
   const fetchOptions = config.authToken
     ? {
@@ -198,6 +276,26 @@ async function connectToServer(config: McpServerConfig): Promise<ConnectedServer
     cursor = nextCursor;
   } while (cursor);
 
+  const connectedAt = new Date().toISOString();
+  recordMcpTraceEvent({
+    correlationId,
+    serverName: config.name,
+    serverUrl: config.url,
+    operation: "connect",
+    target: config.url,
+    success: true,
+    resultSummary: "Connected successfully.",
+  });
+  recordMcpTraceEvent({
+    correlationId,
+    serverName: config.name,
+    serverUrl: config.url,
+    operation: "inventory_sync",
+    target: config.url,
+    success: true,
+    resultSummary: `${wrappedTools.length} tools, ${allResources.length} resources, ${allPrompts.length} prompts`,
+  });
+
   mcpClientLogger.info(
     `[mcp-client] Connected to ${config.name} — ${wrappedTools.length} tools, ${allResources.length} resources, ${allPrompts.length} prompts`,
   );
@@ -210,6 +308,8 @@ async function connectToServer(config: McpServerConfig): Promise<ConnectedServer
     resources: allResources,
     prompts: allPrompts,
     connected: true,
+    connectedAt,
+    lastInventorySyncAt: connectedAt,
   };
 }
 
@@ -229,6 +329,14 @@ export async function initMcpClients(): Promise<void> {
     if (connected) {
       connected.client.onclose = () => {
         mcpClientLogger.info(`[mcp-client] Disconnected from ${config.name}`);
+        recordMcpTraceEvent({
+          correlationId: createMcpTraceCorrelationId(),
+          serverName: config.name,
+          serverUrl: config.url,
+          operation: "disconnect",
+          target: config.url,
+          success: true,
+        });
         connected.connected = false;
         connectedServers.delete(config.name);
       };
@@ -273,6 +381,15 @@ export function getMcpClientToolCatalog(): Array<{
   })));
 }
 
+export async function invokeMcpClientTool(
+  serverName: string,
+  name: string,
+  arguments_: Record<string, unknown> = {},
+): Promise<unknown> {
+  const server = getConnectedServer(serverName);
+  return executeImportedTool(server, name, arguments_, `mcp_${serverName}_${name}`);
+}
+
 export function getMcpClientResources(): ImportedMcpResource[] {
   return Array.from(connectedServers.values()).flatMap((server) => server.resources.map((resource) => ({
     serverName: server.config.name,
@@ -288,12 +405,35 @@ export function getMcpClientPrompts(): ImportedMcpPrompt[] {
 }
 
 export async function readMcpClientResource(serverName: string, uri: string): Promise<ReadResourceResult> {
-  const server = connectedServers.get(serverName);
-  if (!server) {
-    throw new Error(`No connected MCP server named ${serverName}`);
+  const server = getConnectedServer(serverName);
+  const startedAt = Date.now();
+  const correlationId = createMcpTraceCorrelationId();
+  try {
+    const result = await server.client.readResource({ uri });
+    recordMcpTraceEvent({
+      correlationId,
+      serverName,
+      serverUrl: server.config.url,
+      operation: "resource_read",
+      target: uri,
+      success: true,
+      durationMs: Date.now() - startedAt,
+      resultSummary: `${Array.isArray(result.contents) ? result.contents.length : 0} content part(s)`,
+    });
+    return result;
+  } catch (error) {
+    recordMcpTraceEvent({
+      correlationId,
+      serverName,
+      serverUrl: server.config.url,
+      operation: "resource_read",
+      target: uri,
+      success: false,
+      durationMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   }
-
-  return server.client.readResource({ uri });
 }
 
 export async function getMcpClientPrompt(
@@ -301,12 +441,37 @@ export async function getMcpClientPrompt(
   name: string,
   arguments_: Record<string, string> = {},
 ): Promise<GetPromptResult> {
-  const server = connectedServers.get(serverName);
-  if (!server) {
-    throw new Error(`No connected MCP server named ${serverName}`);
+  const server = getConnectedServer(serverName);
+  const startedAt = Date.now();
+  const correlationId = createMcpTraceCorrelationId();
+  try {
+    const result = await server.client.getPrompt({ name, arguments: arguments_ });
+    recordMcpTraceEvent({
+      correlationId,
+      serverName,
+      serverUrl: server.config.url,
+      operation: "prompt_get",
+      target: name,
+      success: true,
+      durationMs: Date.now() - startedAt,
+      requestKeys: Object.keys(arguments_),
+      resultSummary: `${Array.isArray(result.messages) ? result.messages.length : 0} message(s)`,
+    });
+    return result;
+  } catch (error) {
+    recordMcpTraceEvent({
+      correlationId,
+      serverName,
+      serverUrl: server.config.url,
+      operation: "prompt_get",
+      target: name,
+      success: false,
+      durationMs: Date.now() - startedAt,
+      requestKeys: Object.keys(arguments_),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   }
-
-  return server.client.getPrompt({ name, arguments: arguments_ });
 }
 
 /**
@@ -334,11 +499,26 @@ export async function reconnectMcpClients(): Promise<void> {
 /**
  * Get status of all configured/connected MCP servers.
  */
-export function getMcpClientStatus(): { name: string; url: string; connected: boolean; toolCount: number }[] {
+export function getMcpClientStatus(): Array<{
+  name: string;
+  url: string;
+  connected: boolean;
+  toolCount: number;
+  promptCount: number;
+  resourceCount: number;
+  hasAuthToken: boolean;
+  lastSeenAt: string | null;
+  latencyClass: "unknown" | "fast" | "moderate" | "slow";
+}> {
   return Array.from(connectedServers.values()).map((s) => ({
     name: s.config.name,
     url: s.config.url,
     connected: s.connected,
     toolCount: s.tools.length,
+    promptCount: s.prompts.length,
+    resourceCount: s.resources.length,
+    hasAuthToken: typeof s.config.authToken === "string" && s.config.authToken.trim().length > 0,
+    lastSeenAt: getMcpTraceServerSummary(s.config.name).lastSeenAt ?? s.lastInventorySyncAt ?? s.connectedAt,
+    latencyClass: getMcpTraceServerSummary(s.config.name).latencyClass,
   }));
 }
