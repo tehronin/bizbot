@@ -5,6 +5,7 @@ import {
   getProviderCapabilityFlags,
   getConfiguredProviders,
   getGenerationConfig,
+  getProviderGenerationConfig,
   getModelForProvider,
   testProvider,
   type LLMProvider,
@@ -122,6 +123,7 @@ export async function GET() {
   const activeProvider = getActiveProvider();
   const configuredProviders = getConfiguredProviders();
   const generation = getGenerationConfig();
+  const providerGeneration = getProviderGenerationConfig();
   const embedding = getEmbeddingConfig();
   const autonomy = getAgentRuntimeConfig();
   const capabilities = getAgentCapabilities(autonomy);
@@ -158,6 +160,13 @@ export async function GET() {
     activeModel: getModelForProvider(activeProvider),
     configuredProviders,
     generation,
+    providerGeneration: {
+      google: {
+        maxOutputTokens: providerGeneration.googleMaxOutputTokens,
+        contextMode: autonomy.googleContextMode,
+        toolResultMaxChars: autonomy.googleToolResultMaxChars,
+      },
+    },
     embedding,
     autonomy: {
       ...autonomy,

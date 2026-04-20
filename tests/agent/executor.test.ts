@@ -173,6 +173,8 @@ describe("agent executor explicit memory", () => {
       knowledgeEnabled: true,
       toolMaxRounds: 8,
       toolResultMaxChars: 8_000,
+      googleContextMode: "standard",
+      googleToolResultMaxChars: 8_000,
     });
     ontologyMocks.buildOntologyPromptBlock.mockResolvedValue({ block: "", lines: [], omitted: true, reason: "empty" });
     runJournalMocks.startAgentRun.mockReturnValue({ runId: "run-1" });
@@ -227,7 +229,9 @@ describe("agent executor explicit memory", () => {
 
     expect(memoryMocks.getOrCreateConversation).toHaveBeenCalledWith(undefined, "user-1");
   expect(memoryServiceMocks.getRelevantMemoryFacts).toHaveBeenCalledWith({ userId: "user-1", query: "Draft a reply" });
-    expect(memoryMocks.buildContextForPrompt).toHaveBeenCalledWith("Draft a reply", "conversation-1", "user-1");
+    expect(memoryMocks.buildContextForPrompt).toHaveBeenCalledWith("Draft a reply", "conversation-1", "user-1", {
+      extendedContext: false,
+    });
 
     const systemPrompt = kernelMocks.chatComplete.mock.calls[0][0][0].content as string;
     expect(systemPrompt).toContain("[User Memory]");

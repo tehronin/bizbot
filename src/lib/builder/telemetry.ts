@@ -1,5 +1,6 @@
 import type { BuilderRun } from "@prisma/client";
 import { getDefaultUsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
+import type { BuilderCacheStats } from "@/lib/builder/cache";
 import { isFailureEnvelope, type FailureEnvelope } from "@/lib/failures";
 
 type BuilderRunLike = Pick<BuilderRun, "status" | "startedAt" | "finishedAt" | "metadata">;
@@ -38,6 +39,25 @@ export interface BuilderTelemetrySummary {
     cachedPromptTokens: number;
     requestCount: number;
     estimatedCostUsd: number;
+  };
+  cache: {
+    planning: {
+      lookups: number;
+      hits: number;
+      misses: number;
+      bypasses: number;
+      writes: number;
+      keyChanges: number;
+      hitRate: number;
+    };
+    projection: {
+      syncs: number;
+      filesWritten: number;
+      filesSkipped: number;
+      manifestWrites: number;
+      manifestReused: number;
+      writeSkipRate: number;
+    };
   };
 }
 
@@ -102,6 +122,31 @@ function roundMetric(value: number): number {
 
 function roundCurrency(value: number): number {
   return Number.isFinite(value) ? Number(value.toFixed(6)) : 0;
+}
+
+function buildCacheTelemetrySummary(stats?: BuilderCacheStats | null): BuilderTelemetrySummary["cache"] {
+  const planningLookups = stats?.planning.lookups ?? 0;
+  const planningHits = stats?.planning.hits ?? 0;
+  const projectionConsidered = (stats?.projection.filesWritten ?? 0) + (stats?.projection.filesSkipped ?? 0);
+  return {
+    planning: {
+      lookups: planningLookups,
+      hits: planningHits,
+      misses: stats?.planning.misses ?? 0,
+      bypasses: stats?.planning.bypasses ?? 0,
+      writes: stats?.planning.writes ?? 0,
+      keyChanges: stats?.planning.keyChanges ?? 0,
+      hitRate: roundMetric(planningLookups > 0 ? planningHits / planningLookups : 0),
+    },
+    projection: {
+      syncs: stats?.projection.syncs ?? 0,
+      filesWritten: stats?.projection.filesWritten ?? 0,
+      filesSkipped: stats?.projection.filesSkipped ?? 0,
+      manifestWrites: stats?.projection.manifestWrites ?? 0,
+      manifestReused: stats?.projection.manifestReused ?? 0,
+      writeSkipRate: roundMetric(projectionConsidered > 0 ? (stats?.projection.filesSkipped ?? 0) / projectionConsidered : 0),
+    },
+  };
 }
 
 function readObject(value: unknown): Record<string, unknown> | null {
@@ -248,7 +293,7 @@ export function extractBuilderRunTelemetry(run: BuilderRunLike, fallbackTemplate
   };
 }
 
-export function summarizeBuilderRunTelemetry(runs: BuilderRunLike[], fallbackTemplate?: string): BuilderTelemetrySummary {
+export function summarizeBuilderRunTelemetry(runs: BuilderRunLike[], fallbackTemplate?: string, cacheStats?: BuilderCacheStats | null): BuilderTelemetrySummary {
   if (runs.length === 0) {
     return {
       completedRuns: 0,
@@ -268,6 +313,7 @@ export function summarizeBuilderRunTelemetry(runs: BuilderRunLike[], fallbackTem
         requestCount: 0,
         estimatedCostUsd: 0,
       },
+      cache: buildCacheTelemetrySummary(cacheStats),
     };
   }
 
@@ -332,6 +378,7 @@ export function summarizeBuilderRunTelemetry(runs: BuilderRunLike[], fallbackTem
       requestCount: tokenTotals.requestCount,
       estimatedCostUsd: roundMetric(tokenTotals.estimatedCostUsd),
     },
+    cache: buildCacheTelemetrySummary(cacheStats),
   };
 }
 

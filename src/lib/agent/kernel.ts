@@ -35,6 +35,10 @@ export interface GenerationConfig {
   temperature: number;
 }
 
+export interface ProviderGenerationConfig extends GenerationConfig {
+  googleMaxOutputTokens: number;
+}
+
 export interface LLMUsage {
   promptTokens?: number;
   completionTokens?: number;
@@ -180,6 +184,27 @@ export function getGenerationConfig(): GenerationConfig {
   return {
     maxTokens: Math.max(64, Math.trunc(parseNumericEnv(process.env.LLM_MAX_TOKENS, 4096))),
     temperature: Math.min(2, Math.max(0, parseNumericEnv(process.env.LLM_TEMPERATURE, 0.2))),
+  };
+}
+
+function parseGoogleMaxOutputTokens(raw: string | undefined, fallback: number): number {
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Math.trunc(Number(raw));
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(1024, Math.min(65536, parsed));
+}
+
+export function getProviderGenerationConfig(): ProviderGenerationConfig {
+  const generation = getGenerationConfig();
+  return {
+    ...generation,
+    googleMaxOutputTokens: parseGoogleMaxOutputTokens(process.env.GOOGLE_MAX_OUTPUT_TOKENS, generation.maxTokens),
   };
 }
 
@@ -713,6 +738,7 @@ export async function chatComplete(
 ): Promise<LLMResponse> {
   const activeProvider = getActiveProvider(provider);
   const generation = getGenerationConfig();
+  const providerGeneration = getProviderGenerationConfig();
 
   switch (activeProvider) {
     case "openai": {
@@ -818,7 +844,7 @@ export async function chatComplete(
           config: {
             systemInstruction: messages.find((message) => message.role === "system")?.content,
             temperature: generation.temperature,
-            maxOutputTokens: generation.maxTokens,
+            maxOutputTokens: providerGeneration.googleMaxOutputTokens,
             tools: googleTooling.tools,
             ...(googleTooling.toolConfig ? { toolConfig: googleTooling.toolConfig } : {}),
           },

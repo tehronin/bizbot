@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const files = vi.hoisted(() => new Map<string, string>());
+
 const mocks = vi.hoisted(() => ({
-  readBuilderFile: vi.fn(),
-  writeBuilderFile: vi.fn(),
+  readBuilderFile: vi.fn((relativePath: string) => {
+    const value = files.get(relativePath);
+    if (value === undefined) {
+      throw new Error(`missing file ${relativePath}`);
+    }
+    return value;
+  }),
+  writeBuilderFile: vi.fn((relativePath: string, content: string) => {
+    files.set(relativePath, content);
+    return { auditPath: `${relativePath}.audit` };
+  }),
   listBuilderFiles: vi.fn(),
 }));
 
@@ -16,7 +27,19 @@ import { loadBuilderProjectContext, selectRelevantInstructionFragments, syncBuil
 
 describe("builder context", () => {
   beforeEach(() => {
+    files.clear();
     vi.clearAllMocks();
+    mocks.readBuilderFile.mockImplementation((relativePath: string) => {
+      const value = files.get(relativePath);
+      if (value === undefined) {
+        throw new Error(`missing file ${relativePath}`);
+      }
+      return value;
+    });
+    mocks.writeBuilderFile.mockImplementation((relativePath: string, content: string) => {
+      files.set(relativePath, content);
+      return { auditPath: `${relativePath}.audit` };
+    });
     mocks.listBuilderFiles.mockImplementation((relativePath: string) => {
       const entries: Record<string, Array<{ path: string; type: "file" | "directory" }>> = {
         "projects/demo": [
@@ -238,6 +261,55 @@ describe("builder context", () => {
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/architecture.md", expect.stringContaining("planning_schema"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/architecture.md", expect.stringContaining("legacy_projection_path"));
     expect(mocks.writeBuilderFile).toHaveBeenCalledWith("projects/demo/.builder/state.json", expect.stringContaining("Ship the demo app."));
+  });
+
+  it("skips projection writes when artifacts and manifest are unchanged", () => {
+    const args = {
+      project: {
+        id: "project-1",
+        name: "Demo",
+        slug: "demo",
+        relativePath: "projects/demo",
+        template: "node-cli",
+        packageManager: "NPM",
+        lifecycle: "PLANNED",
+      } as never,
+      context: {
+        objective: "Ship the demo app.",
+        plannedStack: null,
+        dependencyContract: null,
+        fileTopologyContract: null,
+        architectureNotes: [],
+        architecture: { active: [], stale: [] },
+        codingConventions: ["Use strict TypeScript."],
+        constraints: ["Stay inside the external workspace."],
+        importantCommands: ["npm run build"],
+        currentPlan: [{ id: "1", label: "Implement changes", status: "in_progress" }],
+        latestSessionSummary: "Implemented the first pass.",
+        knownFailures: [],
+        nextSteps: ["Run tests."],
+        instructionNotes: "Avoid large prompt dumps.",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      },
+      planning: {
+        lifecycle: "PLANNED",
+        brief: null,
+        milestones: [],
+        currentMilestone: null,
+        currentTaskSpec: null,
+      },
+    };
+
+    syncBuilderProjectProjection(args);
+    mocks.writeBuilderFile.mockClear();
+
+    syncBuilderProjectProjection(args);
+
+    expect(mocks.writeBuilderFile).toHaveBeenCalledTimes(1);
+    expect(mocks.writeBuilderFile).toHaveBeenCalledWith(
+      "projects/demo/.builder/cache/stats.json",
+      expect.stringContaining('"filesSkipped": 11'),
+    );
   });
 
   it("selects compact relevant instruction fragments instead of the full file set", () => {

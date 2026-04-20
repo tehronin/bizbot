@@ -5,6 +5,13 @@ import { renderBuilderFileTopologyProjectionMarkdown } from "@/lib/builder/file-
 import { renderBuilderOperatorTrustMarkdown } from "@/lib/builder/operator-trust";
 import { syncBuilderProjectMetadata } from "@/lib/builder/projects";
 import { renderBuilderReviewMarkdown } from "@/lib/builder/review";
+import {
+  hashBuilderProjectionArtifactContent,
+  persistBuilderContextPacketCache,
+  recordBuilderProjectionCacheSync,
+  readBuilderContextPacketManifest,
+  type BuilderProjectionArtifact,
+} from "@/lib/builder/cache";
 import { readBuilderFile, writeBuilderFile } from "@/lib/builder/workspace";
 import {
   type BuilderMilestoneState,
@@ -40,7 +47,7 @@ function normalizeContextForWrite(context: BuilderProjectContextState): BuilderP
   return {
     ...defaultBuilderProjectContext(),
     ...context,
-    updatedAt: new Date().toISOString(),
+    updatedAt: context.updatedAt ?? new Date().toISOString(),
   };
 }
 
@@ -382,14 +389,14 @@ function renderSessionSummaryMarkdown(context: BuilderProjectContextState): stri
   ].join("\n");
 }
 
-export function syncBuilderProjectProjection(args: {
+export function collectBuilderProjectionArtifacts(args: {
   project: BuilderProject;
   context: BuilderProjectContextState;
   planning?: BuilderPlanningSnapshot;
   currentTask?: BuilderTask | null;
   latestReview?: BuilderStructuredReview | null;
   latestOperatorTrust?: BuilderOperatorTrustState | null;
-}): void {
+}): BuilderProjectionArtifact[] {
   const context = normalizeContextForWrite(args.context);
   const currentTaskMetadata = args.currentTask ? normalizeBuilderTaskMetadata(args.currentTask.metadata) : null;
   const planSteps = currentTaskMetadata?.planSteps ?? context.currentPlan;
@@ -398,29 +405,125 @@ export function syncBuilderProjectProjection(args: {
     projectRelativePath: args.project.relativePath,
     context,
   });
+  const artifacts: BuilderProjectionArtifact[] = [
+    {
+      packetId: "project_instructions",
+      relativePath: path.posix.join(args.project.relativePath, "AGENTS.md"),
+      content: renderProjectAgentsFile(args.project, context),
+    },
+    {
+      packetId: "project_context",
+      relativePath: path.posix.join(baseDir, "project-context.md"),
+      content: renderProjectContextMarkdown(context),
+    },
+    {
+      packetId: "dependency_contract",
+      relativePath: path.posix.join(baseDir, "dependency-contract.md"),
+      content: renderDependencyContractMarkdown(context),
+    },
+    {
+      packetId: "file_topology",
+      relativePath: path.posix.join(baseDir, "file-topology.md"),
+      content: renderBuilderFileTopologyProjectionMarkdown({
+        baseline: context.fileTopologyContract ?? null,
+        planningContext: fileTopologyPlanningContext,
+      }),
+    },
+    {
+      packetId: "project_brief",
+      relativePath: path.posix.join(baseDir, "project-brief.md"),
+      content: renderProjectBriefMarkdown(args.planning),
+    },
+    {
+      packetId: "architecture",
+      relativePath: path.posix.join(baseDir, "architecture.md"),
+      content: renderArchitectureMarkdown(context),
+    },
+    {
+      packetId: "milestones",
+      relativePath: path.posix.join(baseDir, "milestones.md"),
+      content: renderMilestonesMarkdown(args.planning),
+    },
+    {
+      packetId: "task_board",
+      relativePath: path.posix.join(baseDir, "task-board.md"),
+      content: renderTaskBoardMarkdown(args.planning),
+    },
+    {
+      packetId: "current_plan",
+      relativePath: path.posix.join(baseDir, "current-plan.md"),
+      content: renderPlanMarkdown(args.currentTask ?? null, planSteps),
+    },
+    {
+      packetId: "session_summary",
+      relativePath: path.posix.join(baseDir, "session-summary.md"),
+      content: renderSessionSummaryMarkdown(context),
+    },
+    {
+      packetId: "state",
+      relativePath: path.posix.join(baseDir, "state.json"),
+      content: `${JSON.stringify(context, null, 2)}\n`,
+    },
+  ];
 
-  writeBuilderFile(path.posix.join(args.project.relativePath, "AGENTS.md"), renderProjectAgentsFile(args.project, context));
-  writeBuilderFile(path.posix.join(baseDir, "project-context.md"), renderProjectContextMarkdown(context));
-  writeBuilderFile(path.posix.join(baseDir, "dependency-contract.md"), renderDependencyContractMarkdown(context));
-  writeBuilderFile(path.posix.join(baseDir, "file-topology.md"), renderBuilderFileTopologyProjectionMarkdown({
-    baseline: context.fileTopologyContract ?? null,
-    planningContext: fileTopologyPlanningContext,
-  }));
-  writeBuilderFile(path.posix.join(baseDir, "project-brief.md"), renderProjectBriefMarkdown(args.planning));
-  writeBuilderFile(path.posix.join(baseDir, "architecture.md"), renderArchitectureMarkdown(context));
-  writeBuilderFile(path.posix.join(baseDir, "milestones.md"), renderMilestonesMarkdown(args.planning));
-  writeBuilderFile(path.posix.join(baseDir, "task-board.md"), renderTaskBoardMarkdown(args.planning));
-  writeBuilderFile(path.posix.join(baseDir, "current-plan.md"), renderPlanMarkdown(args.currentTask ?? null, planSteps));
-  writeBuilderFile(path.posix.join(baseDir, "session-summary.md"), renderSessionSummaryMarkdown(context));
-  writeBuilderFile(path.posix.join(baseDir, "state.json"), `${JSON.stringify(context, null, 2)}\n`);
-  syncBuilderProjectMetadata(args.project);
   if (args.latestReview) {
-    writeBuilderFile(path.posix.join(baseDir, "reports/latest-review.md"), renderBuilderReviewMarkdown(args.latestReview));
+    artifacts.push({
+      packetId: "latest_review",
+      relativePath: path.posix.join(baseDir, "reports/latest-review.md"),
+      content: renderBuilderReviewMarkdown(args.latestReview),
+    });
   }
   if (args.latestOperatorTrust) {
-    writeBuilderFile(path.posix.join(baseDir, "reports/operator-trust.md"), renderBuilderOperatorTrustMarkdown(args.latestOperatorTrust));
-    writeBuilderFile(path.posix.join(baseDir, "reports/operator-trust.json"), `${JSON.stringify(args.latestOperatorTrust, null, 2)}\n`);
+    artifacts.push({
+      packetId: "operator_trust_markdown",
+      relativePath: path.posix.join(baseDir, "reports/operator-trust.md"),
+      content: renderBuilderOperatorTrustMarkdown(args.latestOperatorTrust),
+    });
+    artifacts.push({
+      packetId: "operator_trust_json",
+      relativePath: path.posix.join(baseDir, "reports/operator-trust.json"),
+      content: `${JSON.stringify(args.latestOperatorTrust, null, 2)}\n`,
+    });
   }
+
+  return artifacts;
+}
+
+export function syncBuilderProjectProjection(args: {
+  project: BuilderProject;
+  context: BuilderProjectContextState;
+  planning?: BuilderPlanningSnapshot;
+  currentTask?: BuilderTask | null;
+  latestReview?: BuilderStructuredReview | null;
+  latestOperatorTrust?: BuilderOperatorTrustState | null;
+}): void {
+  const artifacts = collectBuilderProjectionArtifacts(args);
+  const previousManifest = readBuilderContextPacketManifest(args.project.relativePath);
+  const previousPacketsByPath = new Map(previousManifest?.packets.map((packet) => [packet.relativePath, packet]) ?? []);
+  let filesWritten = 0;
+  let filesSkipped = 0;
+
+  for (const artifact of artifacts) {
+    const previousPacket = previousPacketsByPath.get(artifact.relativePath);
+    const currentHash = hashBuilderProjectionArtifactContent(artifact.content);
+    if (previousPacket?.contentHash === currentHash && readOptionalBuilderFile(artifact.relativePath) === artifact.content) {
+      filesSkipped += 1;
+      continue;
+    }
+    writeBuilderFile(artifact.relativePath, artifact.content);
+    filesWritten += 1;
+  }
+  const { reused } = persistBuilderContextPacketCache({
+    projectRelativePath: args.project.relativePath,
+    artifacts,
+  });
+  recordBuilderProjectionCacheSync({
+    projectRelativePath: args.project.relativePath,
+    filesWritten,
+    filesSkipped,
+    manifestReused: reused,
+  });
+  syncBuilderProjectMetadata(args.project);
 }
 
 function splitMarkdownSections(source: string, content: string): BuilderInstructionFragment[] {

@@ -6,6 +6,7 @@ import { adjudicateBuilderExecutionAdr, buildExecutionAdrFocus } from "@/lib/bui
 import { getAgentRuntimeConfig } from "@/lib/agent/runtime";
 import { getAllToolDefinitions } from "@/lib/agent/plugins";
 import { listBuilderCapabilityAuditEvents } from "@/lib/builder/audit";
+import { readBuilderCacheStats } from "@/lib/builder/cache";
 import { getBuilderDatabaseInspectionOverview } from "@/lib/builder/database-introspection";
 import { getBuilderConfig } from "@/lib/builder/config";
 import { validateBuilderProjectEnv, type BuilderConfigReadinessState } from "@/lib/builder/environment";
@@ -547,7 +548,7 @@ export async function planBuilderProject(projectId: string, input: BuilderPlanPr
   const planningSnapshot = await getBuilderPlanningSnapshot(projectId);
   const generated = input.regenerate === false && planningSnapshot.milestones.length > 0
     ? null
-    : await generateBuilderProjectPlan({ project, brief });
+    : await generateBuilderProjectPlan({ project, brief, bypassCache: input.regenerate === true });
   const planning = generated?.planning ?? await recomputeBuilderPlanningProgress(projectId);
   const architecture = generated?.architecture ?? (loadBuilderProjectContext(project).context.architecture ?? { active: [], stale: [] });
   await syncProjectState({
@@ -978,7 +979,7 @@ export async function orchestrateBuilderTask(
     projectRelativePath: project.relativePath,
     packageManager: project.packageManager,
   });
-  const review = buildBuilderStructuredReview({
+  const reviewArgs = {
     task: implementingTask,
     projectId,
     status: taskStatus,
@@ -1021,7 +1022,8 @@ export async function orchestrateBuilderTask(
         }
       : undefined,
     adrAdjudication,
-  });
+  };
+  const review = buildBuilderStructuredReview(reviewArgs);
 
   if (taskStatus === "SUCCEEDED" && adrAdjudication.overallVerdict === "proceed_with_update" && adrAdjudication.updateDecisionKeys.length > 0) {
     await promoteBuilderArchitecturalDecisionsToOntology({
@@ -1287,7 +1289,7 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
     latestReview: structuredReview,
   });
   const budgetProfiles = summarizeBuilderBudgetProfiles(reconciledRuns, project.template);
-  const telemetry = summarizeBuilderRunTelemetry(reconciledRuns, project.template);
+  const telemetry = summarizeBuilderRunTelemetry(reconciledRuns, project.template, readBuilderCacheStats(project.relativePath));
   const reconciliation = inspectBuilderOperationalState({ runs: reconciledRuns, tasks });
   const activeRun = reconciledRuns.find((run) => run.status === "RUNNING") ?? reconciledRuns[0] ?? null;
   const mcpSnapshot = await getBuilderMcpSnapshotOverview({

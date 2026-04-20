@@ -270,6 +270,7 @@ describe("builder orchestrator planning", () => {
     expect(mocks.generateBuilderProjectPlan).toHaveBeenCalledWith(expect.objectContaining({
       project: expect.objectContaining({ id: "project-1" }),
       brief: expect.objectContaining({ title: "Builder v3.1" }),
+      bypassCache: true,
     }));
     expect(mocks.updateBuilderProject).toHaveBeenCalledWith("project-1", expect.objectContaining({
       context: expect.objectContaining({

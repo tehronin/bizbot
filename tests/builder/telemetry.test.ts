@@ -94,7 +94,30 @@ describe("builder telemetry", () => {
           },
         },
       },
-    ] as never);
+    ] as never, undefined, {
+      version: 1,
+      projectRelativePath: "projects/demo",
+      updatedAt: "2026-04-20T00:00:00.000Z",
+      planning: {
+        lookups: 4,
+        hits: 1,
+        misses: 2,
+        bypasses: 1,
+        writes: 2,
+        keyChanges: 1,
+        lastKey: "key-2",
+        lastLookupAt: "2026-04-20T00:00:00.000Z",
+        lastWriteAt: "2026-04-20T00:00:00.000Z",
+      },
+      projection: {
+        syncs: 2,
+        filesWritten: 5,
+        filesSkipped: 15,
+        manifestWrites: 1,
+        manifestReused: 1,
+        lastSyncAt: "2026-04-20T00:00:00.000Z",
+      },
+    });
 
     expect(summary.completedRuns).toBe(2);
     expect(summary.runningRuns).toBe(0);
@@ -106,6 +129,8 @@ describe("builder telemetry", () => {
     expect(summary.blockedReasonCounts["build failed during verification"]).toBe(1);
     expect(summary.topBlockedReason).toBe("build failed during verification");
     expect(summary.tokenTotals.totalTokens).toBe(450);
+    expect(summary.cache.planning.hitRate).toBe(0.25);
+    expect(summary.cache.projection.writeSkipRate).toBe(0.75);
   });
 
   it("returns explicit default budget profiles with observed telemetry by mode", () => {

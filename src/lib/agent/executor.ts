@@ -483,7 +483,13 @@ export async function executeAgentConversation(
   await emitStatus(onEvent, "Loading explicit memory facts.");
   const explicitMemoryFacts = await getRelevantMemoryFacts({ userId: resolvedUserId, query: effectiveMessage });
   await emitStatus(onEvent, "Building prompt context.");
-  const contextResult = await buildContextForPrompt(effectiveMessage, resolvedConversationId, resolvedUserId);
+  const useExtendedGoogleContext = resolvedProvider === "google" && runtimeConfig.googleContextMode === "extended";
+  const contextResult = await buildContextForPrompt(effectiveMessage, resolvedConversationId, resolvedUserId, {
+    extendedContext: useExtendedGoogleContext,
+  });
+  const toolResultCharLimit = resolvedProvider === "google"
+    ? runtimeConfig.googleToolResultMaxChars
+    : runtimeConfig.toolResultMaxChars;
   await emitStatus(onEvent, "Loading ontology context.");
   const ontologyPrompt = await buildOntologyPromptBlock(resolvedUserId).catch((error) => {
     console.warn("[agent executor] ontology context skipped:", error);
@@ -691,7 +697,7 @@ export async function executeAgentConversation(
           }));
         }
 
-        const resultText = stringifyToolResult(normalizedResult.result, runtimeConfig.toolResultMaxChars);
+        const resultText = stringifyToolResult(normalizedResult.result, toolResultCharLimit);
         recordAgentRunToolResult(run.runId, {
           round,
           toolCallId,
@@ -1234,7 +1240,7 @@ export async function executeAgentConversation(
                 result && typeof result === "object" && !Array.isArray(result) && "_sidecar" in (result as Record<string, unknown>)
                   ? Object.fromEntries(Object.entries(result as Record<string, unknown>).filter(([k]) => k !== "_sidecar"))
                   : result;
-              resultText = stringifyToolResult(resultForLLM, runtimeConfig.toolResultMaxChars);
+              resultText = stringifyToolResult(resultForLLM, toolResultCharLimit);
             }
 
             const resumeSafe = cachedToolResult?.resumeSafe ?? isToolExecutionResumeSafe(toolCall.name, toolFailure);

@@ -43,6 +43,13 @@ interface LlmStatusResponse {
     maxTokens: number;
     temperature: number;
   };
+  providerGeneration?: {
+    google?: {
+      maxOutputTokens: number;
+      contextMode: "standard" | "extended";
+      toolResultMaxChars: number;
+    };
+  };
   embedding: {
     provider: string;
     model: string;
@@ -147,6 +154,10 @@ const PUBLIC_ENV_DEFAULTS = {
   EMBEDDING_DIMENSIONS: "1536",
   LLM_TEMPERATURE: "0.2",
   LLM_MAX_TOKENS: "4096",
+  BIZBOT_AGENT_MAX_TOOL_RESULT_CHARS: "8000",
+  GOOGLE_MAX_OUTPUT_TOKENS: "",
+  GOOGLE_CONTEXT_MODE: "standard",
+  GOOGLE_MAX_TOOL_RESULT_CHARS: "",
   MINIMAX_MODEL: "MiniMax-M2.7",
   MINIMAX_BASE_URL: "https://api.minimax.chat/v1",
   BIZBOT_AUTONOMY_PRESET: "approval_all_posts",
@@ -469,6 +480,29 @@ export default function SettingsPage() {
                 <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Max tokens</label>
                 <input value={publicEnv.LLM_MAX_TOKENS} onChange={(event) => updatePublicEnv("LLM_MAX_TOKENS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
               </div>
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Google max output tokens</label>
+              <input value={publicEnv.GOOGLE_MAX_OUTPUT_TOKENS} onChange={(event) => updatePublicEnv("GOOGLE_MAX_OUTPUT_TOKENS", event.target.value)} placeholder="Blank uses global max tokens" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <div className="text-xs leading-6 mt-2" style={{ color: "var(--text-dim)" }}>
+                Gemini-only override. Blank falls back to the global max tokens value. Runtime currently resolves to {runtime?.providerGeneration?.google?.maxOutputTokens ?? publicEnv.LLM_MAX_TOKENS}.
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Google context mode</label>
+                <select value={publicEnv.GOOGLE_CONTEXT_MODE} onChange={(event) => updatePublicEnv("GOOGLE_CONTEXT_MODE", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                  <option value="standard">standard</option>
+                  <option value="extended">extended</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Google max tool result chars</label>
+                <input value={publicEnv.GOOGLE_MAX_TOOL_RESULT_CHARS} onChange={(event) => updatePublicEnv("GOOGLE_MAX_TOOL_RESULT_CHARS", event.target.value)} placeholder="Blank uses global tool result cap" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              </div>
+            </div>
+            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              Extended mode rebuilds a larger conversation summary on demand and expands Gemini-only retrieval breadth. Current Gemini runtime: {runtime?.providerGeneration?.google?.contextMode ?? publicEnv.GOOGLE_CONTEXT_MODE} context, {(runtime?.providerGeneration?.google?.toolResultMaxChars ?? publicEnv.GOOGLE_MAX_TOOL_RESULT_CHARS) || publicEnv.BIZBOT_AGENT_MAX_TOOL_RESULT_CHARS} tool-result chars.
             </div>
             <div>
               <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Ollama base URL</label>

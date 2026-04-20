@@ -2,6 +2,8 @@
 
 ## 2026-04-20
 
+- Added Gemini-specific runtime controls for max output tokens, extended context assembly, and tool-result truncation, surfaced through the LLM status route and Settings UI so Google provider behavior can be tuned independently of the global chat defaults.
+- Added Builder projection and planning cache persistence under `.builder/cache`, including projection write elision, regenerate-aware planning cache bypass, and operator-visible cache telemetry counters for planning lookups and projection reuse.
 - Stabilized the latest imported MCP and Builder discovery additions by fixing strict TypeScript regressions across plugin catalog drift typing, developer prompt and resource discovery helpers, MCP client tool-result unwrapping, imported-catalog aggregation, MCP health and trace helpers, and sampling schema wiring, keeping the production build green after the recent MCP snapshot work.
 - Fixed Builder project conversation bootstrap typing so project-scoped chat history summaries can be serialized from the lighter conversation-list query shape without requiring full message records.
 - Refreshed Builder regression coverage for the latest planning and runtime changes by updating builder project deletion mocks, isolating orchestrator tests to a temporary Builder workspace outside the repo, and correcting compose-service polling fixtures in runtime orchestration tests.

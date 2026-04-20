@@ -9,6 +9,12 @@ import type {
   BuilderTaskSpecStatus,
   BuilderTaskSpecValidator,
 } from "@prisma/client";
+import {
+  buildBuilderPlanningCacheKey,
+  readBuilderPlanningCache,
+  recordBuilderPlanningCacheLookup,
+  writeBuilderPlanningCache,
+} from "@/lib/builder/cache";
 import { db } from "@/lib/db";
 import { getBuilderDependencyPlanningContext, selectRelevantBuilderDependencyContext } from "@/lib/builder/dependency-contract";
 import { getBuilderFileTopologyPlanningContext, selectRelevantBuilderFileTopologyContext } from "@/lib/builder/file-topology-snapshots";
@@ -139,6 +145,7 @@ export async function replaceBuilderProjectPlanWithValidation(args: {
 export async function generateBuilderProjectPlan(args: {
   project: Pick<BuilderProject, "id" | "name" | "relativePath" | "template" | "packageManager" | "context">;
   brief: BuilderProjectBrief;
+  bypassCache?: boolean;
 }): Promise<{
   planning: BuilderPlanningSnapshot;
   architecture: BuilderArchitectureContextState;
@@ -170,10 +177,16 @@ export async function generateBuilderProjectPlan(args: {
     projectRelativePath: args.project.relativePath,
     reasons: ["mode:analysis_only", `template:${args.project.template}`],
   });
-  const pipeline = runBuilderPlannerPipeline({
-    project: args.project,
+  const cacheKey = buildBuilderPlanningCacheKey({
+    project: {
+      id: args.project.id,
+      name: args.project.name,
+      relativePath: args.project.relativePath,
+      template: args.project.template,
+      packageManager: args.project.packageManager,
+      context: args.project.context,
+    },
     brief: args.brief,
-    context: args.project.context as never,
     architecture,
     mcpPlanningContext,
     dependencyPlanningContext,
@@ -181,6 +194,42 @@ export async function generateBuilderProjectPlan(args: {
     fileTopologyPlanningContext,
     fileTopologyContext,
   });
+  const cached = args.bypassCache
+    ? null
+    : readBuilderPlanningCache({
+        projectRelativePath: args.project.relativePath,
+        key: cacheKey,
+      });
+  recordBuilderPlanningCacheLookup({
+    projectRelativePath: args.project.relativePath,
+    key: cacheKey,
+    outcome: args.bypassCache ? "bypass" : cached ? "hit" : "miss",
+  });
+  const pipeline = cached
+    ? {
+        prompt: cached.prompt,
+        critique: cached.critique,
+      }
+    : runBuilderPlannerPipeline({
+        project: args.project,
+        brief: args.brief,
+        context: args.project.context as never,
+        architecture,
+        mcpPlanningContext,
+        dependencyPlanningContext,
+        dependencyContext,
+        fileTopologyPlanningContext,
+        fileTopologyContext,
+      });
+  if (!cached) {
+    writeBuilderPlanningCache({
+      projectId: args.project.id,
+      projectRelativePath: args.project.relativePath,
+      key: cacheKey,
+      prompt: pipeline.prompt,
+      critique: pipeline.critique,
+    });
+  }
   const persisted = await replaceBuilderProjectPlanWithValidation({
     projectId: args.project.id,
     critique: pipeline.critique,

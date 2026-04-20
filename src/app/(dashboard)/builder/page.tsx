@@ -385,6 +385,25 @@ interface BuilderTelemetrySummary {
     requestCount: number;
     estimatedCostUsd: number;
   };
+  cache: {
+    planning: {
+      lookups: number;
+      hits: number;
+      misses: number;
+      bypasses: number;
+      writes: number;
+      keyChanges: number;
+      hitRate: number;
+    };
+    projection: {
+      syncs: number;
+      filesWritten: number;
+      filesSkipped: number;
+      manifestWrites: number;
+      manifestReused: number;
+      writeSkipRate: number;
+    };
+  };
 }
 
 interface BuilderOperationalAlert {
@@ -2741,6 +2760,9 @@ export default function BuilderPage() {
                     Templates: {Object.entries(projectDetail?.telemetry?.templateCounts ?? {}).length > 0
                       ? Object.entries(projectDetail?.telemetry?.templateCounts ?? {}).map(([template, count]) => `${template}: ${count}`).join("; ")
                       : "none recorded"}
+                  </div>
+                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    Cache: planning hits {projectDetail?.telemetry?.cache.planning.hits ?? 0}/{projectDetail?.telemetry?.cache.planning.lookups ?? 0} ({Math.round((projectDetail?.telemetry?.cache.planning.hitRate ?? 0) * 100)}%), misses {projectDetail?.telemetry?.cache.planning.misses ?? 0}, bypasses {projectDetail?.telemetry?.cache.planning.bypasses ?? 0}, key changes {projectDetail?.telemetry?.cache.planning.keyChanges ?? 0}; projection wrote {projectDetail?.telemetry?.cache.projection.filesWritten ?? 0}, skipped {projectDetail?.telemetry?.cache.projection.filesSkipped ?? 0} ({Math.round((projectDetail?.telemetry?.cache.projection.writeSkipRate ?? 0) * 100)}%), manifests reused {projectDetail?.telemetry?.cache.projection.manifestReused ?? 0}.
                   </div>
                 </div>
 

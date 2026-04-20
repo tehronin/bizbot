@@ -7,6 +7,8 @@ export interface AgentRuntimeConfig {
   knowledgeEnabled: boolean;
   toolMaxRounds: number;
   toolResultMaxChars: number;
+  googleContextMode: "standard" | "extended";
+  googleToolResultMaxChars: number;
 }
 
 export interface AgentCapabilities {
@@ -20,6 +22,7 @@ export interface AgentCapabilities {
 const DEFAULT_HEARTBEAT_SECONDS = 300;
 const DEFAULT_TOOL_MAX_ROUNDS = 8;
 const DEFAULT_TOOL_RESULT_MAX_CHARS = 8_000;
+const DEFAULT_GOOGLE_CONTEXT_MODE = "standard" as const;
 
 function parsePositiveInteger(raw: string | undefined, fallback: number): number {
   if (!raw) {
@@ -62,14 +65,21 @@ function parseAutonomyPreset(raw: string | undefined): AgentAutonomyPreset {
   }
 }
 
+function parseGoogleContextMode(raw: string | undefined): "standard" | "extended" {
+  return raw === "extended" ? "extended" : DEFAULT_GOOGLE_CONTEXT_MODE;
+}
+
 export function getAgentRuntimeConfig(): AgentRuntimeConfig {
+  const toolResultMaxChars = Math.max(512, parsePositiveInteger(process.env.BIZBOT_AGENT_MAX_TOOL_RESULT_CHARS, DEFAULT_TOOL_RESULT_MAX_CHARS));
   return {
     autonomyPreset: parseAutonomyPreset(process.env.BIZBOT_AUTONOMY_PRESET),
     heartbeatSeconds: Math.max(15, parsePositiveInteger(process.env.BIZBOT_AGENT_HEARTBEAT_SECONDS, DEFAULT_HEARTBEAT_SECONDS)),
     knowledgePath: process.env.BIZBOT_KNOWLEDGE_PATH ?? "knowledge",
     knowledgeEnabled: parseBoolean(process.env.BIZBOT_KNOWLEDGE_ENABLED, true),
     toolMaxRounds: Math.max(1, parsePositiveInteger(process.env.BIZBOT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_TOOL_MAX_ROUNDS)),
-    toolResultMaxChars: Math.max(512, parsePositiveInteger(process.env.BIZBOT_AGENT_MAX_TOOL_RESULT_CHARS, DEFAULT_TOOL_RESULT_MAX_CHARS)),
+    toolResultMaxChars,
+    googleContextMode: parseGoogleContextMode(process.env.GOOGLE_CONTEXT_MODE),
+    googleToolResultMaxChars: Math.max(512, parsePositiveInteger(process.env.GOOGLE_MAX_TOOL_RESULT_CHARS, toolResultMaxChars)),
   };
 }
 

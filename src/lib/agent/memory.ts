@@ -79,12 +79,44 @@ export interface BuildContextResult {
   };
 }
 
+interface ContextLimits {
+  recentRawMessageWindow: number;
+  summaryMaxChars: number;
+  summaryLineMaxChars: number;
+  summaryMessageLimit: number;
+  recentConversationTake: number;
+  semanticRecallLimit: number;
+  graphLimit: number;
+  knowledgeDocsLimit: number;
+}
+
 const DEFAULT_USER_ID = "local-user";
 const RECENT_CONVERSATION_MAX_AGE_MS = 30 * 60 * 1000;
-const RECENT_RAW_MESSAGE_WINDOW = 6;
-const SUMMARY_MAX_CHARS = 1_200;
-const SUMMARY_LINE_MAX_CHARS = 180;
-const SUMMARY_MESSAGE_LIMIT = 80;
+const STANDARD_CONTEXT_LIMITS: ContextLimits = {
+  recentRawMessageWindow: 6,
+  summaryMaxChars: 1_200,
+  summaryLineMaxChars: 180,
+  summaryMessageLimit: 80,
+  recentConversationTake: 10,
+  semanticRecallLimit: 5,
+  graphLimit: 5,
+  knowledgeDocsLimit: 3,
+};
+
+const EXTENDED_GOOGLE_CONTEXT_LIMITS: ContextLimits = {
+  recentRawMessageWindow: 12,
+  summaryMaxChars: 6_000,
+  summaryLineMaxChars: 320,
+  summaryMessageLimit: 160,
+  recentConversationTake: 20,
+  semanticRecallLimit: 8,
+  graphLimit: 8,
+  knowledgeDocsLimit: 6,
+};
+
+function getContextLimits(extendedContext = false): ContextLimits {
+  return extendedContext ? EXTENDED_GOOGLE_CONTEXT_LIMITS : STANDARD_CONTEXT_LIMITS;
+}
 
 function buildSkippedDecision(reason: string): RetrievalDecision {
   return {
@@ -152,28 +184,28 @@ function shouldIncludeRecentConversation(userMessage: string, recentMessages: Re
   return { include: false, reason: "conversation history exists, but the most recent raw turns are stale" };
 }
 
-function buildSummaryLine(message: RecentMessageRow): string {
+function buildSummaryLine(message: RecentMessageRow, limits: ContextLimits): string {
   const roleLabel = message.role === "USER" ? "User" : message.role === "ASSISTANT" ? "Assistant" : message.role;
   const compact = message.content.replace(/\s+/g, " ").trim();
-  return `- ${roleLabel}: ${truncate(compact, SUMMARY_LINE_MAX_CHARS)}`;
+  return `- ${roleLabel}: ${truncate(compact, limits.summaryLineMaxChars)}`;
 }
 
-function buildConversationSummaryText(messages: RecentMessageRow[]): string {
+function buildConversationSummaryText(messages: RecentMessageRow[], limits: ContextLimits): string {
   const meaningfulMessages = messages.filter((message) => message.role === "USER" || message.role === "ASSISTANT");
-  if (meaningfulMessages.length <= RECENT_RAW_MESSAGE_WINDOW) {
+  if (meaningfulMessages.length <= limits.recentRawMessageWindow) {
     return "";
   }
 
-  const summarySource = meaningfulMessages.slice(0, -RECENT_RAW_MESSAGE_WINDOW);
+  const summarySource = meaningfulMessages.slice(0, -limits.recentRawMessageWindow);
   if (summarySource.length === 0) {
     return "";
   }
 
   const lines: string[] = ["Earlier conversation summary:"];
   for (const message of summarySource) {
-    const nextLine = buildSummaryLine(message);
+    const nextLine = buildSummaryLine(message, limits);
     const nextText = [...lines, nextLine].join("\n");
-    if (nextText.length > SUMMARY_MAX_CHARS) {
+    if (nextText.length > limits.summaryMaxChars) {
       lines.push(`- ${summarySource.length - (lines.length - 1)} earlier turns omitted for brevity.`);
       break;
     }
@@ -184,10 +216,11 @@ function buildConversationSummaryText(messages: RecentMessageRow[]): string {
 }
 
 async function refreshConversationPromptSummary(conversationId: string): Promise<void> {
+  const limits = getContextLimits(false);
   const messages = await db.message.findMany({
     where: { conversationId },
     orderBy: { createdAt: "asc" },
-    take: SUMMARY_MESSAGE_LIMIT,
+    take: limits.summaryMessageLimit,
     select: {
       role: true,
       content: true,
@@ -195,7 +228,7 @@ async function refreshConversationPromptSummary(conversationId: string): Promise
     },
   });
 
-  const promptSummary = buildConversationSummaryText(messages);
+  const promptSummary = buildConversationSummaryText(messages, limits);
   await db.conversation.update({
     where: { id: conversationId },
     data: {
@@ -208,6 +241,8 @@ async function refreshConversationPromptSummary(conversationId: string): Promise
 async function buildConversationSummaryBlock(
   userMessage: string,
   conversationId: string | undefined,
+  limits: ContextLimits,
+  extendedContext = false,
 ): Promise<{ text: string; decision: RetrievalDecision }> {
   if (!conversationId) {
     return { text: "", decision: buildSkippedDecision("no conversation id supplied") };
@@ -216,6 +251,27 @@ async function buildConversationSummaryBlock(
   const historyIntent = shouldUseConversationHistory(userMessage);
   if (!historyIntent.include) {
     return { text: "", decision: buildSkippedDecision(historyIntent.reason) };
+  }
+
+  if (extendedContext) {
+    const messages = await db.message.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: "asc" },
+      take: limits.summaryMessageLimit,
+      select: {
+        role: true,
+        content: true,
+        createdAt: true,
+      },
+    });
+
+    const extendedSummary = buildConversationSummaryText(messages, limits);
+    if (extendedSummary) {
+      return {
+        text: extendedSummary,
+        decision: buildIncludedDecision(`${historyIntent.reason}; rebuilt extended Gemini summary`, 1, extendedSummary.length),
+      };
+    }
   }
 
   const conversation = await db.conversation.findUnique({
@@ -263,6 +319,7 @@ function shouldSearchKnowledgeDocs(userMessage: string): { include: boolean; rea
 
 async function buildRecentConversationBlock(
   conversationId: string | undefined,
+  limits: ContextLimits,
 ): Promise<{ text: string; messages: RecentMessageRow[]; decision: RetrievalDecision }> {
   if (!conversationId) {
     return { text: "", messages: [], decision: buildSkippedDecision("no conversation id supplied") };
@@ -271,7 +328,7 @@ async function buildRecentConversationBlock(
   const recentMessages = await db.message.findMany({
     where: { conversationId },
     orderBy: { createdAt: "desc" },
-    take: 10,
+    take: limits.recentConversationTake,
     select: {
       role: true,
       content: true,
@@ -289,13 +346,13 @@ async function buildRecentConversationBlock(
   };
 }
 
-async function buildSemanticRecallBlock(userMessage: string, userId: string): Promise<{ text: string; decision: RetrievalDecision }> {
+async function buildSemanticRecallBlock(userMessage: string, userId: string, limits: ContextLimits): Promise<{ text: string; decision: RetrievalDecision }> {
   const gate = shouldRecallSemanticMemory(userMessage);
   if (!gate.include) {
     return { text: "", decision: buildSkippedDecision(gate.reason) };
   }
 
-  const memories = await recall(userMessage, 5, userId);
+  const memories = await recall(userMessage, limits.semanticRecallLimit, userId);
   if (memories.length === 0) {
     return { text: "", decision: buildSkippedDecision("semantic recall returned no relevant memories") };
   }
@@ -307,14 +364,14 @@ async function buildSemanticRecallBlock(userMessage: string, userId: string): Pr
   };
 }
 
-async function buildGraphBlock(userMessage: string): Promise<{ text: string; decision: RetrievalDecision }> {
+async function buildGraphBlock(userMessage: string, limits: ContextLimits): Promise<{ text: string; decision: RetrievalDecision }> {
   const gate = shouldSearchGraph(userMessage);
   if (!gate.include) {
     return { text: "", decision: buildSkippedDecision(gate.reason) };
   }
 
   try {
-    const graphResults = await searchGraph(userMessage, 5);
+    const graphResults = await searchGraph(userMessage, limits.graphLimit);
     if (graphResults.length === 0) {
       return { text: "", decision: buildSkippedDecision("graph search returned no matches") };
     }
@@ -329,14 +386,14 @@ async function buildGraphBlock(userMessage: string): Promise<{ text: string; dec
   }
 }
 
-async function buildKnowledgeDocsBlock(userMessage: string): Promise<{ text: string; decision: RetrievalDecision }> {
+async function buildKnowledgeDocsBlock(userMessage: string, limits: ContextLimits): Promise<{ text: string; decision: RetrievalDecision }> {
   const gate = shouldSearchKnowledgeDocs(userMessage);
   if (!gate.include) {
     return { text: "", decision: buildSkippedDecision(gate.reason) };
   }
 
   try {
-    const knowledgeResults = await searchKnowledgeDocuments(userMessage, 3);
+    const knowledgeResults = await searchKnowledgeDocuments(userMessage, limits.knowledgeDocsLimit);
     if (knowledgeResults.length === 0) {
       return { text: "", decision: buildSkippedDecision("knowledge search returned no matches") };
     }
@@ -355,14 +412,16 @@ export async function buildContextForPrompt(
   userMessage: string,
   conversationId?: string,
   userId = DEFAULT_USER_ID,
+  options?: { extendedContext?: boolean },
 ): Promise<BuildContextResult> {
-  const recentConversationBase = await buildRecentConversationBlock(conversationId);
-  const conversationSummaryPromise = buildConversationSummaryBlock(userMessage, conversationId);
+  const limits = getContextLimits(options?.extendedContext ?? false);
+  const recentConversationBase = await buildRecentConversationBlock(conversationId, limits);
+  const conversationSummaryPromise = buildConversationSummaryBlock(userMessage, conversationId, limits, options?.extendedContext ?? false);
   const recentConversationGate = shouldIncludeRecentConversation(userMessage, recentConversationBase.messages);
 
-  const semanticRecallPromise = buildSemanticRecallBlock(userMessage, userId);
-  const graphPromise = buildGraphBlock(userMessage);
-  const knowledgeDocsPromise = buildKnowledgeDocsBlock(userMessage);
+  const semanticRecallPromise = buildSemanticRecallBlock(userMessage, userId, limits);
+  const graphPromise = buildGraphBlock(userMessage, limits);
+  const knowledgeDocsPromise = buildKnowledgeDocsBlock(userMessage, limits);
   const [conversationSummary, semanticRecall, graph, knowledgeDocs] = await Promise.all([
     conversationSummaryPromise,
     semanticRecallPromise,
