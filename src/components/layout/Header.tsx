@@ -83,47 +83,39 @@ export default function Header() {
     return () => window.removeEventListener("bizbot:agentic-setup-changed", handleSetupChanged);
   }, []);
 
-  const setupToneColor =
+  const setupToneClasses =
     setupState?.tone === "ready"
-      ? "var(--success)"
+      ? "border-success text-success bg-success/10"
       : setupState?.tone === "partial"
-        ? "var(--warning)"
-        : "var(--danger)";
-
-  const setupToneBackground =
-    setupState?.tone === "ready"
-      ? "rgba(34,197,94,0.10)"
-      : setupState?.tone === "partial"
-        ? "rgba(245,158,11,0.10)"
-        : "rgba(239,68,68,0.10)";
+        ? "border-warning text-warning bg-warning/10"
+        : "border-danger text-danger bg-danger/10";
 
   return (
     <header
-      className="h-14 flex items-center justify-between px-5 border-b"
-      style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}
+      className="h-14 flex items-center justify-between px-5 border-b border-border bg-surface"
     >
       <div>
-        <div className="font-mono text-[9px] uppercase tracking-widest" style={{ color: "var(--text-dim)" }}>
+        <div className="font-mono text-[9px] uppercase tracking-widest text-dim">
           command console
         </div>
-        <div className="text-xs font-mono min-h-[1rem]" style={{ color: "var(--text-primary)" }}>
+        <div className="text-xs font-mono min-h-[1rem] text-primary">
           {now || " "}
         </div>
       </div>
       <div className="flex items-center gap-5 font-mono text-[10px] uppercase tracking-widest">
-        <Link href="/chat?setup=1" className="inline-flex items-center gap-2 border px-3 py-2" style={{ borderColor: setupToneColor, color: setupToneColor, background: setupToneBackground }} title={getSetupTooltip(setupState)}>
+        <Link href="/chat?setup=1" className={`inline-flex items-center gap-2 border px-3 py-2 ${setupToneClasses}`} title={getSetupTooltip(setupState)}>
           <span>{setupState?.tone === "ready" ? "check" : setupState?.tone === "partial" ? "pending" : "setup"}</span>
           <span>{setupState?.label ?? "Start setup"}</span>
         </Link>
-        <div style={{ color: "var(--text-muted)" }}>
+        <div className="text-muted">
           provider
-          <span className="ml-2" style={{ color: provider ? "var(--accent)" : "var(--text-dim)" }}>
+          <span className={`ml-2 ${provider ? "text-accent" : "text-dim"}`}>
             {provider ?? "detecting"}
           </span>
         </div>
-        <div style={{ color: "var(--text-muted)" }}>
+        <div className="text-muted">
           approvals
-          <span className="ml-2" style={{ color: pending > 0 ? "var(--danger)" : "var(--text-primary)" }}>
+          <span className={`ml-2 ${pending > 0 ? "text-danger" : "text-primary"}`}>
             {pending}
           </span>
         </div>

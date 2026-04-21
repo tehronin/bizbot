@@ -41,8 +41,7 @@ export function BuilderRunPanel({ progress }: BuilderRunPanelProps) {
 
   return (
     <div
-      className="border px-4 py-3 space-y-3"
-      style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}
+      className="border px-4 py-3 space-y-3 border-border bg-raised"
     >
       <div className="flex items-center gap-3">
         <div
@@ -57,7 +56,7 @@ export function BuilderRunPanel({ progress }: BuilderRunPanelProps) {
         </div>
 
         {hasIterations ? (
-          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+          <div className="text-xs text-muted">
             Iteration {progress.currentIteration} / {progress.maxIterations}
           </div>
         ) : null}
@@ -65,21 +64,19 @@ export function BuilderRunPanel({ progress }: BuilderRunPanelProps) {
 
       {progress.latestLoopSummary ? (
         <div
-          className="text-sm leading-6 break-words"
-          style={{ color: "var(--text-dim)" }}
+          className="text-sm leading-6 break-words text-dim"
         >
           {progress.latestLoopSummary}
         </div>
       ) : (
-        <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+        <div className="text-sm text-muted">
           Builder task running...
         </div>
       )}
 
       {hasIterations && progress.maxIterations! > 0 ? (
         <div
-          className="h-1 rounded-full overflow-hidden"
-          style={{ background: "var(--border-sub)" }}
+          className="h-1 rounded-full overflow-hidden bg-border-sub"
         >
           <div
             className="h-full rounded-full transition-all duration-700"

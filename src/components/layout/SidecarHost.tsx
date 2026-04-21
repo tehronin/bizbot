@@ -34,15 +34,15 @@ function SidecarContentView({ content }: { content: SidecarContent }) {
     case "code":
       return (
         <div className="space-y-2">
-          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{content.language ?? "code"}</div>
-          <pre className="overflow-auto border p-3 text-xs leading-6 whitespace-pre-wrap break-words" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)", color: "var(--text-primary)" }}>
+          <div className="text-[11px] uppercase tracking-[0.16em] text-muted">{content.language ?? "code"}</div>
+          <pre className="overflow-auto border border-border-sub bg-raised text-primary p-3 text-xs leading-6 whitespace-pre-wrap break-words">
             <code>{content.code}</code>
           </pre>
         </div>
       );
     case "json":
       return (
-        <pre className="overflow-auto border p-3 text-xs leading-6 whitespace-pre-wrap break-words" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)", color: "var(--text-primary)" }}>
+        <pre className="overflow-auto border border-border-sub bg-raised text-primary p-3 text-xs leading-6 whitespace-pre-wrap break-words">
           <code>{JSON.stringify(content.value, null, 2)}</code>
         </pre>
       );
@@ -51,8 +51,8 @@ function SidecarContentView({ content }: { content: SidecarContent }) {
         <figure className="space-y-3">
           {/* Sidecar intentionally renders validated transient image payloads directly. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={content.url} alt={content.alt} className="max-w-full border" style={{ borderColor: "var(--border-sub)" }} />
-          <figcaption className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{content.alt}</figcaption>
+          <img src={content.url} alt={content.alt} className="max-w-full border border-border-sub" />
+          <figcaption className="text-xs leading-6 text-dim">{content.alt}</figcaption>
         </figure>
       );
     case "selection":
@@ -102,8 +102,8 @@ function SidecarSelectionView({ panelId, content }: { panelId: string; content: 
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{content.title}</div>
-        {content.description ? <p className="text-sm leading-6" style={{ color: "var(--text-dim)" }}>{content.description}</p> : null}
+        <div className="text-sm font-medium text-primary">{content.title}</div>
+        {content.description ? <p className="text-sm leading-6 text-dim">{content.description}</p> : null}
       </div>
 
       <div className="space-y-3">
@@ -114,20 +114,17 @@ function SidecarSelectionView({ panelId, content }: { panelId: string; content: 
               key={item.id}
               type="button"
               onClick={() => onItemClick(item.id)}
-              className="w-full border p-4 text-left transition-colors"
-              style={{
-                borderColor: selected ? "var(--accent)" : "var(--border)",
-                background: selected ? "var(--accent-glow)" : "var(--bg-raised)",
-                color: "var(--text-primary)",
-              }}
+              className={`w-full border p-4 text-left transition-colors ${
+                selected ? "border-accent bg-accent-glow text-primary" : "border-border bg-raised text-primary"
+              }`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-2 min-w-0 flex-1">
-                  <div className="text-xs uppercase tracking-[0.18em]" style={{ color: selected ? "var(--accent)" : "var(--text-muted)" }}>{item.id}</div>
+                  <div className={`text-xs uppercase tracking-[0.18em] ${selected ? "text-accent" : "text-muted"}`}>{item.id}</div>
                   <div className="text-sm font-medium break-words">{item.title}</div>
-                  {item.description ? <div className="text-sm leading-6" style={{ color: "var(--text-dim)" }}>{item.description}</div> : null}
+                  {item.description ? <div className="text-sm leading-6 text-dim">{item.description}</div> : null}
                 </div>
-                <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: selected ? "var(--accent)" : "var(--text-dim)" }}>
+                <div className={`text-[11px] uppercase tracking-[0.18em] ${selected ? "text-accent" : "text-dim"}`}>
                   {selected ? "selected" : content.selectionMode === "multiple" ? "add" : "choose"}
                 </div>
               </div>
@@ -144,8 +141,7 @@ function SidecarSelectionView({ panelId, content }: { panelId: string; content: 
               type="button"
               onClick={() => onFooterAction(action)}
               disabled={action.kind === "apply" && selectedIds.size === 0}
-              className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50"
-              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              className="px-3 py-2 border border-border text-primary text-xs uppercase tracking-[0.18em] disabled:opacity-50"
             >
               {action.label}
             </button>
@@ -221,15 +217,15 @@ export default function SidecarHost() {
         onPointerDown={beginResize}
         style={{ background: "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.12) 50%, transparent 100%)" }}
       />
-      <aside className="h-full w-full border-l" style={{ width: `min(${width}px, 100vw)`, borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-        <div className="sticky top-0 z-10 border-b px-5 py-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <aside className="h-full w-full border-l border-border bg-surface" style={{ width: `min(${width}px, 100vw)` }}>
+        <div className="sticky top-0 z-10 border-b border-border bg-surface px-5 py-4">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-2 min-w-0">
-              <div className="text-xs font-mono uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>sidecar</div>
-              <div className="text-sm font-medium break-words" style={{ color: "var(--text-primary)" }}>{panel.title}</div>
-              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{panel.content.type}</div>
+              <div className="text-xs font-mono uppercase tracking-widest text-muted">sidecar</div>
+              <div className="text-sm font-medium break-words text-primary">{panel.title}</div>
+              <div className="text-[11px] uppercase tracking-[0.16em] text-dim">{panel.content.type}</div>
             </div>
-            <button type="button" onClick={closePanel} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+            <button type="button" onClick={closePanel} className="px-3 py-2 border border-border text-primary text-xs uppercase tracking-[0.18em]">
               close
             </button>
           </div>

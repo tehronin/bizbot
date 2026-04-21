@@ -2136,36 +2136,36 @@ export default function BuilderPage() {
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{dashboardToast.title}</div>
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted">{dashboardToast.title}</div>
               <div className="mt-1 text-sm">{dashboardToast.message}</div>
             </div>
-            <button onClick={() => setDashboardToast(null)} className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>
+            <button onClick={() => setDashboardToast(null)} className="text-xs uppercase tracking-[0.16em] text-dim">
               dismiss
             </button>
           </div>
         </div>
       ) : null}
       <section className="space-y-5">
-        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+        <section className="border p-4 border-border bg-surface">
           <div className="flex items-center justify-between gap-4 mb-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.24em] font-medium mb-1" style={{ color: "var(--text-muted)" }}>builder mode</div>
-              <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+              <div className="text-xs uppercase tracking-[0.24em] font-medium mb-1 text-muted">builder mode</div>
+              <div className="text-sm text-dim">
                 Safe project creation, preset bootstrapping, and typed package actions are the primary supported Builder path. Agentic CLI adapters stay opt-in and blocked unless they are explicitly ready.
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button disabled={saving || !status?.config.safe} onClick={() => void reconcileWorkspaceProjects()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+              <button disabled={saving || !status?.config.safe} onClick={() => void reconcileWorkspaceProjects()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-border text-primary">
                 reconcile/import workspace
               </button>
-              <button onClick={() => void refresh(selectedProjectId)} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+              <button onClick={() => void refresh(selectedProjectId)} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-accent text-accent">
                 refresh
               </button>
             </div>
           </div>
-          {error ? <div className="text-sm mb-3" style={{ color: "var(--danger)" }}>{error}</div> : null}
-          {resultNotice ? <div className="text-sm mb-3" style={{ color: "var(--success)" }}>{resultNotice}</div> : null}
-          {hasRunningRun ? <div className="text-xs mb-3" style={{ color: "var(--text-dim)" }}>Polling live builder progress every 2 seconds.</div> : null}
+          {error ? <div className="text-sm mb-3 text-danger">{error}</div> : null}
+          {resultNotice ? <div className="text-sm mb-3 text-success">{resultNotice}</div> : null}
+          {hasRunningRun ? <div className="text-xs mb-3 text-dim">Polling live builder progress every 2 seconds.</div> : null}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
               { label: "workspace", value: status?.config.safe ? "safe" : "blocked" },
@@ -2173,29 +2173,29 @@ export default function BuilderPage() {
               { label: "running", value: String(status?.projects.running ?? 0) },
               { label: "agentic profile", value: status?.config.defaultAgenticProfile || "none configured" },
             ].map((card) => (
-              <div key={card.label} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
-                <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+              <div key={card.label} className="border p-3 border-border-sub bg-raised">
+                <div className="text-xs uppercase tracking-[0.22em] mb-2 text-muted">{card.label}</div>
+                <div className="text-sm text-primary">{card.value}</div>
               </div>
             ))}
           </div>
           {!status?.config.safe && status?.config.reason ? (
-            <div className="mt-4 text-xs leading-6" style={{ color: "var(--danger)" }}>{status.config.reason}</div>
+            <div className="mt-4 text-xs leading-6 text-danger">{status.config.reason}</div>
           ) : null}
-          <div className="mt-4 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+          <div className="mt-4 text-xs leading-6 text-dim">
             Workspace root: {status?.config.workspaceRoot ?? "loading"}
           </div>
         </section>
 
-        <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>create project</div>
+        <section className="border p-4 space-y-4 border-border bg-surface">
+          <div className="text-xs uppercase tracking-[0.24em] text-muted">create project</div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Project name</label>
-              <input data-testid="builder-create-project-name" value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Project name</label>
+              <input data-testid="builder-create-project-name" value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Planned stack</label>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Planned stack</label>
               <select value={createDraft.stackPresetKey} onChange={(event) => {
                 const nextKey = event.target.value;
                 const preset = (status?.stackPresets ?? []).find((candidate) => candidate.key === nextKey);
@@ -2205,55 +2205,55 @@ export default function BuilderPage() {
                   template: preset?.template ?? current.template,
                   packageManager: preset?.packageManager ?? current.packageManager,
                 }));
-              }} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+              }} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
                 <option value="">No preset yet</option>
                 {(status?.stackPresets ?? []).map((preset) => (
                   <option key={preset.key} value={preset.key}>{preset.displayName}</option>
                 ))}
               </select>
-              <div className="mt-2 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              <div className="mt-2 text-xs leading-6 text-dim">
                 {createDraft.stackPresetKey
                   ? ((status?.stackPresets ?? []).find((preset) => preset.key === createDraft.stackPresetKey)?.description ?? "")
                   : "Choose a common stack preset or leave this empty and set template/package manager manually."}
               </div>
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Template</label>
-              <select value={createDraft.template} onChange={(event) => setCreateDraft((current) => ({ ...current, stackPresetKey: "", template: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Template</label>
+              <select value={createDraft.template} onChange={(event) => setCreateDraft((current) => ({ ...current, stackPresetKey: "", template: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
                 {(status?.templates ?? []).map((template) => (
                   <option key={template.key} value={template.key}>{template.displayName}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Package manager</label>
-              <select value={createDraft.packageManager} onChange={(event) => setCreateDraft((current) => ({ ...current, stackPresetKey: "", packageManager: event.target.value as "NPM" | "PNPM" }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Package manager</label>
+              <select value={createDraft.packageManager} onChange={(event) => setCreateDraft((current) => ({ ...current, stackPresetKey: "", packageManager: event.target.value as "NPM" | "PNPM" }))} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
                 <option value="NPM">NPM</option>
                 <option value="PNPM">PNPM</option>
               </select>
             </div>
             <div className="flex items-end">
-              <button data-testid="builder-create-project-button" disabled={saving || !status?.config.safe} onClick={() => void createProject()} className="w-full px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+              <button data-testid="builder-create-project-button" disabled={saving || !status?.config.safe} onClick={() => void createProject()} className="w-full px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-accent text-accent">
                 create project
               </button>
             </div>
           </div>
         </section>
 
-        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>CLI profiles</div>
+        <section className="border p-4 border-border bg-surface">
+          <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">CLI profiles</div>
           <div className="space-y-3 text-sm">
             {(status?.cliProfiles ?? []).map((profile) => (
-              <div key={profile.key} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div key={profile.key} className="border p-3 border-border-sub bg-raised">
                 <div className="flex items-center justify-between gap-4">
                   <span>{profile.displayName}</span>
-                  <span style={{ color: profile.enabled ? (profile.metadata?.available ? "var(--success)" : "var(--danger)") : "var(--text-dim)" }}>
+                  <span className={profile.enabled ? (profile.metadata?.available ? "text-success" : "text-danger") : "text-dim"}>
                     {profile.enabled ? (profile.metadata?.ready ? "enabled and ready" : "enabled but blocked") : "disabled"}
                   </span>
                 </div>
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{profile.command}</div>
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{profile.description}</div>
-                {profile.metadata?.readinessReason ? <div className="text-xs leading-6" style={{ color: profile.metadata.ready ? "var(--success)" : "var(--danger)" }}>{profile.metadata.readinessReason}</div> : null}
+                <div className="text-xs leading-6 text-dim">{profile.command}</div>
+                <div className="text-xs leading-6 text-dim">{profile.description}</div>
+                {profile.metadata?.readinessReason ? <div className={`text-xs leading-6 ${profile.metadata.ready ? "text-success" : "text-danger"}`}>{profile.metadata.readinessReason}</div> : null}
               </div>
             ))}
           </div>
@@ -2261,57 +2261,51 @@ export default function BuilderPage() {
       </section>
 
       <section className="space-y-5">
-        <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>projects</div>
+        <section className="border p-4 border-border bg-surface">
+          <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">projects</div>
           <div className="space-y-3 text-sm">
             {projects.length === 0 ? (
-              <div style={{ color: "var(--text-dim)" }}>No builder projects yet.</div>
+              <div className="text-dim">No builder projects yet.</div>
             ) : (
               <>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>active builds</div>
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{activeProjects.length} total</div>
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-muted">active builds</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-dim">{activeProjects.length} total</div>
                   </div>
                   {activeProjects.length === 0 ? (
-                    <div className="border p-3 text-xs" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)", color: "var(--text-dim)" }}>
+                    <div className="border p-3 text-xs border-border-sub bg-raised text-dim">
                       No active Builder projects. Restore one from archived history or create a new project.
                     </div>
                   ) : activeProjectsPagination.pageItems.map((project) => (
                     <div
                       key={project.id}
-                      className="border p-3"
-                      style={{
-                        borderColor: project.id === selectedProjectId ? "var(--accent)" : "var(--border-sub)",
-                        background: project.id === selectedProjectId ? "var(--accent-glow)" : "var(--bg-raised)",
-                      }}
+                      className={`border p-3 ${project.id === selectedProjectId ? "border-accent bg-accent-glow" : "border-border-sub bg-raised"}`}
                     >
                       <button onClick={() => setSelectedProjectId(project.id)} className="w-full text-left">
                         <div className="flex items-center justify-between gap-4">
                           <span>{project.name}</span>
-                          <span style={{ color: project.lifecycle === "BLOCKED" ? "var(--danger)" : project.lifecycle === "COMPLETE" ? "var(--success)" : project.lifecycle === "ACTIVE" ? "var(--accent)" : "var(--text-dim)" }}>{project.lifecycle.toLowerCase()}</span>
+                          <span className={project.lifecycle === "BLOCKED" ? "text-danger" : project.lifecycle === "COMPLETE" ? "text-success" : project.lifecycle === "ACTIVE" ? "text-accent" : "text-dim"}>{project.lifecycle.toLowerCase()}</span>
                         </div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.relativePath}</div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.template} · {project.packageManager} · last run {project.lastRunStatus.toLowerCase()}</div>
+                        <div className="text-xs leading-6 text-dim">{project.relativePath}</div>
+                        <div className="text-xs leading-6 text-dim">{project.template} · {project.packageManager} · last run {project.lastRunStatus.toLowerCase()}</div>
                         <div className="text-xs leading-6" style={{ color: getWorkspaceStateColor(project.workspaceState) }}>{getWorkspaceStateLabel(project.workspaceState)}</div>
                         {projectDetail?.project.id === project.id && projectDetail.context.plannedStack ? (
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail.context.plannedStack.label} · {projectDetail.context.plannedStack.tags.join(", ")}</div>
+                          <div className="text-xs leading-6 text-dim">{projectDetail.context.plannedStack.label} · {projectDetail.context.plannedStack.tags.join(", ")}</div>
                         ) : null}
                       </button>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           disabled={saving}
                           onClick={() => void setProjectArchived(project.id, true)}
-                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-border text-primary"
                         >
                           {projectActionProjectId === project.id && projectActionType === "archive" ? "Archiving..." : "Archive"}
                         </button>
                         <button
                           disabled={saving}
                           onClick={() => void deleteProjectHistory(project.id)}
-                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                          style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-danger text-danger"
                         >
                           {projectActionProjectId === project.id && projectActionType === "delete" ? "Deleting..." : "Delete"}
                         </button>
@@ -2323,31 +2317,27 @@ export default function BuilderPage() {
 
                 <div className="space-y-3 pt-2">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>archived history</div>
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{archivedProjects.length} total</div>
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-muted">archived history</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-dim">{archivedProjects.length} total</div>
                   </div>
                   {archivedProjects.length === 0 ? (
-                    <div className="border p-3 text-xs" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)", color: "var(--text-dim)" }}>
+                    <div className="border p-3 text-xs border-border-sub bg-raised text-dim">
                       No archived Builder projects yet.
                     </div>
                   ) : archivedProjectsPagination.pageItems.map((project) => (
                     <div
                       key={project.id}
-                      className="border p-3"
-                      style={{
-                        borderColor: project.id === selectedProjectId ? "var(--accent)" : "var(--border-sub)",
-                        background: project.id === selectedProjectId ? "var(--accent-glow)" : "var(--bg-raised)",
-                      }}
+                      className={`border p-3 ${project.id === selectedProjectId ? "border-accent bg-accent-glow" : "border-border-sub bg-raised"}`}
                     >
                       <button onClick={() => setSelectedProjectId(project.id)} className="w-full text-left">
                         <div className="flex items-center justify-between gap-4">
                           <span>{project.name}</span>
-                          <span style={{ color: "var(--warning)" }}>archived</span>
+                          <span className="text-warning">archived</span>
                         </div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.relativePath}</div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{project.template} · {project.packageManager} · last run {project.lastRunStatus.toLowerCase()}</div>
+                        <div className="text-xs leading-6 text-dim">{project.relativePath}</div>
+                        <div className="text-xs leading-6 text-dim">{project.template} · {project.packageManager} · last run {project.lastRunStatus.toLowerCase()}</div>
                         <div className="text-xs leading-6" style={{ color: getWorkspaceStateColor(project.workspaceState) }}>{getWorkspaceStateLabel(project.workspaceState)}</div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-xs leading-6 text-dim">
                           Archived {project.archivedAt ? new Date(project.archivedAt).toLocaleString() : "recently"}
                         </div>
                       </button>
@@ -2355,16 +2345,14 @@ export default function BuilderPage() {
                         <button
                           disabled={saving}
                           onClick={() => void setProjectArchived(project.id, false)}
-                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                          style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-accent text-accent"
                         >
                           {projectActionProjectId === project.id && projectActionType === "restore" ? "Restoring..." : "Restore"}
                         </button>
                         <button
                           disabled={saving}
                           onClick={() => void deleteProjectHistory(project.id)}
-                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                          style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-danger text-danger"
                         >
                           {projectActionProjectId === project.id && projectActionType === "delete" ? "Deleting..." : "Delete"}
                         </button>
@@ -2378,16 +2366,16 @@ export default function BuilderPage() {
           </div>
         </section>
 
-        <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+        <section className="border p-4 space-y-4 border-border bg-surface">
           <div className="flex items-center justify-between gap-4">
-            <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>selected project</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-muted">selected project</div>
             <div className="flex items-center gap-3">
-              {selectedProject?.archivedAt ? <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--warning)" }}>archived</div> : null}
-              {selectedProject ? <div className="text-xs" style={{ color: "var(--text-dim)" }}>{selectedProject.slug}</div> : null}
+              {selectedProject?.archivedAt ? <div className="text-xs uppercase tracking-[0.16em] text-warning">archived</div> : null}
+              {selectedProject ? <div className="text-xs text-dim">{selectedProject.slug}</div> : null}
             </div>
           </div>
           {!selectedProject ? (
-            <div className="text-sm" style={{ color: "var(--text-dim)" }}>Select a builder project to inspect runs and execute actions.</div>
+            <div className="text-sm text-dim">Select a builder project to inspect runs and execute actions.</div>
           ) : (
             <>
               <div className="flex flex-wrap gap-2">
@@ -2395,8 +2383,7 @@ export default function BuilderPage() {
                   <button
                     disabled={saving}
                     onClick={() => void setProjectArchived(selectedProject.id, false)}
-                    className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50"
-                    style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                    className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-accent text-accent"
                   >
                     {projectActionProjectId === selectedProject.id && projectActionType === "restore" ? "Restoring..." : "Restore Project"}
                   </button>
@@ -2404,8 +2391,7 @@ export default function BuilderPage() {
                   <button
                     disabled={saving}
                     onClick={() => void setProjectArchived(selectedProject.id, true)}
-                    className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50"
-                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-border text-primary"
                   >
                     {projectActionProjectId === selectedProject.id && projectActionType === "archive" ? "Archiving..." : "Archive Project"}
                   </button>
@@ -2413,104 +2399,102 @@ export default function BuilderPage() {
                 <button
                   disabled={saving}
                   onClick={() => void deleteProjectHistory(selectedProject.id)}
-                  className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50"
-                  style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                  className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-danger text-danger"
                 >
                   {projectActionProjectId === selectedProject.id && projectActionType === "delete" ? "Deleting..." : "Delete History"}
                 </button>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>path</div>
+                <div className="border p-3 border-border-sub bg-raised">
+                  <div className="text-xs uppercase tracking-[0.22em] mb-2 text-muted">path</div>
                   <div className="text-sm">{selectedProject.relativePath}</div>
-                  {selectedProject.archivedAt ? <div className="text-xs mt-2" style={{ color: "var(--warning)" }}>Archived {new Date(selectedProject.archivedAt).toLocaleString()}</div> : null}
-                  {projectDetail?.context.plannedStack ? <div className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>{projectDetail.context.plannedStack.label}</div> : null}
+                  {selectedProject.archivedAt ? <div className="text-xs mt-2 text-warning">Archived {new Date(selectedProject.archivedAt).toLocaleString()}</div> : null}
+                  {projectDetail?.context.plannedStack ? <div className="text-xs mt-2 text-dim">{projectDetail.context.plannedStack.label}</div> : null}
                 </div>
-                <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>git</div>
+                <div className="border p-3 border-border-sub bg-raised">
+                  <div className="text-xs uppercase tracking-[0.22em] mb-2 text-muted">git</div>
                   <div className="text-sm">{selectedProject.gitInitialized ? "initialized" : "not initialized"}</div>
                 </div>
-                <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>lifecycle</div>
+                <div className="border p-3 border-border-sub bg-raised">
+                  <div className="text-xs uppercase tracking-[0.22em] mb-2 text-muted">lifecycle</div>
                   <div data-testid="builder-selected-project-lifecycle" className="text-sm">{selectedProject.lifecycle.toLowerCase()}</div>
                 </div>
-                <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>workspace</div>
+                <div className="border p-3 border-border-sub bg-raised">
+                  <div className="text-xs uppercase tracking-[0.22em] mb-2 text-muted">workspace</div>
                   <div className="text-sm" style={{ color: getWorkspaceStateColor(selectedProject.workspaceState) }}>{getWorkspaceStateLabel(selectedProject.workspaceState)}</div>
                 </div>
-                <div className="border p-3 sm:col-span-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="border p-3 sm:col-span-2 border-border-sub bg-raised">
                   <div className="flex items-center justify-between gap-3 mb-2">
-                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>config</div>
+                    <div className="text-xs uppercase tracking-[0.22em] text-muted">config</div>
                     <div className="text-xs uppercase tracking-[0.18em]" style={{ color: getConfigStatusColor(projectDetail?.configReadiness) }}>
                       {getConfigStatusLabel(projectDetail?.configReadiness)}
                     </div>
                   </div>
-                  <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+                  <div className="text-sm text-primary">
                     {projectDetail?.configReadiness.summary ?? "Config readiness has not been evaluated yet."}
                   </div>
                   {projectDetail?.configReadiness.totalRequiredKeys ? (
-                    <div className="mt-2 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="mt-2 text-xs leading-6 text-dim">
                       Required keys: {projectDetail.configReadiness.totalRequiredKeys}
                     </div>
                   ) : null}
                   {projectDetail?.configReadiness.missingProjectKeys.length ? (
-                    <div className="mt-2 text-xs leading-6" style={{ color: "var(--warning)" }}>
+                    <div className="mt-2 text-xs leading-6 text-warning">
                       Missing project-local keys: {projectDetail.configReadiness.missingProjectKeys.join(", ")}
                     </div>
                   ) : null}
                   {projectDetail?.configReadiness.missingExecutionKeys.length ? (
-                    <div className="mt-1 text-xs leading-6" style={{ color: "var(--danger)" }}>
+                    <div className="mt-1 text-xs leading-6 text-danger">
                       Missing execution keys: {projectDetail.configReadiness.missingExecutionKeys.join(", ")}
                     </div>
                   ) : null}
                   {projectDetail?.configReadiness.malformedEntries.length ? (
-                    <div className="mt-1 text-xs leading-6" style={{ color: "var(--danger)" }}>
+                    <div className="mt-1 text-xs leading-6 text-danger">
                       Malformed env entries: {projectDetail.configReadiness.malformedEntries.map((entry) => `${entry.path}:${entry.line}`).join(", ")}
                     </div>
                   ) : null}
                   <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(260px,0.7fr)]">
-                    <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>required config keys</div>
+                    <div className="border p-3 space-y-2 border-border bg-surface">
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted">required config keys</div>
                       {projectDetail?.configReadiness.keys.length ? projectDetail.configReadiness.keys.map((entry) => (
                         <button
                           key={entry.key}
                           onClick={() => setEnvDraft((current) => ({ ...current, key: entry.key }))}
-                          className="w-full border p-2 text-left"
-                          style={{ borderColor: envDraft.key === entry.key ? "var(--accent)" : "var(--border)", background: envDraft.key === entry.key ? "var(--accent-glow)" : "var(--bg-raised)" }}
+                          className={`w-full border p-2 text-left ${envDraft.key === entry.key ? "border-accent bg-accent-glow" : "border-border bg-raised"}`}
                         >
                           <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.14em]">
                             <span>{entry.key}</span>
-                            <span style={{ color: !entry.executionValuePresent ? "var(--danger)" : !entry.projectValuePresent ? "var(--warning)" : "var(--success)" }}>
+                            <span className={!entry.executionValuePresent ? "text-danger" : !entry.projectValuePresent ? "text-warning" : "text-success"}>
                               {!entry.executionValuePresent ? "missing" : !entry.projectValuePresent ? "host-backed" : "project-local"}
                             </span>
                           </div>
-                          <div className="mt-1 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                          <div className="mt-1 text-xs leading-6 text-dim">
                             project {entry.projectSource ?? "missing"}: {entry.redactedProjectValue ?? "missing"}
                           </div>
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                          <div className="text-xs leading-6 text-dim">
                             execution {entry.executionSource}: {entry.redactedExecutionValue ?? "missing"}
                           </div>
                         </button>
-                      )) : <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No declared config keys yet. Sync .env.example after writing project-local values.</div>}
+                      )) : <div className="text-xs leading-6 text-dim">No declared config keys yet. Sync .env.example after writing project-local values.</div>}
                     </div>
-                    <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="border p-3 space-y-3 border-border bg-surface">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>env actions</div>
-                        <button disabled={saving} onClick={() => void mutateProjectEnv({ action: "sync_example" })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                        <div className="text-xs uppercase tracking-[0.16em] text-muted">env actions</div>
+                        <button disabled={saving} onClick={() => void mutateProjectEnv({ action: "sync_example" })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-border text-primary">
                           sync .env.example
                         </button>
                       </div>
                       <div>
-                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Key</label>
-                        <input value={envDraft.key} onChange={(event) => setEnvDraft((current) => ({ ...current, key: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} placeholder="DATABASE_URL" />
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Key</label>
+                        <input value={envDraft.key} onChange={(event) => setEnvDraft((current) => ({ ...current, key: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm border-border" placeholder="DATABASE_URL" />
                       </div>
                       <div>
-                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Value</label>
-                        <input value={envDraft.value} onChange={(event) => setEnvDraft((current) => ({ ...current, value: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} placeholder="Project-local value" />
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Value</label>
+                        <input value={envDraft.value} onChange={(event) => setEnvDraft((current) => ({ ...current, value: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm border-border" placeholder="Project-local value" />
                       </div>
                       <div>
-                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Target file</label>
-                        <select value={envDraft.file} onChange={(event) => setEnvDraft((current) => ({ ...current, file: event.target.value as ".env" | ".env.local" }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Target file</label>
+                        <select value={envDraft.file} onChange={(event) => setEnvDraft((current) => ({ ...current, file: event.target.value as ".env" | ".env.local" }))} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
                           <option value=".env.local">.env.local</option>
                           <option value=".env">.env</option>
                         </select>
@@ -2518,100 +2502,99 @@ export default function BuilderPage() {
                       <button
                         disabled={saving || !envDraft.key.trim()}
                         onClick={() => void mutateProjectEnv({ action: "write", key: envDraft.key, value: envDraft.value, file: envDraft.file })}
-                        className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50"
-                        style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                        className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-accent text-accent"
                       >
                         write env entry
                       </button>
                     </div>
                   </div>
                 </div>
-                <div className="border p-3 sm:col-span-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>objective</div>
-                  <div className="text-sm" style={{ color: projectDetail?.context.objective ? "var(--text-primary)" : "var(--text-dim)" }}>
+                <div className="border p-3 sm:col-span-2 border-border-sub bg-raised">
+                  <div className="text-xs uppercase tracking-[0.22em] mb-2 text-muted">objective</div>
+                  <div className={`text-sm ${projectDetail?.context.objective ? "text-primary" : "text-dim"}`}>
                     {projectDetail?.context.objective ?? "No durable Builder objective recorded yet."}
                   </div>
                 </div>
               </div>
 
               <div className="grid gap-3 lg:grid-cols-3">
-                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="border p-3 space-y-2 border-border-sub bg-raised">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>brief</div>
-                    <button data-testid="builder-save-plan-button" disabled={saving || !selectedProjectId} onClick={() => void planProject()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                    <div className="text-xs uppercase tracking-[0.22em] text-muted">brief</div>
+                    <button data-testid="builder-save-plan-button" disabled={saving || !selectedProjectId} onClick={() => void planProject()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-accent text-accent">
                       save + plan
                     </button>
                   </div>
                   <div>
-                    <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Title</label>
+                    <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Title</label>
                     <input data-testid="builder-brief-title" value={briefDraft.title} onChange={(event) => {
                       briefDirtyRef.current = true;
                       setBriefDraft((current) => ({ ...current, title: event.target.value }));
-                    }} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    }} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                   </div>
                   <div>
-                    <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Summary</label>
+                    <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Summary</label>
                     <textarea data-testid="builder-brief-summary" value={briefDraft.summary} onChange={(event) => {
                       briefDirtyRef.current = true;
                       setBriefDraft((current) => ({ ...current, summary: event.target.value }));
-                    }} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    }} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                   </div>
                   <div>
-                    <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Notes</label>
+                    <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Notes</label>
                     <textarea data-testid="builder-brief-notes" value={briefDraft.notes} onChange={(event) => {
                       briefDirtyRef.current = true;
                       setBriefDraft((current) => ({ ...current, notes: event.target.value }));
-                    }} rows={3} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    }} rows={3} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                   </div>
                 </div>
-                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>plan</div>
+                <div className="border p-3 space-y-2 border-border-sub bg-raised">
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">plan</div>
                   {projectDetail?.milestones.length ? projectDetail.milestones.map((milestone) => (
-                    <div key={milestone.id} className="border p-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div key={milestone.id} className="border p-2 border-border bg-surface">
                       <div className="flex items-center justify-between gap-3 text-sm">
                         <span>{milestone.sortOrder}. {milestone.title}</span>
-                        <span style={{ color: milestone.status === "BLOCKED" ? "var(--danger)" : milestone.status === "COMPLETE" ? "var(--success)" : milestone.status === "ACTIVE" ? "var(--accent)" : "var(--text-dim)" }}>{milestone.status.toLowerCase()}</span>
+                        <span className={milestone.status === "BLOCKED" ? "text-danger" : milestone.status === "COMPLETE" ? "text-success" : milestone.status === "ACTIVE" ? "text-accent" : "text-dim"}>{milestone.status.toLowerCase()}</span>
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{milestone.summary}</div>
+                      <div className="text-xs leading-6 text-dim">{milestone.summary}</div>
                       {milestone.taskSpecs.map((taskSpec) => (
-                        <div key={taskSpec.id} className="text-xs leading-6" style={{ color: taskSpec.id === projectDetail.currentTaskSpec?.id ? "var(--accent)" : "var(--text-dim)" }}>
+                        <div key={taskSpec.id} className={`text-xs leading-6 ${taskSpec.id === projectDetail.currentTaskSpec?.id ? "text-accent" : "text-dim"}`}>
                           {taskSpec.sortOrder}. [{taskSpec.status.toLowerCase()}] {taskSpec.title}
                         </div>
                       ))}
                     </div>
-                  )) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No canonical Builder plan has been generated yet.</div>}
+                  )) : <div className="text-sm text-dim">No canonical Builder plan has been generated yet.</div>}
                 </div>
-                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>current task</div>
+                <div className="border p-3 space-y-2 border-border-sub bg-raised">
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">current task</div>
                   {projectDetail?.currentTaskSpec ? (
                     <>
                       <div className="text-sm">{projectDetail.currentTaskSpec.title}</div>
-                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs text-dim">
                         {projectDetail.currentMilestone?.title ?? "no milestone"} · {projectDetail.currentTaskSpec.status.toLowerCase()}
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail.currentTaskSpec.summary}</div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">{projectDetail.currentTaskSpec.summary}</div>
+                      <div className="text-xs leading-6 text-dim">
                         Validators: {projectDetail.currentTaskSpec.validators.join(", ").toLowerCase() || "manual_review"}
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">
                         Completion: {projectDetail.currentTaskSpec.completionCriteria.join("; ") || "none recorded"}
                       </div>
-                      {selectedTask ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Execution task: {selectedTask.stage.toLowerCase()} · {selectedTask.status.toLowerCase()}</div> : null}
-                      {selectedTask?.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{selectedTask.summary}</div> : null}
-                      {selectedTask?.metadata?.latestLoopSummary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{selectedTask.metadata.latestLoopSummary}</div> : null}
+                      {selectedTask ? <div className="text-xs leading-6 text-dim">Execution task: {selectedTask.stage.toLowerCase()} · {selectedTask.status.toLowerCase()}</div> : null}
+                      {selectedTask?.summary ? <div className="text-xs leading-6 text-dim">{selectedTask.summary}</div> : null}
+                      {selectedTask?.metadata?.latestLoopSummary ? <div className="text-xs leading-6 text-dim">{selectedTask.metadata.latestLoopSummary}</div> : null}
                     </>
-                  ) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No Builder task spec is active yet.</div>}
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>next recommended step</div>
-                  <div className="text-sm" style={{ color: projectDetail?.nextRecommendedStep ? "var(--text-primary)" : "var(--text-dim)" }}>
+                  ) : <div className="text-sm text-dim">No Builder task spec is active yet.</div>}
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">next recommended step</div>
+                  <div className={`text-sm ${projectDetail?.nextRecommendedStep ? "text-primary" : "text-dim"}`}>
                     {projectDetail?.nextRecommendedStep ?? "No next step has been synthesized yet."}
                   </div>
                 </div>
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
                 <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder stats</div>
-                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>project scoped</div>
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">builder stats</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-dim">project scoped</div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {[
@@ -2622,14 +2605,14 @@ export default function BuilderPage() {
                     { label: "avg iterations / run", value: String(builderStats?.avgIterationsPerRun ?? 0) },
                     { label: "total runs", value: String(builderStats?.totalRuns ?? 0) },
                   ].map((card) => (
-                    <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                      <div className="text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
-                      <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+                    <div key={card.label} className="border p-3 border-border bg-surface">
+                      <div className="text-xs uppercase tracking-[0.16em] mb-2 text-muted">{card.label}</div>
+                      <div className="text-sm text-primary">{card.value}</div>
                     </div>
                   ))}
                 </div>
                 {builderStats ? (
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs leading-6 text-dim">
                     Status counts: {Object.entries(builderStats.statusCounts).length > 0
                       ? Object.entries(builderStats.statusCounts).map(([statusKey, count]) => `${statusKey.toLowerCase()}: ${count}`).join("; ")
                       : "none recorded"}
@@ -2637,10 +2620,10 @@ export default function BuilderPage() {
                 ) : null}
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
                 <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder health</div>
-                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>overview scoped</div>
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">builder health</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-dim">overview scoped</div>
                 </div>
                 {healthAlerts.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
@@ -2659,44 +2642,44 @@ export default function BuilderPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs leading-6 text-dim">
                     No Builder health thresholds are currently tripped.
                   </div>
                 )}
                 <div className="grid gap-3 lg:grid-cols-3">
                   <div className="border p-3 space-y-2" style={{ borderColor: getToneColor(efficiencyTone), background: getToneSurface(efficiencyTone) }}>
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>efficiency</div>
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted">efficiency</div>
                       <div className="text-[11px] uppercase tracking-[0.14em]" style={{ color: getToneColor(efficiencyTone) }}>{efficiencyTone}</div>
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Success {formatPercentage(projectDetail?.metrics.efficiency.successRate)}; verification {formatPercentage(projectDetail?.metrics.efficiency.verificationPassRate)}; retry {formatPercentage(projectDetail?.metrics.efficiency.retryRate)}.
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Avg iterations / run {projectDetail?.metrics.efficiency.avgIterationsPerRun ?? 0}; avg iterations / task {projectDetail?.metrics.efficiency.avgIterationsPerTask ?? 0}; tasks in retry {projectDetail?.metrics.efficiency.tasksInRetry ?? 0}.
                     </div>
                   </div>
                   <div className="border p-3 space-y-2" style={{ borderColor: getToneColor(promotionTone), background: getToneSurface(promotionTone) }}>
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>promotion</div>
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted">promotion</div>
                       <div className="text-[11px] uppercase tracking-[0.14em]" style={{ color: getToneColor(promotionTone) }}>{promotionTone}</div>
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Milestones {projectDetail?.metrics.promotion.completedMilestones ?? 0}/{projectDetail?.metrics.promotion.totalMilestones ?? 0} complete ({formatPercentage(projectDetail?.metrics.promotion.milestoneCompletionRate)}).
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Task specs {projectDetail?.metrics.promotion.completedTaskSpecs ?? 0}/{projectDetail?.metrics.promotion.totalTaskSpecs ?? 0} complete ({formatPercentage(projectDetail?.metrics.promotion.taskSpecCompletionRate)}); blocked {projectDetail?.metrics.promotion.blockedTaskSpecs ?? 0}.
                     </div>
                   </div>
                   <div className="border p-3 space-y-2" style={{ borderColor: getToneColor(architectureTone), background: getToneSurface(architectureTone) }}>
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>architecture</div>
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted">architecture</div>
                       <div className="text-[11px] uppercase tracking-[0.14em]" style={{ color: getToneColor(architectureTone) }}>{architectureTone}</div>
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Active ADRs {projectDetail?.metrics.architecture.activeDecisionCount ?? 0}; stale ADRs {projectDetail?.metrics.architecture.staleDecisionCount ?? 0}; current task keys {projectDetail?.metrics.architecture.currentTaskDecisionCount ?? 0}.
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Latest review addressed {projectDetail?.metrics.architecture.latestAddressedStaleCount ?? 0} stale keys, missed {projectDetail?.metrics.architecture.latestMissingStaleCount ?? 0}, added {projectDetail?.metrics.architecture.latestNewDecisionCount ?? 0}, retired {projectDetail?.metrics.architecture.latestRetiredDecisionCount ?? 0}.
                     </div>
                   </div>
@@ -2704,33 +2687,33 @@ export default function BuilderPage() {
               </div>
 
               <div className="grid gap-3 lg:grid-cols-3">
-                <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="border p-3 space-y-3 border-border-sub bg-raised">
                   <div className="flex items-center justify-between gap-4">
-                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>budget profiles</div>
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>mode defaults</div>
+                    <div className="text-xs uppercase tracking-[0.22em] text-muted">budget profiles</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-dim">mode defaults</div>
                   </div>
                   {(projectDetail?.budgetProfiles ?? []).map((profile) => (
-                    <div key={profile.mode} className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div key={profile.mode} className="border p-3 space-y-2 border-border bg-surface">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{profile.mode.replace("_", " ")}</div>
-                        <div className="text-[11px]" style={{ color: "var(--text-dim)" }}>{profile.observedRuns} observed</div>
+                        <div className="text-xs uppercase tracking-[0.16em] text-muted">{profile.mode.replace("_", " ")}</div>
+                        <div className="text-[11px] text-dim">{profile.observedRuns} observed</div>
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">
                         Max {profile.maxIterations} iterations; {formatDurationMs(profile.maxDurationMs)}; {profile.maxTotalTokens.toLocaleString()} tokens; {formatUsd(profile.maxEstimatedCostUsd)}; {profile.maxRetries} retries.
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">
                         Observed avg {formatDurationMs(profile.observedAvgDurationMs)} and {Math.round(profile.observedAvgTotalTokens).toLocaleString()} tokens at {formatUsd(profile.observedAvgCostUsd)}.
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{profile.rationale}</div>
-                      {profile.topBlockedReason ? <div className="text-xs leading-6" style={{ color: "var(--warning)" }}>Top blocker: {profile.topBlockedReason}</div> : null}
+                      <div className="text-xs leading-6 text-dim">{profile.rationale}</div>
+                      {profile.topBlockedReason ? <div className="text-xs leading-6 text-warning">Top blocker: {profile.topBlockedReason}</div> : null}
                     </div>
                   ))}
                 </div>
 
-                <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="border p-3 space-y-3 border-border-sub bg-raised">
                   <div className="flex items-center justify-between gap-4">
-                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>telemetry</div>
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>run behavior</div>
+                    <div className="text-xs uppercase tracking-[0.22em] text-muted">telemetry</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-dim">run behavior</div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {[
@@ -2739,37 +2722,37 @@ export default function BuilderPage() {
                       { label: "requests", value: String(projectDetail?.telemetry?.tokenTotals.requestCount ?? 0) },
                       { label: "estimated cost", value: formatUsd(projectDetail?.telemetry?.tokenTotals.estimatedCostUsd) },
                     ].map((card) => (
-                      <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                        <div className="text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
-                        <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+                      <div key={card.label} className="border p-3 border-border bg-surface">
+                        <div className="text-xs uppercase tracking-[0.16em] mb-2 text-muted">{card.label}</div>
+                        <div className="text-sm text-primary">{card.value}</div>
                       </div>
                     ))}
                   </div>
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs leading-6 text-dim">
                     Tokens: prompt {(projectDetail?.telemetry?.tokenTotals.promptTokens ?? 0).toLocaleString()}, completion {(projectDetail?.telemetry?.tokenTotals.completionTokens ?? 0).toLocaleString()}, total {(projectDetail?.telemetry?.tokenTotals.totalTokens ?? 0).toLocaleString()}, cached {(projectDetail?.telemetry?.tokenTotals.cachedPromptTokens ?? 0).toLocaleString()}.
                   </div>
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs leading-6 text-dim">
                     Top blocked reason: {projectDetail?.telemetry?.topBlockedReason ?? "none"}
                   </div>
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs leading-6 text-dim">
                     Modes: {Object.entries(projectDetail?.telemetry?.modeCounts ?? {}).length > 0
                       ? Object.entries(projectDetail?.telemetry?.modeCounts ?? {}).map(([mode, count]) => `${mode.replace("_", " ")}: ${count}`).join("; ")
                       : "none recorded"}
                   </div>
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs leading-6 text-dim">
                     Templates: {Object.entries(projectDetail?.telemetry?.templateCounts ?? {}).length > 0
                       ? Object.entries(projectDetail?.telemetry?.templateCounts ?? {}).map(([template, count]) => `${template}: ${count}`).join("; ")
                       : "none recorded"}
                   </div>
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs leading-6 text-dim">
                     Cache: planning hits {projectDetail?.telemetry?.cache.planning.hits ?? 0}/{projectDetail?.telemetry?.cache.planning.lookups ?? 0} ({Math.round((projectDetail?.telemetry?.cache.planning.hitRate ?? 0) * 100)}%), misses {projectDetail?.telemetry?.cache.planning.misses ?? 0}, bypasses {projectDetail?.telemetry?.cache.planning.bypasses ?? 0}, key changes {projectDetail?.telemetry?.cache.planning.keyChanges ?? 0}; projection wrote {projectDetail?.telemetry?.cache.projection.filesWritten ?? 0}, skipped {projectDetail?.telemetry?.cache.projection.filesSkipped ?? 0} ({Math.round((projectDetail?.telemetry?.cache.projection.writeSkipRate ?? 0) * 100)}%), manifests reused {projectDetail?.telemetry?.cache.projection.manifestReused ?? 0}.
                   </div>
                 </div>
 
-                <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div className="border p-3 space-y-3 border-border-sub bg-raised">
                   <div className="flex items-center justify-between gap-4">
-                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>reconciliation</div>
-                    <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "reconcile_operational_state" })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                    <div className="text-xs uppercase tracking-[0.22em] text-muted">reconciliation</div>
+                    <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "reconcile_operational_state" })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-accent text-accent">
                       reconcile now
                     </button>
                   </div>
@@ -2780,32 +2763,32 @@ export default function BuilderPage() {
                       { label: "unresolved", value: String(projectDetail?.reconciliation?.unresolvedAlertCount ?? 0) },
                       { label: "stale threshold", value: formatDurationMs(projectDetail?.reconciliation?.thresholds.staleRunningMs) },
                     ].map((card) => (
-                      <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                        <div className="text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
-                        <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+                      <div key={card.label} className="border p-3 border-border bg-surface">
+                        <div className="text-xs uppercase tracking-[0.16em] mb-2 text-muted">{card.label}</div>
+                        <div className="text-sm text-primary">{card.value}</div>
                       </div>
                     ))}
                   </div>
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs leading-6 text-dim">
                     No-progress threshold {formatDurationMs(projectDetail?.reconciliation?.thresholds.noProgressMs)}; identical failure threshold {projectDetail?.reconciliation?.thresholds.identicalFailureThreshold ?? 0}.
                   </div>
                   {(projectDetail?.reconciliation?.alerts ?? []).slice(0, 3).map((alert) => (
-                    <div key={`${alert.code}-${alert.runId}`} className="border p-2 text-xs leading-6" style={{ borderColor: alert.severity === "danger" ? "var(--danger)" : "var(--warning)", background: alert.severity === "danger" ? "color-mix(in srgb, var(--danger) 10%, var(--bg-surface))" : "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))", color: "var(--text-dim)" }}>
+                    <div key={`${alert.code}-${alert.runId}`} className={`border p-2 text-xs leading-6 ${alert.severity === "danger" ? "border-danger bg-danger/10" : "border-warning bg-warning/10"} text-dim`}>
                       {alert.summary} {alert.autoFixable ? "Safe auto-fix available." : "Needs operator review."}
                     </div>
                   ))}
                   {(projectDetail?.reconciliation?.corrections ?? []).slice(0, 2).map((entry) => (
-                    <div key={`${entry.runId}-${entry.correctedAt}`} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div key={`${entry.runId}-${entry.correctedAt}`} className="text-xs leading-6 text-dim">
                       Corrected {entry.runId}: {entry.previousStatus.toLowerCase()} → {entry.nextStatus.toLowerCase()} because {entry.reason}.
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
                 <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>mcp snapshot</div>
-                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: projectDetail?.mcpSnapshot.state === "drifted" ? "var(--danger)" : "var(--text-dim)" }}>
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">mcp snapshot</div>
+                  <div className={`text-[11px] uppercase tracking-[0.16em] ${projectDetail?.mcpSnapshot.state === "drifted" ? "text-danger" : "text-dim"}`}>
                     {projectDetail?.mcpSnapshot.state.replace("_", " ")}
                   </div>
                 </div>
@@ -2816,122 +2799,122 @@ export default function BuilderPage() {
                     { label: "mappings", value: String(projectDetail?.mcpSnapshot.semantic.mappingCount ?? 0) },
                     { label: "unique tools", value: String(projectDetail?.mcpSnapshot.semantic.uniqueToolCount ?? 0) },
                   ].map((card) => (
-                    <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                      <div className="text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
-                      <div className="text-sm" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+                    <div key={card.label} className="border p-3 border-border bg-surface">
+                      <div className="text-xs uppercase tracking-[0.16em] mb-2 text-muted">{card.label}</div>
+                      <div className="text-sm text-primary">{card.value}</div>
                     </div>
                   ))}
                 </div>
-                <div className="text-xs leading-6 break-all" style={{ color: "var(--text-dim)" }}>
+                <div className="text-xs leading-6 break-all text-dim">
                   Current hash: {projectDetail?.mcpSnapshot.currentHash ?? "none"}
                 </div>
                 {projectDetail?.mcpSnapshot.drift ? (
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--danger)", background: "color-mix(in srgb, var(--danger) 10%, var(--bg-surface))" }}>
-                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--danger)" }}>contract drift detected</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="border p-3 space-y-2 border-danger bg-danger/10">
+                    <div className="text-xs uppercase tracking-[0.16em] text-danger">contract drift detected</div>
+                    <div className="text-xs leading-6 text-dim">
                       Tools +{projectDetail.mcpSnapshot.drift.tools.added.length} / -{projectDetail.mcpSnapshot.drift.tools.removed.length} / ~{projectDetail.mcpSnapshot.drift.tools.changed.length}; prompts +{projectDetail.mcpSnapshot.drift.prompts.added.length} / -{projectDetail.mcpSnapshot.drift.prompts.removed.length} / ~{projectDetail.mcpSnapshot.drift.prompts.changed.length}; resources +{projectDetail.mcpSnapshot.drift.resources.added.length} / -{projectDetail.mcpSnapshot.drift.resources.removed.length} / ~{projectDetail.mcpSnapshot.drift.resources.changed.length}.
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Resolve this through the governance review panel so the decision is confirmed and annotated.
                     </div>
                   </div>
                 ) : null}
                 <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>semantic enrichment</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="border p-3 space-y-2 border-border bg-surface">
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted">semantic enrichment</div>
+                    <div className="text-xs leading-6 text-dim">
                       Embedding format {projectDetail?.mcpSnapshot.semantic.embeddingFormatVersion ?? "none"}; embedded {projectDetail?.mcpSnapshot.semantic.embeddedAt ? new Date(projectDetail.mcpSnapshot.semantic.embeddedAt).toLocaleString() : "not yet"}; ontology sync {projectDetail?.mcpSnapshot.semantic.ontologySyncVersion ?? "none"}.
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Validators {projectDetail?.mcpSnapshot.semantic.validatorCount ?? 0}; ADR keys {projectDetail?.mcpSnapshot.semantic.activeAdrDecisionKeys.join(", ") || "none"}; ontology hints {projectDetail?.mcpSnapshot.semantic.ontologyHints.join(", ") || "none"}.
                     </div>
-                    {projectDetail?.mcpSnapshot.semantic.cleanupProcessedAt ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Cleanup processed {new Date(projectDetail.mcpSnapshot.semantic.cleanupProcessedAt).toLocaleString()}.</div> : null}
+                    {projectDetail?.mcpSnapshot.semantic.cleanupProcessedAt ? <div className="text-xs leading-6 text-dim">Cleanup processed {new Date(projectDetail.mcpSnapshot.semantic.cleanupProcessedAt).toLocaleString()}.</div> : null}
                   </div>
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>contract-aware planning</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="border p-3 space-y-2 border-border bg-surface">
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted">contract-aware planning</div>
+                    <div className="text-xs leading-6 text-dim">
                       {projectDetail?.mcpSnapshot.planning?.summary ?? "No accepted MCP baseline exists yet for planner evolution analysis."}
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Related ADR keys: {projectDetail?.mcpSnapshot.planning?.relatedArchitectureDecisionKeys.join(", ") || "none"}
                     </div>
                     {(projectDetail?.mcpSnapshot.planning?.recommendations ?? []).slice(0, 3).map((recommendation) => (
-                      <div key={recommendation} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{recommendation}</div>
+                      <div key={recommendation} className="text-xs leading-6 text-dim">{recommendation}</div>
                     ))}
                   </div>
                 </div>
                 <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>recent history</div>
+                  <div className="border p-3 space-y-2 border-border bg-surface">
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted">recent history</div>
                     {(projectDetail?.mcpSnapshot.history ?? []).slice(0, 3).map((entry) => (
-                      <div key={entry.id} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div key={entry.id} className="text-xs leading-6 text-dim">
                         seq {entry.snapshotSequence} · {entry.versionHash.slice(0, 12)} · {new Date(entry.appliedAt).toLocaleString()}
                       </div>
                     ))}
-                    {(projectDetail?.mcpSnapshot.history ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No accepted snapshot history recorded yet.</div> : null}
+                    {(projectDetail?.mcpSnapshot.history ?? []).length === 0 ? <div className="text-xs leading-6 text-dim">No accepted snapshot history recorded yet.</div> : null}
                   </div>
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>semantic neighbors</div>
+                  <div className="border p-3 space-y-2 border-border bg-surface">
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted">semantic neighbors</div>
                     {(projectDetail?.mcpSnapshot.semanticMatches ?? []).slice(0, 3).map((match) => (
-                      <div key={match.snapshotId} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div key={match.snapshotId} className="text-xs leading-6 text-dim">
                         seq {match.snapshotSequence} · similarity {(match.similarity * 100).toFixed(1)}% · {new Date(match.appliedAt).toLocaleString()}
                       </div>
                     ))}
-                    {(projectDetail?.mcpSnapshot.semanticMatches ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No semantic neighbors available yet.</div> : null}
+                    {(projectDetail?.mcpSnapshot.semanticMatches ?? []).length === 0 ? <div className="text-xs leading-6 text-dim">No semantic neighbors available yet.</div> : null}
                   </div>
                 </div>
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
                 <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>governance review</div>
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">governance review</div>
                   <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: getOperatorTrustColor(projectDetail?.operatorTrust.governance.status) }}>
                     {formatOperatorTrustLabel(projectDetail?.operatorTrust.governance.status)}
                   </div>
                 </div>
                 <div data-testid="builder-governance-panel" className="space-y-3">
-                  <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+                  <div className="text-sm text-primary">
                     {projectDetail?.operatorTrust.governance.summary ?? "Governance actions are not available until a Builder project is loaded."}
                   </div>
-                  <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--warning)" }}>chat-first approvals</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="border p-3 space-y-3 border-border bg-surface">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-warning">chat-first approvals</div>
+                    <div className="text-xs leading-6 text-dim">
                       Builder approvals and governance decisions now flow through chat cards in the Chat tab. Use the Builder page for history, inspection, runtime control, and task debugging.
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {governanceCapabilityGates.length > 0 ? governanceCapabilityGates.map((capabilityKey) => (
-                        <div key={capabilityKey} className="border px-2 py-1 text-[11px] uppercase tracking-[0.14em]" style={{ borderColor: "var(--warning)", background: "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))", color: "var(--warning)" }}>
+                        <div key={capabilityKey} className="border px-2 py-1 text-[11px] uppercase tracking-[0.14em] border-warning bg-warning/10 text-warning">
                           {capabilityKey.replaceAll("_", " ")}
                         </div>
                       )) : (
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No approval-gated governance capabilities are currently advertised.</div>
+                        <div className="text-xs leading-6 text-dim">No approval-gated governance capabilities are currently advertised.</div>
                       )}
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Pending review signals: MCP {hasMcpGovernanceDrift ? "needs attention" : "aligned"}; dependency {dependencyGovernanceState.replaceAll("_", " ")}; topology {fileTopologyGovernanceState.replaceAll("_", " ")}.
                     </div>
                   </div>
                   <div className="space-y-3">
-                      <div data-testid="builder-governance-history" className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                      <div data-testid="builder-governance-history" className="border p-3 space-y-3 border-border bg-surface">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>recent governance decisions</div>
-                          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-muted">recent governance decisions</div>
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-dim">
                             {(projectDetail?.governanceHistory ?? []).length} shown
                           </div>
                         </div>
                         {(projectDetail?.governanceHistory ?? []).length === 0 ? (
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                          <div className="text-xs leading-6 text-dim">
                             No governance decisions have been recorded for this project yet.
                           </div>
                         ) : (projectDetail?.governanceHistory ?? []).map((entry) => (
-                          <div key={entry.eventId} className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                            <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                          <div key={entry.eventId} className="border p-2 space-y-1 border-border-sub bg-raised">
+                            <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.16em] text-muted">
                               <span>{entry.action.replaceAll("_", " ")}</span>
                               <span>{entry.decision} · {entry.outcome.replaceAll("_", " ")}</span>
                             </div>
-                            <div className="text-xs leading-6" style={{ color: "var(--text-primary)" }}>{entry.summary}</div>
-                            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{entry.reason}</div>
-                            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                            <div className="text-xs leading-6 text-primary">{entry.summary}</div>
+                            <div className="text-xs leading-6 text-dim">{entry.reason}</div>
+                            <div className="text-xs leading-6 text-dim">
                               {new Date(entry.timestamp).toLocaleString()} · source {entry.sourceSurface.replaceAll("_", " ")} · command run {entry.commandRunId}{entry.targetRunId ? ` · target ${entry.targetRunId}` : ""}
                             </div>
                           </div>
@@ -2941,91 +2924,91 @@ export default function BuilderPage() {
                   </div>
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder task</div>
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
+                <div className="text-xs uppercase tracking-[0.22em] text-muted">builder task</div>
+                <div className="text-xs leading-6 text-dim">
                   Builder task launch and governance resolution now live in chat. Use the chat tab with the Builder plugin selected to start work, continue a task, or resolve Builder review cards.
                 </div>
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                <div className="text-xs leading-6 text-dim">
                   This dashboard stays focused on project state, run history, telemetry, and logs. Desktop shortcuts still work for retry, log focus, and active-run cancellation.
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "reconcile_operational_state" })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                  <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "reconcile_operational_state" })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-border text-primary">
                     reconcile state
                   </button>
-                  <button disabled={saving || !selectedTask || selectedTask.status === "RUNNING" || selectedTask.status === "PENDING"} onClick={() => selectedTask ? void resumeTask(selectedTask.id) : undefined} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                  <button disabled={saving || !selectedTask || selectedTask.status === "RUNNING" || selectedTask.status === "PENDING"} onClick={() => selectedTask ? void resumeTask(selectedTask.id) : undefined} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-border text-primary">
                     resume selected task
                   </button>
-                  <button disabled={!projectDetail?.runs?.length} onClick={() => focusRunLogs()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                  <button disabled={!projectDetail?.runs?.length} onClick={() => focusRunLogs()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-border text-primary">
                     open current logs
                   </button>
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>plan</div>
+                <div className="border p-3 space-y-2 border-border-sub bg-raised">
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">plan</div>
                   {(projectDetail?.context.currentPlan ?? []).length > 0 ? projectDetail?.context.currentPlan.map((step) => (
-                    <div key={step.id} className="text-xs leading-6" style={{ color: step.status === "completed" ? "var(--success)" : step.status === "in_progress" ? "var(--accent)" : "var(--text-dim)" }}>
+                    <div key={step.id} className={`text-xs leading-6 ${step.status === "completed" ? "text-success" : step.status === "in_progress" ? "text-accent" : "text-dim"}`}>
                       [{step.status.replace("_", " ")}] {step.label}
                     </div>
-                  )) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No active plan recorded yet.</div>}
+                  )) : <div className="text-sm text-dim">No active plan recorded yet.</div>}
                 </div>
-                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>latest review</div>
+                <div className="border p-3 space-y-2 border-border-sub bg-raised">
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">latest review</div>
                   {projectDetail?.latestReview ? (
                     <>
                       <div className="text-sm">{projectDetail.latestReview.summary}</div>
-                      {projectDetail.latestReview.vcs ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>VCS: {projectDetail.latestReview.vcs.summary}</div> : null}
-                      {projectDetail.latestReview.process ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Processes: {projectDetail.latestReview.process.summary}</div> : null}
-                      {projectDetail.latestReview.audit ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Audit: {projectDetail.latestReview.audit.summary}</div> : null}
-                      {projectDetail.latestReview.database ? <div className="text-xs leading-6" style={{ color: projectDetail.latestReview.database.status === "drifted" || projectDetail.latestReview.database.status === "probe_failed" ? "var(--warning)" : "var(--text-dim)" }}>DB: {projectDetail.latestReview.database.summary}</div> : null}
-                      {projectDetail.latestReview.runtime ? <div className="text-xs leading-6" style={{ color: projectDetail.latestReview.runtime.failedServices > 0 ? "var(--warning)" : "var(--text-dim)" }}>Runtime: {projectDetail.latestReview.runtime.summary}</div> : null}
-                      {projectDetail.latestReview.risks.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>Risks: {projectDetail.latestReview.risks.join("; ")}</div> : null}
-                      {projectDetail.latestReview.nextSteps.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Next: {projectDetail.latestReview.nextSteps.join("; ")}</div> : null}
+                      {projectDetail.latestReview.vcs ? <div className="text-xs leading-6 text-dim">VCS: {projectDetail.latestReview.vcs.summary}</div> : null}
+                      {projectDetail.latestReview.process ? <div className="text-xs leading-6 text-dim">Processes: {projectDetail.latestReview.process.summary}</div> : null}
+                      {projectDetail.latestReview.audit ? <div className="text-xs leading-6 text-dim">Audit: {projectDetail.latestReview.audit.summary}</div> : null}
+                      {projectDetail.latestReview.database ? <div className={`text-xs leading-6 ${projectDetail.latestReview.database.status === "drifted" || projectDetail.latestReview.database.status === "probe_failed" ? "text-warning" : "text-dim"}`}>DB: {projectDetail.latestReview.database.summary}</div> : null}
+                      {projectDetail.latestReview.runtime ? <div className={`text-xs leading-6 ${projectDetail.latestReview.runtime.failedServices > 0 ? "text-warning" : "text-dim"}`}>Runtime: {projectDetail.latestReview.runtime.summary}</div> : null}
+                      {projectDetail.latestReview.risks.length > 0 ? <div className="text-xs leading-6 text-danger">Risks: {projectDetail.latestReview.risks.join("; ")}</div> : null}
+                      {projectDetail.latestReview.nextSteps.length > 0 ? <div className="text-xs leading-6 text-dim">Next: {projectDetail.latestReview.nextSteps.join("; ")}</div> : null}
                     </>
-                  ) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No structured Builder review yet.</div>}
+                  ) : <div className="text-sm text-dim">No structured Builder review yet.</div>}
                 </div>
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
                 <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>operator trust</div>
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">operator trust</div>
                   <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: getOperatorTrustColor(projectDetail?.operatorTrust.overallStatus) }}>
                     {formatOperatorTrustLabel(projectDetail?.operatorTrust.overallStatus)}
                   </div>
                 </div>
-                <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+                <div className="text-sm text-primary">
                   {projectDetail?.operatorTrust.summary ?? "No operator trust artifact has been generated yet."}
                 </div>
-                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                <div className="border p-3 space-y-2 border-border bg-surface">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>trust trend</div>
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: projectDetail?.operatorTrust.trend.direction === "degrading" ? "var(--danger)" : projectDetail?.operatorTrust.trend.direction === "improving" ? "var(--success)" : "var(--warning)" }}>
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted">trust trend</div>
+                    <div className={`text-[11px] uppercase tracking-[0.16em] ${projectDetail?.operatorTrust.trend.direction === "degrading" ? "text-danger" : projectDetail?.operatorTrust.trend.direction === "improving" ? "text-success" : "text-warning"}`}>
                       {projectDetail?.operatorTrust.trend.direction ?? "steady"}
                     </div>
                   </div>
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.trend.basis}</div>
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.trend.summary}</div>
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs leading-6 text-dim">{projectDetail?.operatorTrust.trend.basis}</div>
+                  <div className="text-xs leading-6 text-dim">{projectDetail?.operatorTrust.trend.summary}</div>
+                  <div className="text-xs leading-6 text-dim">
                     Warning audit events {projectDetail?.operatorTrust.trend.warningAuditEvents ?? 0}; critical audit events {projectDetail?.operatorTrust.trend.criticalAuditEvents ?? 0}; prioritized blockers {projectDetail?.operatorTrust.trend.blockerCount ?? 0}.
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>recent window</div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="border p-2 space-y-1 border-border-sub bg-raised">
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-muted">recent window</div>
+                      <div className="text-xs leading-6 text-dim">
                         Runs {projectDetail?.operatorTrust.trend.recentWindow.runCount ?? 0}; success {Math.round((projectDetail?.operatorTrust.trend.recentWindow.successRate ?? 0) * 100)}%; verification {Math.round((projectDetail?.operatorTrust.trend.recentWindow.verificationPassRate ?? 0) * 100)}%.
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">
                         Avg risks {projectDetail?.operatorTrust.trend.recentWindow.averageRiskCount ?? 0}; review warnings {projectDetail?.operatorTrust.trend.recentWindow.reviewWarningCount ?? 0}; blocked runs {projectDetail?.operatorTrust.trend.recentWindow.blockedRunCount ?? 0}.
                       </div>
                     </div>
-                    <div className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>previous window</div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="border p-2 space-y-1 border-border-sub bg-raised">
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-muted">previous window</div>
+                      <div className="text-xs leading-6 text-dim">
                         Runs {projectDetail?.operatorTrust.trend.previousWindow.runCount ?? 0}; success {Math.round((projectDetail?.operatorTrust.trend.previousWindow.successRate ?? 0) * 100)}%; verification {Math.round((projectDetail?.operatorTrust.trend.previousWindow.verificationPassRate ?? 0) * 100)}%.
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">
                         Avg risks {projectDetail?.operatorTrust.trend.previousWindow.averageRiskCount ?? 0}; review warnings {projectDetail?.operatorTrust.trend.previousWindow.reviewWarningCount ?? 0}; blocked runs {projectDetail?.operatorTrust.trend.previousWindow.blockedRunCount ?? 0}.
                       </div>
                     </div>
@@ -3038,160 +3021,160 @@ export default function BuilderPage() {
                     { label: "runtime", value: formatOperatorTrustLabel(projectDetail?.operatorTrust.runtime.status), tone: getOperatorTrustColor(projectDetail?.operatorTrust.runtime.status) },
                     { label: "approvals", value: `${projectDetail?.operatorTrust.approvals.pendingCount ?? 0} pending`, tone: getOperatorTrustColor(projectDetail?.operatorTrust.approvals.status) },
                   ].map((card) => (
-                    <div key={card.label} className="border p-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                      <div className="text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+                    <div key={card.label} className="border p-3 border-border bg-surface">
+                      <div className="text-xs uppercase tracking-[0.16em] mb-2 text-muted">{card.label}</div>
                       <div className="text-sm" style={{ color: card.tone }}>{card.value}</div>
                     </div>
                   ))}
                 </div>
                 <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>runtime trust</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.runtime.summary}</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="border p-3 space-y-2 border-border bg-surface">
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted">runtime trust</div>
+                    <div className="text-xs leading-6 text-dim">{projectDetail?.operatorTrust.runtime.summary}</div>
+                    <div className="text-xs leading-6 text-dim">
                       Active alerts {projectDetail?.operatorTrust.runtime.activeAlertCount ?? 0}; unresolved {projectDetail?.operatorTrust.runtime.unresolvedAlertCount ?? 0}; auto-fixes {projectDetail?.operatorTrust.runtime.autoFixCount ?? 0}; MCP {projectDetail?.operatorTrust.runtime.mcpState.replaceAll("_", " ") ?? "unknown"}.
                     </div>
                   </div>
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>approval queue</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.approvals.summary}</div>
+                  <div className="border p-3 space-y-2 border-border bg-surface">
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted">approval queue</div>
+                    <div className="text-xs leading-6 text-dim">{projectDetail?.operatorTrust.approvals.summary}</div>
                     {(projectDetail?.operatorTrust.approvals.pendingApprovals ?? []).slice(0, 3).map((approval) => (
-                      <div key={approval.id} className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div key={approval.id} className="text-xs leading-6 text-dim">
                         {approval.platform} · {approval.postStatus.toLowerCase()} · {approval.excerpt}
                       </div>
                     ))}
-                    {(projectDetail?.operatorTrust.approvals.pendingApprovals ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No queue items are waiting right now.</div> : null}
+                    {(projectDetail?.operatorTrust.approvals.pendingApprovals ?? []).length === 0 ? <div className="text-xs leading-6 text-dim">No queue items are waiting right now.</div> : null}
                   </div>
                 </div>
                 <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>review + config trust</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.review.summary}</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.config.summary}</div>
+                  <div className="border p-3 space-y-2 border-border bg-surface">
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted">review + config trust</div>
+                    <div className="text-xs leading-6 text-dim">{projectDetail?.operatorTrust.review.summary}</div>
+                    <div className="text-xs leading-6 text-dim">{projectDetail?.operatorTrust.config.summary}</div>
                   </div>
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>artifact paths</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.artifactPaths.markdown}</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.artifactPaths.json}</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectDetail?.operatorTrust.artifactPaths.processArtifacts}</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="border p-3 space-y-2 border-border bg-surface">
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted">artifact paths</div>
+                    <div className="text-xs leading-6 text-dim">{projectDetail?.operatorTrust.artifactPaths.markdown}</div>
+                    <div className="text-xs leading-6 text-dim">{projectDetail?.operatorTrust.artifactPaths.json}</div>
+                    <div className="text-xs leading-6 text-dim">{projectDetail?.operatorTrust.artifactPaths.processArtifacts}</div>
+                    <div className="text-xs leading-6 text-dim">
                       Approval-required capability gates: {projectDetail?.operatorTrust.governance.approvalRequiredCapabilities.join(", ") || "none"}
                     </div>
                   </div>
                 </div>
-                <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>prioritized blockers</div>
+                <div className="border p-3 space-y-2 border-border bg-surface">
+                  <div className="text-xs uppercase tracking-[0.16em] text-muted">prioritized blockers</div>
                   {(projectDetail?.operatorTrust.prioritizedBlockers ?? []).map((blocker) => (
-                    <div key={`${blocker.key}-${blocker.priority}`} className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                      <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                    <div key={`${blocker.key}-${blocker.priority}`} className="border p-2 space-y-1 border-border-sub bg-raised">
+                      <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.16em] text-muted">
                         <span>{blocker.label}</span>
                         <span style={{ color: getOperatorTrustColor(blocker.status) }}>{formatOperatorTrustLabel(blocker.status)} · p{blocker.priority}</span>
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{blocker.summary}</div>
+                      <div className="text-xs leading-6 text-dim">{blocker.summary}</div>
                     </div>
                   ))}
-                  {(projectDetail?.operatorTrust.prioritizedBlockers ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No operator blockers are prioritized right now.</div> : null}
+                  {(projectDetail?.operatorTrust.prioritizedBlockers ?? []).length === 0 ? <div className="text-xs leading-6 text-dim">No operator blockers are prioritized right now.</div> : null}
                 </div>
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
                 <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>recent tasks</div>
-                  {selectedTask ? <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>history target: {selectedTask.title}</div> : null}
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">recent tasks</div>
+                  {selectedTask ? <div className="text-[11px] uppercase tracking-[0.16em] text-dim">history target: {selectedTask.title}</div> : null}
                 </div>
                 {(projectDetail?.tasks ?? []).length > 0 ? projectDetail?.tasks.slice(0, 5).map((task) => (
-                  <button key={task.id} onClick={() => setSelectedTaskId(task.id)} className="w-full border p-2 text-left" style={{ borderColor: task.id === selectedTaskId ? "var(--accent)" : "var(--border)", background: task.id === selectedTaskId ? "var(--accent-glow)" : "var(--bg-surface)" }}>
+                  <button key={task.id} onClick={() => setSelectedTaskId(task.id)} className={`w-full border p-2 text-left ${task.id === selectedTaskId ? "border-accent bg-accent-glow" : "border-border bg-surface"}`}>
                     <div className="flex items-center justify-between gap-3 text-sm">
                       <span>{task.title}</span>
-                      <span style={{ color: task.status === "FAILED" ? "var(--danger)" : task.status === "SUCCEEDED" ? "var(--success)" : "var(--text-dim)" }}>{task.status.toLowerCase()}</span>
+                      <span className={task.status === "FAILED" ? "text-danger" : task.status === "SUCCEEDED" ? "text-success" : "text-dim"}>{task.status.toLowerCase()}</span>
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{task.stage.toLowerCase()} · {task.description}</div>
-                    {task.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{task.summary}</div> : null}
+                    <div className="text-xs leading-6 text-dim">{task.stage.toLowerCase()} · {task.description}</div>
+                    {task.summary ? <div className="text-xs leading-6 text-dim">{task.summary}</div> : null}
                   </button>
-                )) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No Builder tasks recorded yet.</div>}
+                )) : <div className="text-sm text-dim">No Builder tasks recorded yet.</div>}
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
                 <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>task history</div>
-                  {selectedTask ? <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{selectedTask.status.toLowerCase()}</div> : null}
+                  <div className="text-xs uppercase tracking-[0.22em] text-muted">task history</div>
+                  {selectedTask ? <div className="text-[11px] uppercase tracking-[0.16em] text-dim">{selectedTask.status.toLowerCase()}</div> : null}
                 </div>
                 {selectedTask ? (
                   taskHistory.length > 0 ? taskHistory.map((entry) => (
-                    <div key={`${entry.runId}-${entry.iteration ?? "run"}`} className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div key={`${entry.runId}-${entry.iteration ?? "run"}`} className="border p-3 space-y-2 border-border bg-surface">
                       <div className="flex items-center justify-between gap-3 text-sm">
                         <span>
                           {entry.iteration ? `iteration ${entry.iteration}` : "run replay"}
                         </span>
-                        <span style={{ color: entry.verdict === "complete" || entry.status === "SUCCEEDED" ? "var(--success)" : entry.verdict === "retry" ? "var(--accent)" : "var(--danger)" }}>
+                        <span className={entry.verdict === "complete" || entry.status === "SUCCEEDED" ? "text-success" : entry.verdict === "retry" ? "text-accent" : "text-danger"}>
                           {entry.verdict.replace(/_/g, " ")}
                         </span>
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">
                         {new Date(entry.timestamp).toLocaleString()} · run {entry.runId}
                       </div>
-                      {entry.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{entry.summary}</div> : null}
+                      {entry.summary ? <div className="text-xs leading-6 text-dim">{entry.summary}</div> : null}
                       <div className="flex flex-wrap gap-3">
-                        <button disabled={saving || selectedTask.status === "RUNNING"} onClick={() => void resumeTask(selectedTask.id, { fromIteration: entry.iteration ?? undefined })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                        <button disabled={saving || selectedTask.status === "RUNNING"} onClick={() => void resumeTask(selectedTask.id, { fromIteration: entry.iteration ?? undefined })} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-border text-primary">
                           resume from here
                         </button>
-                        <button onClick={() => focusRunLogs(entry.runId)} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                        <button onClick={() => focusRunLogs(entry.runId)} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] border-border text-primary">
                           show run logs
                         </button>
                       </div>
                     </div>
-                  )) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>No task history recorded for the selected task yet.</div>
-                ) : <div className="text-sm" style={{ color: "var(--text-dim)" }}>Select a task to inspect its run history.</div>}
+                  )) : <div className="text-sm text-dim">No task history recorded for the selected task yet.</div>
+                ) : <div className="text-sm text-dim">Select a task to inspect its run history.</div>}
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>bootstrap</div>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
+                <div className="text-xs uppercase tracking-[0.22em] text-muted">bootstrap</div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                  <label className="flex items-center justify-between border px-3 py-2 text-sm border-border">
                     <span>Initialize git</span>
                     <input type="checkbox" checked={bootstrapOptions.initializeGit} onChange={(event) => setBootstrapOptions((current) => ({ ...current, initializeGit: event.target.checked }))} />
                   </label>
-                  <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                  <label className="flex items-center justify-between border px-3 py-2 text-sm border-border">
                     <span>Install dependencies</span>
                     <input type="checkbox" checked={bootstrapOptions.installDependencies} onChange={(event) => setBootstrapOptions((current) => ({ ...current, installDependencies: event.target.checked }))} />
                   </label>
                 </div>
-                <button disabled={saving || !status?.config.safe} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/bootstrap`, bootstrapOptions)} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                <button disabled={saving || !status?.config.safe} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/bootstrap`, bootstrapOptions)} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-accent text-accent">
                   bootstrap project
                 </button>
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>package actions</div>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
+                <div className="text-xs uppercase tracking-[0.22em] text-muted">package actions</div>
                 <div>
-                  <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Install packages</label>
-                  <input value={installPackages} onChange={(event) => setInstallPackages(event.target.value)} placeholder="react react-dom" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Install packages</label>
+                  <input value={installPackages} onChange={(event) => setInstallPackages(event.target.value)} placeholder="react react-dom" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "install_dependencies", packages: installPackages.split(/\s+/).filter(Boolean) })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                  <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "install_dependencies", packages: installPackages.split(/\s+/).filter(Boolean) })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-border text-primary">
                     install
                   </button>
-                  <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "initialize_git" })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                  <button disabled={saving} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "initialize_git" })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-border text-primary">
                     init git
                   </button>
                 </div>
                 <div>
-                  <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Run script</label>
+                  <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Run script</label>
                   <div className="flex gap-3">
-                    <input value={scriptName} onChange={(event) => setScriptName(event.target.value)} className="flex-1 bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                    <button disabled={saving || !scriptName.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "run_script", script: scriptName })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                    <input value={scriptName} onChange={(event) => setScriptName(event.target.value)} className="flex-1 bg-transparent border px-3 py-2 text-sm border-border" />
+                    <button disabled={saving || !scriptName.trim()} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "run_script", script: scriptName })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-border text-primary">
                       run
                     </button>
                   </div>
                 </div>
               </div>
 
-              <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>direct cli prompt</div>
+              <div className="border p-3 space-y-3 border-border-sub bg-raised">
+                <div className="text-xs uppercase tracking-[0.22em] text-muted">direct cli prompt</div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Profile</label>
-                    <select value={agenticProfile} onChange={(event) => setAgenticProfile(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                    <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Profile</label>
+                    <select value={agenticProfile} onChange={(event) => setAgenticProfile(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
                       <option value="">Select a profile</option>
                       {enabledAgentProfiles.map((profile) => (
                         <option key={profile.key} value={profile.key}>{profile.displayName}</option>
@@ -3199,179 +3182,179 @@ export default function BuilderPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Model override</label>
-                    <input value={agenticModel} onChange={(event) => setAgenticModel(event.target.value)} placeholder="optional" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Model override</label>
+                    <input value={agenticModel} onChange={(event) => setAgenticModel(event.target.value)} placeholder="optional" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Prompt</label>
-                  <textarea value={agenticPrompt} onChange={(event) => setAgenticPrompt(event.target.value)} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Prompt</label>
+                  <textarea value={agenticPrompt} onChange={(event) => setAgenticPrompt(event.target.value)} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                 </div>
-                <button disabled={saving || !agenticPrompt.trim() || !agenticProfile} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "run_agentic_task", profile: agenticProfile, prompt: agenticPrompt, model: agenticModel || undefined })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                <button disabled={saving || !agenticPrompt.trim() || !agenticProfile} onClick={() => void runProjectAction(`/api/builder/projects/${selectedProject.id}/commands`, { action: "run_agentic_task", profile: agenticProfile, prompt: agenticPrompt, model: agenticModel || undefined })} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-accent text-accent">
                   run raw agentic prompt
                 </button>
               </div>
 
-              <div className="border p-3 space-y-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div className="border p-3 space-y-4 border-border-sub bg-raised">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>extension inspection</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs uppercase tracking-[0.22em] text-muted">extension inspection</div>
+                    <div className="text-xs leading-6 text-dim">
                       Capability audit activity plus current database inspection state for Builder extension surfaces.
                     </div>
                   </div>
-                  <button disabled={saving} onClick={() => void probeLiveDatabase()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                  <button disabled={saving} onClick={() => void probeLiveDatabase()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-accent text-accent">
                     run live db probe
                   </button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                  <div className="border p-3 space-y-2 border-border bg-surface">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>capability audit</div>
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-muted">capability audit</div>
                       <div className="flex flex-wrap justify-end gap-2">
                         {(projectInspection?.capabilityAudit.retention.droppedExpiredCount ?? 0) > 0 ? (
-                          <span className="border px-2 py-1 text-[10px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--warning)", color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 10%, var(--bg-surface))" }}>
+                          <span className="border px-2 py-1 text-[10px] uppercase tracking-[0.16em] border-warning text-warning bg-warning/10">
                             pruned {(projectInspection?.capabilityAudit.retention.droppedExpiredCount ?? 0)} expired
                           </span>
                         ) : null}
                         {(projectInspection?.capabilityAudit.retention.droppedOverflowCount ?? 0) > 0 ? (
-                          <span className="border px-2 py-1 text-[10px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--danger)", color: "var(--danger)", background: "color-mix(in srgb, var(--danger) 10%, var(--bg-surface))" }}>
+                          <span className="border px-2 py-1 text-[10px] uppercase tracking-[0.16em] border-danger text-danger bg-danger/10">
                             dropped {(projectInspection?.capabilityAudit.retention.droppedOverflowCount ?? 0)} overflow
                           </span>
                         ) : null}
                       </div>
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       {projectInspection?.capabilityAudit.totalEvents ?? 0} events · outcomes {Object.entries(projectInspection?.capabilityAudit.outcomeCounts ?? {}).map(([key, value]) => `${key}:${value}`).join(" ") || "none"}
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Severity info:{projectInspection?.capabilityAudit.severityCounts.info ?? 0} warning:{projectInspection?.capabilityAudit.severityCounts.warning ?? 0} critical:{projectInspection?.capabilityAudit.severityCounts.critical ?? 0}
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       {Object.entries(projectInspection?.capabilityAudit.capabilityCounts ?? {}).map(([key, value]) => `${key.replaceAll("_", " ")}:${value}`).join(" · ") || "No extension audit events recorded yet."}
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       {projectInspection?.capabilityAudit.auditPath ?? "No audit log path available yet."}
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Retention {projectInspection?.capabilityAudit.retention.maxEvents ?? 0} events / {projectInspection?.capabilityAudit.retention.maxAgeDays ?? 0} days; dropped expired {projectInspection?.capabilityAudit.retention.droppedExpiredCount ?? 0}; dropped overflow {projectInspection?.capabilityAudit.retention.droppedOverflowCount ?? 0}
                     </div>
                     <div className="space-y-2">
                       {(projectInspection?.capabilityAudit.recentEvents ?? []).slice(0, 4).map((event) => (
-                        <div key={event.eventId} className="border p-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                        <div key={event.eventId} className="border p-2 border-border-sub bg-raised">
                           <div className="flex items-center justify-between gap-3 text-xs">
                             <span>{event.capabilityKey.replaceAll("_", " ")}</span>
-                            <span style={{ color: event.outcomeStatus === "succeeded" ? "var(--success)" : event.outcomeStatus === "failed" || event.outcomeStatus === "blocked" ? "var(--danger)" : "var(--warning)" }}>{event.outcomeStatus.replaceAll("_", " ")}</span>
+                            <span className={event.outcomeStatus === "succeeded" ? "text-success" : event.outcomeStatus === "failed" || event.outcomeStatus === "blocked" ? "text-danger" : "text-warning"}>{event.outcomeStatus.replaceAll("_", " ")}</span>
                           </div>
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{new Date(event.timestamp).toLocaleString()}</div>
-                          <div className="text-xs leading-6" style={{ color: event.severity === "critical" ? "var(--danger)" : event.severity === "warning" ? "var(--warning)" : "var(--text-dim)" }}>severity {event.severity}</div>
-                          {typeof event.metadata?.operation === "string" ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>operation {event.metadata.operation}</div> : null}
+                          <div className="text-xs leading-6 text-dim">{new Date(event.timestamp).toLocaleString()}</div>
+                          <div className={`text-xs leading-6 ${event.severity === "critical" ? "text-danger" : event.severity === "warning" ? "text-warning" : "text-dim"}`}>severity {event.severity}</div>
+                          {typeof event.metadata?.operation === "string" ? <div className="text-xs leading-6 text-dim">operation {event.metadata.operation}</div> : null}
                         </div>
                       ))}
-                      {(projectInspection?.capabilityAudit.recentEvents ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No extension audit events recorded yet.</div> : null}
+                      {(projectInspection?.capabilityAudit.recentEvents ?? []).length === 0 ? <div className="text-xs leading-6 text-dim">No extension audit events recorded yet.</div> : null}
                     </div>
                   </div>
-                  <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>database inspection</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="border p-3 space-y-2 border-border bg-surface">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted">database inspection</div>
+                    <div className="text-xs leading-6 text-dim">
                       Artifact provider {projectInspection?.databaseInspection.artifact.provider ?? "unknown"}; target {projectInspection?.databaseInspection.artifact.connectionTarget ?? "unresolved"}
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       Artifact tables {projectInspection?.databaseInspection.artifact.tableCount ?? 0}; migrations {projectInspection?.databaseInspection.artifact.migrationsCount ?? 0}
                     </div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs leading-6 text-dim">
                       {projectInspection?.databaseInspection.artifact.auditPath ?? "No database artifact audit path recorded yet."}
                     </div>
-                    <div className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                    <div className="border p-2 space-y-1 border-border-sub bg-raised">
                       <div className="flex items-center justify-between gap-3 text-xs">
                         <span>drift summary</span>
-                        <span style={{ color: projectInspection?.databaseInspection.driftSummary.status === "in_sync" ? "var(--success)" : projectInspection?.databaseInspection.driftSummary.status === "drifted" || projectInspection?.databaseInspection.driftSummary.status === "probe_failed" ? "var(--warning)" : "var(--text-dim)" }}>
+                        <span className={projectInspection?.databaseInspection.driftSummary.status === "in_sync" ? "text-success" : projectInspection?.databaseInspection.driftSummary.status === "drifted" || projectInspection?.databaseInspection.driftSummary.status === "probe_failed" ? "text-warning" : "text-dim"}>
                           {projectInspection?.databaseInspection.driftSummary.status.replaceAll("_", " ") ?? "not available"}
                         </span>
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">
                         {projectInspection?.databaseInspection.driftSummary.summary ?? "Run a live probe to compare live metadata against Prisma artifacts."}
                       </div>
                       {projectInspection?.databaseInspection.driftSummary.comparedAt ? (
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-xs leading-6 text-dim">
                           Compared {new Date(projectInspection.databaseInspection.driftSummary.comparedAt).toLocaleString()} · artifact {projectInspection.databaseInspection.driftSummary.artifactTableCount} tables · live {projectInspection.databaseInspection.driftSummary.liveTableCount} tables
                         </div>
                       ) : null}
-                      {projectInspection?.databaseInspection.driftSummary.missingInLive.length ? <div className="text-xs leading-6" style={{ color: "var(--warning)" }}>Missing in live: {projectInspection.databaseInspection.driftSummary.missingInLive.join(", ")}</div> : null}
-                      {projectInspection?.databaseInspection.driftSummary.unexpectedLive.length ? <div className="text-xs leading-6" style={{ color: "var(--warning)" }}>Unexpected live: {projectInspection.databaseInspection.driftSummary.unexpectedLive.join(", ")}</div> : null}
+                      {projectInspection?.databaseInspection.driftSummary.missingInLive.length ? <div className="text-xs leading-6 text-warning">Missing in live: {projectInspection.databaseInspection.driftSummary.missingInLive.join(", ")}</div> : null}
+                      {projectInspection?.databaseInspection.driftSummary.unexpectedLive.length ? <div className="text-xs leading-6 text-warning">Unexpected live: {projectInspection.databaseInspection.driftSummary.unexpectedLive.join(", ")}</div> : null}
                       {projectInspection?.databaseInspection.driftSummary.fieldCountMismatches.length ? (
-                        <div className="text-xs leading-6" style={{ color: "var(--warning)" }}>
+                        <div className="text-xs leading-6 text-warning">
                           Field-count mismatches: {projectInspection.databaseInspection.driftSummary.fieldCountMismatches.map((entry) => `${entry.tableName} ${entry.artifactFieldCount}->${entry.liveFieldCount}`).join(", ")}
                         </div>
                       ) : null}
                     </div>
                     {projectInspection?.databaseInspection.latestLiveProbe ? (
-                      <div className="border p-2 space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                      <div className="border p-2 space-y-1 border-border-sub bg-raised">
                         <div className="flex items-center justify-between gap-3 text-xs">
                           <span>live probe</span>
-                          <span style={{ color: projectInspection.databaseInspection.latestLiveProbe.status === "succeeded" ? "var(--success)" : "var(--danger)" }}>
+                          <span className={projectInspection.databaseInspection.latestLiveProbe.status === "succeeded" ? "text-success" : "text-danger"}>
                             {projectInspection.databaseInspection.latestLiveProbe.status}
                           </span>
                         </div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectInspection.databaseInspection.latestLiveProbe.summary}</div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-xs leading-6 text-dim">{projectInspection.databaseInspection.latestLiveProbe.summary}</div>
+                        <div className="text-xs leading-6 text-dim">
                           {new Date(projectInspection.databaseInspection.latestLiveProbe.probedAt).toLocaleString()} · {projectInspection.databaseInspection.latestLiveProbe.tableCount} tables
                         </div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{projectInspection.databaseInspection.latestLiveProbe.auditPath}</div>
-                        {projectInspection.databaseInspection.latestLiveProbe.error ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{projectInspection.databaseInspection.latestLiveProbe.error}</div> : null}
+                        <div className="text-xs leading-6 text-dim">{projectInspection.databaseInspection.latestLiveProbe.auditPath}</div>
+                        {projectInspection.databaseInspection.latestLiveProbe.error ? <div className="text-xs leading-6 text-danger">{projectInspection.databaseInspection.latestLiveProbe.error}</div> : null}
                       </div>
-                    ) : <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No live database probe has been recorded yet.</div>}
+                    ) : <div className="text-xs leading-6 text-dim">No live database probe has been recorded yet.</div>}
                   </div>
                 </div>
-                <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                <div className="border p-3 space-y-3 border-border bg-surface">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>runtime services</div>
-                    <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted">runtime services</div>
+                    <div className="text-xs leading-6 text-dim">
                       {projectInspection?.runtimeInspection.summary ?? "No runtime services discovered yet."}
                     </div>
                   </div>
                   <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                     <div className="space-y-2">
                       {(projectInspection?.runtimeInspection.services ?? []).map((service) => (
-                        <button key={service.serviceId} onClick={() => setSelectedRuntimeServiceId(service.serviceId)} className="w-full border p-2 text-left" style={{ borderColor: service.serviceId === selectedRuntimeServiceId ? "var(--accent)" : "var(--border-sub)", background: service.serviceId === selectedRuntimeServiceId ? "var(--accent-glow)" : "var(--bg-raised)" }}>
+                        <button key={service.serviceId} onClick={() => setSelectedRuntimeServiceId(service.serviceId)} className={`w-full border p-2 text-left ${service.serviceId === selectedRuntimeServiceId ? "border-accent bg-accent-glow" : "border-border-sub bg-raised"}`}>
                           <div className="flex items-center justify-between gap-3 text-xs">
                             <span>{service.label}</span>
-                            <span style={{ color: service.status === "running" ? "var(--success)" : service.status === "failed" ? "var(--danger)" : "var(--text-dim)" }}>{service.status}</span>
+                            <span className={service.status === "running" ? "text-success" : service.status === "failed" ? "text-danger" : "text-dim"}>{service.status}</span>
                           </div>
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{service.source.replaceAll("_", " ")} · {service.declaredIn}</div>
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{service.workingDirectory}</div>
-                          <div className="text-xs leading-6" style={{ color: service.healthStatus === "healthy" ? "var(--success)" : service.healthStatus === "unhealthy" ? "var(--danger)" : service.healthStatus === "starting" ? "var(--warning)" : "var(--text-dim)" }}>
+                          <div className="text-xs leading-6 text-dim">{service.source.replaceAll("_", " ")} · {service.declaredIn}</div>
+                          <div className="text-xs leading-6 text-dim">{service.workingDirectory}</div>
+                          <div className={`text-xs leading-6 ${service.healthStatus === "healthy" ? "text-success" : service.healthStatus === "unhealthy" ? "text-danger" : service.healthStatus === "starting" ? "text-warning" : "text-dim"}`}>
                             health {service.healthStatus}{service.healthReason ? ` · ${service.healthReason}` : ""}
                           </div>
-                          {service.publishedPorts.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>ports {service.publishedPorts.join(", ")}</div> : null}
-                          {service.command ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{service.command}</div> : null}
+                          {service.publishedPorts.length > 0 ? <div className="text-xs leading-6 text-dim">ports {service.publishedPorts.join(", ")}</div> : null}
+                          {service.command ? <div className="text-xs leading-6 text-dim">{service.command}</div> : null}
                         </button>
                       ))}
-                      {(projectInspection?.runtimeInspection.services ?? []).length === 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No package-script or compose services were detected.</div> : null}
+                      {(projectInspection?.runtimeInspection.services ?? []).length === 0 ? <div className="text-xs leading-6 text-dim">No package-script or compose services were detected.</div> : null}
                     </div>
-                    <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                    <div className="border p-3 space-y-2 border-border-sub bg-raised">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>service logs and controls</div>
-                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: runtimeLogState === "live" ? "var(--success)" : "var(--text-muted)" }}>{runtimeLogState}</div>
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">service logs and controls</div>
+                        <div className={`text-[11px] uppercase tracking-[0.16em] ${runtimeLogState === "live" ? "text-success" : "text-muted"}`}>{runtimeLogState}</div>
                       </div>
                       {runtimeServiceLogs ? (
                         <>
-                          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                          <div className="text-xs leading-6 text-dim">
                             {runtimeServiceLogs.service.label} · {runtimeServiceLogs.service.status}{runtimeServiceLogs.service.logPath ? ` · ${runtimeServiceLogs.service.logPath}` : ""}
                           </div>
-                          <div className="text-xs leading-6" style={{ color: runtimeServiceLogs.service.healthStatus === "healthy" ? "var(--success)" : runtimeServiceLogs.service.healthStatus === "unhealthy" ? "var(--danger)" : runtimeServiceLogs.service.healthStatus === "starting" ? "var(--warning)" : "var(--text-dim)" }}>
+                          <div className={`text-xs leading-6 ${runtimeServiceLogs.service.healthStatus === "healthy" ? "text-success" : runtimeServiceLogs.service.healthStatus === "unhealthy" ? "text-danger" : runtimeServiceLogs.service.healthStatus === "starting" ? "text-warning" : "text-dim"}`}>
                             health {runtimeServiceLogs.service.healthStatus}{runtimeServiceLogs.service.healthReason ? ` · ${runtimeServiceLogs.service.healthReason}` : ""}
                           </div>
-                          {runtimeServiceLogs.service.containerId ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>container {runtimeServiceLogs.service.containerId}</div> : null}
-                          {runtimeServiceLogs.service.publishedPorts.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>ports {runtimeServiceLogs.service.publishedPorts.join(", ")}</div> : null}
+                          {runtimeServiceLogs.service.containerId ? <div className="text-xs leading-6 text-dim">container {runtimeServiceLogs.service.containerId}</div> : null}
+                          {runtimeServiceLogs.service.publishedPorts.length > 0 ? <div className="text-xs leading-6 text-dim">ports {runtimeServiceLogs.service.publishedPorts.join(", ")}</div> : null}
                           <div className="flex flex-wrap gap-2">
-                            <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeServiceLogs.service.supportsStart} onClick={() => void mutateRuntimeService("start_service")} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-main)" }}>
+                            <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeServiceLogs.service.supportsStart} onClick={() => void mutateRuntimeService("start_service")} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-border" style={{ color: "var(--text-main)" }}>
                               start service
                             </button>
-                            <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeServiceLogs.service.supportsStop} onClick={() => void mutateRuntimeService("stop_service")} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-main)" }}>
+                            <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeServiceLogs.service.supportsStop} onClick={() => void mutateRuntimeService("stop_service")} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-border" style={{ color: "var(--text-main)" }}>
                               stop service
                             </button>
-                            <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeServiceLogs.service.supportsRestart} onClick={() => void restartRuntimeService()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                            <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeServiceLogs.service.supportsRestart} onClick={() => void restartRuntimeService()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-accent text-accent">
                               restart service
                             </button>
                             <button disabled={saving || (runtimeServiceLogs.service.status !== "running" && !runtimeServiceLogs.service.processId && !runtimeServiceLogs.service.containerId)} onClick={() => {
@@ -3386,36 +3369,36 @@ export default function BuilderPage() {
                                 return;
                               }
                               startRuntimeLogStream(selectedProjectId, selectedRuntimeServiceId);
-                            }} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-main)" }}>
+                            }} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-border" style={{ color: "var(--text-main)" }}>
                               {runtimeLogLive ? "stop live follow" : "start live follow"}
                             </button>
                           </div>
-                          {runtimeServiceLogs.error ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{runtimeServiceLogs.error}</div> : null}
-                          {!runtimeServiceLogs.error && runtimeServiceLogs.service.status === "declared" ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>This service is declared but not currently active, so no logs are available yet.</div> : null}
-                          {runtimeServiceLogs.logs ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-6 p-2 border" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-dim)" }}>{runtimeServiceLogs.logs}</pre> : null}
-                          {!runtimeServiceLogs.logs && runtimeServiceLogs.service.status === "running" && !runtimeServiceLogs.error ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No buffered logs are available for this service yet.</div> : null}
-                          <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>exec in service</div>
-                            <input value={runtimeExecCommand} onChange={(event) => setRuntimeExecCommand(event.target.value)} placeholder="command" className="w-full border px-3 py-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--bg-raised)", color: "var(--text-main)" }} />
-                            <textarea value={runtimeExecArgs} onChange={(event) => setRuntimeExecArgs(event.target.value)} placeholder="one argument per line" rows={3} className="w-full border px-3 py-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--bg-raised)", color: "var(--text-main)" }} />
+                          {runtimeServiceLogs.error ? <div className="text-xs leading-6 text-danger">{runtimeServiceLogs.error}</div> : null}
+                          {!runtimeServiceLogs.error && runtimeServiceLogs.service.status === "declared" ? <div className="text-xs leading-6 text-dim">This service is declared but not currently active, so no logs are available yet.</div> : null}
+                          {runtimeServiceLogs.logs ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-6 p-2 border border-border bg-surface text-dim">{runtimeServiceLogs.logs}</pre> : null}
+                          {!runtimeServiceLogs.logs && runtimeServiceLogs.service.status === "running" && !runtimeServiceLogs.error ? <div className="text-xs leading-6 text-dim">No buffered logs are available for this service yet.</div> : null}
+                          <div className="border p-3 space-y-2 border-border bg-surface">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-muted">exec in service</div>
+                            <input value={runtimeExecCommand} onChange={(event) => setRuntimeExecCommand(event.target.value)} placeholder="command" className="w-full border px-3 py-2 text-sm border-border bg-raised" style={{ color: "var(--text-main)" }} />
+                            <textarea value={runtimeExecArgs} onChange={(event) => setRuntimeExecArgs(event.target.value)} placeholder="one argument per line" rows={3} className="w-full border px-3 py-2 text-sm border-border bg-raised" style={{ color: "var(--text-main)" }} />
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Commands remain subject to the Builder command allowlist.</div>
-                              <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeExecCommand.trim() || !runtimeServiceLogs.service.supportsExec} onClick={() => void execRuntimeServiceCommand()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                              <div className="text-xs leading-6 text-dim">Commands remain subject to the Builder command allowlist.</div>
+                              <button disabled={saving || runtimeActionServiceId === runtimeServiceLogs.service.serviceId || !runtimeExecCommand.trim() || !runtimeServiceLogs.service.supportsExec} onClick={() => void execRuntimeServiceCommand()} className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-accent text-accent">
                                 run command
                               </button>
                             </div>
                             {runtimeExecResult ? (
                               <div className="space-y-2">
-                                <div className="text-xs leading-6" style={{ color: runtimeExecResult.ok ? "var(--success)" : "var(--warning)" }}>
+                                <div className={`text-xs leading-6 ${runtimeExecResult.ok ? "text-success" : "text-warning"}`}>
                                   {runtimeExecResult.command} {runtimeExecResult.args.join(" ")} · exit {runtimeExecResult.exitCode ?? "unknown"}
                                 </div>
-                                {runtimeExecResult.stdout ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-6 p-2 border" style={{ borderColor: "var(--border)", background: "var(--bg-raised)", color: "var(--text-dim)" }}>{runtimeExecResult.stdout}</pre> : null}
-                                {runtimeExecResult.stderr ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-6 p-2 border" style={{ borderColor: "var(--border)", background: "var(--bg-raised)", color: "var(--danger)" }}>{runtimeExecResult.stderr}</pre> : null}
+                                {runtimeExecResult.stdout ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-6 p-2 border border-border bg-raised text-dim">{runtimeExecResult.stdout}</pre> : null}
+                                {runtimeExecResult.stderr ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-6 p-2 border border-border bg-raised text-danger">{runtimeExecResult.stderr}</pre> : null}
                               </div>
                             ) : null}
                           </div>
                         </>
-                      ) : <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Select a service to inspect its current Builder-managed log buffer.</div>}
+                      ) : <div className="text-xs leading-6 text-dim">Select a service to inspect its current Builder-managed log buffer.</div>}
                     </div>
                   </div>
                 </div>
@@ -3424,13 +3407,13 @@ export default function BuilderPage() {
           )}
         </section>
 
-        <section ref={recentRunsRef} className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>recent runs</div>
+        <section ref={recentRunsRef} className="border p-4 border-border bg-surface">
+          <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">recent runs</div>
           <div className="space-y-3 text-sm">
             {(projectDetail?.runs ?? []).length === 0 ? (
-              <div style={{ color: "var(--text-dim)" }}>No recorded runs for this project yet.</div>
+              <div className="text-dim">No recorded runs for this project yet.</div>
             ) : runsPagination.pageItems.map((run) => (
-              <div key={run.id} className="border p-3" style={{ borderColor: highlightedRunId === run.id ? "var(--accent)" : "var(--border-sub)", background: highlightedRunId === run.id ? "var(--accent-glow)" : "var(--bg-raised)" }}>
+              <div key={run.id} className={`border p-3 ${highlightedRunId === run.id ? "border-accent bg-accent-glow" : "border-border-sub bg-raised"}`}>
                 {(() => {
                   const loop = getRunLoopMetadata(run.metadata);
                   return (
@@ -3442,20 +3425,19 @@ export default function BuilderPage() {
                             <button
                               disabled={cancellingRunId === run.id}
                               onClick={() => void cancelRun(run.id)}
-                              className="px-2 py-1 border text-[10px] uppercase tracking-[0.16em] disabled:opacity-50"
-                              style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                              className="px-2 py-1 border text-[10px] uppercase tracking-[0.16em] disabled:opacity-50 border-danger text-danger"
                             >
                               {cancellingRunId === run.id ? "cancelling" : "cancel"}
                             </button>
                           ) : null}
-                          <span style={{ color: run.status === "FAILED" ? "var(--danger)" : run.status === "SUCCEEDED" ? "var(--success)" : run.status === "CANCELLED" ? "var(--danger)" : "var(--text-dim)" }}>{run.status.toLowerCase()}</span>
+                          <span className={run.status === "FAILED" ? "text-danger" : run.status === "SUCCEEDED" ? "text-success" : run.status === "CANCELLED" ? "text-danger" : "text-dim"}>{run.status.toLowerCase()}</span>
                         </div>
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{run.command ?? "command unavailable"}</div>
-                      {run.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{run.summary}</div> : null}
+                      <div className="text-xs leading-6 text-dim">{run.command ?? "command unavailable"}</div>
+                      {run.summary ? <div className="text-xs leading-6 text-dim">{run.summary}</div> : null}
                       {loop ? (
-                        <div className="mt-3 border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                          <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                        <div className="mt-3 border p-3 space-y-3 border-border bg-surface">
+                          <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em] text-muted">
                             <span>{(loop.finalVerdict ?? run.status.toLowerCase()).replace(/_/g, " ")}</span>
                             <span>{loop.iterations.length}/{loop.maxIterations} iterations</span>
                             <span>{loop.verified ? "verified" : loop.verificationSkipped ? "verification skipped" : "not verified"}</span>
@@ -3463,23 +3445,23 @@ export default function BuilderPage() {
                             {loop.phase ? <span>phase {loop.phase}</span> : null}
                             {loop.currentIteration ? <span>current {loop.currentIteration}</span> : null}
                           </div>
-                          {run.status === "RUNNING" ? <div className="text-xs" style={{ color: "var(--accent)" }}>{loop.summary}</div> : null}
+                          {run.status === "RUNNING" ? <div className="text-xs text-accent">{loop.summary}</div> : null}
                           {loop.iterations.map((iteration) => (
-                            <details key={`${run.id}-iteration-${iteration.iteration}`} className="border p-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                              <summary className="cursor-pointer text-xs flex flex-wrap gap-3" style={{ color: "var(--text-primary)" }}>
+                            <details key={`${run.id}-iteration-${iteration.iteration}`} className="border p-2 border-border-sub bg-raised">
+                              <summary className="cursor-pointer text-xs flex flex-wrap gap-3 text-primary">
                                 <span>attempt {iteration.iteration}</span>
-                                <span style={{ color: iteration.review.verdict === "complete" ? "var(--success)" : iteration.review.verdict === "retry" ? "var(--accent)" : "var(--danger)" }}>
+                                <span className={iteration.review.verdict === "complete" ? "text-success" : iteration.review.verdict === "retry" ? "text-accent" : "text-danger"}>
                                   {iteration.review.verdict.replace(/_/g, " ")}
                                 </span>
-                                <span style={{ color: "var(--text-dim)" }}>{iteration.verification.summary}</span>
+                                <span className="text-dim">{iteration.verification.summary}</span>
                               </summary>
-                              <div className="mt-2 space-y-2 text-xs" style={{ color: "var(--text-dim)" }}>
+                              <div className="mt-2 space-y-2 text-xs text-dim">
                                 <div>{iteration.review.reason}</div>
                                 {iteration.changedFiles.length > 0 ? <div>changed files: {iteration.changedFiles.join(", ")}</div> : <div>changed files: none detected</div>}
                                 {iteration.verification.steps.length > 0 ? (
                                   <div className="flex flex-wrap gap-2">
                                     {iteration.verification.steps.map((step) => (
-                                      <span key={`${run.id}-iteration-${iteration.iteration}-${step.script}`} className="border px-2 py-1" style={{ borderColor: step.ok ? "rgba(34,197,94,0.35)" : "rgba(239,68,68,0.35)", color: step.ok ? "var(--success)" : "var(--danger)" }}>
+                                      <span key={`${run.id}-iteration-${iteration.iteration}-${step.script}`} className={`border px-2 py-1 ${step.ok ? "border-[rgba(34,197,94,0.35)] text-success" : "border-[rgba(239,68,68,0.35)] text-danger"}`}>
                                         {step.script} {step.ok ? "passed" : `failed (${step.exitCode ?? "?"})`}
                                       </span>
                                     ))}
@@ -3490,8 +3472,8 @@ export default function BuilderPage() {
                           ))}
                         </div>
                       ) : null}
-                      {run.stdout ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-dim)" }}>{run.stdout}</pre> : null}
-                      {run.stderr ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--danger)" }}>{run.stderr}</pre> : null}
+                      {run.stdout ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto border-border bg-surface text-dim">{run.stdout}</pre> : null}
+                      {run.stderr ? <pre className="mt-2 text-xs whitespace-pre-wrap border p-2 overflow-auto border-border bg-surface text-danger">{run.stderr}</pre> : null}
                     </>
                   );
                 })()}

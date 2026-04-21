@@ -37,26 +37,26 @@ export default function AnalyticsPage() {
     <div className="space-y-5">
       <div className="grid gap-4 grid-cols-5">
         {Object.entries(totals).map(([key, value]) => (
-          <section key={key} className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-            <div className="text-xs uppercase tracking-[0.24em] mb-3" style={{ color: "var(--text-muted)" }}>{key}</div>
-            <div className="text-2xl font-semibold tabular-nums" style={{ color: "var(--accent)" }}>{value}</div>
+          <section key={key} className="border p-4 border-border bg-surface">
+            <div className="text-xs uppercase tracking-[0.24em] mb-3 text-muted">{key}</div>
+            <div className="text-2xl font-semibold tabular-nums text-accent">{value}</div>
           </section>
         ))}
       </div>
-      <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-        <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>snapshots</div>
+      <section className="border p-4 border-border bg-surface">
+        <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">snapshots</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" style={{ minWidth: 640 }}>
             <thead>
-              <tr className="border-b" style={{ borderColor: "var(--border)" }}>
+              <tr className="border-b border-border">
                 {["date", "impressions", "likes", "replies", "shares", "clicks"].map((h) => (
-                  <th key={h} className="text-left text-xs uppercase tracking-[0.2em] pb-3 pr-6 font-medium" style={{ color: "var(--text-muted)" }}>{h}</th>
+                  <th key={h} className="text-left text-xs uppercase tracking-[0.2em] pb-3 pr-6 font-medium text-muted">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {snapshots.map((snapshot) => (
-                <tr key={snapshot.id} className="border-b" style={{ borderColor: "var(--border-sub)" }}>
+                <tr key={snapshot.id} className="border-b border-border-sub">
                   <td className="py-2.5 pr-6 tabular-nums">{new Date(snapshot.capturedAt).toLocaleDateString()}</td>
                   <td className="py-2.5 pr-6 tabular-nums">{snapshot.impressions}</td>
                   <td className="py-2.5 pr-6 tabular-nums">{snapshot.likes}</td>

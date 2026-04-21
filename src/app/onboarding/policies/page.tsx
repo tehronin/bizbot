@@ -43,40 +43,40 @@ export default function OnboardingPoliciesPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-6" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
-      <section className="w-full max-w-3xl border p-8 space-y-6" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+    <main className="min-h-screen flex items-center justify-center px-6 bg-base text-primary">
+      <section className="w-full max-w-3xl border p-8 space-y-6 border-border bg-surface">
         <div>
-          <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>step 3: policies + runtime behavior</div>
-          <div className="text-sm max-w-2xl" style={{ color: "var(--text-dim)" }}>
+          <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">step 3: policies + runtime behavior</div>
+          <div className="text-sm max-w-2xl text-dim">
             Set the operating guardrails and the runtime rules that change how aggressively the worker drafts, replies, and uses company documents.
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3">
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Autonomy preset</label>
-            <select value={autonomyPreset} onChange={(event) => setAutonomyPreset(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">Autonomy preset</label>
+            <select value={autonomyPreset} onChange={(event) => setAutonomyPreset(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
               {AUTONOMY_PRESETS.map((option) => (
                 <option key={option.id} value={option.id}>{option.label}</option>
               ))}
             </select>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Heartbeat seconds</label>
-              <input value={heartbeatSeconds} onChange={(event) => setHeartbeatSeconds(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Heartbeat seconds</label>
+              <input value={heartbeatSeconds} onChange={(event) => setHeartbeatSeconds(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
-            <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="flex items-center justify-between border px-3 py-2 text-sm border-border">
               <span>Enable knowledge folder</span>
               <input type="checkbox" checked={knowledgeEnabled} onChange={(event) => setKnowledgeEnabled(event.target.checked)} />
             </label>
-            <input value={knowledgePath} onChange={(event) => setKnowledgePath(event.target.value)} placeholder="BIZBOT_KNOWLEDGE_PATH" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            <input value={knowledgePath} onChange={(event) => setKnowledgePath(event.target.value)} placeholder="BIZBOT_KNOWLEDGE_PATH" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
           </div>
           <div className="space-y-3">
-            <textarea value={voice} onChange={(event) => setVoice(event.target.value)} className="w-full min-h-32 bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-            <textarea value={guardrails} onChange={(event) => setGuardrails(event.target.value)} className="w-full min-h-32 bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            <textarea value={voice} onChange={(event) => setVoice(event.target.value)} className="w-full min-h-32 bg-transparent border px-3 py-2 text-sm border-border" />
+            <textarea value={guardrails} onChange={(event) => setGuardrails(event.target.value)} className="w-full min-h-32 bg-transparent border px-3 py-2 text-sm border-border" />
           </div>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => void save()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>save</button>
-          <Link href="/onboarding/memory" className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>next</Link>
+          <button onClick={() => void save()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-accent text-accent">save</button>
+          <Link href="/onboarding/memory" className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-border text-primary">next</Link>
         </div>
       </section>
     </main>

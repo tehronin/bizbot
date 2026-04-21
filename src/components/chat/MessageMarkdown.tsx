@@ -71,8 +71,7 @@ function renderInline(text: string, options?: { trailingCursor?: boolean }) {
       return (
         <code
           key={`${token.kind}-${index}`}
-          className="rounded px-1 py-0.5 text-[0.95em]"
-          style={{ background: "var(--bg-surface)", color: "var(--text-primary)" }}
+          className="rounded px-1 py-0.5 text-[0.95em] bg-surface text-primary"
         >
           {token.value}
         </code>
@@ -86,7 +85,7 @@ function renderInline(text: string, options?: { trailingCursor?: boolean }) {
           href={token.href}
           target="_blank"
           rel="noreferrer"
-          style={{ color: "var(--accent)", textDecoration: "underline" }}
+          className="text-accent underline"
         >
           {token.value}
         </a>
@@ -95,7 +94,7 @@ function renderInline(text: string, options?: { trailingCursor?: boolean }) {
 
     return <Fragment key={`${token.kind}-${index}`}>{token.value}</Fragment>;
   }).concat(options?.trailingCursor ? [
-    <span key={`${text}-cursor`} data-testid="chat-streaming-cursor" className="inline-block ml-1 animate-pulse" style={{ color: "var(--text-muted)" }}>
+    <span key={`${text}-cursor`} data-testid="chat-streaming-cursor" className="inline-block ml-1 animate-pulse text-muted">
       ▌
     </span>,
   ] : []);
@@ -203,7 +202,7 @@ export function MessageMarkdown({ markdown, showStreamingCursor = false }: { mar
                 ? "text-lg font-semibold"
                 : "text-base font-semibold uppercase tracking-[0.12em]";
           return (
-            <div key={index} className={className} style={{ color: "var(--text-primary)" }}>
+            <div key={index} className={`${className} text-primary`}>
               {renderInline(block.lines[0], { trailingCursor: shouldShowCursor })}
             </div>
           );
@@ -213,8 +212,7 @@ export function MessageMarkdown({ markdown, showStreamingCursor = false }: { mar
           return (
             <ListTag
               key={index}
-              className={`space-y-2 pl-5 ${block.ordered ? "list-decimal" : "list-disc"}`}
-              style={{ color: "var(--text-primary)" }}
+              className={`space-y-2 pl-5 text-primary ${block.ordered ? "list-decimal" : "list-disc"}`}
             >
               {block.lines.map((item, itemIndex) => (
                 <li key={itemIndex}>{renderInline(item, { trailingCursor: shouldShowCursor && itemIndex === block.lines.length - 1 })}</li>
@@ -226,23 +224,21 @@ export function MessageMarkdown({ markdown, showStreamingCursor = false }: { mar
           const codeContent = block.lines.join("\n");
           return (
             <div key={index} className="space-y-2">
-              <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+              <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.16em] text-muted">
                 <div>{block.language ?? "code"}</div>
                 <button
                   type="button"
                   onClick={() => {
                     void copyCode(index, codeContent);
                   }}
-                  className="border px-2 py-1 transition-colors"
-                  style={{ borderColor: "var(--border-sub)", color: copiedBlockIndex === index ? "var(--accent)" : "var(--text-dim)" }}
+                  className={`border px-2 py-1 transition-colors border-border-sub ${copiedBlockIndex === index ? "text-accent" : "text-dim"}`}
                   data-testid={`code-copy-${index}`}
                 >
                   {copiedBlockIndex === index ? "Copied" : "Copy"}
                 </button>
               </div>
               <pre
-                className="overflow-auto border p-3 text-xs leading-6 whitespace-pre-wrap break-words"
-                style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)", color: "var(--text-primary)" }}
+                className="overflow-auto border border-border-sub bg-raised text-primary p-3 text-xs leading-6 whitespace-pre-wrap break-words"
               >
                 <code>
                   {codeContent}
@@ -253,7 +249,7 @@ export function MessageMarkdown({ markdown, showStreamingCursor = false }: { mar
           );
         }
         return (
-          <p key={index} style={{ color: "var(--text-primary)" }}>
+          <p key={index} className="text-primary">
             {renderInline(block.lines[0], { trailingCursor: shouldShowCursor })}
           </p>
         );

@@ -37,6 +37,34 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 
+  /* backgrounds */
+  --color-base:    var(--bg-base);
+  --color-surface: var(--bg-surface);
+  --color-raised:  var(--bg-raised);
+  --color-hover:   var(--bg-hover);
+
+  /* borders */
+  --color-border:     var(--border);
+  --color-border-sub: var(--border-sub);
+
+  /* text */
+  --color-primary: var(--text-primary);
+  --color-dim:     var(--text-dim);
+  --color-muted:   var(--text-muted);
+
+  /* semantic */
+  --color-accent:      var(--accent);
+  --color-accent-dim:  var(--accent-dim);
+  --color-accent-glow: var(--accent-glow);
+  --color-danger:      var(--danger);
+  --color-warning:     var(--warning);
+  --color-success:     var(--success);
+
+  /* builder project badge */
+  --color-builder-accent: #a78bfa;
+  --color-builder-accent-glow: rgba(167,139,250,0.08);
+  --color-builder-accent-border: rgba(167,139,250,0.34);
+
   /* flatten all radius tokens */
   --radius:    0px;
   --radius-sm: 0px;

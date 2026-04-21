@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AgenticSetupDrawer } from "@/components/chat/AgenticSetupDrawer";
@@ -141,7 +141,7 @@ function renderConversationProjectBadge(conversation: {
   }
 
   return (
-    <span className="border px-2 py-1" style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.08)", color: "#c4b5fd" }}>
+    <span className="border px-2 py-1 border-builder-accent-border bg-builder-accent-glow text-builder-accent">
       {conversation.builderProjectName}
       {conversation.builderProjectRelativePath ? ` • ${conversation.builderProjectRelativePath}` : ""}
     </span>
@@ -177,20 +177,20 @@ function InlineAssistantNotice({
   tone?: "neutral" | "attention" | "accent";
   children?: React.ReactNode;
 }) {
-  const toneStyles = tone === "attention"
-    ? { borderColor: "var(--warning)", background: "color-mix(in srgb, var(--warning) 7%, var(--bg-raised))", titleColor: "var(--warning)" }
+  const toneClasses = tone === "attention"
+    ? { container: "border-warning bg-warning/7", title: "text-warning" }
     : tone === "accent"
-      ? { borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)", titleColor: "#a78bfa" }
-      : { borderColor: "var(--border)", background: "var(--bg-raised)", titleColor: "var(--text-muted)" };
+      ? { container: "border-builder-accent-border bg-builder-accent-glow", title: "text-builder-accent" }
+      : { container: "border-border bg-raised", title: "text-muted" };
 
   return (
-    <div className="border px-4 py-3 space-y-3" style={{ borderColor: toneStyles.borderColor, background: toneStyles.background }}>
-      <div className="text-xs uppercase tracking-[0.24em]" style={{ color: toneStyles.titleColor }}>
+    <div className={`border px-4 py-3 space-y-3 ${toneClasses.container}`}>
+      <div className={`text-xs uppercase tracking-[0.24em] ${toneClasses.title}`}>
         assistant
       </div>
       <div className="space-y-2">
-        <div className="text-sm" style={{ color: "var(--text-primary)" }}>{title}</div>
-        <div className="text-sm leading-6" style={{ color: "var(--text-dim)" }}>{body}</div>
+        <div className="text-sm text-primary">{title}</div>
+        <div className="text-sm leading-6 text-dim">{body}</div>
       </div>
       {children}
     </div>
@@ -262,10 +262,10 @@ function BuilderCardList({
 
   const renderDetailGroups = (groups: Array<{ label: string; items: string[] }>) => groups.map((group) => (
     <div key={`${group.label}-${group.items.join("|")}`} className="space-y-1">
-      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{group.label}</div>
-      <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+      <div className="text-[11px] uppercase tracking-[0.16em] text-muted">{group.label}</div>
+      <div className="flex flex-wrap gap-2 text-[11px] text-dim">
         {group.items.map((item) => (
-          <span key={`${group.label}-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+          <span key={`${group.label}-${item}`} className="border px-2 py-1 border-border-sub bg-surface">
             {item}
           </span>
         ))}
@@ -281,11 +281,11 @@ function BuilderCardList({
           type="button"
           disabled={disabled}
           onClick={() => onAction(card.interactionId, action.id)}
-          className="px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-          style={{
-            borderColor: action.variant === "danger" ? "var(--danger)" : action.variant === "primary" ? "var(--warning)" : "var(--border)",
-            color: action.variant === "danger" ? "var(--danger)" : action.variant === "primary" ? "var(--warning)" : "var(--text-primary)",
-          }}
+          className={`px-3 py-2 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 ${
+            action.variant === "danger" ? "border-danger text-danger"
+            : action.variant === "primary" ? "border-warning text-warning"
+            : "border-border text-primary"
+          }`}
         >
           {action.label}
         </button>
@@ -311,27 +311,23 @@ function BuilderCardList({
           return (
             <details
               key={card.id}
-              className="border px-3 py-2"
-              style={{
-                borderColor: requiresAction ? "var(--warning)" : "var(--border-sub)",
-                background: requiresAction ? "color-mix(in srgb, var(--warning) 6%, var(--bg-surface))" : "var(--bg-surface)",
-              }}
+              className={`border px-3 py-2 ${requiresAction ? "border-warning bg-warning/6" : "border-border-sub bg-surface"}`}
               data-testid={`compact-builder-card-${card.id}`}
             >
               <summary className="cursor-pointer list-none">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
                       builder • {card.projectName}
                     </div>
-                    <div className="text-sm mt-1" style={{ color: "var(--text-primary)" }}>{card.title}</div>
-                    <div className="text-xs mt-1 line-clamp-2" style={{ color: "var(--text-dim)" }}>{card.summary}</div>
+                    <div className="text-sm mt-1 text-primary">{card.title}</div>
+                    <div className="text-xs mt-1 line-clamp-2 text-dim">{card.summary}</div>
                   </div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-right shrink-0" style={{ color: requiresAction ? "var(--warning)" : "var(--text-dim)" }}>
+                  <div className={`text-[11px] uppercase tracking-[0.16em] text-right shrink-0 ${requiresAction ? "text-warning" : "text-dim"}`}>
                     {formatStatusLabel(card)}
                   </div>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-dim">
                   <span>{card.projectRelativePath}</span>
                   {card.progress?.loopPhase ? <span>{card.progress.loopPhase.replaceAll("_", " ")}</span> : null}
                   {card.progress?.currentIteration !== null && card.progress?.currentIteration !== undefined ? (
@@ -344,33 +340,33 @@ function BuilderCardList({
               </summary>
               <div className="mt-3 space-y-3">
                 {requiresAction ? (
-                  <div className="text-xs" style={{ color: "var(--warning)" }}>
+                  <div className="text-xs text-warning">
                     Builder is paused here until you decide how to proceed.
                   </div>
                 ) : null}
                 {showCompactSupportingDetails && card.progress?.latestLoopSummary ? (
-                  <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.progress.latestLoopSummary}</div>
+                  <div className="text-xs leading-6 text-dim">{card.progress.latestLoopSummary}</div>
                 ) : null}
                 {showCompactSupportingDetails && visibleBadges.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                  <div className="flex flex-wrap gap-2 text-[11px] text-dim">
                     {visibleBadges.map((badge) => (
-                      <span key={`${card.id}-${badge}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                      <span key={`${card.id}-${badge}`} className="border px-2 py-1 border-border-sub bg-raised">
                         {badge}
                       </span>
                     ))}
                   </div>
                 ) : null}
                 {showCompactSupportingDetails && card.recommendations.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                  <div className="flex flex-wrap gap-2 text-[11px] text-dim">
                     {card.recommendations.map((recommendation) => (
-                      <span key={`${card.id}-${recommendation}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                      <span key={`${card.id}-${recommendation}`} className="border px-2 py-1 border-border-sub bg-raised">
                         {recommendation}
                       </span>
                     ))}
                   </div>
                 ) : null}
                 {showCompactSupportingDetails && showAdvancedDetails ? (
-                  <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs text-dim">
                     Expand the Builder inbox or dashboard for the full governance and verification history.
                   </div>
                 ) : null}
@@ -383,34 +379,28 @@ function BuilderCardList({
         return (
         <div
           key={card.id}
-          className="border p-3 space-y-3"
-          style={{
-            borderColor: requiresAction ? "var(--warning)" : "var(--border)",
-            background: requiresAction
-              ? "color-mix(in srgb, var(--warning) 8%, var(--bg-raised))"
-              : "var(--bg-raised)",
-          }}
+          className={`border p-3 space-y-3 ${requiresAction ? "border-warning bg-warning/8" : "border-border bg-raised"}`}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
                 builder • {card.projectName}
               </div>
-              <div className="text-sm mt-1" style={{ color: "var(--text-primary)" }}>{card.title}</div>
+              <div className="text-sm mt-1 text-primary">{card.title}</div>
             </div>
-            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: requiresAction ? "var(--warning)" : "var(--text-dim)" }}>
+            <div className={`text-[11px] uppercase tracking-[0.16em] ${requiresAction ? "text-warning" : "text-dim"}`}>
               {formatStatusLabel(card)}
             </div>
           </div>
-          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.summary}</div>
+          <div className="text-xs leading-6 text-dim">{card.summary}</div>
           {requiresAction ? (
-            <div className="text-xs" style={{ color: "var(--warning)" }}>
+            <div className="text-xs text-warning">
               Builder is paused here until you decide how to proceed.
             </div>
           ) : null}
           {card.progress ? (
-            <div className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
-              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+            <div className="border p-3 space-y-2 border-border-sub bg-surface">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted">
                 {card.progress.loopPhase ? <span>{card.progress.loopPhase.replaceAll("_", " ")}</span> : null}
                 {card.progress.currentIteration !== null ? (
                   <span>
@@ -420,45 +410,45 @@ function BuilderCardList({
                 ) : null}
               </div>
               {card.progress.latestLoopSummary ? (
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.progress.latestLoopSummary}</div>
+                <div className="text-xs leading-6 text-dim">{card.progress.latestLoopSummary}</div>
               ) : null}
             </div>
           ) : null}
           {visibleBadges.length > 0 ? (
-            <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+            <div className="flex flex-wrap gap-2 text-[11px] text-dim">
               {visibleBadges.map((badge) => (
-                <span key={`${card.id}-${badge}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+                <span key={`${card.id}-${badge}`} className="border px-2 py-1 border-border-sub bg-surface">
                   {badge}
                 </span>
               ))}
             </div>
           ) : null}
           {showAdvancedDetails ? (
-            <details className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
-              <summary className="text-[11px] uppercase tracking-[0.16em] cursor-pointer" style={{ color: "var(--text-muted)" }}>
+            <details className="border p-3 border-border-sub bg-surface">
+              <summary className="text-[11px] uppercase tracking-[0.16em] cursor-pointer text-muted">
                 advanced details
               </summary>
               <div className="mt-3 space-y-3">
                 {hasGovernanceDetails ? (
-                  <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs text-dim">
                     Open the Builder dashboard for the full governance history and review context.
                   </div>
                 ) : null}
                 {card.details?.preflightReview ? (
                   <div className="space-y-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>what changed</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted">what changed</div>
                     {card.details.preflightReview.surfaces.map((surface) => (
-                      <div key={`${card.id}-${surface.id}`} className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
-                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{surface.label}</span>
-                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {surface.severity}</span>
-                          <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>state: {surface.state.replaceAll("_", " ")}</span>
+                      <div key={`${card.id}-${surface.id}`} className="border p-3 space-y-2 border-border-sub bg-raised">
+                        <div className="flex flex-wrap gap-2 text-[11px] text-dim">
+                          <span className="border px-2 py-1 border-border-sub bg-surface">{surface.label}</span>
+                          <span className="border px-2 py-1 border-border-sub bg-surface">severity: {surface.severity}</span>
+                          <span className="border px-2 py-1 border-border-sub bg-surface">state: {surface.state.replaceAll("_", " ")}</span>
                         </div>
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{surface.summary}</div>
+                        <div className="text-xs leading-6 text-dim">{surface.summary}</div>
                         {surface.recommendations.length > 0 ? (
-                          <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                          <div className="flex flex-wrap gap-2 text-[11px] text-dim">
                             {surface.recommendations.map((recommendation) => (
-                              <span key={`${card.id}-${surface.id}-${recommendation}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{recommendation}</span>
+                              <span key={`${card.id}-${surface.id}-${recommendation}`} className="border px-2 py-1 border-border-sub bg-surface">{recommendation}</span>
                             ))}
                           </div>
                         ) : null}
@@ -468,24 +458,24 @@ function BuilderCardList({
                 ) : null}
                 {card.details?.mcpDrift ? (
                   <div className="space-y-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>tools and prompts</div>
-                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
-                      <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {card.details.mcpDrift.severity}</span>
-                      <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>classification: {card.details.mcpDrift.classification.replaceAll("_", " ")}</span>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted">tools and prompts</div>
+                    <div className="flex flex-wrap gap-2 text-[11px] text-dim">
+                      <span className="border px-2 py-1 border-border-sub bg-surface">severity: {card.details.mcpDrift.severity}</span>
+                      <span className="border px-2 py-1 border-border-sub bg-surface">classification: {card.details.mcpDrift.classification.replaceAll("_", " ")}</span>
                       {(card.details.mcpDrift.changedSurfaces ?? []).map((surface) => (
-                        <span key={`${card.id}-mcp-${surface}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{surface}</span>
+                        <span key={`${card.id}-mcp-${surface}`} className="border px-2 py-1 border-border-sub bg-surface">{surface}</span>
                       ))}
                     </div>
-                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                    <div className="flex flex-wrap gap-2 text-[11px] text-dim">
                       {(card.details.mcpDrift.reasons ?? []).map((reason) => (
-                        <span key={`${card.id}-${reason}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{reason}</span>
+                        <span key={`${card.id}-${reason}`} className="border px-2 py-1 border-border-sub bg-surface">{reason}</span>
                       ))}
                     </div>
                     {card.details.mcpDrift.contractChanged ? (
-                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>Platform contract metadata changed.</div>
+                      <div className="text-xs text-dim">Platform contract metadata changed.</div>
                     ) : null}
                     {card.details.mcpDrift.profileChanged ? (
-                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>Lane or profile exposure changed.</div>
+                      <div className="text-xs text-dim">Lane or profile exposure changed.</div>
                     ) : null}
                     {renderDetailGroups(card.details.mcpDrift.tools)}
                     {renderDetailGroups(card.details.mcpDrift.prompts)}
@@ -494,18 +484,18 @@ function BuilderCardList({
                 ) : null}
                 {card.details?.dependencyDrift ? (
                   <div className="space-y-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>packages and scripts</div>
-                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
-                      <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {card.details.dependencyDrift.severity}</span>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted">packages and scripts</div>
+                    <div className="flex flex-wrap gap-2 text-[11px] text-dim">
+                      <span className="border px-2 py-1 border-border-sub bg-surface">severity: {card.details.dependencyDrift.severity}</span>
                       {(card.details.dependencyDrift.reasons ?? []).map((reason) => (
-                        <span key={`${card.id}-${reason}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{reason}</span>
+                        <span key={`${card.id}-${reason}`} className="border px-2 py-1 border-border-sub bg-surface">{reason}</span>
                       ))}
                     </div>
                     {card.details.dependencyDrift.packageManagerChanged ? (
-                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>Package manager changed.</div>
+                      <div className="text-xs text-dim">Package manager changed.</div>
                     ) : null}
                     {card.details.dependencyDrift.lockfileChanged ? (
-                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>Lockfile changed.</div>
+                      <div className="text-xs text-dim">Lockfile changed.</div>
                     ) : null}
                     {renderDetailGroups(card.details.dependencyDrift.packages)}
                     {renderDetailGroups(card.details.dependencyDrift.scripts)}
@@ -513,41 +503,41 @@ function BuilderCardList({
                 ) : null}
                 {card.details?.fileTopologyDrift ? (
                   <div className="space-y-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>files and folders</div>
-                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
-                      <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>severity: {card.details.fileTopologyDrift.severity}</span>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted">files and folders</div>
+                    <div className="flex flex-wrap gap-2 text-[11px] text-dim">
+                      <span className="border px-2 py-1 border-border-sub bg-surface">severity: {card.details.fileTopologyDrift.severity}</span>
                       {(card.details.fileTopologyDrift.reasons ?? []).map((reason) => (
-                        <span key={`${card.id}-${reason}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{reason}</span>
+                        <span key={`${card.id}-${reason}`} className="border px-2 py-1 border-border-sub bg-surface">{reason}</span>
                       ))}
                     </div>
                     {renderDetailGroups(card.details.fileTopologyDrift.directories)}
                     {renderDetailGroups(card.details.fileTopologyDrift.importantFiles)}
                     {card.details.fileTopologyDrift.anchorsChanged.length > 0 ? (
                       <div className="space-y-1">
-                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>anchors changed</div>
-                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">anchors changed</div>
+                        <div className="flex flex-wrap gap-2 text-[11px] text-dim">
                           {card.details.fileTopologyDrift.anchorsChanged.map((item) => (
-                            <span key={`anchor-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
+                            <span key={`anchor-${item}`} className="border px-2 py-1 border-border-sub bg-surface">{item}</span>
                           ))}
                         </div>
                       </div>
                     ) : null}
                     {card.details.fileTopologyDrift.classificationsChanged.length > 0 ? (
                       <div className="space-y-1">
-                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>classifications changed</div>
-                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">classifications changed</div>
+                        <div className="flex flex-wrap gap-2 text-[11px] text-dim">
                           {card.details.fileTopologyDrift.classificationsChanged.map((item) => (
-                            <span key={`classification-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
+                            <span key={`classification-${item}`} className="border px-2 py-1 border-border-sub bg-surface">{item}</span>
                           ))}
                         </div>
                       </div>
                     ) : null}
                     {card.details.fileTopologyDrift.rulesChanged.length > 0 ? (
                       <div className="space-y-1">
-                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>rules changed</div>
-                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">rules changed</div>
+                        <div className="flex flex-wrap gap-2 text-[11px] text-dim">
                           {card.details.fileTopologyDrift.rulesChanged.map((item) => (
-                            <span key={`rule-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
+                            <span key={`rule-${item}`} className="border px-2 py-1 border-border-sub bg-surface">{item}</span>
                           ))}
                         </div>
                       </div>
@@ -556,50 +546,50 @@ function BuilderCardList({
                 ) : null}
                 {card.details?.taskExecution ? (
                   <div className="space-y-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>execution details</div>
-                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
-                      <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>verification: {card.details.taskExecution.verificationStatus.replaceAll("_", " ")}</span>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted">execution details</div>
+                    <div className="flex flex-wrap gap-2 text-[11px] text-dim">
+                      <span className="border px-2 py-1 border-border-sub bg-surface">verification: {card.details.taskExecution.verificationStatus.replaceAll("_", " ")}</span>
                       {card.details.taskExecution.failingScript ? (
-                        <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>failing script: {card.details.taskExecution.failingScript}</span>
+                        <span className="border px-2 py-1 border-border-sub bg-surface">failing script: {card.details.taskExecution.failingScript}</span>
                       ) : null}
                     </div>
                     {card.details.taskExecution.verificationSummary ? (
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{card.details.taskExecution.verificationSummary}</div>
+                      <div className="text-xs leading-6 text-dim">{card.details.taskExecution.verificationSummary}</div>
                     ) : null}
                     {card.details.taskExecution.verificationScripts.length > 0 ? (
                       <div className="space-y-1">
-                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>verification scripts</div>
-                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">verification scripts</div>
+                        <div className="flex flex-wrap gap-2 text-[11px] text-dim">
                           {card.details.taskExecution.verificationScripts.map((item) => (
-                            <span key={`verification-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
+                            <span key={`verification-${item}`} className="border px-2 py-1 border-border-sub bg-surface">{item}</span>
                           ))}
                         </div>
                       </div>
                     ) : null}
                     {card.details.taskExecution.changedFiles.length > 0 ? (
                       <div className="space-y-1">
-                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>changed files</div>
-                        <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">changed files</div>
+                        <div className="flex flex-wrap gap-2 text-[11px] text-dim">
                           {card.details.taskExecution.changedFiles.map((item) => (
-                            <span key={`changed-${item}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{item}</span>
+                            <span key={`changed-${item}`} className="border px-2 py-1 border-border-sub bg-surface">{item}</span>
                           ))}
                         </div>
                       </div>
                     ) : null}
                     {card.details.taskExecution.latestExcerpt ? (
                       <div className="space-y-1">
-                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{card.details.taskExecution.excerptLabel ?? "latest excerpt"}</div>
-                        <pre className="text-xs whitespace-pre-wrap border p-3 overflow-x-auto" style={{ color: "var(--text-dim)", borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>{card.details.taskExecution.latestExcerpt}</pre>
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">{card.details.taskExecution.excerptLabel ?? "latest excerpt"}</div>
+                        <pre className="text-xs whitespace-pre-wrap border p-3 overflow-x-auto text-dim border-border-sub bg-raised">{card.details.taskExecution.latestExcerpt}</pre>
                       </div>
                     ) : null}
                   </div>
                 ) : null}
                 {card.recommendations.length > 0 ? (
                   <div className="space-y-1">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>suggestions</div>
-                    <div className="flex flex-wrap gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted">suggestions</div>
+                    <div className="flex flex-wrap gap-2 text-[11px] text-dim">
                       {card.recommendations.map((recommendation) => (
-                        <span key={`${card.id}-${recommendation}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+                        <span key={`${card.id}-${recommendation}`} className="border px-2 py-1 border-border-sub bg-surface">
                           {recommendation}
                         </span>
                       ))}
@@ -608,14 +598,14 @@ function BuilderCardList({
                 ) : null}
                 {card.resolutionReason ? (
                   <div className="space-y-1">
-                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>resolution note</div>
-                    <div className="text-xs" style={{ color: "var(--text-dim)" }}>{card.resolutionReason}</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted">resolution note</div>
+                    <div className="text-xs text-dim">{card.resolutionReason}</div>
                   </div>
                 ) : null}
               </div>
             </details>
           ) : null}
-          <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
             <span>{card.projectRelativePath}</span>
           </div>
           {renderActionButtons(card)}
@@ -637,27 +627,26 @@ function BuilderWelcome({
 }) {
   return (
     <div className="space-y-4" data-testid="builder-welcome">
-      <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
+      <div className="text-xs uppercase tracking-[0.24em] text-muted">
         builder
       </div>
-      <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+      <div className="text-sm text-dim">
         Start a new project or select an existing one to continue building.
       </div>
       <button
         type="button"
         onClick={onNewProject}
-        className="w-full border p-4 text-left hover:bg-[--bg-hover] transition-colors"
-        style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)" }}
+        className="w-full border border-builder-accent-border bg-builder-accent-glow p-4 text-left transition-colors hover:bg-hover"
         data-testid="builder-new-project"
       >
-        <div className="text-sm" style={{ color: "#a78bfa" }}>New Project</div>
-        <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>
+        <div className="text-sm text-builder-accent">New Project</div>
+        <div className="text-xs mt-1 text-dim">
           Start from scratch with guided stack and configuration selection.
         </div>
       </button>
       {projects.length > 0 ? (
         <div className="space-y-2">
-          <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+          <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
             existing projects
           </div>
           {projects.map((project) => (
@@ -665,12 +654,11 @@ function BuilderWelcome({
               key={project.id}
               type="button"
               onClick={() => onSelectProject(project.id)}
-              className="w-full border p-3 text-left hover:bg-[--bg-hover] transition-colors"
-              style={{ borderColor: "var(--border)" }}
+              className="w-full border p-3 text-left hover:bg-[--bg-hover] transition-colors border-border"
               data-testid={`builder-project-${project.id}`}
             >
-              <div className="text-sm" style={{ color: "var(--text-primary)" }}>{project.name}</div>
-              <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{project.relativePath}</div>
+              <div className="text-sm text-primary">{project.name}</div>
+              <div className="text-xs mt-1 text-dim">{project.relativePath}</div>
             </button>
           ))}
         </div>
@@ -736,48 +724,45 @@ function BuilderOnboarding({
   return (
     <div className="space-y-4" data-testid="builder-onboarding">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "#a78bfa" }}>
+        <div className="text-xs uppercase tracking-[0.24em] text-builder-accent">
           new project setup
         </div>
         <button
           type="button"
           onClick={onCancel}
           disabled={disabled}
-          className="px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50"
-          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+          className="px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50 border-border text-primary"
         >
           Cancel
         </button>
       </div>
 
       {step === "naming" ? (
-        <div className="border p-4 space-y-3" style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)" }}>
-          <div className="text-sm" style={{ color: "var(--text-primary)" }}>What are you building?</div>
-          <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+        <div className="border p-4 space-y-3 border-builder-accent-border bg-builder-accent-glow">
+          <div className="text-sm text-primary">What are you building?</div>
+          <div className="text-xs text-dim">
             Give your project a name and an optional one-liner description.
           </div>
           <label className="block space-y-1.5">
-            <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>project name</span>
+            <span className="text-[11px] uppercase tracking-[0.16em] text-muted">project name</span>
             <input
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitName(); } }}
               placeholder="my-app"
               autoFocus
-              className="w-full border px-3 py-2 text-sm"
-              style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-primary)" }}
+              className="w-full border px-3 py-2 text-sm border-border bg-surface text-primary"
               data-testid="onboarding-name-input"
             />
           </label>
           <label className="block space-y-1.5">
-            <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>description</span>
+            <span className="text-[11px] uppercase tracking-[0.16em] text-muted">description</span>
             <input
               value={descInput}
               onChange={(e) => setDescInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitName(); } }}
               placeholder="A brief description of what you're building"
-              className="w-full border px-3 py-2 text-sm"
-              style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-primary)" }}
+              className="w-full border px-3 py-2 text-sm border-border bg-surface text-primary"
               data-testid="onboarding-desc-input"
             />
           </label>
@@ -785,8 +770,7 @@ function BuilderOnboarding({
             type="button"
             onClick={commitName}
             disabled={!nameInput.trim() || disabled}
-            className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-            style={{ borderColor: "#a78bfa", color: "#a78bfa" }}
+            className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-builder-accent text-builder-accent"
             data-testid="onboarding-name-next"
           >
             Next
@@ -795,11 +779,11 @@ function BuilderOnboarding({
       ) : null}
 
       {step === "stack" ? (
-        <div className="border p-4 space-y-3" style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)" }}>
-          <div className="text-sm" style={{ color: "var(--text-primary)" }}>
-            Pick a stack for <span style={{ color: "#a78bfa" }}>{spec.name}</span>
+        <div className="border p-4 space-y-3 border-builder-accent-border bg-builder-accent-glow">
+          <div className="text-sm text-primary">
+            Pick a stack for <span>{spec.name}</span>
           </div>
-          <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+          <div className="text-xs text-dim">
             Choose a preset or skip to configure manually.
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -809,18 +793,18 @@ function BuilderOnboarding({
                 type="button"
                 onClick={() => selectStack(preset.key)}
                 disabled={disabled}
-                className="border p-3 text-left hover:bg-[--bg-hover] transition-colors disabled:opacity-50"
-                style={{
-                  borderColor: spec.stackPresetKey === preset.key ? "#a78bfa" : "var(--border)",
-                  background: spec.stackPresetKey === preset.key ? "rgba(167,139,250,0.12)" : "transparent",
-                }}
+                className={`border p-3 text-left hover:bg-hover transition-colors disabled:opacity-50 ${
+                  spec.stackPresetKey === preset.key
+                    ? "border-builder-accent bg-[rgba(167,139,250,0.12)]"
+                    : "border-border bg-transparent"
+                }`}
                 data-testid={`onboarding-stack-${preset.key}`}
               >
-                <div className="text-sm" style={{ color: "var(--text-primary)" }}>{preset.displayName}</div>
-                <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{preset.description}</div>
+                <div className="text-sm text-primary">{preset.displayName}</div>
+                <div className="text-xs mt-1 text-dim">{preset.description}</div>
                 <div className="flex flex-wrap gap-1 mt-2">
                   {preset.tags.map((tag) => (
-                    <span key={tag} className="text-[10px] px-1.5 py-0.5 border" style={{ borderColor: "var(--border-sub)", color: "var(--text-muted)" }}>{tag}</span>
+                    <span key={tag} className="text-[10px] px-1.5 py-0.5 border border-border-sub text-muted">{tag}</span>
                   ))}
                 </div>
               </button>
@@ -831,8 +815,7 @@ function BuilderOnboarding({
               type="button"
               onClick={skipStack}
               disabled={disabled}
-              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-border text-primary"
             >
               Skip — configure manually
             </button>
@@ -840,8 +823,7 @@ function BuilderOnboarding({
               type="button"
               onClick={() => onSetStep("naming")}
               disabled={disabled}
-              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-border text-primary"
             >
               Back
             </button>
@@ -850,19 +832,18 @@ function BuilderOnboarding({
       ) : null}
 
       {step === "configuring" ? (
-        <div className="border p-4 space-y-3" style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)" }}>
-          <div className="text-sm" style={{ color: "var(--text-primary)" }}>
-            Fine-tune configuration for <span style={{ color: "#a78bfa" }}>{spec.name}</span>
+        <div className="border p-4 space-y-3 border-builder-accent-border bg-builder-accent-glow">
+          <div className="text-sm text-primary">
+            Fine-tune configuration for <span>{spec.name}</span>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block space-y-1.5">
-              <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>template</span>
+              <span className="text-[11px] uppercase tracking-[0.16em] text-muted">template</span>
               <select
                 value={spec.template}
                 onChange={(e) => onUpdateSpec({ template: e.target.value, stackPresetKey: "" })}
                 disabled={disabled}
-                className="w-full bg-transparent border px-3 py-2 text-sm"
-                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary"
                 data-testid="onboarding-template"
               >
                 {templates.map((t) => (
@@ -871,13 +852,12 @@ function BuilderOnboarding({
               </select>
             </label>
             <label className="block space-y-1.5">
-              <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>package manager</span>
+              <span className="text-[11px] uppercase tracking-[0.16em] text-muted">package manager</span>
               <select
                 value={spec.packageManager}
                 onChange={(e) => onUpdateSpec({ packageManager: e.target.value, stackPresetKey: "" })}
                 disabled={disabled}
-                className="w-full bg-transparent border px-3 py-2 text-sm"
-                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary"
                 data-testid="onboarding-pm"
               >
                 <option value="NPM">NPM</option>
@@ -886,7 +866,7 @@ function BuilderOnboarding({
             </label>
           </div>
           <div className="flex flex-wrap gap-4">
-            <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--text-primary)" }}>
+            <label className="flex items-center gap-2 text-xs cursor-pointer text-primary">
               <input
                 type="checkbox"
                 checked={spec.docker}
@@ -896,7 +876,7 @@ function BuilderOnboarding({
               />
               Docker setup
             </label>
-            <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--text-primary)" }}>
+            <label className="flex items-center gap-2 text-xs cursor-pointer text-primary">
               <input
                 type="checkbox"
                 checked={spec.git}
@@ -908,8 +888,8 @@ function BuilderOnboarding({
             </label>
           </div>
           {spec.stackPresetKey ? (
-            <div className="text-xs" style={{ color: "var(--text-dim)" }}>
-              Using stack preset: <span style={{ color: "#a78bfa" }}>{stackPresets.find((p) => p.key === spec.stackPresetKey)?.displayName ?? spec.stackPresetKey}</span>
+            <div className="text-xs text-dim">
+              Using stack preset: <span>{stackPresets.find((p) => p.key === spec.stackPresetKey)?.displayName ?? spec.stackPresetKey}</span>
             </div>
           ) : null}
           <div className="flex gap-2">
@@ -917,8 +897,7 @@ function BuilderOnboarding({
               type="button"
               onClick={() => onSetStep("confirming")}
               disabled={disabled}
-              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-              style={{ borderColor: "#a78bfa", color: "#a78bfa" }}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-builder-accent text-builder-accent"
               data-testid="onboarding-review"
             >
               Review &amp; Confirm
@@ -927,8 +906,7 @@ function BuilderOnboarding({
               type="button"
               onClick={() => onSetStep("stack")}
               disabled={disabled}
-              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-border text-primary"
             >
               Back
             </button>
@@ -937,34 +915,33 @@ function BuilderOnboarding({
       ) : null}
 
       {step === "confirming" ? (
-        <div className="border p-4 space-y-3" style={{ borderColor: "rgba(167,139,250,0.34)", background: "rgba(167,139,250,0.06)" }}>
-          <div className="text-sm" style={{ color: "var(--text-primary)" }}>
-            Ready to create <span style={{ color: "#a78bfa" }}>{spec.name}</span>?
+        <div className="border p-4 space-y-3 border-builder-accent-border bg-builder-accent-glow">
+          <div className="text-sm text-primary">
+            Ready to create <span>{spec.name}</span>?
           </div>
-          <div className="border p-3 space-y-2 text-xs" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <div className="border p-3 space-y-2 text-xs border-border bg-surface">
             {spec.description ? (
-              <div style={{ color: "var(--text-dim)" }}>{spec.description}</div>
+              <div className="text-dim">{spec.description}</div>
             ) : null}
-            <div className="grid gap-1" style={{ color: "var(--text-primary)" }}>
-              <div><span style={{ color: "var(--text-muted)" }}>Template:</span> {templates.find((t) => t.key === spec.template)?.displayName ?? spec.template}</div>
-              <div><span style={{ color: "var(--text-muted)" }}>Package manager:</span> {spec.packageManager}</div>
+            <div className="grid gap-1 text-primary">
+              <div><span className="text-muted">Template:</span> {templates.find((t) => t.key === spec.template)?.displayName ?? spec.template}</div>
+              <div><span className="text-muted">Package manager:</span> {spec.packageManager}</div>
               {spec.stackPresetKey ? (
-                <div><span style={{ color: "var(--text-muted)" }}>Stack preset:</span> {stackPresets.find((p) => p.key === spec.stackPresetKey)?.displayName ?? spec.stackPresetKey}</div>
+                <div><span className="text-muted">Stack preset:</span> {stackPresets.find((p) => p.key === spec.stackPresetKey)?.displayName ?? spec.stackPresetKey}</div>
               ) : null}
-              <div><span style={{ color: "var(--text-muted)" }}>Docker:</span> {spec.docker ? "Yes" : "No"}</div>
-              <div><span style={{ color: "var(--text-muted)" }}>Git:</span> {spec.git ? "Yes" : "No"}</div>
+              <div><span className="text-muted">Docker:</span> {spec.docker ? "Yes" : "No"}</div>
+              <div><span className="text-muted">Git:</span> {spec.git ? "Yes" : "No"}</div>
             </div>
           </div>
           {error ? (
-            <div className="text-xs" style={{ color: "var(--danger)" }}>{error}</div>
+            <div className="text-xs text-danger">{error}</div>
           ) : null}
           <div className="flex gap-2">
             <button
               type="button"
               onClick={onConfirm}
               disabled={disabled}
-              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-              style={{ borderColor: "#a78bfa", color: "#a78bfa" }}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-builder-accent text-builder-accent"
               data-testid="onboarding-confirm"
             >
               {disabled ? "Creating..." : "Create Project"}
@@ -973,8 +950,7 @@ function BuilderOnboarding({
               type="button"
               onClick={() => onSetStep("configuring")}
               disabled={disabled}
-              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-border text-primary"
             >
               Edit
             </button>
@@ -982,8 +958,7 @@ function BuilderOnboarding({
               type="button"
               onClick={onCancel}
               disabled={disabled}
-              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-              style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+              className="px-4 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-danger text-danger"
             >
               Cancel
             </button>
@@ -1107,21 +1082,21 @@ function MessageGroups({
     }
 
     return (
-      <div className="space-y-2 text-xs" style={{ color: "var(--text-dim)" }}>
-        <div style={{ color: "var(--text-muted)" }}>Context: {summary}</div>
+      <div className="space-y-2 text-xs text-dim">
+        <div className="text-muted">Context: {summary}</div>
         <div className="flex flex-wrap gap-2">
           {entry.chatMode ? (
-            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+            <span className="border px-2 py-1 border-border-sub bg-surface">
               mode: {entry.chatMode}
             </span>
           ) : null}
           {entry.chatPluginId ? (
-            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+            <span className="border px-2 py-1 border-border-sub bg-surface">
               plugin: {entry.chatPluginId}
             </span>
           ) : null}
           {entry.attachments?.map((attachment) => (
-            <span key={`${entry.id}-${attachment.path}`} className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+            <span key={`${entry.id}-${attachment.path}`} className="border px-2 py-1 border-border-sub bg-surface">
               doc: {attachment.label}
             </span>
           ))}
@@ -1203,7 +1178,7 @@ function MessageGroups({
         <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: accent.title }}>
           {title}
         </div>
-        <div className="text-xs whitespace-pre-wrap break-words" style={{ color: "var(--text-dim)" }}>
+        <div className="text-xs whitespace-pre-wrap break-words text-dim">
           {body}
         </div>
       </div>
@@ -1228,7 +1203,7 @@ function MessageGroups({
   return (
     <div className="space-y-3">
       {messages.length === 0 && !pendingAssistantTurn && (
-        <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+        <div className="text-sm text-muted">
           {emptyHint ?? "Ask BizBot to draft, schedule, inspect analytics, or recall brand context."}
         </div>
       )}
@@ -1237,28 +1212,23 @@ function MessageGroups({
           <div
             key={group.entry.id}
             data-testid={`chat-message-${group.entry.role}`}
-            className="group border px-4 py-3"
-            style={{
-              borderColor: "var(--accent-dim)",
-              background: "rgba(56,189,248,0.08)",
-            }}
+            className="group border px-4 py-3 border-accent-dim bg-accent/8"
           >
             <div className="flex items-center justify-between gap-3 mb-2">
-              <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
+              <div className="text-xs uppercase tracking-[0.24em] text-muted">
                 {group.entry.role}
               </div>
               {onPromote ? (
                 <button
                   type="button"
                   onClick={() => onPromote(group.entry)}
-                  className="px-2 py-1 border text-xs uppercase tracking-[0.18em] opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto focus:opacity-100 focus:pointer-events-auto"
-                  style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  className="px-2 py-1 border text-xs uppercase tracking-[0.18em] opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto focus:opacity-100 focus:pointer-events-auto border-border text-primary"
                 >
                   promote to memory
                 </button>
               ) : null}
             </div>
-            <div className="whitespace-pre-wrap text-sm" style={{ color: "var(--text-primary)" }}>{group.entry.content}</div>
+            <div className="whitespace-pre-wrap text-sm text-primary">{group.entry.content}</div>
             {(() => {
               const metadata = renderExecutionMetadata(group.entry);
               const builderCards = splitBuilderCards(group.entry.builderCards);
@@ -1267,8 +1237,8 @@ function MessageGroups({
               }
 
               return (
-                <details className="mt-3 border px-3 py-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
-                  <summary className="cursor-pointer text-xs" style={{ color: "var(--text-dim)" }}>
+                <details className="mt-3 border px-3 py-2 border-border-sub bg-surface">
+                  <summary className="cursor-pointer text-xs text-dim">
                     Message details
                   </summary>
                   <div className="mt-3 space-y-3">
@@ -1288,29 +1258,24 @@ function MessageGroups({
           <div
             key={group.id}
             data-testid="chat-message-assistant"
-            className="group border px-4 py-3 space-y-3"
-            style={{
-              borderColor: "var(--border)",
-              background: "var(--bg-raised)",
-            }}
+            className="group border px-4 py-3 space-y-3 border-border bg-raised"
           >
             <div className="flex items-center justify-between gap-3">
-              <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
+              <div className="text-xs uppercase tracking-[0.24em] text-muted">
                 assistant
               </div>
             </div>
             {group.assistantEntries.map((entry, entryIndex) => (
               <div key={entry.id} className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs text-dim">
                     BizBot
                   </div>
                   {onPromote && !group.pendingTurn ? (
                     <button
                       type="button"
                       onClick={() => onPromote(entry)}
-                      className="px-2 py-1 border text-xs uppercase tracking-[0.18em] opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto focus:opacity-100 focus:pointer-events-auto"
-                      style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                      className="px-2 py-1 border text-xs uppercase tracking-[0.18em] opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto focus:opacity-100 focus:pointer-events-auto border-border text-primary"
                     >
                       promote to memory
                     </button>
@@ -1351,16 +1316,15 @@ function MessageGroups({
                         }
                         toggleActivityGroup(group.id);
                       }}
-                      className="border px-3 py-2"
-                      style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}
+                      className="border px-3 py-2 border-border-sub bg-surface"
                     >
-                      <summary className="cursor-pointer text-xs" style={{ color: "var(--text-dim)" }}>
+                      <summary className="cursor-pointer text-xs text-dim">
                         {summarizeActivity(group.activityEntries, group.pendingTurn)}
                       </summary>
                       <div className="mt-3 space-y-3">
                         {group.pendingTurn?.builderProgress ? (
                           <div className="space-y-2">
-                            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
                               {verbosity === "detailed" ? "builder progress" : "working details"}
                             </div>
                             <BuilderRunPanel progress={group.pendingTurn.builderProgress} />
@@ -1376,7 +1340,7 @@ function MessageGroups({
                             {metadataEntries.map(({ entry, metadata }) => (
                               <div key={`${entry.id}-metadata`} className="space-y-2">
                                 {group.assistantEntries.length > 1 ? (
-                                  <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
                                     message context
                                   </div>
                                 ) : null}
@@ -1387,7 +1351,7 @@ function MessageGroups({
                         ) : null}
                         {passiveCards.length > 0 ? (
                           <div className="space-y-2">
-                            <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
                               {verbosity === "detailed" ? "work details" : `${passiveCards.length} work detail${passiveCards.length === 1 ? "" : "s"}`}
                             </div>
                             <BuilderCardList cards={passiveCards} compact verbosity={verbosity} />
@@ -1398,7 +1362,7 @@ function MessageGroups({
                   );
                 })()}
             {group.assistantEntries.length === 0 ? (
-              <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+              <div className="text-sm text-dim">
                     I'm still working on this.
                 {isStreaming && groupIndex === grouped.length - 1 ? (
                   <span data-testid="chat-streaming-cursor" className="inline-block ml-1 animate-pulse">▌</span>
@@ -1409,8 +1373,8 @@ function MessageGroups({
         )
       ))}
       {isStreaming && grouped.at(-1)?.kind !== "response" ? (
-        <div data-testid="chat-message-assistant" className="border px-4 py-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
-          <div className="text-xs" style={{ color: "var(--text-dim)" }}>
+        <div data-testid="chat-message-assistant" className="border px-4 py-3 border-border bg-raised">
+          <div className="text-xs text-dim">
             BizBot <span data-testid="chat-streaming-cursor" className="inline-block ml-1 animate-pulse">▌</span>
           </div>
         </div>
@@ -1806,11 +1770,11 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
         <section className="flex flex-col gap-1.5 px-1">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="text-[11px] uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>
+              <div className="text-[11px] uppercase tracking-[0.24em] text-muted">
                 {panelMode === "chat" ? "active conversation" : "conversation history"}
               </div>
               {panelMode === "chat" ? (
-                <div className="text-sm truncate" style={{ color: "var(--text-primary)" }}>
+                <div className="text-sm truncate text-primary">
                   {currentConversation?.label ?? "New chat"}
                 </div>
               ) : null}
@@ -1825,8 +1789,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   setPanelMode("chat");
                   setActionError(null);
                 }}
-                className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:bg-[--bg-hover] transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:bg-[--bg-hover] transition-colors disabled:opacity-40 disabled:pointer-events-none border-border text-primary"
               >
                 New Chat
               </button>
@@ -1834,8 +1797,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 type="button"
                 aria-label="Open history"
                 onClick={() => setPanelMode((current) => current === "chat" ? "history" : "chat")}
-                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:bg-[--bg-hover] transition-colors"
-                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border hover:bg-[--bg-hover] transition-colors border-border text-primary"
               >
                 <HistoryIcon />
                 History
@@ -1844,16 +1806,15 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 type="button"
                 onClick={() => chat.conversationId ? void handleArchiveConversation(chat.conversationId) : undefined}
                 disabled={!chat.conversationId || chat.isPending || chat.isBootstrapping}
-                className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border disabled:opacity-50 hover:bg-[--bg-hover] transition-colors"
-                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                className="px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] border disabled:opacity-50 hover:bg-[--bg-hover] transition-colors border-border text-primary"
               >
                 Archive
               </button>
             </div>
           </div>
           {panelMode === "chat" && showHeaderConversationDetails ? (
-            <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
-              <details className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }} data-testid="header-conversation-details">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-dim">
+              <details className="border px-2 py-1 border-border-sub bg-raised" data-testid="header-conversation-details">
                 <summary className="cursor-pointer list-none">
                   conversation details
                 </summary>
@@ -1889,14 +1850,14 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   ) : null}
                   <div className="space-y-2" data-testid="header-session-summary">
                     <div>
-                      <span style={{ color: "var(--text-muted)" }}>session</span>{" "}
+                      <span className="text-muted">session</span>{" "}
                       {formatNumber(chat.activeRun.totalTokens)} tokens • {formatUsd(activeRunCostEstimate)}
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1" style={{ color: "var(--text-dim)" }}>
-                      <span><span style={{ color: "var(--text-muted)" }}>requests</span> {formatNumber(chat.activeRun.requestCount)}</span>
-                      <span><span style={{ color: "var(--text-muted)" }}>prompt</span> {formatNumber(chat.activeRun.promptTokens)}</span>
-                      <span><span style={{ color: "var(--text-muted)" }}>completion</span> {formatNumber(chat.activeRun.completionTokens)}</span>
-                      {chat.activeRun.cachedPromptTokens > 0 ? <span><span style={{ color: "var(--text-muted)" }}>cached</span> {formatNumber(chat.activeRun.cachedPromptTokens)}</span> : null}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-dim">
+                      <span><span className="text-muted">requests</span> {formatNumber(chat.activeRun.requestCount)}</span>
+                      <span><span className="text-muted">prompt</span> {formatNumber(chat.activeRun.promptTokens)}</span>
+                      <span><span className="text-muted">completion</span> {formatNumber(chat.activeRun.completionTokens)}</span>
+                      {chat.activeRun.cachedPromptTokens > 0 ? <span><span className="text-muted">cached</span> {formatNumber(chat.activeRun.cachedPromptTokens)}</span> : null}
                     </div>
                   </div>
                 </div>
@@ -1905,12 +1866,12 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           ) : null}
         </section>
 
-        <section className="border min-h-0 flex flex-col" style={{ borderColor: "var(--border)", background: "var(--bg-surface)", minHeight: 500 }}>
+        <section className="border min-h-0 flex flex-col border-border bg-surface" style={{ minHeight: 500 }}>
           {panelMode === "chat" ? (
             <>
               <div className="relative min-h-0 flex-1">
                 {chat.isBootstrapping ? (
-                  <div className="absolute right-4 top-3 z-10 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                  <div className="absolute right-4 top-3 z-10 text-[11px] uppercase tracking-[0.16em] text-muted">
                     loading chat
                   </div>
                 ) : null}
@@ -2045,56 +2006,52 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           ) : (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] h-full min-h-0 p-4">
               <div className="space-y-4 min-w-0">
-                <form onSubmit={(event) => void handleApplyHistoryFilters(event)} className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                <form onSubmit={(event) => void handleApplyHistoryFilters(event)} className="border p-4 space-y-3 border-border bg-raised">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>history filters</div>
-                      <div className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>Search titles and messages, then narrow both lists by updated date.</div>
+                      <div className="text-xs uppercase tracking-[0.24em] text-muted">history filters</div>
+                      <div className="text-xs mt-2 text-dim">Search titles and messages, then narrow both lists by updated date.</div>
                     </div>
                     {chat.isLoadingHistoryLists ? (
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>refreshing</div>
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-dim">refreshing</div>
                     ) : null}
                   </div>
                   <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,180px))_auto]">
                     <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>search</span>
+                      <span className="text-[11px] uppercase tracking-[0.16em] text-muted">search</span>
                       <input
                         aria-label="history search"
                         value={historySearchDraft}
                         onChange={(event) => setHistorySearchDraft(event.target.value)}
                         placeholder="Search titles, summaries, or messages"
-                        className="w-full border px-3 py-2 text-sm"
-                        style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-primary)" }}
+                        className="w-full border px-3 py-2 text-sm border-border bg-surface text-primary"
                       />
                     </label>
                     <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>updated from</span>
+                      <span className="text-[11px] uppercase tracking-[0.16em] text-muted">updated from</span>
                       <input
                         aria-label="updated from"
                         type="date"
                         value={historyFromDraft}
                         onChange={(event) => setHistoryFromDraft(event.target.value)}
-                        className="w-full border px-3 py-2 text-sm"
-                        style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-primary)" }}
+                        className="w-full border px-3 py-2 text-sm border-border bg-surface text-primary"
                       />
                     </label>
                     <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>updated to</span>
+                      <span className="text-[11px] uppercase tracking-[0.16em] text-muted">updated to</span>
                       <input
                         aria-label="updated to"
                         type="date"
                         value={historyToDraft}
                         onChange={(event) => setHistoryToDraft(event.target.value)}
-                        className="w-full border px-3 py-2 text-sm"
-                        style={{ borderColor: "var(--border)", background: "var(--bg-surface)", color: "var(--text-primary)" }}
+                        className="w-full border px-3 py-2 text-sm border-border bg-surface text-primary"
                       />
                     </label>
                     <div className="flex gap-2 items-end">
                       <button
                         type="submit"
                         disabled={chat.isLoadingHistoryLists}
-                        className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                        className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-border text-primary"
                       >
                         Apply
                       </button>
@@ -2102,8 +2059,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                         type="button"
                         onClick={() => void handleClearHistoryFilters()}
                         disabled={!hasHistoryFilters && !historySearchDraft && !historyFromDraft && !historyToDraft}
-                        className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                        className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-border text-primary"
                       >
                         Clear
                       </button>
@@ -2112,39 +2068,39 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 </form>
 
                 <div className="grid gap-3 md:grid-cols-2">
-                  <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>recent chats</div>
-                    <div className="mt-2 text-xl" style={{ color: "var(--text-primary)" }}>{chat.recentPagination.totalItems}</div>
-                    <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{hasHistoryFilters ? "Matching active conversations after filters." : "Active conversations you can preview, open, archive, or delete."}</div>
+                  <div className="border p-3 border-border-sub bg-raised">
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted">recent chats</div>
+                    <div className="mt-2 text-xl text-primary">{chat.recentPagination.totalItems}</div>
+                    <div className="text-xs mt-1 text-dim">{hasHistoryFilters ? "Matching active conversations after filters." : "Active conversations you can preview, open, archive, or delete."}</div>
                   </div>
-                  <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>archived chats</div>
-                    <div className="mt-2 text-xl" style={{ color: "var(--text-primary)" }}>{chat.archivedPagination.totalItems}</div>
-                    <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{hasHistoryFilters ? "Matching archived conversations after filters." : "Archived conversations remain inspectable, restorable, and deletable."}</div>
+                  <div className="border p-3 border-border-sub bg-raised">
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted">archived chats</div>
+                    <div className="mt-2 text-xl text-primary">{chat.archivedPagination.totalItems}</div>
+                    <div className="text-xs mt-1 text-dim">{hasHistoryFilters ? "Matching archived conversations after filters." : "Archived conversations remain inspectable, restorable, and deletable."}</div>
                   </div>
                 </div>
 
                 <div className="grid gap-4 2xl:grid-cols-2">
-                  <div className="border p-4 space-y-3 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                  <div className="border p-4 space-y-3 min-w-0 border-border bg-raised">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>Recent</div>
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{chat.recentPagination.totalItems} total</div>
+                      <div className="text-xs uppercase tracking-[0.24em] text-muted">Recent</div>
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-dim">{chat.recentPagination.totalItems} total</div>
                     </div>
                     <div className="space-y-2">
                       {chat.recentPagination.totalItems === 0 ? (
-                        <div className="border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+                        <div className="border p-3 text-sm border-border text-muted">
                           {hasHistoryFilters ? "No active chats match the current filters." : "No active chats yet."}
                         </div>
                       ) : chat.recentConversations.map((conversation) => (
-                        <div key={conversation.id} className="border p-3" style={{ borderColor: conversation.id === chat.conversationId ? "var(--accent)" : "var(--border)" }}>
-                          <div className="text-sm" style={{ color: "var(--text-primary)" }}>{conversation.label}</div>
-                          <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{conversation.preview ?? "No messages yet"}</div>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
-                            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultMode}</span>
-                            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultPluginId}</span>
+                        <div key={conversation.id} className={`border p-3 ${conversation.id === chat.conversationId ? "border-accent" : "border-border"}`}>
+                          <div className="text-sm text-primary">{conversation.label}</div>
+                          <div className="text-xs mt-1 text-dim">{conversation.preview ?? "No messages yet"}</div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted">
+                            <span className="border px-2 py-1 border-border-sub bg-surface">{conversation.defaultMode}</span>
+                            <span className="border px-2 py-1 border-border-sub bg-surface">{conversation.defaultPluginId}</span>
                             {renderConversationProjectBadge(conversation)}
                           </div>
-                          <div className="text-[11px] mt-2 flex items-center justify-between gap-3" style={{ color: "var(--text-muted)" }}>
+                          <div className="text-[11px] mt-2 flex items-center justify-between gap-3 text-muted">
                             <span>{formatTimestamp(conversation.lastMessageAt)}</span>
                             <span>{conversation.messageCount} messages</span>
                           </div>
@@ -2152,16 +2108,14 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                             <button
                               type="button"
                               onClick={() => void handleOpenArchivedConversation(conversation.id)}
-                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border border-border text-primary"
                             >
                               Preview
                             </button>
                             <button
                               type="button"
                               onClick={() => void handleSwitchConversation(conversation.id)}
-                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border border-border text-primary"
                             >
                               Open Chat
                             </button>
@@ -2169,16 +2123,14 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                               type="button"
                               onClick={() => void handleArchiveConversation(conversation.id)}
                               disabled={chat.isPending || chat.isBootstrapping}
-                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50"
-                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border disabled:opacity-50 border-border text-primary"
                             >
                               Archive
                             </button>
                             <button
                               type="button"
                               onClick={() => void handleDeleteConversation(conversation.id)}
-                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                              style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border border-danger text-danger"
                             >
                               Delete
                             </button>
@@ -2196,50 +2148,47 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                     />
                   </div>
 
-                  <div className="border p-4 space-y-3 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                  <div className="border p-4 space-y-3 min-w-0 border-border bg-raised">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>Archived</div>
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>{chat.archivedPagination.totalItems} total</div>
+                      <div className="text-xs uppercase tracking-[0.24em] text-muted">Archived</div>
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-dim">{chat.archivedPagination.totalItems} total</div>
                     </div>
                     <div className="space-y-2">
                       {chat.archivedPagination.totalItems === 0 ? (
-                        <div className="border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+                        <div className="border p-3 text-sm border-border text-muted">
                           {hasHistoryFilters ? "No archived chats match the current filters." : "No archived chats yet."}
                         </div>
                       ) : chat.archivedConversations.map((conversation) => (
-                        <div key={conversation.id} className="border p-3" style={{ borderColor: chat.historyConversation?.id === conversation.id ? "var(--accent)" : "var(--border)" }}>
-                          <div className="text-sm" style={{ color: "var(--text-primary)" }}>{conversation.label}</div>
-                          <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{conversation.preview ?? "No messages yet"}</div>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
-                            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultMode}</span>
-                            <span className="border px-2 py-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>{conversation.defaultPluginId}</span>
+                        <div key={conversation.id} className={`border p-3 ${chat.historyConversation?.id === conversation.id ? "border-accent" : "border-border"}`}>
+                          <div className="text-sm text-primary">{conversation.label}</div>
+                          <div className="text-xs mt-1 text-dim">{conversation.preview ?? "No messages yet"}</div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted">
+                            <span className="border px-2 py-1 border-border-sub bg-surface">{conversation.defaultMode}</span>
+                            <span className="border px-2 py-1 border-border-sub bg-surface">{conversation.defaultPluginId}</span>
                             {renderConversationProjectBadge(conversation)}
                           </div>
-                          <div className="text-[11px] mt-2" style={{ color: "var(--text-muted)" }}>
+                          <div className="text-[11px] mt-2 text-muted">
                             Archived {formatTimestamp(conversation.archivedAt)}
                           </div>
                           <div className="flex flex-wrap gap-2 mt-3">
                             <button
                               type="button"
                               onClick={() => void handleOpenArchivedConversation(conversation.id)}
-                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border border-border text-primary"
                             >
                               Preview
                             </button>
                             <button
                               type="button"
                               onClick={() => void handleRestoreConversation(conversation.id)}
-                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border border-border text-primary"
                             >
                               Restore
                             </button>
                             <button
                               type="button"
                               onClick={() => void handleDeleteConversation(conversation.id)}
-                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                              style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                              className="px-3 py-2 text-xs uppercase tracking-[0.18em] border border-danger text-danger"
                             >
                               Delete
                             </button>
@@ -2259,22 +2208,22 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 </div>
               </div>
 
-              <div className="border p-4 overflow-auto min-w-0 min-h-0" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+              <div className="border p-4 overflow-auto min-w-0 min-h-0 border-border bg-raised">
                 {chat.isLoadingHistoryConversation ? (
-                  <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading conversation...</div>
+                  <div className="text-sm text-muted">Loading conversation...</div>
                 ) : chat.historyConversation ? (
                   <div className="space-y-4">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>History preview</div>
-                      <div className="text-lg" style={{ color: "var(--text-primary)" }}>{chat.historyConversation.label}</div>
-                      <div className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs uppercase tracking-[0.24em] mb-2 text-muted">History preview</div>
+                      <div className="text-lg text-primary">{chat.historyConversation.label}</div>
+                      <div className="text-xs mt-2 text-dim">
                         {chat.historyConversation.archivedAt ? `Archived ${formatTimestamp(chat.historyConversation.archivedAt)}` : "Active"}
                       </div>
-                      <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs mt-1 text-dim">
                         {chat.historyConversation.messageCount} messages · last updated {formatTimestamp(chat.historyConversation.lastMessageAt)}
                       </div>
                       {chat.historyConversation.builderProjectName ? (
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted">
                           {renderConversationProjectBadge(chat.historyConversation)}
                         </div>
                       ) : null}
@@ -2285,16 +2234,14 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                           <button
                             type="button"
                             onClick={() => void handleRestoreConversation(chat.historyConversation!.id)}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border border-border text-primary"
                           >
                             Restore
                           </button>
                           <button
                             type="button"
                             onClick={() => void handleDeleteConversation(chat.historyConversation!.id)}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border border-danger text-danger"
                           >
                             Delete
                           </button>
@@ -2304,16 +2251,14 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                           <button
                             type="button"
                             onClick={() => void handleSwitchConversation(chat.historyConversation!.id)}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border border-border text-primary"
                           >
                             Open Chat
                           </button>
                           <button
                             type="button"
                             onClick={() => void handleDeleteConversation(chat.historyConversation!.id)}
-                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border"
-                            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                            className="px-3 py-2 text-xs uppercase tracking-[0.18em] border border-danger text-danger"
                           >
                             Delete
                           </button>
@@ -2331,7 +2276,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                     ))} />
                   </div>
                 ) : (
-                  <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+                  <div className="text-sm text-muted">
                     Select a recent or archived chat to preview it, then archive, restore, open, or delete it from here.
                   </div>
                 )}
@@ -2341,43 +2286,43 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
         </section>
 
         {memoryDraft ? (
-          <section className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <section className="border p-4 space-y-3 border-border bg-surface">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>promote message to explicit memory</div>
-                <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+                <div className="text-xs uppercase tracking-[0.24em] mb-2 text-muted">promote message to explicit memory</div>
+                <div className="text-sm text-dim">
                   Convert a stable fact from chat into durable user memory. Edit the category, key, and value before saving.
                 </div>
               </div>
-              <div className="text-xs uppercase tracking-[0.16em]" style={{ color: memoryState === "saved" ? "var(--success)" : memoryState === "error" ? "var(--danger)" : "var(--text-dim)" }}>{memoryState}</div>
+              <div className={`text-xs uppercase tracking-[0.16em] ${memoryState === "saved" ? "text-success" : memoryState === "error" ? "text-danger" : "text-dim"}`}>{memoryState}</div>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>category</label>
-                <select value={memoryDraft.category} onChange={(event) => setMemoryDraft((current) => current ? { ...current, category: event.target.value as MemoryFactCategory } : current)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">category</label>
+                <select value={memoryDraft.category} onChange={(event) => setMemoryDraft((current) => current ? { ...current, category: event.target.value as MemoryFactCategory } : current)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
                   {MEMORY_FACT_CATEGORIES.map((option) => (
                     <option key={option} value={option}>{option}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>key</label>
-                <input value={memoryDraft.key} onChange={(event) => setMemoryDraft((current) => current ? { ...current, key: event.target.value } : current)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">key</label>
+                <input value={memoryDraft.key} onChange={(event) => setMemoryDraft((current) => current ? { ...current, key: event.target.value } : current)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>value</label>
-              <textarea value={memoryDraft.value} onChange={(event) => setMemoryDraft((current) => current ? { ...current, value: event.target.value } : current)} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">value</label>
+              <textarea value={memoryDraft.value} onChange={(event) => setMemoryDraft((current) => current ? { ...current, value: event.target.value } : current)} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               Use this only for durable, user-approved facts. Do not promote temporary requests, guesses, secrets, or tool noise.
             </div>
-            {memoryError ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{memoryError}</div> : null}
+            {memoryError ? <div className="text-xs leading-6 text-danger">{memoryError}</div> : null}
             <div className="flex gap-2">
-              <button onClick={() => void promoteToMemory()} disabled={memoryState === "saving" || !memoryDraft.key.trim() || !memoryDraft.value.trim()} className="px-4 py-2 text-sm uppercase tracking-[0.18em] border disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+              <button onClick={() => void promoteToMemory()} disabled={memoryState === "saving" || !memoryDraft.key.trim() || !memoryDraft.value.trim()} className="px-4 py-2 text-sm uppercase tracking-[0.18em] border disabled:opacity-50 border-accent text-accent">
                 {memoryState === "saving" ? "Saving" : "save memory fact"}
               </button>
-              <button onClick={() => { setMemoryDraft(null); setMemoryState("idle"); setMemoryError(null); }} className="px-4 py-2 text-sm uppercase tracking-[0.18em] border" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+              <button onClick={() => { setMemoryDraft(null); setMemoryState("idle"); setMemoryError(null); }} className="px-4 py-2 text-sm uppercase tracking-[0.18em] border border-border text-primary">
                 cancel
               </button>
             </div>
@@ -2430,21 +2375,20 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           <div className="p-3">
             <div className="mb-3 flex flex-wrap items-end gap-3">
               <label className="space-y-1.5 min-w-[7rem]">
-                <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>mode</span>
+                <span className="text-[11px] uppercase tracking-[0.16em] text-muted">mode</span>
                 <select
                   aria-label="chat mode"
                   value={executionMode}
                   disabled={panelMode === "history" || chat.isPending}
                   onChange={(event) => setExecutionMode(event.target.value as ChatExecutionMode)}
-                  className="w-full bg-transparent border px-3 py-2 text-sm"
-                  style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary"
                 >
                   <option value="ask">Ask</option>
                   <option value="agent">Agent</option>
                 </select>
               </label>
               <label className="space-y-1.5 w-[11rem] md:w-[13rem] shrink-0">
-                <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>capability</span>
+                <span className="text-[11px] uppercase tracking-[0.16em] text-muted">capability</span>
                 <select
                   aria-label="chat plugin"
                   value={executionPluginId}
@@ -2454,8 +2398,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                     setActionError(null);
                   }}
                   title={activePlugin.description}
-                  className="w-full bg-transparent border px-3 py-2 text-sm"
-                  style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary"
                 >
                   {executionCatalog.plugins.map((plugin) => (
                     <option key={plugin.id} value={plugin.id}>{plugin.displayName}</option>
@@ -2463,7 +2406,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 </select>
               </label>
               <label className="space-y-1.5 w-[8.5rem] shrink-0">
-                <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>reply style</span>
+                <span className="text-[11px] uppercase tracking-[0.16em] text-muted">reply style</span>
                 <select
                   aria-label="chat verbosity"
                   value={chat.chatVerbosity}
@@ -2475,8 +2418,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       setActionError(error instanceof Error ? error.message : String(error));
                     });
                   }}
-                  className="w-full bg-transparent border px-3 py-2 text-sm"
-                  style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary"
                 >
                   <option value="concise">Concise</option>
                   <option value="detailed">Detailed</option>
@@ -2484,14 +2426,13 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
               </label>
               {executionPluginId === "builder" ? (
                 <label className="space-y-1.5 w-[14rem] md:w-[16rem] shrink-0">
-                  <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>builder project</span>
+                  <span className="text-[11px] uppercase tracking-[0.16em] text-muted">builder project</span>
                   <select
                     aria-label="builder project"
                     value={selectedBuilderProjectId ?? ""}
                     onChange={(event) => setSelectedBuilderProjectId(event.target.value || null)}
                     disabled={chat.isPending || builderProjects.length === 0}
-                    className="w-full bg-transparent border px-3 py-2 text-sm"
-                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary"
                     title={selectedBuilderProject ? `${selectedBuilderProject.name}${selectedBuilderProject.relativePath ? ` · ${selectedBuilderProject.relativePath}` : ""}` : ""}
                   >
                     {builderProjects.length === 0 ? <option value="">No active Builder projects</option> : null}
@@ -2503,7 +2444,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
               ) : null}
               {executionPluginId === "builder" ? (
                 <label className="space-y-1.5 min-w-[15rem] flex-1">
-                  <span className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>project chat</span>
+                  <span className="text-[11px] uppercase tracking-[0.16em] text-muted">project chat</span>
                   <select
                     aria-label="builder project chat history"
                     value={selectedBuilderHistoryConversationId}
@@ -2517,8 +2458,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       void handleSwitchConversation(nextConversationId);
                     }}
                     disabled={chat.isPending || !selectedBuilderProjectId}
-                    className="w-full bg-transparent border px-3 py-2 text-sm"
-                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary"
                     title={currentConversation?.builderProjectId === selectedBuilderProjectId ? currentConversation.label : ""}
                   >
                     <option value="">{selectedBuilderProject ? `New chat in ${selectedBuilderProject.name}` : "Select a Builder project"}</option>
@@ -2542,8 +2482,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
               }}
               placeholder={builderPluginActive ? "Describe what to build or change in the selected project..." : "Ask BizBot anything..."}
               rows={1}
-              className="w-full bg-transparent text-sm resize-none leading-relaxed px-1 py-1"
-              style={{ color: "var(--text-primary)", minHeight: "2.5rem", outline: "none", border: "none" }}
+              className="w-full bg-transparent text-sm resize-none leading-relaxed px-1 py-1 text-primary" style={{ minHeight: "2.5rem", outline: "none", border: "none" }}
               disabled={panelMode === "history"}
             />
             {selectedAttachments.length > 0 ? (
@@ -2565,17 +2504,16 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
           </div>
 
           {attachmentMenuOpen ? (
-            <div className="border-t px-3 py-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+            <div className="border-t px-3 py-3 space-y-3 border-border bg-raised">
               {attachmentMenuOpen ? (
                 <div data-testid="composer-options-panel" className="space-y-2">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>knowledge docs</div>
+                <div className="text-[11px] uppercase tracking-[0.16em] text-muted">knowledge docs</div>
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => setAttachmentMenuOpen(false)}
-                    className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border"
-                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border border-border text-primary"
                   >
                     Close
                   </button>
@@ -2590,8 +2528,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={knowledgeState === "uploading"}
-                    className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50"
-                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50 border-border text-primary"
                   >
                     {knowledgeState === "uploading" ? "Uploading" : "Upload"}
                   </button>
@@ -2599,17 +2536,16 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                     type="button"
                     onClick={() => void loadKnowledgeFiles()}
                     disabled={knowledgeState === "loading" || knowledgeState === "uploading"}
-                    className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50"
-                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    className="px-2 py-1 text-[11px] uppercase tracking-[0.16em] border disabled:opacity-50 border-border text-primary"
                   >
                     Refresh
                   </button>
                 </div>
               </div>
-              {knowledgeError ? <div className="text-[11px]" style={{ color: "var(--danger)" }}>{knowledgeError}</div> : null}
+              {knowledgeError ? <div className="text-[11px] text-danger">{knowledgeError}</div> : null}
               <div className="grid gap-1.5 max-h-40 overflow-y-auto">
                 {knowledgeFiles.length === 0 && knowledgeState === "ready" ? (
-                  <div className="text-xs" style={{ color: "var(--text-muted)" }}>No indexed docs yet.</div>
+                  <div className="text-xs text-muted">No indexed docs yet.</div>
                 ) : knowledgeFiles.map((file) => {
                   const attached = selectedAttachments.some((attachment) => attachment.path === file.path);
                   return (
@@ -2624,7 +2560,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       }}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs" style={{ color: "var(--text-primary)" }}>{file.name}</span>
+                        <span className="text-xs text-primary">{file.name}</span>
                         <span className="text-[10px] uppercase tracking-[0.16em]" style={{ color: attached ? composerAccent : "var(--text-muted)" }}>
                           {attached ? "attached" : file.status}
                         </span>
@@ -2638,15 +2574,14 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
             </div>
           ) : null}
 
-          <div className="flex items-center gap-0.5 px-2 py-1.5 border-t" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-center gap-0.5 px-2 py-1.5 border-t border-border">
             <button
               type="button"
               onClick={toggleAttachmentMenu}
               disabled={panelMode === "history" || chat.isPending}
               aria-label={attachmentMenuOpen ? "Close knowledge docs" : "Open knowledge docs"}
               title={attachmentMenuOpen ? "Close knowledge docs" : "Open knowledge docs"}
-              className="inline-flex items-center justify-center w-7 h-7 disabled:opacity-40 hover:bg-[--bg-hover] transition-colors"
-              style={{ color: "var(--text-dim)" }}
+              className="inline-flex items-center justify-center w-7 h-7 disabled:opacity-40 hover:bg-[--bg-hover] transition-colors text-dim"
               data-testid="composer-options-toggle"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
@@ -2671,7 +2606,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
         </form>
 
         {actionError ? (
-          <div className="text-xs" style={{ color: "var(--danger)" }}>{actionError}</div>
+          <div className="text-xs text-danger">{actionError}</div>
         ) : null}
       </div>
       <AgenticSetupDrawer open={setupOpen} closeHref={closeSetupHref} />

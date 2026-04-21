@@ -361,55 +361,55 @@ export function KnowledgePanel({ refreshNonce = 0 }: { refreshNonce?: number }) 
   }
 
   return (
-    <section className="border p-4 space-y-4 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+    <section className="border p-4 space-y-4 min-w-0 border-border bg-surface">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0 flex-1">
-          <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>knowledge ingest</div>
-          <div className="text-sm mt-2" style={{ color: "var(--text-primary)" }}>
+          <div className="text-xs uppercase tracking-[0.24em] text-muted">knowledge ingest</div>
+          <div className="text-sm mt-2 text-primary">
             Manage the local knowledge folder, upload supported text docs, and force reindexing when operators need retrieval to catch up.
           </div>
-          <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>
+          <div className="text-xs mt-2 leading-6 text-dim">
             Supported types: {ACCEPTED_FILE_TYPES.replaceAll(",", ", ")}.
           </div>
           {dashboard?.summary ? (
-            <div className="text-xs mt-2 leading-6 break-all" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs mt-2 leading-6 break-all text-dim">
               Root: {dashboard.summary.absolutePath}
             </div>
           ) : null}
         </div>
 
         <div className="flex items-center gap-3 flex-wrap shrink-0">
-          <div className="text-xs uppercase tracking-[0.18em]" style={{ color: panelState === "error" ? "var(--danger)" : panelState === "saving" ? "var(--accent)" : "var(--text-dim)" }}>
+          <div className={`text-xs uppercase tracking-[0.18em] ${panelState === "error" ? "text-danger" : panelState === "saving" ? "text-accent" : "text-dim"}`}>
             {panelState}
           </div>
-          <button onClick={() => void refreshDashboard()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+          <button onClick={() => void refreshDashboard()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-border text-primary">
             refresh
           </button>
-          <button onClick={() => void runAction("reindex_all")} disabled={panelState === "saving"} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+          <button onClick={() => void runAction("reindex_all")} disabled={panelState === "saving"} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-accent text-accent">
             reindex all
           </button>
         </div>
       </div>
 
-      {error ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{error}</div> : null}
+      {error ? <div className="text-xs leading-6 text-danger">{error}</div> : null}
 
       {dashboard?.summary && !dashboard.summary.enabled ? (
-        <div className="border px-3 py-2 text-xs leading-6" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)", color: "var(--text-dim)" }}>
+        <div className="border px-3 py-2 text-xs leading-6 border-border-sub bg-raised text-dim">
           Knowledge retrieval is currently disabled. Files can still be staged here, but they will not be retrieved until the knowledge folder toggle is enabled in Settings.
         </div>
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {summaryCards.map((card) => (
-          <div key={card.label} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>{card.label}</div>
-            <div className="text-sm mt-2" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+          <div key={card.label} className="border p-3 border-border-sub bg-raised">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-muted">{card.label}</div>
+            <div className="text-sm mt-2 text-primary">{card.value}</div>
           </div>
         ))}
       </div>
 
-      <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-        <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>upload documents</div>
+      <div className="border p-4 space-y-3 border-border-sub bg-raised">
+        <div className="text-xs uppercase tracking-[0.18em] text-muted">upload documents</div>
         <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
           <div>
             <input
@@ -417,65 +417,64 @@ export function KnowledgePanel({ refreshNonce = 0 }: { refreshNonce?: number }) 
               multiple
               accept={ACCEPTED_FILE_TYPES}
               onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
-              className="w-full bg-transparent border px-3 py-2 text-sm"
-              style={{ borderColor: "var(--border)" }}
+              className="w-full bg-transparent border px-3 py-2 text-sm border-border"
             />
-            <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs mt-2 leading-6 text-dim">
               Uploads overwrite existing files with the same name in the knowledge folder.
             </div>
           </div>
-          <button onClick={() => void uploadSelectedFiles()} disabled={panelState === "saving" || selectedFiles.length === 0} className="px-4 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+          <button onClick={() => void uploadSelectedFiles()} disabled={panelState === "saving" || selectedFiles.length === 0} className="px-4 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50 border-accent text-accent">
             upload
           </button>
         </div>
 
         {uploadResult ? (
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>upload outcome</div>
-              <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+            <div className="border p-3 space-y-2 border-border bg-surface">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted">upload outcome</div>
+              <div className="text-sm text-primary">
                 Saved {uploadResult.saved.length} file{uploadResult.saved.length === 1 ? "" : "s"}
                 {uploadResult.rejected.length > 0 ? `, rejected ${uploadResult.rejected.length}` : ""}.
               </div>
               {uploadResult.saved.length > 0 ? (
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                <div className="text-xs leading-6 text-dim">
                   {uploadResult.saved.map((item) => `${item.path}${item.overwritten ? " (overwritten)" : ""}`).join(" | ")}
                 </div>
               ) : null}
             </div>
 
-            <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>rejections</div>
+            <div className="border p-3 space-y-2 border-border bg-surface">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted">rejections</div>
               {uploadResult.rejected.length > 0 ? (
-                <div className="space-y-1 text-xs leading-6" style={{ color: "var(--danger)" }}>
+                <div className="space-y-1 text-xs leading-6 text-danger">
                   {uploadResult.rejected.map((item) => (
                     <div key={`${item.name}:${item.reason}`}>{item.name}: {item.reason}</div>
                   ))}
                 </div>
               ) : (
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>No files were rejected.</div>
+                <div className="text-xs leading-6 text-dim">No files were rejected.</div>
               )}
             </div>
           </div>
         ) : null}
       </div>
 
-      <div className="border" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-        <div className="grid grid-cols-[minmax(0,2fr)_auto_auto_auto] gap-3 border-b px-3 py-2 text-[11px] uppercase tracking-[0.18em]" style={{ borderColor: "var(--border-sub)", color: "var(--text-muted)" }}>
+      <div className="border border-border-sub bg-raised">
+        <div className="grid grid-cols-[minmax(0,2fr)_auto_auto_auto] gap-3 border-b px-3 py-2 text-[11px] uppercase tracking-[0.18em] border-border-sub text-muted">
           <div>file</div>
           <div>status</div>
           <div>size</div>
           <div>actions</div>
         </div>
 
-        <div className="max-h-[420px] overflow-auto divide-y" style={{ borderColor: "var(--border-sub)" }}>
+        <div className="max-h-[420px] overflow-auto divide-y border-border-sub">
           {dashboard?.files.length ? dashboard.files.map((file) => {
             const isBusy = panelState === "saving" && busyPath === file.path;
             return (
-              <div key={file.path} className="grid grid-cols-[minmax(0,2fr)_auto_auto_auto] gap-3 px-3 py-3 items-start" style={{ borderColor: "var(--border-sub)" }}>
+              <div key={file.path} className="grid grid-cols-[minmax(0,2fr)_auto_auto_auto] gap-3 px-3 py-3 items-start border-border-sub">
                 <div className="min-w-0">
-                  <div className="text-sm truncate" style={{ color: "var(--text-primary)" }}>{file.path}</div>
-                  <div className="text-xs mt-1 leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-sm truncate text-primary">{file.path}</div>
+                  <div className="text-xs mt-1 leading-6 text-dim">
                     Updated {formatTimestamp(file.modifiedAt)}
                     {file.indexedChunks > 0 ? ` • ${file.indexedChunks} chunks` : ""}
                     {file.skipReason ? ` • ${file.skipReason}` : ""}
@@ -486,13 +485,13 @@ export function KnowledgePanel({ refreshNonce = 0 }: { refreshNonce?: number }) 
                   {file.status}
                 </div>
 
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{formatBytes(file.size)}</div>
+                <div className="text-xs leading-6 text-dim">{formatBytes(file.size)}</div>
 
                 <div className="flex flex-wrap gap-2 justify-end">
-                  <button onClick={() => togglePreview(file.path)} disabled={panelState === "saving"} className="px-2 py-1 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                  <button onClick={() => togglePreview(file.path)} disabled={panelState === "saving"} className="px-2 py-1 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-border text-primary">
                     {preview?.path === file.path ? "hide preview" : previewPath === file.path && !preview ? "loading" : "preview"}
                   </button>
-                  <button onClick={() => void runAction("reindex_file", file.path)} disabled={panelState === "saving" || file.status === "skipped"} className="px-2 py-1 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                  <button onClick={() => void runAction("reindex_file", file.path)} disabled={panelState === "saving" || file.status === "skipped"} className="px-2 py-1 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-border text-primary">
                     {isBusy ? "working" : "reindex"}
                   </button>
                   <button
@@ -502,30 +501,29 @@ export function KnowledgePanel({ refreshNonce = 0 }: { refreshNonce?: number }) 
                       }
                     }}
                     disabled={panelState === "saving"}
-                    className="px-2 py-1 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50"
-                    style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                    className="px-2 py-1 border text-[11px] uppercase tracking-[0.16em] disabled:opacity-50 border-danger text-danger"
                   >
                     delete
                   </button>
                 </div>
 
                 {preview?.path === file.path ? (
-                  <div className="col-span-4 border mt-3 p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+                  <div className="col-span-4 border mt-3 p-3 space-y-3 border-border-sub bg-surface">
                     <div className="flex flex-wrap justify-between gap-3">
                       <div>
-                        <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>chunk preview</div>
-                        <div className="text-xs mt-1 leading-6" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-muted">chunk preview</div>
+                        <div className="text-xs mt-1 leading-6 text-dim">
                           Status {preview.status} • {preview.chunkCount} chunk{preview.chunkCount === 1 ? "" : "s"} • updated {formatTimestamp(preview.updatedAt)}
                         </div>
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">
                         {preview.indexed ? "Showing indexed chunks from retrieval storage." : "Showing derived chunks from the current file contents."}
                       </div>
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                       <div>
-                        <label className="block text-[11px] uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>search preview</label>
+                        <label className="block text-[11px] uppercase tracking-[0.16em] mb-1 text-muted">search preview</label>
                         <input
                           value={previewQuery}
                           onChange={(event) => {
@@ -533,11 +531,10 @@ export function KnowledgePanel({ refreshNonce = 0 }: { refreshNonce?: number }) 
                             setPreviewMatchSelection({});
                           }}
                           placeholder="Filter chunks by text"
-                          className="w-full bg-transparent border px-3 py-2 text-sm"
-                          style={{ borderColor: "var(--border)" }}
+                          className="w-full bg-transparent border px-3 py-2 text-sm border-border"
                         />
                       </div>
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">
                         Showing {filteredPreviewChunks.length} of {preview.chunks.length} preview chunk{preview.chunks.length === 1 ? "" : "s"}
                       </div>
                     </div>
@@ -545,37 +542,35 @@ export function KnowledgePanel({ refreshNonce = 0 }: { refreshNonce?: number }) 
                     {filteredPreviewChunks.length > 0 ? (
                       <div className="space-y-2">
                         {filteredPreviewChunks.map((chunk) => (
-                          <div key={`${chunk.index}:${chunk.source}`} className="border p-3" style={{ borderColor: "var(--border-sub)" }}>
+                          <div key={`${chunk.index}:${chunk.source}`} className="border p-3 border-border-sub">
                             <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                              <div className="text-[11px] uppercase tracking-[0.16em] text-muted">
                                 chunk {chunk.index} • {chunk.source}
                               </div>
                               {previewQuery.trim() ? (() => {
                                 const matchRanges = getSnippetMatchRanges(chunk.snippet, previewQuery);
                                 const activeMatchIndex = getActiveMatchIndex(chunk);
                                 if (matchRanges.length === 0) {
-                                  return <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>0 matches</div>;
+                                  return <div className="text-[11px] uppercase tracking-[0.16em] text-dim">0 matches</div>;
                                 }
 
                                 return (
                                   <div className="flex items-center gap-2">
-                                    <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>
+                                    <div className="text-[11px] uppercase tracking-[0.16em] text-dim">
                                       {activeMatchIndex + 1} / {matchRanges.length} matches
                                     </div>
                                     {matchRanges.length > 1 ? (
                                       <>
                                         <button
                                           onClick={() => moveChunkMatch(chunk, -1)}
-                                          className="px-2 py-1 border text-[11px] uppercase tracking-[0.16em]"
-                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                          className="px-2 py-1 border text-[11px] uppercase tracking-[0.16em] border-border text-primary"
                                           aria-label={`Previous match in chunk ${chunk.index}`}
                                         >
                                           prev
                                         </button>
                                         <button
                                           onClick={() => moveChunkMatch(chunk, 1)}
-                                          className="px-2 py-1 border text-[11px] uppercase tracking-[0.16em]"
-                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                          className="px-2 py-1 border text-[11px] uppercase tracking-[0.16em] border-border text-primary"
                                           aria-label={`Next match in chunk ${chunk.index}`}
                                         >
                                           next
@@ -586,18 +581,18 @@ export function KnowledgePanel({ refreshNonce = 0 }: { refreshNonce?: number }) 
                                 );
                               })() : null}
                             </div>
-                            <div className="text-sm mt-2 leading-6" style={{ color: "var(--text-primary)" }}>
+                            <div className="text-sm mt-2 leading-6 text-primary">
                               {highlightSnippet(chunk.snippet, previewQuery, getActiveMatchIndex(chunk))}
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : preview.chunks.length > 0 ? (
-                      <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                      <div className="text-xs leading-6 text-dim">
                         No preview chunks match the current filter.
                       </div>
                     ) : (
-                      <div className="text-xs leading-6" style={{ color: preview.status === "skipped" ? "var(--danger)" : "var(--text-dim)" }}>
+                      <div className={`text-xs leading-6 ${preview.status === "skipped" ? "text-danger" : "text-dim"}`}>
                         {file.skipReason ?? "No chunk preview is available for this file yet."}
                       </div>
                     )}
@@ -606,7 +601,7 @@ export function KnowledgePanel({ refreshNonce = 0 }: { refreshNonce?: number }) 
               </div>
             );
           }) : (
-            <div className="px-3 py-6 text-sm" style={{ color: "var(--text-dim)" }}>
+            <div className="px-3 py-6 text-sm text-dim">
               {panelState === "loading" ? "Loading knowledge files..." : "No files found in the knowledge folder yet."}
             </div>
           )}

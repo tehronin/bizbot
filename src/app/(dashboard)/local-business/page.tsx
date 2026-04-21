@@ -119,40 +119,40 @@ export default function LocalBusinessPage() {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-      <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <section className="border p-4 space-y-4 border-border bg-surface">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>google business profile</div>
-            <div className="text-sm mt-2" style={{ color: "var(--text-dim)" }}>Reviews, local posts, and hours updates for the location where local search discovery actually happens.</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-muted">google business profile</div>
+            <div className="text-sm mt-2 text-dim">Reviews, local posts, and hours updates for the location where local search discovery actually happens.</div>
           </div>
-          <button onClick={() => void load(true)} className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--accent)" }}>sync</button>
+          <button onClick={() => void load(true)} className="text-xs uppercase tracking-[0.18em] text-accent">sync</button>
         </div>
-        {loading ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div> : null}
-        {error ? <div className="text-sm" style={{ color: "var(--danger)" }}>{error}</div> : null}
+        {loading ? <div className="text-sm text-muted">Loading…</div> : null}
+        {error ? <div className="text-sm text-danger">{error}</div> : null}
         {!configured ? (
-          <div className="text-sm leading-7" style={{ color: "var(--text-dim)" }}>
+          <div className="text-sm leading-7 text-dim">
             Configure `GOOGLE_BUSINESS_CLIENT_ID`, `GOOGLE_BUSINESS_CLIENT_SECRET`, `GOOGLE_BUSINESS_REFRESH_TOKEN`, `GOOGLE_BUSINESS_ACCOUNT_NAME`, and `GOOGLE_BUSINESS_LOCATION_NAME` in settings or `.env`.
           </div>
         ) : null}
         {location ? (
           <>
-            <div className="border p-3 text-sm space-y-1" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+            <div className="border p-3 text-sm space-y-1 border-border-sub bg-raised">
               <div>{location.title}</div>
-              <div style={{ color: "var(--text-dim)" }}>{location.locationName}</div>
-              <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+              <div className="text-dim">{location.locationName}</div>
+              <div className="text-xs uppercase tracking-[0.16em] text-muted">
                 last sync {location.lastSyncAt ? new Date(location.lastSyncAt).toLocaleString() : "never"}
               </div>
             </div>
             <div className="space-y-3">
               {reviewsPagination.pageItems.map((review) => (
-                <article key={review.id} className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                <article key={review.id} className="border p-3 space-y-3 border-border-sub bg-raised">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.16em] text-muted">
                     <span>{review.reviewerName ?? "anonymous"}</span>
                     <span>{review.starRating} stars</span>
                   </div>
                   <div className="text-sm whitespace-pre-wrap">{review.comment ?? "No review text"}</div>
                   {review.reviewReply ? (
-                    <div className="border p-3 text-sm whitespace-pre-wrap" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+                    <div className="border p-3 text-sm whitespace-pre-wrap border-border bg-surface">
                       {review.reviewReply}
                     </div>
                   ) : null}
@@ -160,10 +160,9 @@ export default function LocalBusinessPage() {
                     value={replyDrafts[review.id] ?? ""}
                     onChange={(event) => setReplyDrafts((current) => ({ ...current, [review.id]: event.target.value }))}
                     placeholder={review.needsResponse ? "Draft a review reply" : "Update reply"}
-                    className="w-full min-h-24 bg-transparent border px-3 py-2 text-sm"
-                    style={{ borderColor: "var(--border)" }}
+                    className="w-full min-h-24 bg-transparent border px-3 py-2 text-sm border-border"
                   />
-                  <button onClick={() => void reply(review.id)} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                  <button onClick={() => void reply(review.id)} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-accent text-accent">
                     {review.reviewReply ? "update reply" : "reply"}
                   </button>
                 </article>
@@ -175,30 +174,30 @@ export default function LocalBusinessPage() {
       </section>
 
       <section className="space-y-6">
-        <section className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>new local post</div>
-          <textarea value={postSummary} onChange={(event) => setPostSummary(event.target.value)} placeholder="Update, offer, event, or announcement" className="w-full min-h-32 bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-          <input value={postUrl} onChange={(event) => setPostUrl(event.target.value)} placeholder="Call to action URL" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-          <button onClick={() => void createPost()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>publish post</button>
+        <section className="border p-4 space-y-3 border-border bg-surface">
+          <div className="text-xs uppercase tracking-[0.24em] text-muted">new local post</div>
+          <textarea value={postSummary} onChange={(event) => setPostSummary(event.target.value)} placeholder="Update, offer, event, or announcement" className="w-full min-h-32 bg-transparent border px-3 py-2 text-sm border-border" />
+          <input value={postUrl} onChange={(event) => setPostUrl(event.target.value)} placeholder="Call to action URL" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+          <button onClick={() => void createPost()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-accent text-accent">publish post</button>
           <div className="space-y-3">
             {postsPagination.pageItems.map((post) => (
-              <article key={post.id} className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-                <div className="flex items-center justify-between text-xs uppercase tracking-[0.16em] mb-2" style={{ color: "var(--text-muted)" }}>
+              <article key={post.id} className="border p-3 border-border-sub bg-raised">
+                <div className="flex items-center justify-between text-xs uppercase tracking-[0.16em] mb-2 text-muted">
                   <span>{post.topicType}</span>
                   <span>{post.status}</span>
                 </div>
                 <div className="text-sm whitespace-pre-wrap">{post.summary}</div>
-                {post.searchUrl ? <a href={post.searchUrl} target="_blank" rel="noreferrer" className="text-xs" style={{ color: "var(--accent)" }}>view on Google</a> : null}
+                {post.searchUrl ? <a href={post.searchUrl} target="_blank" rel="noreferrer" className="text-xs text-accent">view on Google</a> : null}
               </article>
             ))}
             <PaginationControls {...postsPagination} />
           </div>
         </section>
 
-        <section className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-          <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>business hours</div>
-          <textarea value={hoursJson} onChange={(event) => setHoursJson(event.target.value)} className="w-full min-h-32 bg-transparent border px-3 py-2 text-sm font-mono" style={{ borderColor: "var(--border)" }} />
-          <button onClick={() => void updateHours()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>update hours</button>
+        <section className="border p-4 space-y-3 border-border bg-surface">
+          <div className="text-xs uppercase tracking-[0.24em] text-muted">business hours</div>
+          <textarea value={hoursJson} onChange={(event) => setHoursJson(event.target.value)} className="w-full min-h-32 bg-transparent border px-3 py-2 text-sm font-mono border-border" />
+          <button onClick={() => void updateHours()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-accent text-accent">update hours</button>
         </section>
       </section>
     </div>

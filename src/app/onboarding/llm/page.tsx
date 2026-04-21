@@ -118,11 +118,11 @@ export default function OnboardingLlmPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-6" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
-      <section className="w-full max-w-3xl border p-8 space-y-6" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+    <main className="min-h-screen flex items-center justify-center px-6 bg-base text-primary">
+      <section className="w-full max-w-3xl border p-8 space-y-6 border-border bg-surface">
         <div>
-          <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>step 1: llm + embeddings</div>
-          <div className="text-sm max-w-2xl" style={{ color: "var(--text-dim)" }}>
+          <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">step 1: llm + embeddings</div>
+          <div className="text-sm max-w-2xl text-dim">
             Pick the agent LLM role and the embedding role separately. Adding an API key makes a provider available, but the active agent role only changes when you explicitly select it.
           </div>
         </div>
@@ -130,16 +130,16 @@ export default function OnboardingLlmPage() {
           <div className="space-y-3">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Agent LLM role</label>
-                <div className="text-xs leading-6 mt-2" style={{ color: "var(--text-dim)" }}>
+                <label className="block text-xs uppercase tracking-[0.16em] text-muted">Agent LLM role</label>
+                <div className="text-xs leading-6 mt-2 text-dim">
                   Controls chat, tool calling, and the main agent loop. This does not affect embeddings.
                 </div>
               </div>
-              <div className="text-xs uppercase tracking-[0.16em]" style={{ color: selectedProviderReadiness.ready ? "var(--success)" : "var(--danger)" }}>
+              <div className={`text-xs uppercase tracking-[0.16em] ${selectedProviderReadiness.ready ? "text-success" : "text-danger"}`}>
                 {selectedProviderReadiness.ready ? "ready" : "needs setup"}
               </div>
             </div>
-            <select value={provider} onChange={(event) => setProvider(event.target.value as ChatProvider)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <select value={provider} onChange={(event) => setProvider(event.target.value as ChatProvider)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
               {Object.keys(CHAT_MODELS).map((option) => (
                 <option
                   key={option}
@@ -150,40 +150,40 @@ export default function OnboardingLlmPage() {
                 </option>
               ))}
             </select>
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Active provider model</label>
-            <select value={models[provider]} onChange={(event) => setModels((current) => ({ ...current, [provider]: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">Active provider model</label>
+            <select value={models[provider]} onChange={(event) => setModels((current) => ({ ...current, [provider]: event.target.value }))} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
               {CHAT_MODELS[provider].map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
             <div className="grid gap-2">
               {providerReadiness.map((entry) => (
-                <div key={entry.provider} className="flex items-center justify-between border px-3 py-2 text-xs uppercase tracking-[0.14em]" style={{ borderColor: entry.provider === provider ? "var(--accent)" : "var(--border)", color: "var(--text-primary)", background: entry.provider === provider ? "var(--accent-glow)" : "transparent" }}>
+                <div key={entry.provider} className={`flex items-center justify-between border px-3 py-2 text-xs uppercase tracking-[0.14em] text-primary ${entry.provider === provider ? "border-accent bg-accent-glow" : "border-border bg-transparent"}`}>
                   <span>{entry.provider}</span>
-                  <span style={{ color: entry.ready ? "var(--success)" : "var(--text-dim)" }}>{entry.reason}</span>
+                  <span className={entry.ready ? "text-success" : "text-dim"}>{entry.reason}</span>
                 </div>
               ))}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Temperature</label>
-                <input value={temperature} onChange={(event) => setTemperature(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Temperature</label>
+                <input value={temperature} onChange={(event) => setTemperature(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Max tokens</label>
-                <input value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Max tokens</label>
+                <input value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
             </div>
           </div>
           <div className="space-y-3">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Embedding role</label>
-                <div className="text-xs leading-6 mt-2" style={{ color: "var(--text-dim)" }}>
+                <label className="block text-xs uppercase tracking-[0.16em] text-muted">Embedding role</label>
+                <div className="text-xs leading-6 mt-2 text-dim">
                   Controls vector generation only. For the intended split, keep embeddings on Google and use MiniMax M2.7 for the agent role.
                 </div>
               </div>
-              <div className="text-xs uppercase tracking-[0.16em]" style={{ color: selectedEmbeddingReadiness.ready ? "var(--success)" : "var(--danger)" }}>
+              <div className={`text-xs uppercase tracking-[0.16em] ${selectedEmbeddingReadiness.ready ? "text-success" : "text-danger"}`}>
                 {selectedEmbeddingReadiness.ready ? "ready" : "needs setup"}
               </div>
             </div>
@@ -191,7 +191,7 @@ export default function OnboardingLlmPage() {
               const nextProvider = event.target.value;
               setEmbeddingProvider(nextProvider);
               setEmbeddingModel(EMBEDDING_MODELS[nextProvider]?.[0] ?? embeddingModel);
-            }} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            }} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
               {Object.keys(EMBEDDING_MODELS).map((option) => (
                 <option
                   key={option}
@@ -202,41 +202,41 @@ export default function OnboardingLlmPage() {
                 </option>
               ))}
             </select>
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Embedding model</label>
-            <select value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">Embedding model</label>
+            <select value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
               {(EMBEDDING_MODELS[embeddingProvider] ?? [embeddingModel]).map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               The recommended split is Google embeddings plus MiniMax M2.7 for the agent role. Changing credentials does not auto-switch the active role.
             </div>
           </div>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{PROVIDER_KEY_LABELS.google}</label>
-            <input value={googleApiKey} onChange={(event) => setGoogleApiKey(event.target.value)} placeholder="GOOGLE_AI_API_KEY" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">{PROVIDER_KEY_LABELS.google}</label>
+            <input value={googleApiKey} onChange={(event) => setGoogleApiKey(event.target.value)} placeholder="GOOGLE_AI_API_KEY" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
           </div>
           <div className="space-y-1">
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{PROVIDER_KEY_LABELS.openai}</label>
-            <input value={openAiApiKey} onChange={(event) => setOpenAiApiKey(event.target.value)} placeholder="OPENAI_API_KEY" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">{PROVIDER_KEY_LABELS.openai}</label>
+            <input value={openAiApiKey} onChange={(event) => setOpenAiApiKey(event.target.value)} placeholder="OPENAI_API_KEY" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
           </div>
           <div className="space-y-1">
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{PROVIDER_KEY_LABELS.anthropic}</label>
-            <input value={anthropicApiKey} onChange={(event) => setAnthropicApiKey(event.target.value)} placeholder="ANTHROPIC_API_KEY" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">{PROVIDER_KEY_LABELS.anthropic}</label>
+            <input value={anthropicApiKey} onChange={(event) => setAnthropicApiKey(event.target.value)} placeholder="ANTHROPIC_API_KEY" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
           </div>
           <div className="space-y-1">
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{PROVIDER_KEY_LABELS.minimax}</label>
-            <input value={miniMaxApiKey} onChange={(event) => setMiniMaxApiKey(event.target.value)} placeholder="MINIMAX_API_KEY" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">{PROVIDER_KEY_LABELS.minimax}</label>
+            <input value={miniMaxApiKey} onChange={(event) => setMiniMaxApiKey(event.target.value)} placeholder="MINIMAX_API_KEY" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
           </div>
         </div>
-        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+        <div className="text-xs leading-6 text-dim">
           Suggested first-run path: enter Google and MiniMax credentials, keep Embedding role on Google, then explicitly set Agent LLM role to MiniMax M2.7 once it shows as ready.
         </div>
         <div className="flex gap-3">
-          <button onClick={() => void save()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>save</button>
-          <Link href="/onboarding/platforms" className="px-4 py-2 border text-sm uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>next</Link>
+          <button onClick={() => void save()} className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-accent text-accent">save</button>
+          <Link href="/onboarding/platforms" className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-border text-primary">next</Link>
         </div>
       </section>
     </main>

@@ -2,6 +2,7 @@
 
 ## 2026-04-20
 
+- Reworked the Tailwind v4 migration across chat, Builder, settings, onboarding, and dashboard surfaces by promoting semantic color and border tokens into `globals.css`, replacing broad inline-style usage with reusable utility classes, and fixing the resulting JSX and encoding regressions so local CI verification is green again.
 - Added Gemini-specific runtime controls for max output tokens, extended context assembly, and tool-result truncation, surfaced through the LLM status route and Settings UI so Google provider behavior can be tuned independently of the global chat defaults.
 - Added Builder projection and planning cache persistence under `.builder/cache`, including projection write elision, regenerate-aware planning cache bypass, and operator-visible cache telemetry counters for planning lookups and projection reuse.
 - Stabilized the latest imported MCP and Builder discovery additions by fixing strict TypeScript regressions across plugin catalog drift typing, developer prompt and resource discovery helpers, MCP client tool-result unwrapping, imported-catalog aggregation, MCP health and trace helpers, and sampling schema wiring, keeping the production build green after the recent MCP snapshot work.

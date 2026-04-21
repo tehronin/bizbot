@@ -216,44 +216,43 @@ export function UserMemoryPanel({ userId = DEFAULT_AGENT_USER_ID }: { userId?: s
   }
 
   return (
-    <section id="explicit-user-memory" className="border p-4 space-y-4 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+    <section id="explicit-user-memory" className="border border-border bg-surface p-4 space-y-4 min-w-0">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-2 min-w-0 flex-1">
-          <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>explicit user memory</div>
-          <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+          <div className="text-xs uppercase tracking-[0.24em] text-muted">explicit user memory</div>
+          <div className="text-sm text-dim">
             Store only stable, user-approved identity details, preferences, workflows, constraints, and operator settings. This feeds the executor’s [User Memory] prompt block directly.
           </div>
-          <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+          <div className="text-xs uppercase tracking-[0.18em] text-muted">
             scope {userId} · {facts.length} active facts
           </div>
         </div>
-        <button onClick={() => void loadFacts()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+        <button onClick={() => void loadFacts()} className="px-3 py-2 border border-border text-primary text-xs uppercase tracking-[0.18em]">
           refresh
         </button>
       </div>
 
-      <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-        <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>recommended starting points</div>
+      <div className="border border-border-sub bg-raised p-3 space-y-3">
+        <div className="text-xs uppercase tracking-[0.22em] text-muted">recommended starting points</div>
         <div className="grid gap-2">
           {QUICK_START_PRESETS.map((preset) => (
             <button
               key={preset.label}
               onClick={() => loadPreset(preset.label)}
-              className="flex items-center justify-between border px-3 py-2 text-left text-xs uppercase tracking-[0.16em]"
-              style={{ borderColor: "var(--border)", color: "var(--text-primary)", background: "transparent" }}
+              className="flex items-center justify-between border border-border text-primary px-3 py-2 text-left text-xs uppercase tracking-[0.16em] bg-transparent"
             >
               <span>{preset.label}</span>
-              <span style={{ color: "var(--text-muted)" }}>{MEMORY_FACT_CATEGORY_LABELS[preset.category]}</span>
+              <span className="text-muted">{MEMORY_FACT_CATEGORY_LABELS[preset.category]}</span>
             </button>
           ))}
         </div>
       </div>
 
-      <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+      <div className="border border-border-sub bg-raised p-3 space-y-3">
         <div className="grid gap-3 sm:grid-cols-[0.9fr_1.1fr]">
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>filter category</label>
-            <select value={filterCategory} onChange={(event) => setFilterCategory(event.target.value as MemoryFactCategory | "all")} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">filter category</label>
+            <select value={filterCategory} onChange={(event) => setFilterCategory(event.target.value as MemoryFactCategory | "all")} className="w-full bg-transparent border border-border px-3 py-2 text-sm">
               <option value="all">all</option>
               {MEMORY_FACT_CATEGORIES.map((option) => (
                 <option key={option} value={option}>{MEMORY_FACT_CATEGORY_LABELS[option]}</option>
@@ -261,53 +260,53 @@ export function UserMemoryPanel({ userId = DEFAULT_AGENT_USER_ID }: { userId?: s
             </select>
           </div>
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>search key or value</label>
-            <input value={filterQuery} onChange={(event) => setFilterQuery(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">search key or value</label>
+            <input value={filterQuery} onChange={(event) => setFilterQuery(event.target.value)} className="w-full bg-transparent border border-border px-3 py-2 text-sm" />
           </div>
         </div>
 
         <div className="space-y-2 max-h-[360px] overflow-auto">
-          {loading ? <div className="text-sm" style={{ color: "var(--text-dim)" }}>loading facts…</div> : null}
-          {!loading && filteredFacts.length === 0 ? <div className="text-sm" style={{ color: "var(--text-dim)" }}>No active facts match the current filter.</div> : null}
+          {loading ? <div className="text-sm text-dim">loading facts…</div> : null}
+          {!loading && filteredFacts.length === 0 ? <div className="text-sm text-dim">No active facts match the current filter.</div> : null}
           {filteredFacts.map((fact) => (
-            <article key={fact.id} className="border p-3 space-y-3" style={{ borderColor: editingKey === fact.key ? "var(--accent)" : "var(--border)", background: editingKey === fact.key ? "var(--accent-glow)" : "var(--bg-surface)" }}>
+            <article key={fact.id} className={`border p-3 space-y-3 ${editingKey === fact.key ? "border-accent bg-accent-glow" : "border-border bg-surface"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>{fact.key}</div>
-                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-dim)" }}>
+                  <div className="text-xs uppercase tracking-[0.18em] text-muted">{fact.key}</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-dim">
                     {MEMORY_FACT_CATEGORY_LABELS[fact.category]} · {MEMORY_FACT_SOURCE_LABELS[fact.source]}
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => editFact(fact)} className="px-3 py-2 border text-xs uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>edit</button>
-                  <button onClick={() => void forgetFact(fact.key)} className="px-3 py-2 border text-xs uppercase tracking-[0.16em]" style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>forget</button>
+                  <button onClick={() => editFact(fact)} className="px-3 py-2 border border-border text-primary text-xs uppercase tracking-[0.16em]">edit</button>
+                  <button onClick={() => void forgetFact(fact.key)} className="px-3 py-2 border border-danger text-danger text-xs uppercase tracking-[0.16em]">forget</button>
                 </div>
               </div>
-              <pre className="overflow-auto border p-3 text-xs leading-6 whitespace-pre-wrap break-words" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)", color: "var(--text-primary)" }}>{formatValue(fact.value)}</pre>
+              <pre className="overflow-auto border border-border-sub bg-raised text-primary p-3 text-xs leading-6 whitespace-pre-wrap break-words">{formatValue(fact.value)}</pre>
             </article>
           ))}
         </div>
       </div>
 
-      <div className="border p-3 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+      <div className="border border-border-sub bg-raised p-3 space-y-3">
         <div className="flex items-center justify-between gap-4">
-          <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>
+          <div className="text-xs uppercase tracking-[0.22em] text-muted">
             {editingKey ? `editing ${editingKey}` : "store or update fact"}
           </div>
-          <div className="text-xs uppercase tracking-[0.16em]" style={{ color: saveState === "saved" ? "var(--success)" : saveState === "error" ? "var(--danger)" : "var(--text-dim)" }}>{saveState}</div>
+          <div className={`text-xs uppercase tracking-[0.16em] ${saveState === "saved" ? "text-success" : saveState === "error" ? "text-danger" : "text-dim"}`}>{saveState}</div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>category</label>
-            <select value={category} onChange={(event) => setCategory(event.target.value as MemoryFactCategory)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">category</label>
+            <select value={category} onChange={(event) => setCategory(event.target.value as MemoryFactCategory)} className="w-full bg-transparent border border-border px-3 py-2 text-sm">
               {MEMORY_FACT_CATEGORIES.map((option) => (
                 <option key={option} value={option}>{MEMORY_FACT_CATEGORY_LABELS[option]}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>source</label>
-            <select value={source} onChange={(event) => setSource(event.target.value as MemoryFactSource)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">source</label>
+            <select value={source} onChange={(event) => setSource(event.target.value as MemoryFactSource)} className="w-full bg-transparent border border-border px-3 py-2 text-sm">
               {MEMORY_FACT_SOURCES.map((option) => (
                 <option key={option} value={option}>{MEMORY_FACT_SOURCE_LABELS[option]}</option>
               ))}
@@ -315,32 +314,31 @@ export function UserMemoryPanel({ userId = DEFAULT_AGENT_USER_ID }: { userId?: s
           </div>
         </div>
         <div>
-          <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>key</label>
-          <input value={key} onChange={(event) => setKey(event.target.value)} placeholder="preferred_name" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+          <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">key</label>
+          <input value={key} onChange={(event) => setKey(event.target.value)} placeholder="preferred_name" className="w-full bg-transparent border border-border px-3 py-2 text-sm" />
         </div>
         <div className="grid gap-3 sm:grid-cols-[0.7fr_1.3fr]">
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>value mode</label>
-            <select value={valueMode} onChange={(event) => setValueMode(event.target.value as ValueMode)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">value mode</label>
+            <select value={valueMode} onChange={(event) => setValueMode(event.target.value as ValueMode)} className="w-full bg-transparent border border-border px-3 py-2 text-sm">
               <option value="text">plain text</option>
               <option value="json">json</option>
             </select>
           </div>
-          <div className="text-xs leading-6 pt-6" style={{ color: "var(--text-dim)" }}>
+          <div className="text-xs leading-6 pt-6 text-dim">
             Use plain text for names, timezones, or short preferences. Use JSON for workflows, constraints, and structured operator settings.
           </div>
         </div>
         <div>
-          <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>value</label>
-          <textarea value={valueInput} onChange={(event) => setValueInput(event.target.value)} rows={valueMode === "json" ? 8 : 4} placeholder={valueMode === "json" ? '{\n  "tone": "calm"\n}' : "America/Chicago"} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+          <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">value</label>
+          <textarea value={valueInput} onChange={(event) => setValueInput(event.target.value)} rows={valueMode === "json" ? 8 : 4} placeholder={valueMode === "json" ? '{\n  "tone": "calm"\n}' : "America/Chicago"} className="w-full bg-transparent border border-border px-3 py-2 text-sm" />
         </div>
-        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
-          Never store secrets, credentials, tokens, payment details, or speculative profile guesses here. This surface is for durable, user-approved facts only.
+        <div className="text-xs leading-6 text-dim">Never store secrets, credentials, tokens, payment details, or speculative profile guesses here. This surface is for durable, user-approved facts only.
         </div>
-        {error ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{error}</div> : null}
+        {error ? <div className="text-xs leading-6 text-danger">{error}</div> : null}
         <div className="flex gap-2">
-          <button onClick={() => void saveFact()} disabled={!key.trim() || !valueInput.trim() || saveState === "saving"} className="px-4 py-2 border text-xs uppercase tracking-[0.18em] disabled:opacity-50" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>save fact</button>
-          <button onClick={resetForm} className="px-4 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>clear</button>
+          <button onClick={() => void saveFact()} disabled={!key.trim() || !valueInput.trim() || saveState === "saving"} className="px-4 py-2 border border-accent text-accent text-xs uppercase tracking-[0.18em] disabled:opacity-50">save fact</button>
+          <button onClick={resetForm} className="px-4 py-2 border border-border text-primary text-xs uppercase tracking-[0.18em]">clear</button>
         </div>
       </div>
     </section>

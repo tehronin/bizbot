@@ -104,19 +104,19 @@ const EMPTY_EXTERNAL_FORM: ExternalPluginFormState = {
 
 function SummaryCard({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div className="border p-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-      <div className="text-xs uppercase tracking-[0.22em] mb-2" style={{ color: "var(--text-muted)" }}>{label}</div>
-      <div className="text-lg" style={{ color: "var(--text-primary)" }}>{value}</div>
-      <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>{detail}</div>
+    <div className="border p-4 border-border-sub bg-raised">
+      <div className="text-xs uppercase tracking-[0.22em] mb-2 text-muted">{label}</div>
+      <div className="text-lg text-primary">{value}</div>
+      <div className="text-xs mt-2 leading-6 text-dim">{detail}</div>
     </div>
   );
 }
 
 function DiscoveryChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="px-3 py-2 border text-xs" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)", color: "var(--text-dim)" }}>
-      <span style={{ color: "var(--text-muted)" }}>{label}: </span>
-      <span style={{ color: "var(--text-primary)" }}>{value}</span>
+    <div className="px-3 py-2 border text-xs border-border-sub bg-surface text-dim">
+      <span className="text-muted">{label}: </span>
+      <span className="text-primary">{value}</span>
     </div>
   );
 }
@@ -135,22 +135,22 @@ function PluginCard({
   onEdit?: (entry: PluginCatalogEntry) => void;
 }) {
   return (
-    <article className="border p-4 space-y-4" style={{ borderColor: entry.enabled ? "var(--accent)" : "var(--border-sub)", background: entry.enabled ? "var(--accent-glow)" : "var(--bg-raised)" }}>
+    <article className={`border p-4 space-y-4 ${entry.enabled ? "border-accent bg-accent-glow" : "border-border-sub bg-raised"}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-xs uppercase tracking-[0.2em]" style={{ color: "var(--text-muted)" }}>{entry.kind}</div>
-            <div className="text-xs uppercase tracking-[0.18em] px-2 py-1 border" style={{ borderColor: entry.connected ? "var(--success)" : "var(--border-sub)", color: entry.connected ? "var(--success)" : "var(--text-dim)" }}>
+            <div className="text-xs uppercase tracking-[0.2em] text-muted">{entry.kind}</div>
+            <div className={`text-xs uppercase tracking-[0.18em] px-2 py-1 border ${entry.connected ? "border-success text-success" : "border-border-sub text-dim"}`}>
               {entry.connected ? "connected" : entry.enabled ? "enabled" : "disabled"}
             </div>
           </div>
           <div>
-            <h2 className="text-sm uppercase tracking-[0.16em]" style={{ color: "var(--text-primary)" }}>{entry.displayName}</h2>
-            <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>{entry.description}</div>
+            <h2 className="text-sm uppercase tracking-[0.16em] text-primary">{entry.displayName}</h2>
+            <div className="text-xs mt-2 leading-6 text-dim">{entry.description}</div>
           </div>
         </div>
 
-        <label className="flex items-center gap-2 text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+        <label className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted">
           <span>{entry.enabled ? "on" : "off"}</span>
           <input
             type="checkbox"
@@ -163,11 +163,11 @@ function PluginCard({
 
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
         <div className="space-y-2">
-          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{entry.managementSummary}</div>
-          {entry.url ? <div className="text-xs leading-6 break-all" style={{ color: "var(--text-dim)" }}>{entry.url}</div> : null}
-          {entry.envKey ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Controlled by {entry.envKey}</div> : null}
-          {entry.version ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Version {entry.version}</div> : null}
-          {entry.tags.length > 0 ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Tags: {entry.tags.join(", ")}</div> : null}
+          <div className="text-xs leading-6 text-dim">{entry.managementSummary}</div>
+          {entry.url ? <div className="text-xs leading-6 break-all text-dim">{entry.url}</div> : null}
+          {entry.envKey ? <div className="text-xs leading-6 text-dim">Controlled by {entry.envKey}</div> : null}
+          {entry.version ? <div className="text-xs leading-6 text-dim">Version {entry.version}</div> : null}
+          {entry.tags.length > 0 ? <div className="text-xs leading-6 text-dim">Tags: {entry.tags.join(", ")}</div> : null}
           {entry.kind === "external" ? (
             <div className="flex flex-wrap gap-2">
               <DiscoveryChip label="prompts" value={String(entry.promptCount ?? 0)} />
@@ -178,7 +178,7 @@ function PluginCard({
               <DiscoveryChip label="audit" value={entry.auditState ?? "unaudited"} />
             </div>
           ) : null}
-          {entry.kind === "external" && entry.lastSeenAt ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>Last seen {new Date(entry.lastSeenAt).toLocaleString()}</div> : null}
+          {entry.kind === "external" && entry.lastSeenAt ? <div className="text-xs leading-6 text-dim">Last seen {new Date(entry.lastSeenAt).toLocaleString()}</div> : null}
         </div>
 
         <div className="flex items-start justify-end gap-2">
@@ -187,8 +187,8 @@ function PluginCard({
               type="button"
               disabled={busy}
               onClick={() => onEdit(entry)}
-              className="px-3 py-2 border text-xs uppercase tracking-[0.18em]"
-              style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: busy ? 0.65 : 1 }}
+              className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-accent text-accent"
+              style={{ opacity: busy ? 0.65 : 1 }}
             >
               edit
             </button>
@@ -197,22 +197,18 @@ function PluginCard({
             type="button"
             disabled={busy || !entry.removable}
             onClick={() => void onRemove(entry)}
-            className="px-3 py-2 border text-xs uppercase tracking-[0.18em]"
-            style={{
-              borderColor: entry.removable ? "var(--danger)" : "var(--border-sub)",
-              color: entry.removable ? "var(--danger)" : "var(--text-dim)",
-              opacity: busy ? 0.65 : 1,
-            }}
+            className={`px-3 py-2 border text-xs uppercase tracking-[0.18em] ${entry.removable ? "border-danger text-danger" : "border-border-sub text-dim"}`}
+            style={{ opacity: busy ? 0.65 : 1 }}
           >
             {entry.removable ? entry.removalLabel : "source-managed"}
           </button>
         </div>
       </div>
 
-      <div className="border p-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
-        <div className="text-xs uppercase tracking-[0.18em] mb-2" style={{ color: "var(--text-muted)" }}>tools</div>
+      <div className="border p-3 border-border-sub bg-surface">
+        <div className="text-xs uppercase tracking-[0.18em] mb-2 text-muted">tools</div>
         {entry.toolNames.length === 0 ? (
-          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+          <div className="text-xs leading-6 text-dim">
             {entry.kind === "external" && entry.enabled
               ? "No tools discovered yet. Check the MCP connection status."
               : "No tools are exposed while this plugin is disabled."}
@@ -220,7 +216,7 @@ function PluginCard({
         ) : (
           <div className="flex flex-wrap gap-2">
             {entry.toolNames.map((toolName) => (
-              <span key={toolName} className="px-2 py-1 text-xs border" style={{ borderColor: "var(--border-sub)", color: "var(--text-dim)" }}>
+              <span key={toolName} className="px-2 py-1 text-xs border border-border-sub text-dim">
                 {toolName}
               </span>
             ))}
@@ -249,14 +245,14 @@ function PluginSection({
   onEdit?: (entry: PluginCatalogEntry) => void;
 }) {
   return (
-    <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+    <section className="border p-4 space-y-4 border-border bg-surface">
       <div>
-        <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>{title}</div>
-        <div className="text-sm" style={{ color: "var(--text-dim)" }}>{description}</div>
+        <div className="text-xs uppercase tracking-[0.24em] mb-2 text-muted">{title}</div>
+        <div className="text-sm text-dim">{description}</div>
       </div>
 
       {entries.length === 0 ? (
-        <div className="text-sm" style={{ color: "var(--text-dim)" }}>No plugins in this section.</div>
+        <div className="text-sm text-dim">No plugins in this section.</div>
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
           {entries.map((entry) => (
@@ -404,20 +400,20 @@ export default function PluginsPage() {
 
   return (
     <div className="space-y-5">
-      <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <section className="border p-4 space-y-4 border-border bg-surface">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>plugins</div>
-            <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs uppercase tracking-[0.24em] mb-2 text-muted">plugins</div>
+            <div className="text-sm text-dim">
               Builtin plugins can be enabled or disabled. External MCP integrations can also be disconnected without deleting retained knowledge or graph data.
             </div>
           </div>
-          <button onClick={() => void refresh()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+          <button onClick={() => void refresh()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-accent text-accent">
             refresh
           </button>
         </div>
 
-        {error ? <div className="text-sm" style={{ color: "var(--danger)" }}>{error}</div> : null}
+        {error ? <div className="text-sm text-danger">{error}</div> : null}
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <SummaryCard label="builtin enabled" value={String(data?.summary.builtinEnabled ?? 0)} detail="Source-managed plugins currently visible to the agent." />
@@ -427,15 +423,15 @@ export default function PluginsPage() {
           <SummaryCard label="connected" value={String(data?.summary.connectedExternal ?? 0)} detail="External integrations with an active MCP connection right now." />
         </div>
 
-        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+        <div className="text-xs leading-6 text-dim">
           Last refresh: {data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : "not loaded"}
         </div>
       </section>
 
-      <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <section className="border p-4 space-y-4 border-border bg-surface">
         <div>
-          <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>mcp discovery</div>
-          <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+          <div className="text-xs uppercase tracking-[0.24em] mb-2 text-muted">mcp discovery</div>
+          <div className="text-sm text-dim">
             Discovery bundles, skill resources, and VS Code dev-loop guidance are surfaced here so MCP authoring and debugging paths are visible inside the app.
           </div>
         </div>
@@ -451,13 +447,13 @@ export default function PluginsPage() {
         </div>
 
         <div className="grid gap-4 xl:grid-cols-3">
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>recommended bundles</div>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.18em] text-muted">recommended bundles</div>
             {(data?.discovery.bundles ?? []).map((bundle) => (
-              <div key={bundle.bundleId} className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+              <div key={bundle.bundleId} className="border p-3 space-y-2 border-border-sub bg-surface">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-primary)" }}>{bundle.title}</div>
-                  <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>{bundle.description}</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-primary">{bundle.title}</div>
+                  <div className="text-xs mt-2 leading-6 text-dim">{bundle.description}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <DiscoveryChip label="bundle" value={bundle.bundleId} />
@@ -469,26 +465,26 @@ export default function PluginsPage() {
             ))}
           </div>
 
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>skill resources</div>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.18em] text-muted">skill resources</div>
             {(data?.discovery.skillResources ?? []).map((resource) => (
-              <div key={resource.uri} className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+              <div key={resource.uri} className="border p-3 space-y-2 border-border-sub bg-surface">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-primary)" }}>{resource.title}</div>
-                  <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>{resource.description}</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-primary">{resource.title}</div>
+                  <div className="text-xs mt-2 leading-6 text-dim">{resource.description}</div>
                 </div>
-                <div className="text-xs leading-6 break-all" style={{ color: "var(--text-dim)" }}>{resource.uri}</div>
+                <div className="text-xs leading-6 break-all text-dim">{resource.uri}</div>
               </div>
             ))}
           </div>
 
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>task recipes</div>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.18em] text-muted">task recipes</div>
             {(data?.discovery.taskRecipes ?? []).map((recipe) => (
-              <div key={recipe.recipeId} className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-surface)" }}>
+              <div key={recipe.recipeId} className="border p-3 space-y-2 border-border-sub bg-surface">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-primary)" }}>{recipe.title}</div>
-                  <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>{recipe.description}</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-primary">{recipe.title}</div>
+                  <div className="text-xs mt-2 leading-6 text-dim">{recipe.description}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <DiscoveryChip label="recipe" value={recipe.recipeId} />
@@ -499,9 +495,9 @@ export default function PluginsPage() {
           </div>
         </div>
 
-        <div className="border p-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-          <div className="text-xs uppercase tracking-[0.18em] mb-2" style={{ color: "var(--text-muted)" }}>vs code dev loop</div>
-          <div className="text-sm leading-6" style={{ color: "var(--text-dim)" }}>
+        <div className="border p-4 border-border-sub bg-raised">
+          <div className="text-xs uppercase tracking-[0.18em] mb-2 text-muted">vs code dev loop</div>
+          <div className="text-sm leading-6 text-dim">
             Review {data?.discovery.devLoop.reviewResourceUri ?? "bizbot://debug/vscode-mcp-devloop"} for the checked-in MCP connection, inspect {data?.discovery.devLoop.traceResourceUri ?? "bizbot://debug/mcp-trace"} when discovery and execution disagree, and use {data?.discovery.devLoop.optimizationPromptName ?? "optimize-vscode-mcp-devloop"} when you want a guided pass on the VS Code to BizBot loop.
           </div>
         </div>
@@ -525,21 +521,22 @@ export default function PluginsPage() {
         onRemove={removeEntry}
       />
 
-      <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <section className="border p-4 space-y-4 border-border bg-surface">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>
+            <div className="text-xs uppercase tracking-[0.24em] mb-2 text-muted">
               {formState.pluginId ? "edit external integration" : "add external integration"}
             </div>
-            <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+            <div className="text-sm text-dim">
               Use a stable integration name because it becomes the MCP tool prefix. Example: github produces tools like mcp_github_list_prs.
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={startCreateExternal} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--border-sub)", color: "var(--text-dim)" }}>
+            <button onClick={startCreateExternal} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-border-sub text-dim">
               reset
             </button>
-            <button onClick={() => void saveExternalPlugin()} disabled={formBusy} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)", opacity: formBusy ? 0.65 : 1 }}>
+            <button onClick={() => void saveExternalPlugin()} disabled={formBusy} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-accent text-accent"
+            style={{ opacity: formBusy ? 0.65 : 1 }}>
               {formState.pluginId ? "save changes" : "create integration"}
             </button>
           </div>
@@ -547,22 +544,20 @@ export default function PluginsPage() {
 
         <div className="grid gap-4 xl:grid-cols-2">
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>integration name</label>
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">integration name</label>
             <input
               value={formState.name}
               onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))}
-              className="w-full bg-transparent border px-3 py-2 text-sm"
-              style={{ borderColor: "var(--border)" }}
+              className="w-full bg-transparent border px-3 py-2 text-sm border-border"
               placeholder="github"
             />
           </div>
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>server URL</label>
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">server URL</label>
             <input
               value={formState.url}
               onChange={(event) => setFormState((current) => ({ ...current, url: event.target.value }))}
-              className="w-full bg-transparent border px-3 py-2 text-sm"
-              style={{ borderColor: "var(--border)" }}
+              className="w-full bg-transparent border px-3 py-2 text-sm border-border"
               placeholder="http://localhost:4100/mcp"
             />
           </div>
@@ -570,17 +565,16 @@ export default function PluginsPage() {
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-end">
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>auth token</label>
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">auth token</label>
             <input
               type="password"
               value={formState.authToken}
               onChange={(event) => setFormState((current) => ({ ...current, authToken: event.target.value, clearAuthToken: false }))}
-              className="w-full bg-transparent border px-3 py-2 text-sm"
-              style={{ borderColor: "var(--border)" }}
+              className="w-full bg-transparent border px-3 py-2 text-sm border-border"
               placeholder={formState.pluginId ? "Leave blank to keep existing token" : "Optional bearer token"}
             />
           </div>
-          <label className="flex items-center gap-2 text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+          <label className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted">
             <input
               type="checkbox"
               checked={formState.enabled}
@@ -588,7 +582,7 @@ export default function PluginsPage() {
             />
             <span>enabled</span>
           </label>
-          <label className="flex items-center gap-2 text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+          <label className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted">
             <input
               type="checkbox"
               checked={formState.clearAuthToken}
@@ -600,7 +594,7 @@ export default function PluginsPage() {
         </div>
 
         {formState.pluginId ? (
-          <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+          <div className="text-xs leading-6 text-dim">
             Editing {formState.pluginId}. If this integration already has a stored token, leaving the token field blank keeps it unchanged.
           </div>
         ) : null}
@@ -626,9 +620,9 @@ export default function PluginsPage() {
         onEdit={startEditExternal}
       />
 
-      <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-        <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>integration source</div>
-        <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+      <section className="border p-4 border-border bg-surface">
+        <div className="text-xs uppercase tracking-[0.24em] mb-2 text-muted">integration source</div>
+        <div className="text-sm text-dim">
           The plugins page is now the primary control surface for external MCP integrations. The raw MCP JSON in settings remains as an advanced fallback only.
         </div>
       </section>

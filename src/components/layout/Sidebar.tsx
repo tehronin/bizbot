@@ -36,11 +36,10 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="w-48 shrink-0 flex flex-col h-screen sticky top-0"
-      style={{ background: "var(--bg-surface)", borderRight: "1px solid var(--border)" }}
+      className="w-48 shrink-0 flex flex-col h-screen sticky top-0 bg-surface border-r border-border"
     >
-      <div className="h-14 flex items-center px-5" style={{ borderBottom: "1px solid var(--border)" }}>
-        <span className="font-black text-sm tracking-tight" style={{ color: "var(--accent)" }}>
+      <div className="h-14 flex items-center px-5 border-b border-border">
+        <span className="font-black text-sm tracking-tight text-accent">
           BIZBOT
         </span>
       </div>
@@ -51,31 +50,17 @@ export default function Sidebar() {
             <Link
               key={href}
               href={href}
-              className="flex items-center gap-3 px-3 py-2 font-mono text-[10px] tracking-widest uppercase transition-colors"
-              style={
+              className={`flex items-center gap-3 px-3 py-2 font-mono text-[10px] tracking-widest uppercase transition-colors border-l-2 ${
                 active
-                  ? { background: "var(--accent-glow)", color: "var(--accent)", borderLeft: "2px solid var(--accent)" }
-                  : { color: "var(--text-dim)", borderLeft: "2px solid transparent" }
-              }
-              onMouseEnter={(e) => {
-                if (!active) {
-                  (e.currentTarget as HTMLAnchorElement).style.background = "var(--bg-hover)";
-                  (e.currentTarget as HTMLAnchorElement).style.color = "#FFFFFF";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!active) {
-                  (e.currentTarget as HTMLAnchorElement).style.background = "";
-                  (e.currentTarget as HTMLAnchorElement).style.color = "var(--text-dim)";
-                }
-              }}
+                  ? "bg-accent-glow text-accent border-accent"
+                  : "text-dim border-transparent hover:bg-hover hover:text-primary"
+              }`}
             >
               <span className="opacity-60 text-[10px]">{icon}</span>
               <span className="flex-1">{label}</span>
               {label === "Approvals" && pendingCount > 0 && (
                 <span
-                  className="ml-auto text-[9px] font-bold px-1.5 py-0.5"
-                  style={{ background: "var(--danger)", color: "#FFFFFF" }}
+                  className="ml-auto text-[9px] font-bold px-1.5 py-0.5 bg-danger text-white"
                 >
                   {pendingCount}
                 </span>
@@ -84,7 +69,7 @@ export default function Sidebar() {
           );
         })}
       </nav>
-      <div className="px-4 py-3 font-mono text-[9px] uppercase tracking-widest" style={{ borderTop: "1px solid var(--border)", color: "var(--text-muted)" }}>
+      <div className="px-4 py-3 font-mono text-[9px] uppercase tracking-widest border-t border-border text-muted">
         local agent
       </div>
     </aside>

@@ -5,7 +5,7 @@ import SidecarHost from "@/components/layout/SidecarHost";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen flex" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
+    <div className="min-h-screen flex bg-base text-primary">
       <Sidebar />
       <div className="flex-1 min-w-0 flex flex-col">
         <Header />

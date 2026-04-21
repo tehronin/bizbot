@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -407,35 +407,35 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <section className="border p-4 space-y-6" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <section className="border p-4 space-y-6 border-border bg-surface">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.24em] mb-2" style={{ color: "var(--text-muted)" }}>settings</div>
-            <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs uppercase tracking-[0.24em] mb-2 text-muted">settings</div>
+            <div className="text-sm text-dim">
               This page is the operational source of truth for provider setup, explicit model roles, workspace + knowledge paths, autonomy, platform credentials, and Meta webhook behavior.
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => void refreshRuntime()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>refresh status</button>
-            <button onClick={() => void save()} className="px-4 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>save all</button>
+            <button onClick={() => void refreshRuntime()} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-border text-primary">refresh status</button>
+            <button onClick={() => void save()} className="px-4 py-2 border text-xs uppercase tracking-[0.18em] border-accent text-accent">save all</button>
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>agent llm role</div>
-                <div className="text-xs leading-6 mt-2" style={{ color: "var(--text-dim)" }}>
+                <div className="text-xs uppercase tracking-[0.22em] text-muted">agent llm role</div>
+                <div className="text-xs leading-6 mt-2 text-dim">
                   Controls chat, tool calling, and the main agent loop. This does not change embeddings.
                 </div>
               </div>
-              <div className="text-xs uppercase tracking-[0.16em]" style={{ color: selectedProviderStatus?.available ? "var(--success)" : "var(--danger)" }}>
+              <div className={`text-xs uppercase tracking-[0.16em] ${selectedProviderStatus?.available ? "text-success" : "text-danger"}`}>
                 {selectedProviderStatus?.available ? "ready" : "needs setup"}
               </div>
             </div>
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Active provider</label>
-            <select value={activeProvider} onChange={(event) => updatePublicEnv("ACTIVE_LLM_PROVIDER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">Active provider</label>
+            <select value={activeProvider} onChange={(event) => updatePublicEnv("ACTIVE_LLM_PROVIDER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
               {(runtime?.options.chatProviders ?? ["ollama", "google", "openai", "anthropic", "minimax"]).map((option) => (
                 <option
                   key={option}
@@ -446,25 +446,25 @@ export default function SettingsPage() {
                 </option>
               ))}
             </select>
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Active model</label>
-            <select value={publicEnv[activeModelKey]} onChange={(event) => updatePublicEnv(activeModelKey, event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">Active model</label>
+            <select value={publicEnv[activeModelKey]} onChange={(event) => updatePublicEnv(activeModelKey, event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
               {chatModelOptions.map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
             <div className="grid gap-2">
               {providerStatuses.map((status) => (
-                <div key={status.provider} className="border px-3 py-2 text-xs" style={{ borderColor: status.active ? "var(--accent)" : "var(--border)", color: "var(--text-primary)", background: status.active ? "var(--accent-glow)" : "transparent" }}>
+                <div key={status.provider} className={`border px-3 py-2 text-xs text-primary ${status.active ? "border-accent bg-accent-glow" : "border-border bg-transparent"}`}>
                   <div className="flex items-center justify-between gap-4 uppercase tracking-[0.14em]">
                     <span>{status.provider}</span>
-                    <span style={{ color: status.available ? "var(--success)" : "var(--text-dim)" }}>{status.reason}</span>
+                    <span className={status.available ? "text-success" : "text-dim"}>{status.reason}</span>
                   </div>
-                  <div className="mt-2 leading-6" style={{ color: "var(--text-dim)" }}>
+                  <div className="mt-2 leading-6 text-dim">
                     Usage telemetry: {status.capabilities.usageReliability.reliability}.
                     {" "}{status.capabilities.usageReliability.notes}
                   </div>
                   {status.capabilities.nativeExtras.length > 0 ? (
-                    <div className="leading-6" style={{ color: "var(--text-dim)" }}>
+                    <div className="leading-6 text-dim">
                       Native extras: {status.capabilities.nativeExtras.join(", ")}
                     </div>
                   ) : null}
@@ -473,128 +473,128 @@ export default function SettingsPage() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Temperature</label>
-                <input value={publicEnv.LLM_TEMPERATURE} onChange={(event) => updatePublicEnv("LLM_TEMPERATURE", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Temperature</label>
+                <input value={publicEnv.LLM_TEMPERATURE} onChange={(event) => updatePublicEnv("LLM_TEMPERATURE", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Max tokens</label>
-                <input value={publicEnv.LLM_MAX_TOKENS} onChange={(event) => updatePublicEnv("LLM_MAX_TOKENS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Max tokens</label>
+                <input value={publicEnv.LLM_MAX_TOKENS} onChange={(event) => updatePublicEnv("LLM_MAX_TOKENS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Google max output tokens</label>
-              <input value={publicEnv.GOOGLE_MAX_OUTPUT_TOKENS} onChange={(event) => updatePublicEnv("GOOGLE_MAX_OUTPUT_TOKENS", event.target.value)} placeholder="Blank uses global max tokens" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-              <div className="text-xs leading-6 mt-2" style={{ color: "var(--text-dim)" }}>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Google max output tokens</label>
+              <input value={publicEnv.GOOGLE_MAX_OUTPUT_TOKENS} onChange={(event) => updatePublicEnv("GOOGLE_MAX_OUTPUT_TOKENS", event.target.value)} placeholder="Blank uses global max tokens" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+              <div className="text-xs leading-6 mt-2 text-dim">
                 Gemini-only override. Blank falls back to the global max tokens value. Runtime currently resolves to {runtime?.providerGeneration?.google?.maxOutputTokens ?? publicEnv.LLM_MAX_TOKENS}.
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Google context mode</label>
-                <select value={publicEnv.GOOGLE_CONTEXT_MODE} onChange={(event) => updatePublicEnv("GOOGLE_CONTEXT_MODE", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Google context mode</label>
+                <select value={publicEnv.GOOGLE_CONTEXT_MODE} onChange={(event) => updatePublicEnv("GOOGLE_CONTEXT_MODE", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
                   <option value="standard">standard</option>
                   <option value="extended">extended</option>
                 </select>
               </div>
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Google max tool result chars</label>
-                <input value={publicEnv.GOOGLE_MAX_TOOL_RESULT_CHARS} onChange={(event) => updatePublicEnv("GOOGLE_MAX_TOOL_RESULT_CHARS", event.target.value)} placeholder="Blank uses global tool result cap" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Google max tool result chars</label>
+                <input value={publicEnv.GOOGLE_MAX_TOOL_RESULT_CHARS} onChange={(event) => updatePublicEnv("GOOGLE_MAX_TOOL_RESULT_CHARS", event.target.value)} placeholder="Blank uses global tool result cap" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
             </div>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               Extended mode rebuilds a larger conversation summary on demand and expands Gemini-only retrieval breadth. Current Gemini runtime: {runtime?.providerGeneration?.google?.contextMode ?? publicEnv.GOOGLE_CONTEXT_MODE} context, {(runtime?.providerGeneration?.google?.toolResultMaxChars ?? publicEnv.GOOGLE_MAX_TOOL_RESULT_CHARS) || publicEnv.BIZBOT_AGENT_MAX_TOOL_RESULT_CHARS} tool-result chars.
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Ollama base URL</label>
-              <input value={publicEnv.OLLAMA_BASE_URL} onChange={(event) => updatePublicEnv("OLLAMA_BASE_URL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Ollama base URL</label>
+              <input value={publicEnv.OLLAMA_BASE_URL} onChange={(event) => updatePublicEnv("OLLAMA_BASE_URL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>MiniMax base URL</label>
-              <input value={publicEnv.MINIMAX_BASE_URL} onChange={(event) => updatePublicEnv("MINIMAX_BASE_URL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">MiniMax base URL</label>
+              <input value={publicEnv.MINIMAX_BASE_URL} onChange={(event) => updatePublicEnv("MINIMAX_BASE_URL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               Entering credentials only makes a provider available. The agent will switch only when you explicitly change the active provider here.
             </div>
           </div>
 
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>embedding role</div>
-                <div className="text-xs leading-6 mt-2" style={{ color: "var(--text-dim)" }}>
+                <div className="text-xs uppercase tracking-[0.22em] text-muted">embedding role</div>
+                <div className="text-xs leading-6 mt-2 text-dim">
                   Controls vector generation only. This is independent from the agent LLM role.
                 </div>
               </div>
-              <div className="text-xs uppercase tracking-[0.16em]" style={{ color: selectedEmbeddingProviderStatus.available ? "var(--success)" : "var(--danger)" }}>
+              <div className={`text-xs uppercase tracking-[0.16em] ${selectedEmbeddingProviderStatus.available ? "text-success" : "text-danger"}`}>
                 {selectedEmbeddingProviderStatus.available ? "ready" : "needs setup"}
               </div>
             </div>
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Provider</label>
-            <select value={publicEnv.EMBEDDING_PROVIDER} onChange={(event) => updatePublicEnv("EMBEDDING_PROVIDER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">Provider</label>
+            <select value={publicEnv.EMBEDDING_PROVIDER} onChange={(event) => updatePublicEnv("EMBEDDING_PROVIDER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
               {embeddingProviderOptions.map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Model</label>
-            <select value={publicEnv.EMBEDDING_MODEL} onChange={(event) => updatePublicEnv("EMBEDDING_MODEL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">Model</label>
+            <select value={publicEnv.EMBEDDING_MODEL} onChange={(event) => updatePublicEnv("EMBEDDING_MODEL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
               {embeddingModelOptions.map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Vector dimensions</label>
-                <input value={publicEnv.EMBEDDING_DIMENSIONS} onChange={(event) => updatePublicEnv("EMBEDDING_DIMENSIONS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Vector dimensions</label>
+                <input value={publicEnv.EMBEDDING_DIMENSIONS} onChange={(event) => updatePublicEnv("EMBEDDING_DIMENSIONS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
               <div className="flex items-end">
-                <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                <div className="text-xs leading-6 text-dim">
                   {selectedEmbeddingProviderStatus.reason}
                 </div>
               </div>
             </div>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               Keep the embedding dimension aligned with the model that populated your pgvector column. The current default path expects 1536. For the intended production split, leave embeddings on Google and switch the agent role to MiniMax M2.7.
             </div>
           </div>
         </div>
 
-        <div className="border p-4 space-y-4" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-          <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>provider credentials</div>
+        <div className="border p-4 space-y-4 border-border-sub bg-raised">
+          <div className="text-xs uppercase tracking-[0.22em] text-muted">provider credentials</div>
           <div className="grid gap-3 md:grid-cols-2">
             {(Object.entries(SECRET_ENV_LABELS) as Array<[SecretEnvKey, string]>).slice(0, 4).map(([key, label]) => (
               <div key={key}>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{label}</label>
-                <input type="password" value={secretEnv[key]} onChange={(event) => updateSecretEnv(key, event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">{label}</label>
+                <input type="password" value={secretEnv[key]} onChange={(event) => updateSecretEnv(key, event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
             ))}
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>CRM and HubSpot</div>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.22em] text-muted">CRM and HubSpot</div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>CRM provider</label>
-              <select value={publicEnv.CRM_PROVIDER} onChange={(event) => updatePublicEnv("CRM_PROVIDER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">CRM provider</label>
+              <select value={publicEnv.CRM_PROVIDER} onChange={(event) => updatePublicEnv("CRM_PROVIDER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
                 <option value="internal">internal</option>
                 <option value="hubspot">hubspot</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>HubSpot portal ID</label>
-              <input value={publicEnv.HUBSPOT_PORTAL_ID} onChange={(event) => updatePublicEnv("HUBSPOT_PORTAL_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">HubSpot portal ID</label>
+              <input value={publicEnv.HUBSPOT_PORTAL_ID} onChange={(event) => updatePublicEnv("HUBSPOT_PORTAL_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>HubSpot base URL</label>
-              <input value={publicEnv.HUBSPOT_BASE_URL} onChange={(event) => updatePublicEnv("HUBSPOT_BASE_URL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">HubSpot base URL</label>
+              <input value={publicEnv.HUBSPOT_BASE_URL} onChange={(event) => updatePublicEnv("HUBSPOT_BASE_URL", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.HUBSPOT_PRIVATE_APP_TOKEN}</label>
-              <input type="password" value={secretEnv.HUBSPOT_PRIVATE_APP_TOKEN} onChange={(event) => updateSecretEnv("HUBSPOT_PRIVATE_APP_TOKEN", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">{SECRET_ENV_LABELS.HUBSPOT_PRIVATE_APP_TOKEN}</label>
+              <input type="password" value={secretEnv.HUBSPOT_PRIVATE_APP_TOKEN} onChange={(event) => updateSecretEnv("HUBSPOT_PRIVATE_APP_TOKEN", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
-            <div className="space-y-2 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="space-y-2 text-xs leading-6 text-dim">
               {(runtime?.crm.providers ?? []).map((provider) => (
-                <div key={provider.name} className="border px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                <div key={provider.name} className="border px-3 py-2 border-border">
                   <div>{provider.label}: {provider.mode}</div>
                   <div>{provider.connected ? "connected" : "not connected"}</div>
                 </div>
@@ -602,247 +602,247 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>MCP and infrastructure</div>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.22em] text-muted">MCP and infrastructure</div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Advanced MCP servers JSON</label>
-              <div className="text-xs leading-6 mb-2" style={{ color: "var(--text-dim)" }}>Prefer the plugins page for normal create, edit, enable, and disconnect workflows. Use this only for raw recovery or bulk edits.</div>
-              <textarea value={publicEnv.MCP_SERVERS} onChange={(event) => updatePublicEnv("MCP_SERVERS", event.target.value)} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Advanced MCP servers JSON</label>
+              <div className="text-xs leading-6 mb-2 text-dim">Prefer the plugins page for normal create, edit, enable, and disconnect workflows. Use this only for raw recovery or bulk edits.</div>
+              <textarea value={publicEnv.MCP_SERVERS} onChange={(event) => updatePublicEnv("MCP_SERVERS", event.target.value)} rows={5} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.MCP_AUTH_TOKEN}</label>
-              <input type="password" value={secretEnv.MCP_AUTH_TOKEN} onChange={(event) => updateSecretEnv("MCP_AUTH_TOKEN", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">{SECRET_ENV_LABELS.MCP_AUTH_TOKEN}</label>
+              <input type="password" value={secretEnv.MCP_AUTH_TOKEN} onChange={(event) => updateSecretEnv("MCP_AUTH_TOKEN", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Redis URL</label>
-              <input value={publicEnv.REDIS_URL} onChange={(event) => updatePublicEnv("REDIS_URL", event.target.value)} placeholder="Optional if using local default" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Redis URL</label>
+              <input value={publicEnv.REDIS_URL} onChange={(event) => updatePublicEnv("REDIS_URL", event.target.value)} placeholder="Optional if using local default" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Memgraph URI</label>
-                <input value={publicEnv.MEMGRAPH_URI} onChange={(event) => updatePublicEnv("MEMGRAPH_URI", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Memgraph URI</label>
+                <input value={publicEnv.MEMGRAPH_URI} onChange={(event) => updatePublicEnv("MEMGRAPH_URI", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Memgraph user</label>
-                <input value={publicEnv.MEMGRAPH_USER} onChange={(event) => updatePublicEnv("MEMGRAPH_USER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Memgraph user</label>
+                <input value={publicEnv.MEMGRAPH_USER} onChange={(event) => updatePublicEnv("MEMGRAPH_USER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.MEMGRAPH_PASSWORD}</label>
-              <input type="password" value={secretEnv.MEMGRAPH_PASSWORD} onChange={(event) => updateSecretEnv("MEMGRAPH_PASSWORD", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">{SECRET_ENV_LABELS.MEMGRAPH_PASSWORD}</label>
+              <input type="password" value={secretEnv.MEMGRAPH_PASSWORD} onChange={(event) => updateSecretEnv("MEMGRAPH_PASSWORD", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Dev web conflict strategy</label>
-              <select value={publicEnv.BIZBOT_DEV_WEB_CONFLICT} onChange={(event) => updatePublicEnv("BIZBOT_DEV_WEB_CONFLICT", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Dev web conflict strategy</label>
+              <select value={publicEnv.BIZBOT_DEV_WEB_CONFLICT} onChange={(event) => updatePublicEnv("BIZBOT_DEV_WEB_CONFLICT", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
                 <option value="reuse">reuse</option>
                 <option value="replace">replace</option>
               </select>
             </div>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               MCP endpoint: {runtime?.mcp.serverEndpoint ?? "/api/mcp"}. Auth {runtime?.mcp.authRequired ? "required" : "optional"}. Imported clients: {runtime?.mcp.connectedClients.length ?? 0}.
             </div>
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>agent operations</div>
-            <label className="block text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>Autonomy preset</label>
-            <select value={publicEnv.BIZBOT_AUTONOMY_PRESET} onChange={(event) => updatePublicEnv("BIZBOT_AUTONOMY_PRESET", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.22em] text-muted">agent operations</div>
+            <label className="block text-xs uppercase tracking-[0.16em] text-muted">Autonomy preset</label>
+            <select value={publicEnv.BIZBOT_AUTONOMY_PRESET} onChange={(event) => updatePublicEnv("BIZBOT_AUTONOMY_PRESET", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
               {AUTONOMY_PRESETS.map((option) => (
                 <option key={option.id} value={option.id}>{option.label}</option>
               ))}
             </select>
-            <div className="space-y-2 text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="space-y-2 text-xs leading-6 text-dim">
               {AUTONOMY_PRESETS.map((option) => (
-                <div key={option.id} style={{ color: option.id === publicEnv.BIZBOT_AUTONOMY_PRESET ? "var(--text-primary)" : "var(--text-dim)" }}>
+                <div key={option.id} className={option.id === publicEnv.BIZBOT_AUTONOMY_PRESET ? "text-primary" : "text-dim"}>
                   {option.label}: {option.description}
                 </div>
               ))}
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Heartbeat seconds</label>
-              <input value={publicEnv.BIZBOT_AGENT_HEARTBEAT_SECONDS} onChange={(event) => updatePublicEnv("BIZBOT_AGENT_HEARTBEAT_SECONDS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Heartbeat seconds</label>
+              <input value={publicEnv.BIZBOT_AGENT_HEARTBEAT_SECONDS} onChange={(event) => updatePublicEnv("BIZBOT_AGENT_HEARTBEAT_SECONDS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
-            <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="flex items-center justify-between border px-3 py-2 text-sm border-border">
               <span>Process webhook inbox immediately</span>
               <input type="checkbox" checked={publicEnv.BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY === "true"} onChange={(event) => updatePublicEnv("BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY", event.target.checked ? "true" : "false")} />
             </label>
           </div>
 
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>workspace and knowledge</div>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.22em] text-muted">workspace and knowledge</div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Workspace path</label>
-              <input value={publicEnv.BIZBOT_WORKSPACE_PATH} onChange={(event) => updatePublicEnv("BIZBOT_WORKSPACE_PATH", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Workspace path</label>
+              <input value={publicEnv.BIZBOT_WORKSPACE_PATH} onChange={(event) => updatePublicEnv("BIZBOT_WORKSPACE_PATH", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
-            <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <label className="flex items-center justify-between border px-3 py-2 text-sm border-border">
               <span>Enable knowledge folder</span>
               <input type="checkbox" checked={publicEnv.BIZBOT_KNOWLEDGE_ENABLED === "true"} onChange={(event) => updatePublicEnv("BIZBOT_KNOWLEDGE_ENABLED", event.target.checked ? "true" : "false")} />
             </label>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Knowledge folder</label>
-              <input value={publicEnv.BIZBOT_KNOWLEDGE_PATH} onChange={(event) => updatePublicEnv("BIZBOT_KNOWLEDGE_PATH", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Knowledge folder</label>
+              <input value={publicEnv.BIZBOT_KNOWLEDGE_PATH} onChange={(event) => updatePublicEnv("BIZBOT_KNOWLEDGE_PATH", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               Current docs path: {knowledgeExample}
             </div>
           </div>
 
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>builder mode</div>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.22em] text-muted">builder mode</div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Builder workspace path</label>
-              <input value={publicEnv.BIZBOT_BUILDER_WORKSPACE_PATH} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_WORKSPACE_PATH", event.target.value)} placeholder="External path outside this repo" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Builder workspace path</label>
+              <input value={publicEnv.BIZBOT_BUILDER_WORKSPACE_PATH} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_WORKSPACE_PATH", event.target.value)} placeholder="External path outside this repo" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Allowed raw commands</label>
-              <input value={publicEnv.BIZBOT_BUILDER_ALLOWED_COMMANDS} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_ALLOWED_COMMANDS", event.target.value)} placeholder="npm,pnpm,npx,git,node" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Allowed raw commands</label>
+              <input value={publicEnv.BIZBOT_BUILDER_ALLOWED_COMMANDS} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_ALLOWED_COMMANDS", event.target.value)} placeholder="npm,pnpm,npx,git,node" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Default template</label>
-                <input value={publicEnv.BIZBOT_BUILDER_DEFAULT_TEMPLATE} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_TEMPLATE", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Default template</label>
+                <input value={publicEnv.BIZBOT_BUILDER_DEFAULT_TEMPLATE} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_TEMPLATE", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Default package manager</label>
-                <select value={publicEnv.BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Default package manager</label>
+                <select value={publicEnv.BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_PACKAGE_MANAGER", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border">
                   <option value="NPM">NPM</option>
                   <option value="PNPM">PNPM</option>
                 </select>
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+              <label className="flex items-center justify-between border px-3 py-2 text-sm border-border">
                 <span>Initialize git by default</span>
                 <input type="checkbox" checked={publicEnv.BIZBOT_BUILDER_INIT_GIT === "true"} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_INIT_GIT", event.target.checked ? "true" : "false")} />
               </label>
-              <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+              <label className="flex items-center justify-between border px-3 py-2 text-sm border-border">
                 <span>Install dependencies by default</span>
                 <input type="checkbox" checked={publicEnv.BIZBOT_BUILDER_INSTALL_DEPS === "true"} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_INSTALL_DEPS", event.target.checked ? "true" : "false")} />
               </label>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Default agentic profile</label>
-                <input value={publicEnv.BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE", event.target.value)} placeholder="Leave blank to require explicit profile selection" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Default agentic profile</label>
+                <input value={publicEnv.BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_DEFAULT_AGENTIC_PROFILE", event.target.value)} placeholder="Leave blank to require explicit profile selection" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Agentic timeout seconds</label>
-                <input value={publicEnv.BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Agentic timeout seconds</label>
+                <input value={publicEnv.BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_AGENTIC_TIMEOUT_SECONDS", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
             </div>
-            <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-              <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>codex adapter</div>
-              <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <div className="border p-3 space-y-3 border-border bg-surface">
+              <div className="text-xs uppercase tracking-[0.22em] text-muted">codex adapter</div>
+              <label className="flex items-center justify-between border px-3 py-2 text-sm border-border">
                 <span>Enable Codex adapter</span>
                 <input type="checkbox" checked={publicEnv.BIZBOT_BUILDER_CODEX_ENABLED === "true"} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CODEX_ENABLED", event.target.checked ? "true" : "false")} />
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Codex command</label>
-                  <input value={publicEnv.BIZBOT_BUILDER_CODEX_COMMAND} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CODEX_COMMAND", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Codex command</label>
+                  <input value={publicEnv.BIZBOT_BUILDER_CODEX_COMMAND} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CODEX_COMMAND", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                 </div>
                 <div>
-                  <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Codex model override</label>
-                  <input value={publicEnv.BIZBOT_BUILDER_CODEX_MODEL} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CODEX_MODEL", event.target.value)} placeholder="optional" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                  <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Codex model override</label>
+                  <input value={publicEnv.BIZBOT_BUILDER_CODEX_MODEL} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CODEX_MODEL", event.target.value)} placeholder="optional" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                 </div>
               </div>
-              <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              <div className="text-xs leading-6 text-dim">
                 Keep this disabled unless you intentionally validate the Codex auth path and non-interactive execution contract for Builder.
               </div>
             </div>
-            <div className="border p-3 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-              <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>claude code adapter</div>
-              <label className="flex items-center justify-between border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <div className="border p-3 space-y-3 border-border bg-surface">
+              <div className="text-xs uppercase tracking-[0.22em] text-muted">claude code adapter</div>
+              <label className="flex items-center justify-between border px-3 py-2 text-sm border-border">
                 <span>Enable Claude Code adapter</span>
                 <input type="checkbox" checked={publicEnv.BIZBOT_BUILDER_CLAUDE_CODE_ENABLED === "true"} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CLAUDE_CODE_ENABLED", event.target.checked ? "true" : "false")} />
               </label>
               <div>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Claude command</label>
-                <input value={publicEnv.BIZBOT_BUILDER_CLAUDE_CODE_COMMAND} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CLAUDE_CODE_COMMAND", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Claude command</label>
+                <input value={publicEnv.BIZBOT_BUILDER_CLAUDE_CODE_COMMAND} onChange={(event) => updatePublicEnv("BIZBOT_BUILDER_CLAUDE_CODE_COMMAND", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
             </div>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               Builder Mode should point at an external workspace. Raw commands stay behind the allowlist; agentic adapters such as Codex run through the dedicated builder project flow instead of the generic command surface.
             </div>
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>google business profile</div>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.22em] text-muted">google business profile</div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Account name</label>
-              <input value={publicEnv.GOOGLE_BUSINESS_ACCOUNT_NAME} onChange={(event) => updatePublicEnv("GOOGLE_BUSINESS_ACCOUNT_NAME", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Account name</label>
+              <input value={publicEnv.GOOGLE_BUSINESS_ACCOUNT_NAME} onChange={(event) => updatePublicEnv("GOOGLE_BUSINESS_ACCOUNT_NAME", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Review/post location name</label>
-              <input value={publicEnv.GOOGLE_BUSINESS_LOCATION_NAME} onChange={(event) => updatePublicEnv("GOOGLE_BUSINESS_LOCATION_NAME", event.target.value)} placeholder="accounts/*/locations/*" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Review/post location name</label>
+              <input value={publicEnv.GOOGLE_BUSINESS_LOCATION_NAME} onChange={(event) => updatePublicEnv("GOOGLE_BUSINESS_LOCATION_NAME", event.target.value)} placeholder="accounts/*/locations/*" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Business info location name</label>
-              <input value={publicEnv.GOOGLE_BUSINESS_INFO_LOCATION_NAME} onChange={(event) => updatePublicEnv("GOOGLE_BUSINESS_INFO_LOCATION_NAME", event.target.value)} placeholder="locations/*" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Business info location name</label>
+              <input value={publicEnv.GOOGLE_BUSINESS_INFO_LOCATION_NAME} onChange={(event) => updatePublicEnv("GOOGLE_BUSINESS_INFO_LOCATION_NAME", event.target.value)} placeholder="locations/*" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.GOOGLE_BUSINESS_CLIENT_ID}</label>
-              <input type="password" value={secretEnv.GOOGLE_BUSINESS_CLIENT_ID} onChange={(event) => updateSecretEnv("GOOGLE_BUSINESS_CLIENT_ID", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">{SECRET_ENV_LABELS.GOOGLE_BUSINESS_CLIENT_ID}</label>
+              <input type="password" value={secretEnv.GOOGLE_BUSINESS_CLIENT_ID} onChange={(event) => updateSecretEnv("GOOGLE_BUSINESS_CLIENT_ID", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.GOOGLE_BUSINESS_CLIENT_SECRET}</label>
-              <input type="password" value={secretEnv.GOOGLE_BUSINESS_CLIENT_SECRET} onChange={(event) => updateSecretEnv("GOOGLE_BUSINESS_CLIENT_SECRET", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">{SECRET_ENV_LABELS.GOOGLE_BUSINESS_CLIENT_SECRET}</label>
+              <input type="password" value={secretEnv.GOOGLE_BUSINESS_CLIENT_SECRET} onChange={(event) => updateSecretEnv("GOOGLE_BUSINESS_CLIENT_SECRET", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS.GOOGLE_BUSINESS_REFRESH_TOKEN}</label>
-              <input type="password" value={secretEnv.GOOGLE_BUSINESS_REFRESH_TOKEN} onChange={(event) => updateSecretEnv("GOOGLE_BUSINESS_REFRESH_TOKEN", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">{SECRET_ENV_LABELS.GOOGLE_BUSINESS_REFRESH_TOKEN}</label>
+              <input type="password" value={secretEnv.GOOGLE_BUSINESS_REFRESH_TOKEN} onChange={(event) => updateSecretEnv("GOOGLE_BUSINESS_REFRESH_TOKEN", event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               Reviews and local posts use the v4 `accounts/*/locations/*` resource name. Hours updates use the Business Information `locations/*` resource name. Access tokens are now minted locally from the OAuth refresh token instead of being stored directly.
             </div>
           </div>
 
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>meta and webhooks</div>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.22em] text-muted">meta and webhooks</div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Facebook page ID</label>
-              <input value={publicEnv.FACEBOOK_PAGE_ID} onChange={(event) => updatePublicEnv("FACEBOOK_PAGE_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Facebook page ID</label>
+              <input value={publicEnv.FACEBOOK_PAGE_ID} onChange={(event) => updatePublicEnv("FACEBOOK_PAGE_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Meta page ID</label>
-              <input value={publicEnv.META_PAGE_ID} onChange={(event) => updatePublicEnv("META_PAGE_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Meta page ID</label>
+              <input value={publicEnv.META_PAGE_ID} onChange={(event) => updatePublicEnv("META_PAGE_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Instagram business account ID</label>
-              <input value={publicEnv.INSTAGRAM_BUSINESS_ACCOUNT_ID} onChange={(event) => updatePublicEnv("INSTAGRAM_BUSINESS_ACCOUNT_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Instagram business account ID</label>
+              <input value={publicEnv.INSTAGRAM_BUSINESS_ACCOUNT_ID} onChange={(event) => updatePublicEnv("INSTAGRAM_BUSINESS_ACCOUNT_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Meta Instagram account ID</label>
-              <input value={publicEnv.META_INSTAGRAM_ACCOUNT_ID} onChange={(event) => updatePublicEnv("META_INSTAGRAM_ACCOUNT_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Meta Instagram account ID</label>
+              <input value={publicEnv.META_INSTAGRAM_ACCOUNT_ID} onChange={(event) => updatePublicEnv("META_INSTAGRAM_ACCOUNT_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             {(["META_ACCESS_TOKEN", "META_WEBHOOK_VERIFY_TOKEN"] as SecretEnvKey[]).map((key) => (
               <div key={key}>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{SECRET_ENV_LABELS[key]}</label>
-                <input type="password" value={secretEnv[key]} onChange={(event) => updateSecretEnv(key, event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">{SECRET_ENV_LABELS[key]}</label>
+                <input type="password" value={secretEnv[key]} onChange={(event) => updateSecretEnv(key, event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
             ))}
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               Messenger and Instagram real-time ingestion depend on page/account IDs, a valid Meta access token, and the verify token used by /api/webhooks/meta.
             </div>
-            <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs leading-6 text-dim">
               Effective page linkage: page {metaPageId || "not set"}, instagram {instagramAccountId || "not set"}
             </div>
           </div>
 
-          <div className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>twitter credentials</div>
+          <div className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="text-xs uppercase tracking-[0.22em] text-muted">twitter credentials</div>
             <div>
-              <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Twitter user ID</label>
-              <input value={publicEnv.TWITTER_USER_ID} onChange={(event) => updatePublicEnv("TWITTER_USER_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+              <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Twitter user ID</label>
+              <input value={publicEnv.TWITTER_USER_ID} onChange={(event) => updatePublicEnv("TWITTER_USER_ID", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
             </div>
             {(Object.entries(SECRET_ENV_LABELS) as Array<[SecretEnvKey, string]>).filter(([key]) => key.startsWith("TWITTER_")).map(([key, label]) => (
               <div key={key}>
-                <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>{label}</label>
-                <input type="password" value={secretEnv[key]} onChange={(event) => updateSecretEnv(key, event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">{label}</label>
+                <input type="password" value={secretEnv[key]} onChange={(event) => updateSecretEnv(key, event.target.value)} placeholder="Leave blank to keep existing" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
               </div>
             ))}
           </div>
@@ -853,15 +853,15 @@ export default function SettingsPage() {
         <UserMemoryPanel />
 
         <div className="space-y-6 min-w-0">
-          <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <section className="border p-4 border-border bg-surface">
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div className="min-w-0 flex-1">
-                <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>usage ledger</div>
-                <div className="mt-2 text-sm" style={{ color: "var(--text-dim)" }}>
+                <div className="text-xs uppercase tracking-[0.24em] text-muted">usage ledger</div>
+                <div className="mt-2 text-sm text-dim">
                   Review daily token totals, inspect underlying run records, and remove stale journal entries.
                 </div>
               </div>
-              <Link href="/settings/usage-ledger" className="border px-3 py-2 text-xs uppercase tracking-[0.16em] shrink-0" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+              <Link href="/settings/usage-ledger" className="border px-3 py-2 text-xs uppercase tracking-[0.16em] shrink-0 border-border text-primary">
                 open ledger
               </Link>
             </div>
@@ -871,49 +871,49 @@ export default function SettingsPage() {
 
           <KnowledgePanel refreshNonce={knowledgeRefreshNonce} />
 
-          <section className="border p-4 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+          <section className="border p-4 min-w-0 border-border bg-surface">
             <div className="flex items-center justify-between mb-4">
-              <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>runtime status</div>
-              <div className="text-xs uppercase tracking-[0.18em]" style={{ color: saveState === "saved" ? "var(--success)" : saveState === "error" ? "var(--danger)" : "var(--text-dim)" }}>
+              <div className="text-xs uppercase tracking-[0.24em] text-muted">runtime status</div>
+              <div className={`text-xs uppercase tracking-[0.18em] ${saveState === "saved" ? "text-success" : saveState === "error" ? "text-danger" : "text-dim"}`}>
                 {saveState}
               </div>
             </div>
             <div className="space-y-3 text-sm">
               {runtimeCards.map((card) => (
-                <div key={card.label} className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}>
-                  <span className="min-w-0" style={{ color: "var(--text-muted)" }}>{card.label}</span>
+                <div key={card.label} className="flex justify-between border-b pb-2 gap-4 min-w-0 border-border-sub">
+                  <span className="min-w-0 text-muted">{card.label}</span>
                   <span className="min-w-0 break-all text-right">{card.value}</span>
                 </div>
               ))}
-              {runtime?.checks.embedding.error ? <div className="text-xs leading-6" style={{ color: "var(--danger)" }}>{runtime.checks.embedding.error}</div> : null}
-              {runtime?.autonomy.description ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{runtime.autonomy.description}</div> : null}
-              {runtime?.heartbeat.summary ? <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>{runtime.heartbeat.summary}</div> : null}
+              {runtime?.checks.embedding.error ? <div className="text-xs leading-6 text-danger">{runtime.checks.embedding.error}</div> : null}
+              {runtime?.autonomy.description ? <div className="text-xs leading-6 text-dim">{runtime.autonomy.description}</div> : null}
+              {runtime?.heartbeat.summary ? <div className="text-xs leading-6 text-dim">{runtime.heartbeat.summary}</div> : null}
             </div>
           </section>
 
-          <section className="border p-4 min-w-0" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-            <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>requirements check</div>
+          <section className="border p-4 min-w-0 border-border bg-surface">
+            <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">requirements check</div>
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>LLM configured</span><span className="min-w-0 break-all text-right">{runtime?.checks.chat.ok ? "yes" : "needs attention"}</span></div>
-              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>CRM provider</span><span className="min-w-0 break-all text-right">{runtime?.crm.activeProvider ?? publicEnv.CRM_PROVIDER}</span></div>
-              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>MCP HTTP auth</span><span className="min-w-0 break-all text-right">{runtime?.mcp.authRequired ? "required" : "disabled"}</span></div>
-              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Redis configured</span><span className="min-w-0 break-all text-right">{runtime?.infrastructure.redisConfigured ? "yes" : "local default"}</span></div>
-              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Memgraph configured</span><span className="min-w-0 break-all text-right">{runtime?.infrastructure.memgraphConfigured ? "yes" : "no"}</span></div>
-              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Knowledge folder exists</span><span className="min-w-0 break-all text-right">{runtime?.knowledge.exists ? "yes" : "no"}</span></div>
-              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Meta page IDs present</span><span className="min-w-0 break-all text-right">{metaPageId && instagramAccountId ? "yes" : "partial"}</span></div>
-              <div className="flex justify-between border-b pb-2 gap-4 min-w-0" style={{ borderColor: "var(--border-sub)" }}><span style={{ color: "var(--text-muted)" }}>Webhook immediate processing</span><span className="min-w-0 break-all text-right">{publicEnv.BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY === "true" ? "enabled" : "disabled"}</span></div>
-              <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0 border-border-sub"><span className="text-muted">LLM configured</span><span className="min-w-0 break-all text-right">{runtime?.checks.chat.ok ? "yes" : "needs attention"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0 border-border-sub"><span className="text-muted">CRM provider</span><span className="min-w-0 break-all text-right">{runtime?.crm.activeProvider ?? publicEnv.CRM_PROVIDER}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0 border-border-sub"><span className="text-muted">MCP HTTP auth</span><span className="min-w-0 break-all text-right">{runtime?.mcp.authRequired ? "required" : "disabled"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0 border-border-sub"><span className="text-muted">Redis configured</span><span className="min-w-0 break-all text-right">{runtime?.infrastructure.redisConfigured ? "yes" : "local default"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0 border-border-sub"><span className="text-muted">Memgraph configured</span><span className="min-w-0 break-all text-right">{runtime?.infrastructure.memgraphConfigured ? "yes" : "no"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0 border-border-sub"><span className="text-muted">Knowledge folder exists</span><span className="min-w-0 break-all text-right">{runtime?.knowledge.exists ? "yes" : "no"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0 border-border-sub"><span className="text-muted">Meta page IDs present</span><span className="min-w-0 break-all text-right">{metaPageId && instagramAccountId ? "yes" : "partial"}</span></div>
+              <div className="flex justify-between border-b pb-2 gap-4 min-w-0 border-border-sub"><span className="text-muted">Webhook immediate processing</span><span className="min-w-0 break-all text-right">{publicEnv.BIZBOT_PROCESS_WEBHOOK_INBOX_IMMEDIATELY === "true" ? "enabled" : "disabled"}</span></div>
+              <div className="text-xs leading-6 text-dim">
                 When new product features add operational requirements, this page should be updated alongside the codepath so operators can satisfy them here instead of editing env files blindly.
               </div>
             </div>
           </section>
 
-          <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-            <div className="text-xs uppercase tracking-[0.24em] mb-4" style={{ color: "var(--text-muted)" }}>stored settings</div>
+          <section className="border p-4 border-border bg-surface">
+            <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">stored settings</div>
             <div className="space-y-2 text-sm max-h-[420px] overflow-auto">
               {settings.map((item) => (
-                <div key={item.key} className="flex justify-between border-b pb-2 gap-4" style={{ borderColor: "var(--border-sub)" }}>
-                  <span style={{ color: "var(--text-muted)" }}>{item.key}</span>
+                <div key={item.key} className="flex justify-between border-b pb-2 gap-4 border-border-sub">
+                  <span className="text-muted">{item.key}</span>
                   <span>{item.value}</span>
                 </div>
               ))}

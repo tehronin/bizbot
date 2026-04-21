@@ -124,63 +124,62 @@ export default function InboxPage() {
   }, []);
 
   return (
-    <section className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+    <section className="border p-4 border-border bg-surface">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>inbox</div>
-          <div className="text-sm mt-2" style={{ color: "var(--text-dim)" }}>Mentions and direct-message inbox items processed by the heartbeat loop.</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-muted">inbox</div>
+          <div className="text-sm mt-2 text-dim">Mentions and direct-message inbox items processed by the heartbeat loop.</div>
         </div>
-        <button onClick={() => void load()} className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--accent)" }}>refresh</button>
+        <button onClick={() => void load()} className="text-xs uppercase tracking-[0.18em] text-accent">refresh</button>
       </div>
 
       <div className="space-y-3">
-        {loading ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div> : null}
-        {error ? <div className="text-sm" style={{ color: "var(--danger)" }}>{error}</div> : null}
-        {!loading && items.length === 0 ? <div className="text-sm" style={{ color: "var(--text-muted)" }}>No inbox items yet.</div> : null}
+        {loading ? <div className="text-sm text-muted">Loading…</div> : null}
+        {error ? <div className="text-sm text-danger">{error}</div> : null}
+        {!loading && items.length === 0 ? <div className="text-sm text-muted">No inbox items yet.</div> : null}
         {itemsPagination.pageItems.map((item) => (
-          <article key={item.id} className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
-            <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em]" style={{ color: "var(--text-muted)" }}>
+          <article key={item.id} className="border p-4 space-y-3 border-border-sub bg-raised">
+            <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted">
               <span>{item.platform.displayName}</span>
               <span>{item.channelType}</span>
               <span>{item.status}</span>
             </div>
-            <div className="flex flex-wrap gap-3 text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+            <div className="flex flex-wrap gap-3 text-xs uppercase tracking-[0.18em] text-muted">
               <span>lead {item.leadStage}</span>
               {item.cannedResponseTree ? <span>tree {item.cannedResponseTree.name}</span> : null}
               {item.cannedResponseNodeKey ? <span>node {item.cannedResponseNodeKey}</span> : null}
             </div>
-            <div className="text-sm" style={{ color: "var(--text-dim)" }}>{item.authorHandle ?? item.authorName ?? "unknown"}</div>
+            <div className="text-sm text-dim">{item.authorHandle ?? item.authorName ?? "unknown"}</div>
             <div className="text-sm whitespace-pre-wrap">{item.content}</div>
             {item.replyContent ? (
-              <div className="border p-3 text-sm whitespace-pre-wrap" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+              <div className="border p-3 text-sm whitespace-pre-wrap border-border bg-surface">
                 {item.replyContent}
               </div>
             ) : null}
             {item.leadSummary ? (
-              <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              <div className="text-xs leading-6 text-dim">
                 {item.leadSummary}
               </div>
             ) : null}
-            <label className="block text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+            <label className="block text-xs uppercase tracking-[0.18em] text-muted">
               Lead stage
             </label>
             <select
               value={item.leadStage}
               onChange={(event) => void updateLead(item.id, event.target.value as LeadStage)}
               disabled={actionItemId === item.id}
-              className="w-full max-w-52 bg-transparent border px-3 py-2 text-xs"
-              style={{ borderColor: "var(--border)" }}
+              className="w-full max-w-52 bg-transparent border px-3 py-2 text-xs border-border"
             >
               {LEAD_STAGES.map((stage) => (
                 <option key={stage} value={stage}>{stage}</option>
               ))}
             </select>
-            <div className="flex flex-wrap gap-3 text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>
+            <div className="flex flex-wrap gap-3 text-xs uppercase tracking-[0.18em] text-muted">
               {canDraft(item) ? (
                 <button
                   onClick={() => void runAction(item.id, "draft")}
                   disabled={actionItemId === item.id}
-                  style={{ color: "var(--text-primary)" }}
+                  className="text-primary"
                 >
                   draft reply
                 </button>
@@ -189,7 +188,7 @@ export default function InboxPage() {
                 <button
                   onClick={() => void runAction(item.id, "approve")}
                   disabled={actionItemId === item.id}
-                  style={{ color: "var(--accent)" }}
+                  className="text-accent"
                 >
                   approve / send
                 </button>
@@ -198,7 +197,7 @@ export default function InboxPage() {
                 <button
                   onClick={() => void runAction(item.id, "resend")}
                   disabled={actionItemId === item.id}
-                  style={{ color: "var(--text-dim)" }}
+                  className="text-dim"
                 >
                   resend draft
                 </button>
@@ -207,13 +206,13 @@ export default function InboxPage() {
                 <button
                   onClick={() => void runAction(item.id, "dismiss")}
                   disabled={actionItemId === item.id}
-                  style={{ color: "var(--text-muted)" }}
+                  className="text-muted"
                 >
                   dismiss
                 </button>
               ) : null}
             </div>
-            <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+            <div className="text-xs uppercase tracking-[0.16em] text-muted">
               {new Date(item.receivedAt).toLocaleString()}
             </div>
           </article>

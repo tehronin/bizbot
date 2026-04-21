@@ -515,13 +515,13 @@ export function UsageLedgerPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>settings</div>
-          <h1 className="text-2xl" style={{ color: "var(--text-primary)" }}>usage ledger</h1>
-          <p className="mt-2 text-sm max-w-3xl" style={{ color: "var(--text-dim)" }}>
+          <div className="text-xs uppercase tracking-[0.22em] text-muted">settings</div>
+          <h1 className="text-2xl text-primary">usage ledger</h1>
+          <p className="mt-2 text-sm max-w-3xl text-dim">
             Daily usage totals are aggregated from local agent run journal files. Filters stay local to this page, cost estimates use editable model-level USD assumptions per million tokens, and those assumptions are saved in settings.
           </p>
         </div>
-        <Link href="/settings" className="border px-3 py-2 text-xs uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+        <Link href="/settings" className="border px-3 py-2 text-xs uppercase tracking-[0.16em] border-border text-primary">
           back to settings
         </Link>
       </div>
@@ -535,26 +535,26 @@ export function UsageLedgerPage() {
           { label: "avg tokens / run", value: formatNumber(Math.round(filteredTotals.averageTokensPerRun)) },
           { label: "avg tokens / request", value: formatNumber(Math.round(filteredTotals.averageTokensPerRequest)) },
         ].map((card) => (
-          <div key={card.label} className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-            <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>{card.label}</div>
-            <div className="mt-3 text-2xl" style={{ color: "var(--text-primary)" }}>{card.value}</div>
+          <div key={card.label} className="border p-4 border-border bg-surface">
+            <div className="text-xs uppercase tracking-[0.18em] text-muted">{card.label}</div>
+            <div className="mt-3 text-2xl text-primary">{card.value}</div>
           </div>
         ))}
       </section>
 
-      <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <section className="border p-4 space-y-4 border-border bg-surface">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>filters and pricing</div>
-            <div className="text-sm mt-1" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs uppercase tracking-[0.22em] text-muted">filters and pricing</div>
+            <div className="text-sm mt-1 text-dim">
               Filter the ledger by date range and provider. Cost estimates update immediately from the model pricing presets below and can be exported as CSV.
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+            <div className="text-sm text-primary">
               estimated filtered cost {formatMoney(filteredEstimatedCost)}
             </div>
-            <div className="text-xs uppercase tracking-[0.16em]" style={{ color: pricingSaveState === "saved" ? "var(--success)" : pricingSaveState === "error" ? "var(--danger)" : "var(--text-dim)" }}>
+            <div className={`text-xs uppercase tracking-[0.16em] ${pricingSaveState === "saved" ? "text-success" : pricingSaveState === "error" ? "text-danger" : "text-dim"}`}>
               pricing {pricingSaveState}
             </div>
           </div>
@@ -562,19 +562,19 @@ export function UsageLedgerPage() {
 
         <div className="grid gap-4 lg:grid-cols-4">
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>provider</label>
-            <select value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">provider</label>
+            <select value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary">
               <option value="all">all providers</option>
               {providerOptions.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>start date</label>
-            <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }} />
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">start date</label>
+            <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary" />
           </div>
           <div>
-            <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>end date</label>
-            <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }} />
+            <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">end date</label>
+            <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary" />
           </div>
           <div className="flex items-end">
             <div className="flex gap-2 flex-wrap">
@@ -584,23 +584,20 @@ export function UsageLedgerPage() {
                   setStartDate("");
                   setEndDate("");
                 }}
-                className="border px-3 py-2 text-xs uppercase tracking-[0.16em]"
-                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                className="border px-3 py-2 text-xs uppercase tracking-[0.16em] border-border text-primary"
               >
                 clear filters
               </button>
               <button
                 onClick={exportCsv}
                 disabled={filteredEntries.length === 0}
-                className="border px-3 py-2 text-xs uppercase tracking-[0.16em] disabled:opacity-50"
-                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                className="border px-3 py-2 text-xs uppercase tracking-[0.16em] disabled:opacity-50 border-border text-primary"
               >
                 export csv
               </button>
               <button
                 onClick={() => void savePricing()}
-                className="border px-3 py-2 text-xs uppercase tracking-[0.16em]"
-                style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                className="border px-3 py-2 text-xs uppercase tracking-[0.16em] border-accent text-accent"
               >
                 save pricing
               </button>
@@ -610,13 +607,13 @@ export function UsageLedgerPage() {
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {modelOptions.length === 0 ? (
-            <div className="text-sm" style={{ color: "var(--text-dim)" }}>No model data recorded yet.</div>
+            <div className="text-sm text-dim">No model data recorded yet.</div>
           ) : modelOptions.map(({ provider, model }) => {
             const pricing = getPricingForModel(model, provider);
             return (
-              <div key={`${provider}:${model}`} className="border p-3 space-y-2" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+              <div key={`${provider}:${model}`} className="border p-3 space-y-2 border-border-sub bg-raised">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{provider}</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-muted">{provider}</div>
                   <span
                     className="border px-2 py-1 text-[10px] uppercase tracking-[0.16em]"
                     style={{
@@ -628,14 +625,14 @@ export function UsageLedgerPage() {
                     {getPricingPresetBadge(model, provider, pricing).label}
                   </span>
                 </div>
-                <div className="text-sm break-all" style={{ color: "var(--text-primary)" }}>{model}</div>
+                <div className="text-sm break-all text-primary">{model}</div>
                 <div>
-                  <label className="block text-[11px] uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-dim)" }}>prompt $ / 1M</label>
-                  <input value={pricing.promptUsdPerMillion} onChange={(event) => updatePricing(model, provider, "promptUsdPerMillion", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }} />
+                  <label className="block text-[11px] uppercase tracking-[0.16em] mb-1 text-dim">prompt $ / 1M</label>
+                  <input value={pricing.promptUsdPerMillion} onChange={(event) => updatePricing(model, provider, "promptUsdPerMillion", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary" />
                 </div>
                 <div>
-                  <label className="block text-[11px] uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-dim)" }}>completion $ / 1M</label>
-                  <input value={pricing.completionUsdPerMillion} onChange={(event) => updatePricing(model, provider, "completionUsdPerMillion", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }} />
+                  <label className="block text-[11px] uppercase tracking-[0.16em] mb-1 text-dim">completion $ / 1M</label>
+                  <input value={pricing.completionUsdPerMillion} onChange={(event) => updatePricing(model, provider, "completionUsdPerMillion", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary" />
                 </div>
               </div>
             );
@@ -644,20 +641,20 @@ export function UsageLedgerPage() {
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+        <section className="border p-4 space-y-4 border-border bg-surface">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>daily ledger</div>
-              <div className="text-sm mt-1" style={{ color: "var(--text-dim)" }}>Grouped by day, provider, and model with request counts and token averages.</div>
+              <div className="text-xs uppercase tracking-[0.22em] text-muted">daily ledger</div>
+              <div className="text-sm mt-1 text-dim">Grouped by day, provider, and model with request counts and token averages.</div>
             </div>
-            <button onClick={() => void loadLedger(selectedEntryId)} className="border px-3 py-2 text-xs uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+            <button onClick={() => void loadLedger(selectedEntryId)} className="border px-3 py-2 text-xs uppercase tracking-[0.16em] border-border text-primary">
               refresh
             </button>
           </div>
 
-          {error ? <div className="border px-3 py-2 text-sm" style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>{error}</div> : null}
-          {loading ? <div className="text-sm" style={{ color: "var(--text-dim)" }}>Loading usage ledger...</div> : null}
-          {!loading && entryPagination.totalItems === 0 ? <div className="text-sm" style={{ color: "var(--text-dim)" }}>No usage rows match the current filters.</div> : null}
+          {error ? <div className="border px-3 py-2 text-sm border-danger text-danger">{error}</div> : null}
+          {loading ? <div className="text-sm text-dim">Loading usage ledger...</div> : null}
+          {!loading && entryPagination.totalItems === 0 ? <div className="text-sm text-dim">No usage rows match the current filters.</div> : null}
 
           <div className="space-y-3">
             {entryPagination.pageItems.map((entry) => {
@@ -671,16 +668,16 @@ export function UsageLedgerPage() {
                 <div key={entry.id} className="border p-4 space-y-4" style={{ borderColor: isSelected ? "var(--accent)" : "var(--border-sub)", background: isSelected ? "rgba(199, 92, 31, 0.08)" : "var(--bg-raised)" }}>
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.2em]" style={{ color: "var(--text-muted)" }}>{formatDay(entry.day)}</div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-muted">{formatDay(entry.day)}</div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <div className="text-base" style={{ color: "var(--text-primary)" }}>{entry.provider} / {entry.model}</div>
+                        <div className="text-base text-primary">{entry.provider} / {entry.model}</div>
                         <span className="border px-2 py-1 text-[10px] uppercase tracking-[0.16em]" style={{ color: presetBadge.color, borderColor: presetBadge.borderColor, background: presetBadge.background }}>
                           {presetBadge.label}
                         </span>
                       </div>
-                      <div className="mt-1 text-xs" style={{ color: "var(--text-dim)" }}>{entry.runCount} runs - {entry.requestCount} requests - {statusSummary || "no statuses"}</div>
+                      <div className="mt-1 text-xs text-dim">{entry.runCount} runs - {entry.requestCount} requests - {statusSummary || "no statuses"}</div>
                     </div>
-                    <div className="text-right text-xs space-y-1" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-right text-xs space-y-1 text-dim">
                       <div>updated {formatTimestamp(entry.updatedAt)}</div>
                       <div>cached {formatNumber(entry.cachedPromptTokens)}</div>
                       <div>cost {formatMoney(estimatedCost)}</div>
@@ -688,24 +685,24 @@ export function UsageLedgerPage() {
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6 text-sm">
-                    <div><span style={{ color: "var(--text-muted)" }}>prompt / day</span><div>{formatNumber(entry.promptTokens)}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>completion / day</span><div>{formatNumber(entry.completionTokens)}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>total / day</span><div>{formatNumber(entry.totalTokens)}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>avg / run</span><div>{formatNumber(Math.round(entry.averageTokensPerRun))}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>avg / request</span><div>{formatNumber(Math.round(entry.averageTokensPerRequest))}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>started</span><div>{formatTimestamp(entry.startedAt)}</div></div>
+                    <div><span className="text-muted">prompt / day</span><div>{formatNumber(entry.promptTokens)}</div></div>
+                    <div><span className="text-muted">completion / day</span><div>{formatNumber(entry.completionTokens)}</div></div>
+                    <div><span className="text-muted">total / day</span><div>{formatNumber(entry.totalTokens)}</div></div>
+                    <div><span className="text-muted">avg / run</span><div>{formatNumber(Math.round(entry.averageTokensPerRun))}</div></div>
+                    <div><span className="text-muted">avg / request</span><div>{formatNumber(Math.round(entry.averageTokensPerRequest))}</div></div>
+                    <div><span className="text-muted">started</span><div>{formatTimestamp(entry.startedAt)}</div></div>
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2 text-sm">
-                    <div><span style={{ color: "var(--text-muted)" }}>avg prompt / request</span><div>{formatNumber(Math.round(entry.averagePromptTokensPerRequest))}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>avg completion / request</span><div>{formatNumber(Math.round(entry.averageCompletionTokensPerRequest))}</div></div>
+                    <div><span className="text-muted">avg prompt / request</span><div>{formatNumber(Math.round(entry.averagePromptTokensPerRequest))}</div></div>
+                    <div><span className="text-muted">avg completion / request</span><div>{formatNumber(Math.round(entry.averageCompletionTokensPerRequest))}</div></div>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <button onClick={() => void loadLedger(isSelected ? null : entry.id)} className="border px-3 py-2 text-xs uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                    <button onClick={() => void loadLedger(isSelected ? null : entry.id)} className="border px-3 py-2 text-xs uppercase tracking-[0.16em] border-border text-primary">
                       {isSelected ? "hide runs" : "view runs"}
                     </button>
-                    <button onClick={() => void deleteEntry(entry)} disabled={deletingKey === `entry:${entry.id}`} className="border px-3 py-2 text-xs uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>
+                    <button onClick={() => void deleteEntry(entry)} disabled={deletingKey === `entry:${entry.id}`} className="border px-3 py-2 text-xs uppercase tracking-[0.16em] disabled:opacity-50 border-danger text-danger">
                       delete row
                     </button>
                   </div>
@@ -717,52 +714,52 @@ export function UsageLedgerPage() {
           <PaginationControls currentPage={entryPagination.currentPage} totalPages={entryPagination.totalPages} startItem={entryPagination.startItem} endItem={entryPagination.endItem} totalItems={entryPagination.totalItems} setCurrentPage={entryPagination.setCurrentPage} />
         </section>
 
-        <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+        <section className="border p-4 space-y-4 border-border bg-surface">
           <div>
-            <div className="text-xs uppercase tracking-[0.22em]" style={{ color: "var(--text-muted)" }}>run details</div>
-            <div className="text-sm mt-1" style={{ color: "var(--text-dim)" }}>
+            <div className="text-xs uppercase tracking-[0.22em] text-muted">run details</div>
+            <div className="text-sm mt-1 text-dim">
               {selectedEntry ? `${formatDay(selectedEntry.day)} - ${selectedEntry.provider} / ${selectedEntry.model}` : "Select a ledger row to inspect individual journal records."}
             </div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 text-sm">
-            <div><span style={{ color: "var(--text-muted)" }}>raw totals loaded</span><div>{formatNumber(totals.totalTokens)} tokens across {formatNumber(totals.requestCount)} requests</div></div>
-            <div><span style={{ color: "var(--text-muted)" }}>filtered totals</span><div>{formatNumber(filteredTotals.totalTokens)} tokens across {formatNumber(filteredTotals.requestCount)} requests</div></div>
+            <div><span className="text-muted">raw totals loaded</span><div>{formatNumber(totals.totalTokens)} tokens across {formatNumber(totals.requestCount)} requests</div></div>
+            <div><span className="text-muted">filtered totals</span><div>{formatNumber(filteredTotals.totalTokens)} tokens across {formatNumber(filteredTotals.requestCount)} requests</div></div>
           </div>
 
-          {!selectedEntry ? <div className="text-sm" style={{ color: "var(--text-dim)" }}>No ledger row selected.</div> : null}
-          {selectedEntry && runPagination.totalItems === 0 ? <div className="text-sm" style={{ color: "var(--text-dim)" }}>This ledger row has no remaining runs.</div> : null}
+          {!selectedEntry ? <div className="text-sm text-dim">No ledger row selected.</div> : null}
+          {selectedEntry && runPagination.totalItems === 0 ? <div className="text-sm text-dim">This ledger row has no remaining runs.</div> : null}
 
           <div className="space-y-3">
             {runPagination.pageItems.map((run) => {
               const pricing = getPricingForModel(run.model, run.provider);
               return (
-                <div key={run.runId} className="border p-4 space-y-3" style={{ borderColor: "var(--border-sub)", background: "var(--bg-raised)" }}>
+                <div key={run.runId} className="border p-4 space-y-3 border-border-sub bg-raised">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>{run.profileLabel}</div>
-                      <div className="mt-2 text-sm break-all" style={{ color: "var(--text-primary)" }}>{run.runId}</div>
-                      <div className="mt-1 text-xs" style={{ color: "var(--text-dim)" }}>conversation {run.conversationId}</div>
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted">{run.profileLabel}</div>
+                      <div className="mt-2 text-sm break-all text-primary">{run.runId}</div>
+                      <div className="mt-1 text-xs text-dim">conversation {run.conversationId}</div>
                     </div>
-                    <div className="text-right text-xs" style={{ color: run.status === "failed" ? "var(--danger)" : "var(--text-dim)" }}>
+                    <div className={`text-right text-xs ${run.status === "failed" ? "text-danger" : "text-dim"}`}>
                       <div>{run.status}</div>
                       <div className="mt-1">{formatTimestamp(run.updatedAt)}</div>
                     </div>
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2 text-sm">
-                    <div><span style={{ color: "var(--text-muted)" }}>provider</span><div>{run.provider} / {run.model}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>started</span><div>{formatTimestamp(run.startedAt)}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>requests</span><div>{formatNumber(run.requestCount)}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>avg / request</span><div>{formatNumber(Math.round(run.averageTokensPerRequest))}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>prompt</span><div>{formatNumber(run.promptTokens)}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>completion</span><div>{formatNumber(run.completionTokens)}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>total</span><div>{formatNumber(run.totalTokens)}</div></div>
-                    <div><span style={{ color: "var(--text-muted)" }}>cost</span><div>{formatMoney(getEstimatedCost(run.promptTokens, run.completionTokens, pricing))}</div></div>
+                    <div><span className="text-muted">provider</span><div>{run.provider} / {run.model}</div></div>
+                    <div><span className="text-muted">started</span><div>{formatTimestamp(run.startedAt)}</div></div>
+                    <div><span className="text-muted">requests</span><div>{formatNumber(run.requestCount)}</div></div>
+                    <div><span className="text-muted">avg / request</span><div>{formatNumber(Math.round(run.averageTokensPerRequest))}</div></div>
+                    <div><span className="text-muted">prompt</span><div>{formatNumber(run.promptTokens)}</div></div>
+                    <div><span className="text-muted">completion</span><div>{formatNumber(run.completionTokens)}</div></div>
+                    <div><span className="text-muted">total</span><div>{formatNumber(run.totalTokens)}</div></div>
+                    <div><span className="text-muted">cost</span><div>{formatMoney(getEstimatedCost(run.promptTokens, run.completionTokens, pricing))}</div></div>
                   </div>
 
                   <div>
-                    <button onClick={() => void deleteRun(run)} disabled={deletingKey === `run:${run.runId}`} className="border px-3 py-2 text-xs uppercase tracking-[0.16em] disabled:opacity-50" style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>
+                    <button onClick={() => void deleteRun(run)} disabled={deletingKey === `run:${run.runId}`} className="border px-3 py-2 text-xs uppercase tracking-[0.16em] disabled:opacity-50 border-danger text-danger">
                       delete run
                     </button>
                   </div>

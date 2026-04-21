@@ -426,15 +426,15 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" style={{ background: "rgba(6, 6, 10, 0.74)" }}>
-      <div className="w-full max-w-2xl h-full border-l overflow-auto" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-        <div className="sticky top-0 z-10 border-b px-5 py-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+      <div className="w-full max-w-2xl h-full border-l overflow-auto border-border bg-surface">
+        <div className="sticky top-0 z-10 border-b px-5 py-4 border-border bg-surface">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-2">
-              <div className="text-xs uppercase tracking-[0.24em]" style={{ color: "var(--text-muted)" }}>agentic setup</div>
-              <div className="text-sm" style={{ color: "var(--text-dim)" }}>
+              <div className="text-xs uppercase tracking-[0.24em] text-muted">agentic setup</div>
+              <div className="text-sm text-dim">
                 Guided, resumable setup for chat, optional integrations, and the env values needed for the features you actually plan to use now.
               </div>
-              <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+              <div className="text-xs leading-6 text-dim">
                 Stored credentials and completed setup are tracked separately so detected config does not read as finished setup.
               </div>
               {state ? (
@@ -444,22 +444,22 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                 </div>
               ) : null}
             </div>
-            <Link href={closeHref} className="px-3 py-2 border text-xs uppercase tracking-[0.18em]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+            <Link href={closeHref} className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-border text-primary">
               close
             </Link>
           </div>
         </div>
 
         <div className="p-5 space-y-5">
-          {loading ? <div className="text-sm" style={{ color: "var(--text-dim)" }}>Loading setup state...</div> : null}
-          {error ? <div className="border px-4 py-3 text-sm" style={{ borderColor: "var(--danger)", color: "var(--danger)", background: "rgba(239,68,68,0.08)" }}>{error}</div> : null}
+          {loading ? <div className="text-sm text-dim">Loading setup state...</div> : null}
+          {error ? <div className="border px-4 py-3 text-sm border-danger text-danger bg-danger/8">{error}</div> : null}
           {!loading && session && state ? (
             <>
-              <section className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+              <section className="border p-4 space-y-3 border-border bg-raised">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>guide state</div>
-                    <div className="text-sm mt-1" style={{ color: "var(--text-primary)" }}>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted">guide state</div>
+                    <div className="text-sm mt-1 text-primary">
                       Step {currentStepNumber} of {currentStepTotal}: {STEP_TITLES[session.step]}
                     </div>
                   </div>
@@ -467,48 +467,45 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                     {session.status.replaceAll("_", " ")}
                   </div>
                 </div>
-                <div className="text-sm leading-6" style={{ color: "var(--text-dim)" }}>
+                <div className="text-sm leading-6 text-dim">
                   Pause at any step, ask setup questions in the main chat, then reopen this guide to resume without losing progress or confirmed choices.
                 </div>
               </section>
 
               {session.step === "welcome" ? (
-                <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                <section className="border p-4 space-y-4 border-border bg-raised">
                   {isFirstRunSetup ? (
                     <>
                       <div>
-                        <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>step 1</div>
-                        <div className="text-2xl mt-2" style={{ color: "var(--text-primary)" }}>Get BizBot running in two minutes.</div>
-                        <div className="text-sm mt-3" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-xs uppercase tracking-[0.18em] text-muted">step 1</div>
+                        <div className="text-2xl mt-2 text-primary">Get BizBot running in two minutes.</div>
+                        <div className="text-sm mt-3 text-dim">
                           Start with one Google AI API key. This activates core chat immediately and keeps the rest of setup optional.
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Google AI API key</label>
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Google AI API key</label>
                         <input
                           type="password"
                           value={form.googleApiKey}
                           onChange={(event) => updateForm("googleApiKey", event.target.value)}
                           placeholder="Paste your Google AI API key"
-                          className="w-full bg-transparent border px-3 py-2 text-sm"
-                          style={{ borderColor: "var(--border)" }}
+                          className="w-full bg-transparent border px-3 py-2 text-sm border-border"
                         />
-                        <div className="text-xs mt-2 leading-6" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-xs mt-2 leading-6 text-dim">
                           This will power core chat now. You can turn on memory and retrieval in the next step using the same key.
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-3">
                         <button
-                          className="px-4 py-2 border text-sm uppercase tracking-[0.18em]"
-                          style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                          className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-accent text-accent"
                           onClick={() => void activateCoreAgent()}
                           disabled={saving || !form.googleApiKey.trim()}
                         >
                           {saving ? "saving" : "use google quick start"}
                         </button>
                         <button
-                          className="text-xs uppercase tracking-[0.18em]"
-                          style={{ color: "var(--text-dim)" }}
+                          className="text-xs uppercase tracking-[0.18em] text-dim"
                           onClick={() => void chooseAnotherProvider()}
                           disabled={saving}
                         >
@@ -519,16 +516,16 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                   ) : (
                     <>
                       <div>
-                        <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>step 1</div>
-                        <div className="text-lg mt-2" style={{ color: "var(--text-primary)" }}>{STEP_TITLES.welcome}</div>
-                        <div className="text-sm mt-2" style={{ color: "var(--text-primary)" }}>
+                        <div className="text-xs uppercase tracking-[0.18em] text-muted">step 1</div>
+                        <div className="text-lg mt-2 text-primary">{STEP_TITLES.welcome}</div>
+                        <div className="text-sm mt-2 text-primary">
                           Start with scope. Chat setup is always required. Everything else can be bypassed unless it supports your use case right now.
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Workspace path</label>
-                        <input value={form.workspacePath} onChange={(event) => updateForm("workspacePath", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                        <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Workspace path</label>
+                        <input value={form.workspacePath} onChange={(event) => updateForm("workspacePath", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                        <div className="text-xs mt-1 text-dim">
                           This is where BizBot keeps the local working area it uses for knowledge and related app workflows.
                         </div>
                       </div>
@@ -539,15 +536,15 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                           { key: "localBusiness", label: "Google Business", detail: "Enable reviews, local posts, and hours workflows." },
                           { key: "crm", label: "CRM handoff", detail: "Track leads internally or sync to HubSpot." },
                         ].map((item) => (
-                          <label key={item.key} className="border p-3 flex items-start gap-3" style={{ borderColor: "var(--border)" }}>
+                          <label key={item.key} className="border p-3 flex items-start gap-3 border-border">
                             <input
                               type="checkbox"
                               checked={session.useCases[item.key as keyof AgenticSetupSession["useCases"]]}
                               onChange={(event) => updateSession({ useCases: { [item.key]: event.target.checked } as Partial<AgenticSetupSession["useCases"]> })}
                             />
                             <div>
-                              <div className="text-sm" style={{ color: "var(--text-primary)" }}>{item.label}</div>
-                              <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{item.detail}</div>
+                              <div className="text-sm text-primary">{item.label}</div>
+                              <div className="text-xs mt-1 text-dim">{item.detail}</div>
                             </div>
                           </label>
                         ))}
@@ -556,26 +553,26 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                   )}
                   {!isFirstRunSetup && session.useCases.social ? (
                     <div className="grid gap-3 md:grid-cols-2">
-                      <label className="border p-3 flex items-start gap-3" style={{ borderColor: "var(--border)" }}>
+                      <label className="border p-3 flex items-start gap-3 border-border">
                         <input type="checkbox" checked={session.channels.meta} onChange={(event) => updateSession({ channels: { meta: event.target.checked } })} />
                         <div>
-                          <div className="text-sm" style={{ color: "var(--text-primary)" }}>Meta channel</div>
-                          <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>Facebook page, Instagram business account, access token, and webhook verify token.</div>
+                          <div className="text-sm text-primary">Meta channel</div>
+                          <div className="text-xs mt-1 text-dim">Facebook page, Instagram business account, access token, and webhook verify token.</div>
                         </div>
                       </label>
-                      <label className="border p-3 flex items-start gap-3" style={{ borderColor: "var(--border)" }}>
+                      <label className="border p-3 flex items-start gap-3 border-border">
                         <input type="checkbox" checked={session.channels.twitter} onChange={(event) => updateSession({ channels: { twitter: event.target.checked } })} />
                         <div>
-                          <div className="text-sm" style={{ color: "var(--text-primary)" }}>Twitter channel</div>
-                          <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>App credentials, user ID, and user access tokens.</div>
+                          <div className="text-sm text-primary">Twitter channel</div>
+                          <div className="text-xs mt-1 text-dim">App credentials, user ID, and user access tokens.</div>
                         </div>
                       </label>
                     </div>
                   ) : null}
                   {!isFirstRunSetup && session.useCases.crm ? (
                     <div>
-                      <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>CRM mode</label>
-                      <select className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} value={session.crmMode} onChange={(event) => updateSession({ crmMode: event.target.value as AgenticSetupCrmMode })}>
+                      <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">CRM mode</label>
+                      <select className="w-full bg-transparent border px-3 py-2 text-sm border-border" value={session.crmMode} onChange={(event) => updateSession({ crmMode: event.target.value as AgenticSetupCrmMode })}>
                         <option value="internal">internal</option>
                         <option value="hubspot">hubspot</option>
                       </select>
@@ -585,36 +582,34 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
               ) : null}
 
               {session.step === "llm" && isQuickStartSuccessStep ? (
-                <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                <section className="border p-4 space-y-4 border-border bg-raised">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>step 2</div>
-                    <div className="text-2xl mt-2" style={{ color: "var(--text-primary)" }}>Core agent is live.</div>
-                    <div className="text-sm mt-3" style={{ color: "var(--text-dim)" }}>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted">step 2</div>
+                    <div className="text-2xl mt-2 text-primary">Core agent is live.</div>
+                    <div className="text-sm mt-3 text-dim">
                       Chat is active with Google. You can enable memory and retrieval now with the same key, or skip and add it later.
                     </div>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="border p-4 space-y-2" style={{ borderColor: "var(--success)", background: "rgba(34,197,94,0.08)" }}>
-                      <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--success)" }}>chat status</div>
-                      <div className="text-sm" style={{ color: "var(--text-primary)" }}>Google chat is configured and ready.</div>
+                    <div className="border p-4 space-y-2 border-success bg-success/8">
+                      <div className="text-xs uppercase tracking-[0.18em] text-success">chat status</div>
+                      <div className="text-sm text-primary">Google chat is configured and ready.</div>
                     </div>
-                    <div className="border p-4 space-y-2" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-                      <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>recommended next</div>
-                      <div className="text-sm" style={{ color: "var(--text-primary)" }}>Enable memory and retrieval with the same key.</div>
+                    <div className="border p-4 space-y-2 border-border bg-surface">
+                      <div className="text-xs uppercase tracking-[0.18em] text-muted">recommended next</div>
+                      <div className="text-sm text-primary">Enable memory and retrieval with the same key.</div>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-3">
                     <button
-                      className="px-4 py-2 border text-sm uppercase tracking-[0.18em]"
-                      style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                      className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-accent text-accent"
                       onClick={() => void enableKnowledgeRetrievalNow()}
                       disabled={saving}
                     >
                       {saving ? "saving" : "enable memory and retrieval now"}
                     </button>
                     <button
-                      className="px-4 py-2 border text-sm uppercase tracking-[0.18em]"
-                      style={{ borderColor: "var(--border)", color: "var(--text-dim)" }}
+                      className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-border text-dim"
                       onClick={() => void skipKnowledgeForNow()}
                       disabled={saving}
                     >
@@ -625,15 +620,15 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
               ) : null}
 
               {session.step === "llm" && !isQuickStartSuccessStep ? (
-                <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                <section className="border p-4 space-y-4 border-border bg-raised">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>step 2</div>
-                    <div className="text-lg mt-2" style={{ color: "var(--text-primary)" }}>{STEP_TITLES.llm}</div>
-                    <div className="text-sm mt-2" style={{ color: "var(--text-primary)" }}>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted">step 2</div>
+                    <div className="text-lg mt-2 text-primary">{STEP_TITLES.llm}</div>
+                    <div className="text-sm mt-2 text-primary">
                       Pick the chat provider first. If you want knowledge or retrieval, choose the embedding provider separately. You can keep local options if you do not want to add hosted credentials.
                     </div>
                     {isFirstRunSetup && !isAdvancedProviderChoice ? (
-                      <div className="text-xs leading-6 mt-2" style={{ color: "var(--accent)" }}>
+                      <div className="text-xs leading-6 mt-2 text-accent">
                         Recommended: keep Google selected for both. One Google AI API key will activate chat and embeddings together.
                       </div>
                     ) : null}
@@ -641,8 +636,8 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Chat provider</label>
-                        <select className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} value={session.selectedChatProvider} onChange={(event) => updateSession({ selectedChatProvider: event.target.value as AgenticSetupChatProvider })}>
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Chat provider</label>
+                        <select className="w-full bg-transparent border px-3 py-2 text-sm border-border" value={session.selectedChatProvider} onChange={(event) => updateSession({ selectedChatProvider: event.target.value as AgenticSetupChatProvider })}>
                           <option value="google">google</option>
                           <option value="openai">openai</option>
                           <option value="anthropic">anthropic</option>
@@ -651,16 +646,16 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                         </select>
                       </div>
                       {session.selectedChatProvider === "ollama" ? (
-                        <label className="border p-3 flex items-start gap-3" style={{ borderColor: "var(--border)" }}>
+                        <label className="border p-3 flex items-start gap-3 border-border">
                           <input type="checkbox" checked={session.confirmedLocalChatProvider} onChange={(event) => updateSession({ confirmedLocalChatProvider: event.target.checked })} />
                           <div>
-                            <div className="text-sm" style={{ color: "var(--text-primary)" }}>Confirm local Ollama path</div>
-                            <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>Use this if you intend to run the chat model locally instead of providing a hosted API key.</div>
+                            <div className="text-sm text-primary">Confirm local Ollama path</div>
+                            <div className="text-xs mt-1 text-dim">Use this if you intend to run the chat model locally instead of providing a hosted API key.</div>
                           </div>
                         </label>
                       ) : (
                         <div>
-                          <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Chat provider credential</label>
+                          <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Chat provider credential</label>
                           <input
                             type="password"
                             value={getProviderSecretKey(session.selectedChatProvider) ? form[getProviderSecretKey(session.selectedChatProvider) as keyof SetupFormState] as string : ""}
@@ -671,10 +666,9 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                               }
                             }}
                             placeholder="Paste the API key here"
-                            className="w-full bg-transparent border px-3 py-2 text-sm"
-                            style={{ borderColor: "var(--border)" }}
+                            className="w-full bg-transparent border px-3 py-2 text-sm border-border"
                           />
-                          <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>
+                          <div className="text-xs mt-1 text-dim">
                             {getProviderSecretKey(session.selectedChatProvider) && stored?.secretPresence[
                               session.selectedChatProvider === "google"
                                 ? "GOOGLE_AI_API_KEY"
@@ -686,7 +680,7 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                             ] ? "A credential is already stored. Leave blank to keep it." : "No credential stored yet."}
                           </div>
                             {session.selectedChatProvider === "google" && session.selectedEmbeddingProvider === "google" ? (
-                              <div className="text-xs leading-6 mt-2" style={{ color: "var(--text-dim)" }}>
+                              <div className="text-xs leading-6 mt-2 text-dim">
                                 This single key will be saved and used for both chat and embeddings when you continue.
                               </div>
                             ) : null}
@@ -696,27 +690,27 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
 
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-xs uppercase tracking-[0.16em] mb-1" style={{ color: "var(--text-muted)" }}>Embedding provider</label>
-                        <select className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} value={session.selectedEmbeddingProvider} onChange={(event) => updateSession({ selectedEmbeddingProvider: event.target.value as AgenticSetupEmbeddingProvider })} disabled={!session.useCases.knowledge}>
+                        <label className="block text-xs uppercase tracking-[0.16em] mb-1 text-muted">Embedding provider</label>
+                        <select className="w-full bg-transparent border px-3 py-2 text-sm border-border" value={session.selectedEmbeddingProvider} onChange={(event) => updateSession({ selectedEmbeddingProvider: event.target.value as AgenticSetupEmbeddingProvider })} disabled={!session.useCases.knowledge}>
                           <option value="google">google</option>
                           <option value="openai">openai</option>
                           <option value="ollama">ollama</option>
                         </select>
                       </div>
                       {!session.useCases.knowledge ? (
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-xs leading-6 text-dim">
                           Embeddings are bypassed because knowledge + retrieval is not selected.
                         </div>
                       ) : session.selectedEmbeddingProvider === "ollama" ? (
-                        <label className="border p-3 flex items-start gap-3" style={{ borderColor: "var(--border)" }}>
+                        <label className="border p-3 flex items-start gap-3 border-border">
                           <input type="checkbox" checked={session.confirmedLocalEmbeddingProvider} onChange={(event) => updateSession({ confirmedLocalEmbeddingProvider: event.target.checked })} />
                           <div>
-                            <div className="text-sm" style={{ color: "var(--text-primary)" }}>Confirm local embedding path</div>
-                            <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>Use this if your embedding model will come from a local Ollama endpoint.</div>
+                            <div className="text-sm text-primary">Confirm local embedding path</div>
+                            <div className="text-xs mt-1 text-dim">Use this if your embedding model will come from a local Ollama endpoint.</div>
                           </div>
                         </label>
                       ) : (
-                        <div className="text-xs leading-6" style={{ color: "var(--text-dim)" }}>
+                        <div className="text-xs leading-6 text-dim">
                           Reuse the matching provider credential above or add it now on the settings page later.
                         </div>
                       )}
@@ -726,13 +720,13 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
               ) : null}
 
               {session.step === "platforms" ? (
-                <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                <section className="border p-4 space-y-4 border-border bg-raised">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>step 3</div>
-                    <div className="text-lg mt-2" style={{ color: "var(--text-primary)" }}>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted">step 3</div>
+                    <div className="text-lg mt-2 text-primary">
                       {isQuickStartFlow ? "Optional add-ons" : STEP_TITLES.platforms}
                     </div>
-                    <div className="text-sm mt-2" style={{ color: "var(--text-primary)" }}>
+                    <div className="text-sm mt-2 text-primary">
                       {isQuickStartFlow
                         ? "Your core agent is active. Add only the extra capabilities you want right now."
                         : "Fill only the integrations you selected. Anything not relevant to your workflow can stay bypassed and revisited later."}
@@ -740,48 +734,48 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2">
-                    <label className="border p-3 flex items-start gap-3" style={{ borderColor: session.useCases.social ? "var(--accent)" : "var(--border)" }}>
+                    <label className={`border p-3 flex items-start gap-3 ${session.useCases.social ? "border-accent" : "border-border"}`}>
                       <input type="checkbox" checked={session.useCases.social} onChange={(event) => updateSession({ useCases: { social: event.target.checked } })} />
                       <div>
-                        <div className="text-sm" style={{ color: "var(--text-primary)" }}>Connect social channels</div>
-                        <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>Enable Meta or Twitter posting and inbox workflows.</div>
+                        <div className="text-sm text-primary">Connect social channels</div>
+                        <div className="text-xs mt-1 text-dim">Enable Meta or Twitter posting and inbox workflows.</div>
                       </div>
                     </label>
-                    <label className="border p-3 flex items-start gap-3" style={{ borderColor: session.useCases.localBusiness ? "var(--accent)" : "var(--border)" }}>
+                    <label className={`border p-3 flex items-start gap-3 ${session.useCases.localBusiness ? "border-accent" : "border-border"}`}>
                       <input type="checkbox" checked={session.useCases.localBusiness} onChange={(event) => updateSession({ useCases: { localBusiness: event.target.checked } })} />
                       <div>
-                        <div className="text-sm" style={{ color: "var(--text-primary)" }}>Connect Google Business</div>
-                        <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>Manage reviews, posts, and location workflows.</div>
+                        <div className="text-sm text-primary">Connect Google Business</div>
+                        <div className="text-xs mt-1 text-dim">Manage reviews, posts, and location workflows.</div>
                       </div>
                     </label>
-                    <label className="border p-3 flex items-start gap-3" style={{ borderColor: session.useCases.crm ? "var(--accent)" : "var(--border)" }}>
+                    <label className={`border p-3 flex items-start gap-3 ${session.useCases.crm ? "border-accent" : "border-border"}`}>
                       <input type="checkbox" checked={session.useCases.crm} onChange={(event) => updateSession({ useCases: { crm: event.target.checked } })} />
                       <div>
-                        <div className="text-sm" style={{ color: "var(--text-primary)" }}>Connect CRM</div>
-                        <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>Track leads internally or sync them to HubSpot.</div>
+                        <div className="text-sm text-primary">Connect CRM</div>
+                        <div className="text-xs mt-1 text-dim">Track leads internally or sync them to HubSpot.</div>
                       </div>
                     </label>
-                    <div className="border p-3 space-y-2" style={{ borderColor: "var(--border)" }}>
-                      <div className="text-sm" style={{ color: "var(--text-primary)" }}>Builder workspace</div>
-                      <div className="text-xs" style={{ color: "var(--text-dim)" }}>Set the local workspace path BizBot uses for builder and knowledge workflows.</div>
-                      <input value={form.workspacePath} onChange={(event) => updateForm("workspacePath", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                    <div className="border p-3 space-y-2 border-border">
+                      <div className="text-sm text-primary">Builder workspace</div>
+                      <div className="text-xs text-dim">Set the local workspace path BizBot uses for builder and knowledge workflows.</div>
+                      <input value={form.workspacePath} onChange={(event) => updateForm("workspacePath", event.target.value)} className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                     </div>
                   </div>
 
                   {session.useCases.social ? (
                     <div className="grid gap-3 md:grid-cols-2">
-                      <label className="border p-3 flex items-start gap-3" style={{ borderColor: "var(--border)" }}>
+                      <label className="border p-3 flex items-start gap-3 border-border">
                         <input type="checkbox" checked={session.channels.meta} onChange={(event) => updateSession({ channels: { meta: event.target.checked } })} />
                         <div>
-                          <div className="text-sm" style={{ color: "var(--text-primary)" }}>Meta channel</div>
-                          <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>Facebook page, Instagram business account, access token, and webhook verify token.</div>
+                          <div className="text-sm text-primary">Meta channel</div>
+                          <div className="text-xs mt-1 text-dim">Facebook page, Instagram business account, access token, and webhook verify token.</div>
                         </div>
                       </label>
-                      <label className="border p-3 flex items-start gap-3" style={{ borderColor: "var(--border)" }}>
+                      <label className="border p-3 flex items-start gap-3 border-border">
                         <input type="checkbox" checked={session.channels.twitter} onChange={(event) => updateSession({ channels: { twitter: event.target.checked } })} />
                         <div>
-                          <div className="text-sm" style={{ color: "var(--text-primary)" }}>Twitter channel</div>
-                          <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>App credentials, user ID, and user access tokens.</div>
+                          <div className="text-sm text-primary">Twitter channel</div>
+                          <div className="text-xs mt-1 text-dim">App credentials, user ID, and user access tokens.</div>
                         </div>
                       </label>
                     </div>
@@ -789,62 +783,62 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
 
                   {session.channels.meta ? (
                     <div className="grid gap-3 md:grid-cols-2">
-                      <input value={form.facebookPageId} onChange={(event) => updateForm("facebookPageId", event.target.value)} placeholder="FACEBOOK_PAGE_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input value={form.metaPageId} onChange={(event) => updateForm("metaPageId", event.target.value)} placeholder="META_PAGE_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input value={form.instagramBusinessAccountId} onChange={(event) => updateForm("instagramBusinessAccountId", event.target.value)} placeholder="INSTAGRAM_BUSINESS_ACCOUNT_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input value={form.metaInstagramAccountId} onChange={(event) => updateForm("metaInstagramAccountId", event.target.value)} placeholder="META_INSTAGRAM_ACCOUNT_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input type="password" value={form.metaAccessToken} onChange={(event) => updateForm("metaAccessToken", event.target.value)} placeholder="META_ACCESS_TOKEN" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input type="password" value={form.metaWebhookVerifyToken} onChange={(event) => updateForm("metaWebhookVerifyToken", event.target.value)} placeholder="META_WEBHOOK_VERIFY_TOKEN" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                      <input value={form.facebookPageId} onChange={(event) => updateForm("facebookPageId", event.target.value)} placeholder="FACEBOOK_PAGE_ID" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input value={form.metaPageId} onChange={(event) => updateForm("metaPageId", event.target.value)} placeholder="META_PAGE_ID" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input value={form.instagramBusinessAccountId} onChange={(event) => updateForm("instagramBusinessAccountId", event.target.value)} placeholder="INSTAGRAM_BUSINESS_ACCOUNT_ID" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input value={form.metaInstagramAccountId} onChange={(event) => updateForm("metaInstagramAccountId", event.target.value)} placeholder="META_INSTAGRAM_ACCOUNT_ID" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input type="password" value={form.metaAccessToken} onChange={(event) => updateForm("metaAccessToken", event.target.value)} placeholder="META_ACCESS_TOKEN" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input type="password" value={form.metaWebhookVerifyToken} onChange={(event) => updateForm("metaWebhookVerifyToken", event.target.value)} placeholder="META_WEBHOOK_VERIFY_TOKEN" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                     </div>
                   ) : null}
 
                   {session.channels.twitter ? (
                     <div className="grid gap-3 md:grid-cols-2">
-                      <input value={form.twitterUserId} onChange={(event) => updateForm("twitterUserId", event.target.value)} placeholder="TWITTER_USER_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input type="password" value={form.twitterAppKey} onChange={(event) => updateForm("twitterAppKey", event.target.value)} placeholder="TWITTER_APP_KEY" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input type="password" value={form.twitterAppSecret} onChange={(event) => updateForm("twitterAppSecret", event.target.value)} placeholder="TWITTER_APP_SECRET" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input type="password" value={form.twitterAccessToken} onChange={(event) => updateForm("twitterAccessToken", event.target.value)} placeholder="TWITTER_ACCESS_TOKEN" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input type="password" value={form.twitterAccessTokenSecret} onChange={(event) => updateForm("twitterAccessTokenSecret", event.target.value)} placeholder="TWITTER_ACCESS_TOKEN_SECRET" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                      <input value={form.twitterUserId} onChange={(event) => updateForm("twitterUserId", event.target.value)} placeholder="TWITTER_USER_ID" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input type="password" value={form.twitterAppKey} onChange={(event) => updateForm("twitterAppKey", event.target.value)} placeholder="TWITTER_APP_KEY" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input type="password" value={form.twitterAppSecret} onChange={(event) => updateForm("twitterAppSecret", event.target.value)} placeholder="TWITTER_APP_SECRET" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input type="password" value={form.twitterAccessToken} onChange={(event) => updateForm("twitterAccessToken", event.target.value)} placeholder="TWITTER_ACCESS_TOKEN" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input type="password" value={form.twitterAccessTokenSecret} onChange={(event) => updateForm("twitterAccessTokenSecret", event.target.value)} placeholder="TWITTER_ACCESS_TOKEN_SECRET" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                     </div>
                   ) : null}
 
                   {session.useCases.localBusiness ? (
                     <div className="grid gap-3 md:grid-cols-2">
-                      <input type="password" value={form.googleBusinessClientId} onChange={(event) => updateForm("googleBusinessClientId", event.target.value)} placeholder="GOOGLE_BUSINESS_CLIENT_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input type="password" value={form.googleBusinessClientSecret} onChange={(event) => updateForm("googleBusinessClientSecret", event.target.value)} placeholder="GOOGLE_BUSINESS_CLIENT_SECRET" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input type="password" value={form.googleBusinessRefreshToken} onChange={(event) => updateForm("googleBusinessRefreshToken", event.target.value)} placeholder="GOOGLE_BUSINESS_REFRESH_TOKEN" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input value={form.googleBusinessAccountName} onChange={(event) => updateForm("googleBusinessAccountName", event.target.value)} placeholder="GOOGLE_BUSINESS_ACCOUNT_NAME" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input value={form.googleBusinessLocationName} onChange={(event) => updateForm("googleBusinessLocationName", event.target.value)} placeholder="GOOGLE_BUSINESS_LOCATION_NAME" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input value={form.googleBusinessInfoLocationName} onChange={(event) => updateForm("googleBusinessInfoLocationName", event.target.value)} placeholder="GOOGLE_BUSINESS_INFO_LOCATION_NAME" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                      <input type="password" value={form.googleBusinessClientId} onChange={(event) => updateForm("googleBusinessClientId", event.target.value)} placeholder="GOOGLE_BUSINESS_CLIENT_ID" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input type="password" value={form.googleBusinessClientSecret} onChange={(event) => updateForm("googleBusinessClientSecret", event.target.value)} placeholder="GOOGLE_BUSINESS_CLIENT_SECRET" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input type="password" value={form.googleBusinessRefreshToken} onChange={(event) => updateForm("googleBusinessRefreshToken", event.target.value)} placeholder="GOOGLE_BUSINESS_REFRESH_TOKEN" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input value={form.googleBusinessAccountName} onChange={(event) => updateForm("googleBusinessAccountName", event.target.value)} placeholder="GOOGLE_BUSINESS_ACCOUNT_NAME" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input value={form.googleBusinessLocationName} onChange={(event) => updateForm("googleBusinessLocationName", event.target.value)} placeholder="GOOGLE_BUSINESS_LOCATION_NAME" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input value={form.googleBusinessInfoLocationName} onChange={(event) => updateForm("googleBusinessInfoLocationName", event.target.value)} placeholder="GOOGLE_BUSINESS_INFO_LOCATION_NAME" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                     </div>
                   ) : null}
 
                   {session.useCases.crm && session.crmMode === "hubspot" ? (
                     <div className="grid gap-3 md:grid-cols-2">
-                      <input value={form.hubspotPortalId} onChange={(event) => updateForm("hubspotPortalId", event.target.value)} placeholder="HUBSPOT_PORTAL_ID" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
-                      <input type="password" value={form.hubspotPrivateAppToken} onChange={(event) => updateForm("hubspotPrivateAppToken", event.target.value)} placeholder="HUBSPOT_PRIVATE_APP_TOKEN" className="w-full bg-transparent border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }} />
+                      <input value={form.hubspotPortalId} onChange={(event) => updateForm("hubspotPortalId", event.target.value)} placeholder="HUBSPOT_PORTAL_ID" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
+                      <input type="password" value={form.hubspotPrivateAppToken} onChange={(event) => updateForm("hubspotPrivateAppToken", event.target.value)} placeholder="HUBSPOT_PRIVATE_APP_TOKEN" className="w-full bg-transparent border px-3 py-2 text-sm border-border" />
                     </div>
                   ) : null}
                 </section>
               ) : null}
 
               {session.step === "review" ? (
-                <section className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
+                <section className="border p-4 space-y-4 border-border bg-raised">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>step 4</div>
-                    <div className="text-lg mt-2" style={{ color: "var(--text-primary)" }}>{STEP_TITLES.review}</div>
-                    <div className="text-sm mt-2" style={{ color: "var(--text-primary)" }}>
+                    <div className="text-xs uppercase tracking-[0.18em] text-muted">step 4</div>
+                    <div className="text-lg mt-2 text-primary">{STEP_TITLES.review}</div>
+                    <div className="text-sm mt-2 text-primary">
                       Review the required checks. Green means the selected path is configured and this guide is complete. Amber means configuration is detected or in progress, but guide confirmation is still missing.
                     </div>
                   </div>
                   <div className="space-y-2">
                     {state.checks.map((check) => (
-                      <div key={check.id} className="border px-3 py-3 flex items-start justify-between gap-4" style={{ borderColor: check.ready ? "var(--success)" : check.required ? "var(--warning)" : "var(--border)" }}>
+                      <div key={check.id} className={`border px-3 py-3 flex items-start justify-between gap-4 ${check.ready ? "border-success" : check.required ? "border-warning" : "border-border"}`}>
                         <div>
-                          <div className="text-sm" style={{ color: "var(--text-primary)" }}>{check.label}</div>
-                          <div className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{check.detail}</div>
+                          <div className="text-sm text-primary">{check.label}</div>
+                          <div className="text-xs mt-1 text-dim">{check.detail}</div>
                         </div>
-                        <div className="text-xs uppercase tracking-[0.16em]" style={{ color: check.ready ? "var(--success)" : check.required ? "var(--warning)" : "var(--text-dim)" }}>
+                        <div className={`text-xs uppercase tracking-[0.16em] ${check.ready ? "text-success" : check.required ? "text-warning" : "text-dim"}`}>
                           {check.ready ? "ready" : check.required ? "required" : "skipped"}
                         </div>
                       </div>
@@ -853,17 +847,16 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                 </section>
               ) : null}
 
-              <section className="border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--bg-raised)" }}>
-                <div className="text-xs uppercase tracking-[0.18em]" style={{ color: "var(--text-muted)" }}>setup handoff</div>
-                <div className="text-sm leading-6" style={{ color: "var(--text-dim)" }}>
+              <section className="border p-4 space-y-3 border-border bg-raised">
+                <div className="text-xs uppercase tracking-[0.18em] text-muted">setup handoff</div>
+                <div className="text-sm leading-6 text-dim">
                   If you want clarification, pause here, ask the main chat a setup question, then reopen this guide to resume from the same step.
                 </div>
               </section>
 
-              <div className="sticky bottom-0 flex flex-wrap gap-2 border-t pt-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+              <div className="sticky bottom-0 flex flex-wrap gap-2 border-t pt-4 border-border bg-surface">
                 <button
-                  className="px-4 py-2 border text-sm uppercase tracking-[0.18em]"
-                  style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-border text-primary"
                   onClick={() => {
                     const nextSession = { ...session, step: getPreviousStep(session.step, session) };
                     void persist(nextSession, "resume");
@@ -873,8 +866,7 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                   back
                 </button>
                 <button
-                  className="px-4 py-2 border text-sm uppercase tracking-[0.18em]"
-                  style={{ borderColor: "var(--warning)", color: "var(--warning)" }}
+                  className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-warning text-warning"
                   onClick={() => {
                     void persist(session, "pause").then(() => closeDrawer());
                   }}
@@ -884,8 +876,7 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                 </button>
                 {session.step !== "review" ? (
                   <button
-                    className="px-4 py-2 border text-sm uppercase tracking-[0.18em]"
-                    style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
+                    className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-accent text-accent"
                     onClick={() => {
                       const nextSession = { ...session, step: getNextStep(session.step, session) };
                       void persist(nextSession, "resume");
@@ -896,8 +887,7 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                   </button>
                 ) : (
                   <button
-                    className="px-4 py-2 border text-sm uppercase tracking-[0.18em]"
-                    style={{ borderColor: state.tone === "ready" ? "var(--success)" : "var(--accent)", color: state.tone === "ready" ? "var(--success)" : "var(--accent)" }}
+                    className={`px-4 py-2 border text-sm uppercase tracking-[0.18em] ${state.tone === "ready" ? "border-success text-success" : "border-accent text-accent"}`}
                     onClick={() => {
                       void persist(session, "complete").then((result) => {
                         if (result?.state.tone === "ready") {
@@ -911,8 +901,7 @@ export function AgenticSetupDrawer({ open, closeHref }: AgenticSetupDrawerProps)
                   </button>
                 )}
                 <button
-                  className="px-4 py-2 border text-sm uppercase tracking-[0.18em]"
-                  style={{ borderColor: "var(--border)", color: "var(--text-dim)" }}
+                  className="px-4 py-2 border text-sm uppercase tracking-[0.18em] border-border text-dim"
                   onClick={() => {
                     void persist({
                       version: 1,
