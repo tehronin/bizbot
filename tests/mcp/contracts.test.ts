@@ -22,13 +22,45 @@ async function callMcp(method: string, params: Record<string, unknown>, id: stri
 
 describe("MCP contract snapshots", () => {
   beforeEach(() => {
-    delete process.env.BIZBOT_PLUGIN_ORACLE_ENABLED;
-    delete process.env.BIZBOT_PLUGIN_CREEPER_ENABLED;
+    process.env.BIZBOT_PLUGIN_SOCIAL_ENABLED = "false";
+    process.env.BIZBOT_PLUGIN_COMMERCE_ENABLED = "false";
+    process.env.BIZBOT_PLUGIN_CONTENT_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_CRM_ENABLED = "false";
+    process.env.BIZBOT_PLUGIN_BUILDER_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_CREEPER_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_DELEGATION_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_DEVELOPER_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_MEMORY_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_FILES_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_GRAPH_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_LOCAL_BUSINESS_ENABLED = "false";
+    process.env.BIZBOT_PLUGIN_SCHEDULE_ENABLED = "false";
+    process.env.BIZBOT_PLUGIN_APPROVAL_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_BROWSER_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_COMPETITOR_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_ORACLE_ENABLED = "true";
+    process.env.BIZBOT_PLUGIN_CONVERSATION_BRIDGE_ENABLED = "false";
   });
 
   afterEach(() => {
+    delete process.env.BIZBOT_PLUGIN_SOCIAL_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_COMMERCE_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_CONTENT_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_CRM_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_BUILDER_ENABLED;
     delete process.env.BIZBOT_PLUGIN_ORACLE_ENABLED;
     delete process.env.BIZBOT_PLUGIN_CREEPER_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_DELEGATION_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_DEVELOPER_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_MEMORY_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_FILES_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_GRAPH_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_LOCAL_BUSINESS_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_SCHEDULE_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_APPROVAL_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_BROWSER_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_COMPETITOR_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_CONVERSATION_BRIDGE_ENABLED;
   });
 
   it("matches the stable normalized Builder MCP contract seed", () => {
