@@ -3,36 +3,66 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useDashboardShellState } from "@/components/layout/DashboardShellStateProvider";
 
-interface ApprovalsResponse {
-  approvals?: Array<{ id: string }>;
+const BIZBOT_PLUGINS_CHANGED_EVENT = "bizbot:plugins-changed";
+
+interface PluginCatalogResponse {
+  builtin: {
+    installed: Array<{ id: string }>;
+  };
 }
 
 const NAV = [
   { href: "/chat", label: "Chat", icon: "💬" },
-  { href: "/builder", label: "Builder", icon: "🏗️" },
-  { href: "/inbox", label: "Inbox", icon: "✉️" },
-  { href: "/leads", label: "Leads", icon: "🧭" },
-  { href: "/commerce", label: "Commerce", icon: "🧾" },
-  { href: "/posts", label: "Posts", icon: "📝" },
-  { href: "/local-business", label: "Local Business", icon: "⭐" },
-  { href: "/approvals", label: "Approvals", icon: "✅" },
-  { href: "/analytics", label: "Analytics", icon: "📊" },
-  { href: "/operations", label: "Operations", icon: "🛠" },
+  { href: "/builder", label: "Builder", icon: "🏗️", pluginIds: ["builder"] },
+  { href: "/inbox", label: "Inbox", icon: "✉️", pluginIds: ["social"] },
+  { href: "/leads", label: "Leads", icon: "🧭", pluginIds: ["crm"] },
+  { href: "/commerce", label: "Commerce", icon: "🧾", pluginIds: ["commerce"] },
+  { href: "/posts", label: "Posts", icon: "📝", pluginIds: ["social", "schedule", "approval"] },
+  { href: "/local-business", label: "Local Business", icon: "⭐", pluginIds: ["local-business"] },
+  { href: "/approvals", label: "Approvals", icon: "✅", pluginIds: ["approval"] },
+  { href: "/analytics", label: "Analytics", icon: "📊", pluginIds: ["social"] },
+  { href: "/operations", label: "Operations", icon: "🛠", pluginIds: ["developer"] },
   { href: "/plugins", label: "Plugins", icon: "🧩" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const [pendingCount, setPendingCount] = useState(0);
+  const { pendingApprovalCount } = useDashboardShellState();
+  const [enabledPlugins, setEnabledPlugins] = useState<Set<string> | null>(null);
 
   useEffect(() => {
-    fetch("/api/approvals")
-      .then((r) => r.json())
-      .then((d: ApprovalsResponse) => setPendingCount(d.approvals?.length ?? 0))
-      .catch(() => {});
-  }, [pathname]);
+    let cancelled = false;
+
+    const loadPlugins = () => {
+      fetch("/api/plugins")
+        .then((r) => r.json() as Promise<PluginCatalogResponse>)
+        .then((catalog) => {
+          if (!cancelled) {
+            setEnabledPlugins(new Set((catalog.builtin.installed ?? []).map((entry) => entry.id)));
+          }
+        })
+        .catch(() => {});
+    };
+
+    loadPlugins();
+    window.addEventListener(BIZBOT_PLUGINS_CHANGED_EVENT, loadPlugins);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(BIZBOT_PLUGINS_CHANGED_EVENT, loadPlugins);
+    };
+  }, []);
+
+  const visibleNav = NAV.filter((entry) => {
+    if (!entry.pluginIds || enabledPlugins === null) {
+      return true;
+    }
+
+    return entry.pluginIds.some((pluginId) => enabledPlugins.has(pluginId));
+  });
 
   return (
     <aside
@@ -44,7 +74,7 @@ export default function Sidebar() {
         </span>
       </div>
       <nav className="flex-1 overflow-y-auto py-3 space-y-0.5 px-2">
-        {NAV.map(({ href, label, icon }) => {
+        {visibleNav.map(({ href, label, icon }) => {
           const active = pathname.startsWith(href);
           return (
             <Link
@@ -58,11 +88,11 @@ export default function Sidebar() {
             >
               <span className="opacity-60 text-[10px]">{icon}</span>
               <span className="flex-1">{label}</span>
-              {label === "Approvals" && pendingCount > 0 && (
+              {label === "Approvals" && pendingApprovalCount > 0 && (
                 <span
                   className="ml-auto text-[9px] font-bold px-1.5 py-0.5 bg-danger text-white"
                 >
-                  {pendingCount}
+                  {pendingApprovalCount}
                 </span>
               )}
             </Link>

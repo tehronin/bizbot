@@ -220,9 +220,6 @@ describe("MCP HTTP route", () => {
       expect.objectContaining({ name: "developer_summarize_builder_repair" }),
       expect.objectContaining({ name: "developer_get_builder_task_lifecycle" }),
       expect.objectContaining({ name: "developer_list_agent_runs" }),
-      expect.objectContaining({ name: "developer_vscode_loop_assist" }),
-      expect.objectContaining({ name: "crm_list_contacts" }),
-      expect.objectContaining({ name: "local_business_get_status" }),
     ]));
     expect(result.body.result.tools).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "agent_delegate_run" }),

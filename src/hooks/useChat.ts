@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import type {
   BuilderChatCard,
@@ -196,6 +197,22 @@ interface InternalActiveRunState extends ActiveRunState {
 interface ExecutionSelection {
   mode: ChatExecutionMode;
   pluginId: string;
+}
+
+interface BootstrapRequestOptions {
+  selectedConversationId?: string | null;
+  selectedBuilderProjectId?: string | null;
+  selectedCreeperCompanyProfileId?: string | null;
+  replaceCurrent?: boolean;
+  recentPage?: number;
+  archivedPage?: number;
+  historyFilters?: ChatConversationHistoryFilters;
+}
+
+interface ScheduledBootstrapRequest {
+  id: number;
+  options?: BootstrapRequestOptions;
+  showPending: boolean;
 }
 
 type PendingAssistantTurnAction =
@@ -609,6 +626,14 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+function shouldIgnoreCancelledRequest(error: unknown, signal?: AbortSignal): boolean {
+  if (isAbortError(error)) {
+    return true;
+  }
+
+  return Boolean(signal?.aborted);
+}
+
 function summarizeResumeFailure(message: string): string {
   const normalized = message.replace(/^Request failed:\s*/i, "").replace(/\s+/g, " ").trim();
   if (!normalized) {
@@ -644,6 +669,7 @@ function mergeBootstrapMessages(
 }
 
 export function useChat(): UseChatResult {
+  const pathname = usePathname();
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [pendingResumePrompt, setPendingResumePrompt] = useState<PendingResumePrompt | null>(null);
   const [pendingAssistantTurn, dispatchPendingAssistantTurn] = useReducer(pendingAssistantTurnReducer, null);
@@ -677,11 +703,20 @@ export function useChat(): UseChatResult {
   const [isPending, startTransition] = useTransition();
   const [activeBuilderTaskId, setActiveBuilderTaskId] = useState<string | null>(null);
   const isMountedRef = useRef(true);
+  isMountedRef.current = true;
   const completionPublishedTaskIdsRef = useRef<Set<string>>(new Set());
   const syncedExecutionDefaultsRef = useRef<string | null>(null);
   const shouldSyncExecutionDefaultsRef = useRef(false);
   const bootstrapAbortControllerRef = useRef<AbortController | null>(null);
   const bootstrapRequestIdRef = useRef(0);
+  const bootstrapRequestKeyRef = useRef<string | null>(null);
+  const bootstrapPromiseRef = useRef<Promise<void> | null>(null);
+  const bootstrapScheduleIdRef = useRef(0);
+  const bootstrapPendingResolversRef = useRef(new Map<number, { resolve: () => void; reject: (error: unknown) => void }>());
+  const passiveBootstrapKeyRef = useRef<string | null>(null);
+  const hasLoadedBootstrapRef = useRef(false);
+  const creeperSelectionAbortControllerRef = useRef<AbortController | null>(null);
+  const creeperSelectionRequestIdRef = useRef(0);
   const sidecarInteractionAbortControllerRef = useRef<AbortController | null>(null);
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
@@ -691,10 +726,10 @@ export function useChat(): UseChatResult {
   activeRunRef.current = activeRun;
   const selectedBuilderProjectIdRef = useRef(selectedBuilderProjectId);
   selectedBuilderProjectIdRef.current = selectedBuilderProjectId;
-  const previousBuilderProjectIdRef = useRef(selectedBuilderProjectId);
   const selectedCreeperCompanyProfileIdRef = useRef(selectedCreeperCompanyProfileId);
   selectedCreeperCompanyProfileIdRef.current = selectedCreeperCompanyProfileId;
   const previousCreeperCompanyProfileIdRef = useRef(selectedCreeperCompanyProfileId);
+  const [scheduledBootstrapRequest, setScheduledBootstrapRequest] = useState<ScheduledBootstrapRequest | null>(null);
 
   function applyExecutionSelection(nextSelection: ExecutionSelection, options?: {
     syncConversation?: boolean;
@@ -728,46 +763,74 @@ export function useChat(): UseChatResult {
     setSelectedCreeperCompanyProfileIdState(value);
   };
 
-  // Trigger bootstrap reload whenever the selected builder project changes (after initial render).
-  useEffect(() => {
-    if (previousBuilderProjectIdRef.current === selectedBuilderProjectId) {
-      return;
-    }
-    previousBuilderProjectIdRef.current = selectedBuilderProjectId;
-    void loadBootstrap({
-      selectedConversationId: conversationIdRef.current,
-      selectedBuilderProjectId,
-    }).catch(() => undefined);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBuilderProjectId]);
-
   useEffect(() => {
     if (previousCreeperCompanyProfileIdRef.current === selectedCreeperCompanyProfileId) {
       return;
     }
     previousCreeperCompanyProfileIdRef.current = selectedCreeperCompanyProfileId;
+
+    if (pathname !== "/chat") {
+      creeperSelectionAbortControllerRef.current?.abort();
+      return;
+    }
+
     const currentConversationId = conversationIdRef.current;
     if (!currentConversationId) {
       return;
     }
 
+    const nextCompanyProfileId = selectedCreeperCompanyProfileId;
+    const controller = new AbortController();
+    const requestId = creeperSelectionRequestIdRef.current + 1;
+    creeperSelectionRequestIdRef.current = requestId;
+    creeperSelectionAbortControllerRef.current?.abort();
+    creeperSelectionAbortControllerRef.current = controller;
+
     void fetch(`/api/chat/conversations/${currentConversationId}/company`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyProfileId: selectedCreeperCompanyProfileId }),
+      signal: controller.signal,
+      body: JSON.stringify({ companyProfileId: nextCompanyProfileId }),
     })
-      .then(() => loadBootstrap({
-        selectedConversationId: currentConversationId,
-        selectedCreeperCompanyProfileId,
-        replaceCurrent: true,
-      }))
-      .catch(() => undefined);
+      .then(async (response) => {
+        const payload = await readJson<{ error?: string }>(response);
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Failed to update chat company selection.");
+        }
+
+        if (
+          controller.signal.aborted
+          || requestId !== creeperSelectionRequestIdRef.current
+          || pathname !== "/chat"
+          || conversationIdRef.current !== currentConversationId
+          || selectedCreeperCompanyProfileIdRef.current !== nextCompanyProfileId
+        ) {
+          return;
+        }
+
+        await requestBootstrap({
+          selectedConversationId: currentConversationId,
+          selectedCreeperCompanyProfileId: nextCompanyProfileId,
+          replaceCurrent: true,
+        });
+      })
+      .catch((error: unknown) => {
+        if (!isAbortError(error)) {
+          console.error("[chat creeper selection]", error);
+        }
+      })
+      .finally(() => {
+        if (creeperSelectionAbortControllerRef.current === controller) {
+          creeperSelectionAbortControllerRef.current = null;
+        }
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCreeperCompanyProfileId]);
+  }, [pathname, selectedCreeperCompanyProfileId]);
 
   useEffect(() => () => {
     isMountedRef.current = false;
     bootstrapAbortControllerRef.current?.abort();
+    creeperSelectionAbortControllerRef.current?.abort();
     sidecarInteractionAbortControllerRef.current?.abort();
   }, []);
 
@@ -878,21 +941,7 @@ export function useChat(): UseChatResult {
     };
   }, [activeBuilderTaskId]);
 
-  async function loadBootstrap(options?: {
-    selectedConversationId?: string | null;
-    selectedBuilderProjectId?: string | null;
-    selectedCreeperCompanyProfileId?: string | null;
-    replaceCurrent?: boolean;
-    recentPage?: number;
-    archivedPage?: number;
-    historyFilters?: ChatConversationHistoryFilters;
-  }): Promise<void> {
-    const controller = new AbortController();
-    const requestId = bootstrapRequestIdRef.current + 1;
-    bootstrapRequestIdRef.current = requestId;
-    bootstrapAbortControllerRef.current?.abort();
-    bootstrapAbortControllerRef.current = controller;
-
+  async function loadBootstrap(options?: BootstrapRequestOptions): Promise<void> {
     const replaceCurrent = options?.replaceCurrent ?? false;
     const nextConversationId = options?.selectedConversationId ?? conversationId;
     const nextBuilderProjectId = options?.selectedBuilderProjectId !== undefined
@@ -927,99 +976,290 @@ export function useChat(): UseChatResult {
       params.set("historyTo", nextFilters.to);
     }
 
-    try {
-      const response = await fetch(`/api/chat/conversations${params.toString() ? `?${params.toString()}` : ""}`, {
-        signal: controller.signal,
-      });
-      const payload = await readJson<ChatConversationBootstrap & { error?: string }>(response);
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to load chat conversations.");
-      }
-
-      if (controller.signal.aborted || !isMountedRef.current || requestId !== bootstrapRequestIdRef.current) {
-        return;
-      }
-
-      setRecentConversations(payload.recentConversations);
-      setArchivedConversations(payload.archivedConversations);
-      setRecentPagination(payload.recentPagination);
-      setArchivedPagination(payload.archivedPagination);
-      setHistoryFilters(payload.historyFilters);
-      setModelPricing(payload.modelPricing);
-      setChatVerbosityState(payload.chatVerbosity);
-      setExecutionCatalog(payload.executionCatalog);
-      const storedExecutionPreference = getStoredExecutionPreference();
-      const preferredExecutionDefaults = payload.currentConversation
-        ? payload.executionDefaults
-        : storedExecutionPreference ?? payload.executionDefaults;
-      applyExecutionSelection(preferredExecutionDefaults, {
-        conversationId: payload.currentConversationId,
-      });
-      setBuilderProjects(payload.builderProjects);
-      setBuilderProjectConversations(payload.builderProjectConversations ?? []);
-      setCreeperCompanyProfiles(payload.creeperCompanyProfiles ?? []);
-      setBuilderStackPresets(payload.builderStackPresets ?? []);
-      setBuilderTemplates(payload.builderTemplates ?? []);
-      setSelectedBuilderProjectIdState((current) => {
-        if (options?.selectedBuilderProjectId !== undefined) {
-          return options.selectedBuilderProjectId && payload.builderProjects.some((project) => project.id === options.selectedBuilderProjectId)
-            ? options.selectedBuilderProjectId
-            : payload.builderProjects[0]?.id ?? null;
-        }
-
-        return payload.currentConversation?.builderProjectId && payload.builderProjects.some((project) => project.id === payload.currentConversation?.builderProjectId)
-          ? payload.currentConversation.builderProjectId
-          : current && payload.builderProjects.some((project) => project.id === current)
-            ? current
-            : payload.builderProjects[0]?.id ?? null;
-      });
-      setSelectedCreeperCompanyProfileIdState((current) => {
-        if (options?.selectedCreeperCompanyProfileId !== undefined) {
-          return options.selectedCreeperCompanyProfileId && payload.creeperCompanyProfiles.some((profile) => profile.id === options.selectedCreeperCompanyProfileId)
-            ? options.selectedCreeperCompanyProfileId
-            : null;
-        }
-
-        return payload.selectedCreeperCompanyProfileId && payload.creeperCompanyProfiles.some((profile) => profile.id === payload.selectedCreeperCompanyProfileId)
-          ? payload.selectedCreeperCompanyProfileId
-          : current && payload.creeperCompanyProfiles.some((profile) => profile.id === current)
-            ? current
-            : null;
-      });
-      setBuilderInbox(payload.builderInbox);
-      setConversationId(payload.currentConversationId);
-      setCurrentConversation(payload.currentConversation);
-      persistSelectedConversationId(payload.currentConversationId);
-
-      if (replaceCurrent) {
-        const nextMessages = payload.currentConversation ? mapConversationMessages(payload.currentConversation.messages) : [];
-        setMessages((current) => {
-          const mergedMessages = mergeBootstrapMessages(current, nextMessages, pendingResumePromptRef.current);
-          return haveEquivalentChatEntries(current, mergedMessages) ? current : mergedMessages;
-        });
-        setActiveRun(createInternalActiveRun(payload.activeRun));
-        if (!activeBuilderTaskId) {
-          dispatchPendingAssistantTurn({ type: "clear" });
-        }
-      }
-
-      setHistoryConversation((current) => {
-        if (!current) {
-          return current;
-        }
-
-        const stillVisible = payload.archivedConversations.some((conversation) => conversation.id === current.id)
-          || payload.recentConversations.some((conversation) => conversation.id === current.id);
-
-        return stillVisible ? current : null;
-      });
-    } finally {
-      if (bootstrapAbortControllerRef.current === controller) {
-        bootstrapAbortControllerRef.current = null;
-      }
+    const requestKey = params.toString();
+    if (
+      bootstrapAbortControllerRef.current
+      && bootstrapRequestKeyRef.current === requestKey
+      && bootstrapPromiseRef.current
+    ) {
+      return bootstrapPromiseRef.current;
     }
+
+    const controller = new AbortController();
+    const requestId = bootstrapRequestIdRef.current + 1;
+    bootstrapRequestIdRef.current = requestId;
+    bootstrapAbortControllerRef.current?.abort();
+    bootstrapAbortControllerRef.current = controller;
+    bootstrapRequestKeyRef.current = requestKey;
+
+    let bootstrapPromise: Promise<void> | null = null;
+    bootstrapPromise = (async () => {
+      try {
+        let response: Response;
+        try {
+          response = await fetch(`/api/chat/conversations${params.toString() ? `?${params.toString()}` : ""}`, {
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (shouldIgnoreCancelledRequest(error, controller.signal) || !isMountedRef.current) {
+            return;
+          }
+
+          throw error;
+        }
+
+        let payload: ChatConversationBootstrap & { error?: string };
+        try {
+          payload = await readJson<ChatConversationBootstrap & { error?: string }>(response);
+        } catch (error) {
+          if (shouldIgnoreCancelledRequest(error, controller.signal) || !isMountedRef.current) {
+            return;
+          }
+
+          throw error;
+        }
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Failed to load chat conversations.");
+        }
+
+        if (controller.signal.aborted || !isMountedRef.current || requestId !== bootstrapRequestIdRef.current) {
+          return;
+        }
+
+        setRecentConversations(payload.recentConversations);
+        setArchivedConversations(payload.archivedConversations);
+        setRecentPagination(payload.recentPagination);
+        setArchivedPagination(payload.archivedPagination);
+        setHistoryFilters(payload.historyFilters);
+        setModelPricing(payload.modelPricing);
+        setChatVerbosityState(payload.chatVerbosity);
+        setExecutionCatalog(payload.executionCatalog);
+        const storedExecutionPreference = getStoredExecutionPreference();
+        const preferredExecutionDefaults = payload.currentConversation
+          ? payload.executionDefaults
+          : storedExecutionPreference ?? payload.executionDefaults;
+        applyExecutionSelection(preferredExecutionDefaults, {
+          conversationId: payload.currentConversationId,
+        });
+        setBuilderProjects(payload.builderProjects);
+        setBuilderProjectConversations(payload.builderProjectConversations ?? []);
+        setCreeperCompanyProfiles(payload.creeperCompanyProfiles ?? []);
+        setBuilderStackPresets(payload.builderStackPresets ?? []);
+        setBuilderTemplates(payload.builderTemplates ?? []);
+        setSelectedBuilderProjectIdState((current) => {
+          if (options?.selectedBuilderProjectId !== undefined) {
+            return options.selectedBuilderProjectId && payload.builderProjects.some((project) => project.id === options.selectedBuilderProjectId)
+              ? options.selectedBuilderProjectId
+              : null;
+          }
+
+          return payload.currentConversation?.builderProjectId && payload.builderProjects.some((project) => project.id === payload.currentConversation?.builderProjectId)
+            ? payload.currentConversation.builderProjectId
+            : current && payload.builderProjects.some((project) => project.id === current)
+              ? current
+              : null;
+        });
+        setSelectedCreeperCompanyProfileIdState((current) => {
+          if (options?.selectedCreeperCompanyProfileId !== undefined) {
+            return options.selectedCreeperCompanyProfileId && payload.creeperCompanyProfiles.some((profile) => profile.id === options.selectedCreeperCompanyProfileId)
+              ? options.selectedCreeperCompanyProfileId
+              : null;
+          }
+
+          return payload.selectedCreeperCompanyProfileId && payload.creeperCompanyProfiles.some((profile) => profile.id === payload.selectedCreeperCompanyProfileId)
+            ? payload.selectedCreeperCompanyProfileId
+            : current && payload.creeperCompanyProfiles.some((profile) => profile.id === current)
+              ? current
+              : null;
+        });
+        setBuilderInbox(payload.builderInbox);
+        setConversationId(payload.currentConversationId);
+        setCurrentConversation(payload.currentConversation);
+        persistSelectedConversationId(payload.currentConversationId);
+        hasLoadedBootstrapRef.current = true;
+
+        if (replaceCurrent) {
+          const nextMessages = payload.currentConversation ? mapConversationMessages(payload.currentConversation.messages) : [];
+          setMessages((current) => {
+            const mergedMessages = mergeBootstrapMessages(current, nextMessages, pendingResumePromptRef.current);
+            return haveEquivalentChatEntries(current, mergedMessages) ? current : mergedMessages;
+          });
+          setActiveRun(createInternalActiveRun(payload.activeRun));
+          if (!activeBuilderTaskId) {
+            dispatchPendingAssistantTurn({ type: "clear" });
+          }
+        }
+
+        setHistoryConversation((current) => {
+          if (!current) {
+            return current;
+          }
+
+          const stillVisible = payload.archivedConversations.some((conversation) => conversation.id === current.id)
+            || payload.recentConversations.some((conversation) => conversation.id === current.id);
+
+          return stillVisible ? current : null;
+        });
+      } finally {
+        if (bootstrapAbortControllerRef.current === controller) {
+          bootstrapAbortControllerRef.current = null;
+        }
+        if (bootstrapRequestKeyRef.current === requestKey) {
+          bootstrapRequestKeyRef.current = null;
+        }
+        if (bootstrapPromise && bootstrapPromiseRef.current === bootstrapPromise) {
+          bootstrapPromiseRef.current = null;
+        }
+      }
+    })();
+
+    bootstrapPromiseRef.current = bootstrapPromise;
+    return bootstrapPromise;
   }
+
+  function createPassiveBootstrapKey(options: BootstrapRequestOptions): string {
+    const params = new URLSearchParams();
+    if (options.selectedConversationId) {
+      params.set("selectedConversationId", options.selectedConversationId);
+    }
+    if (options.selectedBuilderProjectId) {
+      params.set("selectedBuilderProjectId", options.selectedBuilderProjectId);
+    }
+    if (options.selectedCreeperCompanyProfileId) {
+      params.set("selectedCreeperCompanyProfileId", options.selectedCreeperCompanyProfileId);
+    }
+
+    return params.toString() || "__initial__";
+  }
+
+  function requestBootstrap(options?: BootstrapRequestOptions, controls?: { showPending?: boolean }): Promise<void> {
+    const id = bootstrapScheduleIdRef.current + 1;
+    bootstrapScheduleIdRef.current = id;
+
+    return new Promise<void>((resolve, reject) => {
+      bootstrapPendingResolversRef.current.set(id, { resolve, reject });
+      setScheduledBootstrapRequest({
+        id,
+        options,
+        showPending: controls?.showPending ?? false,
+      });
+    });
+  }
+
+  useEffect(() => {
+    if (pathname !== "/chat") {
+      passiveBootstrapKeyRef.current = null;
+      return;
+    }
+
+    const storedConversationId = getStoredSelectedConversationId();
+    const selectedConversationId = conversationId ?? storedConversationId;
+    const passiveRequest: BootstrapRequestOptions = {
+      selectedConversationId,
+      selectedBuilderProjectId,
+      selectedCreeperCompanyProfileId,
+      replaceCurrent: true,
+    };
+
+    if (!selectedConversationId && !selectedBuilderProjectId && !selectedCreeperCompanyProfileId && hasLoadedBootstrapRef.current) {
+      passiveBootstrapKeyRef.current = null;
+      if (!scheduledBootstrapRequest?.showPending && isMountedRef.current) {
+        setIsBootstrapping(false);
+      }
+      return;
+    }
+
+    const desiredKey = createPassiveBootstrapKey(passiveRequest);
+    const initialBootstrapPending = !selectedConversationId
+      && !selectedBuilderProjectId
+      && !selectedCreeperCompanyProfileId
+      && !hasLoadedBootstrapRef.current;
+    const currentConversationReady = !selectedConversationId
+      ? !initialBootstrapPending
+      : conversationId === selectedConversationId && (currentConversation !== null || messages.length > 0);
+    const currentBuilderReady = selectedBuilderProjectId === (currentConversation?.builderProjectId ?? selectedBuilderProjectId);
+    const currentCreeperReady = selectedCreeperCompanyProfileId === (currentConversation?.companyProfileId ?? selectedCreeperCompanyProfileId);
+
+    if (currentConversationReady && currentBuilderReady && currentCreeperReady) {
+      passiveBootstrapKeyRef.current = null;
+      if (!scheduledBootstrapRequest?.showPending && isMountedRef.current) {
+        setIsBootstrapping(false);
+      }
+      return;
+    }
+
+    if (scheduledBootstrapRequest?.showPending && passiveBootstrapKeyRef.current === desiredKey) {
+      return;
+    }
+
+    passiveBootstrapKeyRef.current = desiredKey;
+    void requestBootstrap(passiveRequest, { showPending: true })
+      .catch((error) => {
+        if (!isAbortError(error)) {
+          console.error("[chat bootstrap coordinator]", error);
+        }
+      })
+      .finally(() => {
+        if (passiveBootstrapKeyRef.current === desiredKey) {
+          passiveBootstrapKeyRef.current = null;
+        }
+      });
+  }, [
+    conversationId,
+    currentConversation,
+    messages.length,
+    pathname,
+    scheduledBootstrapRequest?.showPending,
+    selectedBuilderProjectId,
+    selectedCreeperCompanyProfileId,
+  ]);
+
+  useEffect(() => {
+    if (pathname !== "/chat" || !scheduledBootstrapRequest) {
+      return;
+    }
+
+    const { id, options, showPending } = scheduledBootstrapRequest;
+    let active = true;
+
+    if (showPending && isMountedRef.current) {
+      setIsBootstrapping(true);
+    }
+
+    void loadBootstrap(options)
+      .then(() => {
+        if (!active) {
+          return;
+        }
+        bootstrapPendingResolversRef.current.get(id)?.resolve();
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+
+        if (shouldIgnoreCancelledRequest(error)) {
+          bootstrapPendingResolversRef.current.get(id)?.resolve();
+          return;
+        }
+
+        bootstrapPendingResolversRef.current.get(id)?.reject(error);
+      })
+      .finally(() => {
+        bootstrapPendingResolversRef.current.delete(id);
+        if (active) {
+          setScheduledBootstrapRequest((current) => (current?.id === id ? null : current));
+          if (showPending && isMountedRef.current) {
+            setIsBootstrapping(false);
+          }
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [pathname, scheduledBootstrapRequest]);
 
   useEffect(() => {
     const handleSidecarInteraction = (event: Event) => {
@@ -1080,42 +1320,9 @@ export function useChat(): UseChatResult {
     };
   }, [conversationId]);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        await loadBootstrap({
-          selectedConversationId: getStoredSelectedConversationId(),
-          replaceCurrent: true,
-        });
-      } catch (error) {
-        if (isAbortError(error)) {
-          return;
-        }
-        console.error("[chat bootstrap]", error);
-        if (isMountedRef.current) {
-          dispatchPendingAssistantTurn({ type: "clear" });
-          setMessages([
-            createEntry("assistant", `Chat bootstrap failed: ${error instanceof Error ? error.message : "Unknown error."}`),
-          ]);
-        }
-      } finally {
-        if (isMountedRef.current) {
-          setIsBootstrapping(false);
-        }
-      }
-    })();
-    // Initial bootstrap is intentionally one-time; later refreshes are explicit user actions.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   async function loadConversation(nextConversationId: string): Promise<void> {
-    setIsBootstrapping(true);
-    try {
-      dispatchPendingAssistantTurn({ type: "clear" });
-      await loadBootstrap({ selectedConversationId: nextConversationId, replaceCurrent: true });
-    } finally {
-      setIsBootstrapping(false);
-    }
+    dispatchPendingAssistantTurn({ type: "clear" });
+    await requestBootstrap({ selectedConversationId: nextConversationId, replaceCurrent: true }, { showPending: true });
   }
 
   function startNewChat(): void {
@@ -1153,16 +1360,11 @@ export function useChat(): UseChatResult {
     }
 
     setHistoryConversation((current) => current?.id === nextConversationId ? null : current);
-    setIsBootstrapping(true);
-    try {
-      const nextSelectedConversationId = conversationId === nextConversationId ? null : conversationId;
-      await loadBootstrap({
-        selectedConversationId: nextSelectedConversationId,
-        replaceCurrent: conversationId === nextConversationId,
-      });
-    } finally {
-      setIsBootstrapping(false);
-    }
+    const nextSelectedConversationId = conversationId === nextConversationId ? null : conversationId;
+    await requestBootstrap({
+      selectedConversationId: nextSelectedConversationId,
+      replaceCurrent: conversationId === nextConversationId,
+    }, { showPending: true });
   }
 
   async function archiveCurrentConversation(): Promise<void> {
@@ -1182,12 +1384,7 @@ export function useChat(): UseChatResult {
     }
 
     setHistoryConversation(null);
-    setIsBootstrapping(true);
-    try {
-      await loadBootstrap({ selectedConversationId: nextConversationId, replaceCurrent: true });
-    } finally {
-      setIsBootstrapping(false);
-    }
+    await requestBootstrap({ selectedConversationId: nextConversationId, replaceCurrent: true }, { showPending: true });
   }
 
   async function deleteConversation(nextConversationId: string): Promise<void> {
@@ -1199,22 +1396,17 @@ export function useChat(): UseChatResult {
     }
 
     setHistoryConversation((current) => current?.id === nextConversationId ? null : current);
-    setIsBootstrapping(true);
-    try {
-      const nextSelectedConversationId = conversationId === nextConversationId ? null : conversationId;
-      await loadBootstrap({
-        selectedConversationId: nextSelectedConversationId,
-        replaceCurrent: true,
-      });
-    } finally {
-      setIsBootstrapping(false);
-    }
+    const nextSelectedConversationId = conversationId === nextConversationId ? null : conversationId;
+    await requestBootstrap({
+      selectedConversationId: nextSelectedConversationId,
+      replaceCurrent: true,
+    }, { showPending: true });
   }
 
   async function applyHistoryFilters(nextFilters: ChatConversationHistoryFilters): Promise<void> {
     setIsLoadingHistoryLists(true);
     try {
-      await loadBootstrap({
+      await requestBootstrap({
         selectedConversationId: conversationId,
         replaceCurrent: false,
         recentPage: 1,
@@ -1241,7 +1433,7 @@ export function useChat(): UseChatResult {
 
     setIsLoadingHistoryLists(true);
     try {
-      await loadBootstrap({
+      await requestBootstrap({
         selectedConversationId: conversationId,
         replaceCurrent: false,
         recentPage: nextPage,
@@ -1262,7 +1454,7 @@ export function useChat(): UseChatResult {
 
     setIsLoadingHistoryLists(true);
     try {
-      await loadBootstrap({
+      await requestBootstrap({
         selectedConversationId: conversationId,
         replaceCurrent: false,
         archivedPage: nextPage,
@@ -1324,7 +1516,7 @@ export function useChat(): UseChatResult {
     setBuilderOnboarding(null);
     setSelectedBuilderProjectId(payload.projectId ?? null);
 
-    await loadBootstrap({
+    await requestBootstrap({
       selectedConversationId: payload.conversationId ?? conversationId,
       replaceCurrent: true,
     });
@@ -1342,7 +1534,7 @@ export function useChat(): UseChatResult {
       throw new Error(payload.error ?? "Failed to resolve Builder interaction.");
     }
 
-    await loadBootstrap({
+    await requestBootstrap({
       selectedConversationId: conversationId,
       replaceCurrent: true,
     });
@@ -1410,7 +1602,7 @@ export function useChat(): UseChatResult {
         conversationId: nextConversationId,
       });
     }
-    await loadBootstrap({
+    await requestBootstrap({
       selectedConversationId: nextConversationId,
       replaceCurrent: true,
     });
@@ -1628,7 +1820,7 @@ export function useChat(): UseChatResult {
           }
 
           if (nextConversationId) {
-            await loadBootstrap({ selectedConversationId: nextConversationId, replaceCurrent: true });
+            await requestBootstrap({ selectedConversationId: nextConversationId, replaceCurrent: true });
           }
 
           if (!builderTaskIdFromStream && isMountedRef.current) {

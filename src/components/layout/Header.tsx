@@ -2,14 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useDashboardShellState } from "@/components/layout/DashboardShellStateProvider";
 
 interface SettingsResponse {
   settings: Array<{ key: string; value: string }>;
   env?: Record<string, string>;
-}
-
-interface ApprovalsResponse {
-  approvals?: Array<{ id: string }>;
 }
 
 interface AgenticSetupResponse {
@@ -40,8 +37,8 @@ function getSetupTooltip(state: AgenticSetupResponse["state"] | null): string {
 }
 
 export default function Header() {
+  const { pendingApprovalCount } = useDashboardShellState();
   const [provider, setProvider] = useState<string | null>(null);
-  const [pending, setPending] = useState(0);
   const [now, setNow] = useState<string>("");
   const [setupState, setSetupState] = useState<AgenticSetupResponse["state"] | null>(null);
 
@@ -55,11 +52,6 @@ export default function Header() {
           setProvider(activeProvider);
         }
       })
-      .catch(() => {});
-
-    fetch("/api/approvals")
-      .then((res) => res.json() as Promise<ApprovalsResponse>)
-      .then((data) => setPending(data.approvals?.length ?? 0))
       .catch(() => {});
 
     fetch("/api/agentic-setup")
@@ -115,8 +107,8 @@ export default function Header() {
         </div>
         <div className="text-muted">
           approvals
-          <span className={`ml-2 ${pending > 0 ? "text-danger" : "text-primary"}`}>
-            {pending}
+          <span className={`ml-2 ${pendingApprovalCount > 0 ? "text-danger" : "text-primary"}`}>
+            {pendingApprovalCount}
           </span>
         </div>
       </div>

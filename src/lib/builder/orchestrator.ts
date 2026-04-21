@@ -119,6 +119,19 @@ export interface BuilderProjectOverview {
   nextRecommendedStep: string | null;
 }
 
+export interface BuilderProjectSummary {
+  project: BuilderProjectRecord;
+  brief: BuilderPlanningSnapshot["brief"];
+  currentMilestone: BuilderMilestoneState | null;
+  currentTaskSpec: BuilderTaskSpecState | null;
+  tasks: BuilderTask[];
+  currentTask: BuilderTask | null;
+  runs: BuilderRun[];
+  latestReview: BuilderStructuredReview | null;
+  metrics: BuilderHealthMetrics;
+  nextRecommendedStep: string | null;
+}
+
 export type BuilderLaunchResult =
   | { status: "RUNNING"; runId: string; taskId: string }
   | { status: "PLANNED"; projectId: string; taskId: null; runId: null };
@@ -1339,6 +1352,49 @@ export async function getBuilderProjectOverview(projectId: string): Promise<Buil
     dependencyContract,
     fileTopologyContract,
     governanceHistory,
+    nextRecommendedStep: buildNextRecommendedStep(planning, context),
+  };
+}
+
+export async function getBuilderProjectSummary(projectId: string): Promise<BuilderProjectSummary> {
+  const project = await getBuilderProject(projectId);
+  const projectRecord = await getBuilderProjectRecord(projectId);
+  const tasks = await listBuilderTasks(projectId, 25);
+  const planning = await getBuilderPlanningSnapshot(projectId);
+  const currentTask = planning.currentTaskSpec
+    ? tasks.find((task) => task.taskSpecId === planning.currentTaskSpec?.id && (task.status === "RUNNING" || task.status === "PENDING"))
+      ?? tasks.find((task) => task.taskSpecId === planning.currentTaskSpec?.id)
+      ?? tasks.find((task) => task.status === "RUNNING" || task.status === "PENDING")
+      ?? tasks[0]
+      ?? null
+    : tasks.find((task) => task.status === "RUNNING" || task.status === "PENDING") ?? tasks[0] ?? null;
+  const runs = await listBuilderRuns(projectId, 25);
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const reconciledRuns = runs.map((run) => {
+    const task = run.taskId ? tasksById.get(run.taskId) : undefined;
+    return task ? reconcileBuilderRunWithTask(run, task) : run;
+  });
+  const latestReview = reconciledRuns.find((run) => run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata) && "review" in (run.metadata as Record<string, unknown>))?.metadata as Record<string, unknown> | undefined;
+  const { context } = loadBuilderProjectContext(project);
+  const structuredReview = latestReview?.review as BuilderStructuredReview ?? null;
+  const metrics = summarizeBuilderProjectMetrics({
+    runs: reconciledRuns,
+    tasks,
+    planning,
+    context,
+    latestReview: structuredReview,
+  });
+
+  return {
+    project: projectRecord,
+    brief: planning.brief,
+    currentMilestone: planning.currentMilestone,
+    currentTaskSpec: planning.currentTaskSpec,
+    tasks,
+    currentTask,
+    runs: reconciledRuns,
+    latestReview: structuredReview,
+    metrics,
     nextRecommendedStep: buildNextRecommendedStep(planning, context),
   };
 }

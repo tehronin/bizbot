@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { afterEach, describe, expect, it } from "vitest";
 import { developerPlugin } from "@/lib/agent/plugins/DeveloperPlugin";
+
+function createTempBuilderWorkspace(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-developer-devloop-"));
+}
 
 function asObjectResult<T extends object>(value: unknown): T {
   return value as T;
@@ -10,6 +17,10 @@ function requireTool(name: string) {
   expect(tool).toBeDefined();
   return tool!;
 }
+
+afterEach(() => {
+  delete process.env.BIZBOT_BUILDER_WORKSPACE_PATH;
+});
 
 describe("developer plugin dev loop", () => {
   it("inspects the registry and previews MCP-facing descriptors", async () => {
@@ -115,6 +126,8 @@ describe("developer plugin dev loop", () => {
   });
 
   it("supports MCP discovery bundles, search, imported audit, and composite workflow tools", async () => {
+    process.env.BIZBOT_BUILDER_WORKSPACE_PATH = createTempBuilderWorkspace();
+
     const searchTools = requireTool("developer_search_tools");
     const searchResources = requireTool("developer_search_resources");
     const searchPrompts = requireTool("developer_search_prompts");

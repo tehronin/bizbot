@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-04-21
+
+- Restored chat-route continuity by reworking `useChat` bootstrap coordination around route-aware scheduling, one-time initial hydration, and safer cancellation handling, which fixed empty chat returns after navigating away and removed several bootstrap race conditions surfaced by tests.
+- Changed builtin plugin defaults so unfinished social, commerce, local-business, and schedule surfaces stay off by default while Oracle and Creeper are enabled, and tightened dashboard navigation to hide plugin-owned sidebar entries whenever their backing plugin is disabled.
+- Reduced repeated dashboard churn by centralizing approval-count state in a shared shell provider, broadcasting plugin and approval catalog changes across the shell, and narrowing active Builder polling to a lightweight project-summary endpoint plus inspection refresh instead of repeatedly loading the full detail payload.
+- Hardened mutating API routes by adding structured `ApiRouteError` responses, atomic approval decisions, stricter settings payload and env validation, and explicit user-memory ownership enforcement that rejects cross-user overrides.
+- Improved Builder consistency and diagnostics by wrapping run and project mutation paths in transaction-aware helpers, adding the `GET /api/builder/projects/[id]/summary` surface for active-run polling, and introducing a live heap-snapshot capture script for Next.js memory investigation.
+- Refreshed regression and contract coverage for the updated chat bootstrap behavior, Builder transaction flow, Oracle and Creeper default exposure, MCP tool catalogs, and developer dev-loop safety checks so local CI-equivalent validation passes again.
+
 ## 2026-04-20
 
 - Reworked the Tailwind v4 migration across chat, Builder, settings, onboarding, and dashboard surfaces by promoting semantic color and border tokens into `globals.css`, replacing broad inline-style usage with reusable utility classes, and fixing the resulting JSX and encoding regressions so local CI verification is green again.

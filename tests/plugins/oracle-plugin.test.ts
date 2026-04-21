@@ -79,19 +79,24 @@ describe("oracle plugin", () => {
     mockedSetMemoryFact.mockResolvedValue({ id: "fact-1", key: "oracle_bot_personality", value: "balanced" } as never);
   });
 
-  it("is disabled by default and exposed when enabled", () => {
+  it("is enabled by default and can be explicitly disabled", () => {
     delete process.env.BIZBOT_PLUGIN_ORACLE_ENABLED;
+    const defaultTools = getAllToolDefinitions(undefined, { agentProfile: "mcp_operator" }).map((tool) => tool.name);
+    expect(defaultTools).toContain("oracle_search_markets");
+    expect(defaultTools).toContain("oracle_get_market_verdict");
+    expect(defaultTools).toContain("oracle_analyze_prediction");
+    expect(defaultTools).toContain("oracle_open_personality_selector");
+    expect(defaultTools).toContain("oracle_watch_prediction");
+    expect(defaultTools).toContain("oracle_list_predictions");
+
+    process.env.BIZBOT_PLUGIN_ORACLE_ENABLED = "false";
     const disabledTools = getAllToolDefinitions(undefined, { agentProfile: "mcp_operator" }).map((tool) => tool.name);
     expect(disabledTools).not.toContain("oracle_search_markets");
-
-    process.env.BIZBOT_PLUGIN_ORACLE_ENABLED = "true";
-    const enabledTools = getAllToolDefinitions(undefined, { agentProfile: "mcp_operator" }).map((tool) => tool.name);
-    expect(enabledTools).toContain("oracle_search_markets");
-    expect(enabledTools).toContain("oracle_get_market_verdict");
-    expect(enabledTools).toContain("oracle_analyze_prediction");
-    expect(enabledTools).toContain("oracle_open_personality_selector");
-    expect(enabledTools).toContain("oracle_watch_prediction");
-    expect(enabledTools).toContain("oracle_list_predictions");
+    expect(disabledTools).not.toContain("oracle_get_market_verdict");
+    expect(disabledTools).not.toContain("oracle_analyze_prediction");
+    expect(disabledTools).not.toContain("oracle_open_personality_selector");
+    expect(disabledTools).not.toContain("oracle_watch_prediction");
+    expect(disabledTools).not.toContain("oracle_list_predictions");
   });
 
   it("builds an evidence-backed Oracle prediction analysis packet", async () => {

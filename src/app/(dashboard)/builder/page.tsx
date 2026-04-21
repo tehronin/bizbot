@@ -717,6 +717,20 @@ interface BuilderProjectDetailResponse {
   error?: string;
 }
 
+interface BuilderProjectSummaryResponse {
+  project: BuilderProject;
+  brief: BuilderProjectBrief | null;
+  currentMilestone: BuilderMilestone | null;
+  currentTaskSpec: BuilderTaskSpec | null;
+  tasks: BuilderTask[];
+  currentTask: BuilderTask | null;
+  runs: BuilderRun[];
+  latestReview: BuilderReview | null;
+  metrics: BuilderHealthMetrics;
+  nextRecommendedStep: string | null;
+  error?: string;
+}
+
 interface BuilderGovernanceDecisionRecord {
   eventId: string;
   timestamp: string;
@@ -1306,6 +1320,42 @@ export default function BuilderPage() {
     });
   }
 
+  async function loadProjectSummary(projectId: string): Promise<void> {
+    const response = await fetch(`/api/builder/projects/${projectId}/summary`);
+    const payload = await readJsonResponse<BuilderProjectSummaryResponse>(response);
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load builder project summary.");
+    }
+
+    setProjectDetail((current) => {
+      if (!current || current.project.id !== projectId) {
+        return current;
+      }
+
+      return {
+        ...current,
+        project: payload.project,
+        brief: payload.brief,
+        currentMilestone: payload.currentMilestone,
+        currentTaskSpec: payload.currentTaskSpec,
+        tasks: payload.tasks,
+        currentTask: payload.currentTask,
+        runs: payload.runs,
+        latestReview: payload.latestReview,
+        metrics: payload.metrics,
+        nextRecommendedStep: payload.nextRecommendedStep,
+      };
+    });
+
+    setSelectedTaskId((current) => {
+      if (current && payload.tasks.some((task) => task.id === current)) {
+        return current;
+      }
+
+      return payload.currentTask?.id ?? payload.tasks[0]?.id ?? null;
+    });
+  }
+
   async function loadBuilderStats(projectId: string): Promise<void> {
     const response = await fetch(`/api/analytics/builder-stats?projectId=${encodeURIComponent(projectId)}`);
     const payload = await readJsonResponse<BuilderStats & { error?: string }>(response);
@@ -1641,6 +1691,17 @@ export default function BuilderPage() {
     });
   });
 
+  const refreshRunningProjectData = useEffectEvent((projectId: string) => {
+    void Promise.all([
+      loadProjectSummary(projectId),
+      loadProjectInspection(projectId).catch(() => {
+        setProjectInspection(null);
+      }),
+    ]).catch((nextError) => {
+      setError(nextError instanceof Error ? nextError.message : "Failed to refresh running Builder project state.");
+    });
+  });
+
   useEffect(() => {
     refreshBuilderData();
   }, []);
@@ -1765,7 +1826,11 @@ export default function BuilderPage() {
     }
 
     const interval = window.setInterval(() => {
-      refreshBuilderData(selectedProjectId);
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+
+      refreshRunningProjectData(selectedProjectId);
     }, 2000);
 
     return () => window.clearInterval(interval);

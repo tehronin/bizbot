@@ -7,6 +7,10 @@ import { useChat } from "@/hooks/useChat";
 import { BIZBOT_SIDECAR_EVENT } from "@/lib/sidecar/types";
 import type { ChatConversationBootstrap } from "@/lib/chat/types";
 
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/chat",
+}));
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();

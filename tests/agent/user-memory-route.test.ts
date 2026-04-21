@@ -23,16 +23,16 @@ describe("user memory route", () => {
   it("lists facts with optional category and key filters", async () => {
     mocks.getActiveMemoryFacts.mockResolvedValue([{ key: "timezone" }]);
 
-    const response = await GET(new NextRequest("http://localhost/api/user-memory?userId=user-1&category=preference&key=timezone"));
+    const response = await GET(new NextRequest("http://localhost/api/user-memory?category=preference&key=timezone"));
     const payload = await response.json();
 
     expect(response.status).toBe(200);
     expect(mocks.getActiveMemoryFacts).toHaveBeenCalledWith({
-      userId: "user-1",
+      userId: "local-user",
       categories: ["preference"],
       keys: ["timezone"],
     });
-    expect(payload).toEqual({ userId: "user-1", facts: [{ key: "timezone" }] });
+    expect(payload).toEqual({ userId: "local-user", facts: [{ key: "timezone" }] });
   });
 
   it("stores a fact through POST", async () => {
@@ -42,7 +42,6 @@ describe("user memory route", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        userId: "user-1",
         category: "identity",
         key: "preferred_name",
         value: "Sam",
@@ -53,13 +52,24 @@ describe("user memory route", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.setMemoryFact).toHaveBeenCalledWith({
-      userId: "user-1",
+      userId: "local-user",
       category: "identity",
       key: "preferred_name",
       value: "Sam",
       source: "user",
     });
     expect(payload).toEqual({ fact: { key: "preferred_name", value: "Sam" } });
+  });
+
+  it("rejects explicit userId overrides", async () => {
+    const response = await GET(new NextRequest("http://localhost/api/user-memory?userId=user-1"));
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload).toEqual({
+      error: "Explicit userId overrides are not allowed.",
+      code: "user_id_override_not_allowed",
+    });
   });
 
   it("forgets a fact through DELETE", async () => {

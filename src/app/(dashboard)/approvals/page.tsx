@@ -1,5 +1,6 @@
 "use client";
 
+import { BIZBOT_APPROVALS_CHANGED_EVENT } from "@/components/layout/DashboardShellStateProvider";
 import { PaginationControls } from "@/components/layout/PaginationControls";
 import { usePagination } from "@/hooks/usePagination";
 import { useApprovals } from "@/hooks/useApprovals";
@@ -14,6 +15,7 @@ export default function ApprovalsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision }),
     });
+    window.dispatchEvent(new Event(BIZBOT_APPROVALS_CHANGED_EVENT));
     reload();
   }
 

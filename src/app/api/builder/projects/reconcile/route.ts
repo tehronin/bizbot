@@ -1,4 +1,5 @@
 import { reconcileBuilderWorkspaceProjects } from "@/lib/builder/projects";
+import { apiErrorResponse } from "@/lib/api/errors";
 
 export async function POST() {
   try {
@@ -8,6 +9,6 @@ export async function POST() {
       summary: `Scanned ${result.scanned} Builder workspace folders. Verified ${result.verified}, relinked ${result.relinked}, imported ${result.imported}, rebound metadata ${result.metadataRebound}, ignored ${result.ignored}.`,
     });
   } catch (error) {
-    return Response.json({ error: String(error) }, { status: 500 });
+    return apiErrorResponse(error, "[api/builder/projects/reconcile] POST failed");
   }
 }

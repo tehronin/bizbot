@@ -82,6 +82,14 @@ interface ScannedBuilderWorkspaceProject {
   metadataOnly?: boolean;
 }
 
+async function runBuilderTransaction<T>(callback: (client: Prisma.TransactionClient | typeof db) => Promise<T>): Promise<T> {
+  if (typeof db.$transaction === "function") {
+    return db.$transaction((tx) => callback(tx));
+  }
+
+  return callback(db);
+}
+
 function slugifySegment(value: string): string {
   const slug = value
     .trim()
@@ -216,14 +224,17 @@ function scanBuilderWorkspaceProjects(): ScannedBuilderWorkspaceProject[] {
   return results;
 }
 
-async function resolveUniqueImportedSlug(baseValue: string): Promise<string> {
+async function resolveUniqueImportedSlug(
+  baseValue: string,
+  client: Pick<Prisma.TransactionClient, "builderProject"> | Pick<typeof db, "builderProject"> = db,
+): Promise<string> {
   const baseSlug = slugifySegment(baseValue);
   let attempt = 0;
 
   while (attempt < 100) {
     const suffix = attempt === 0 ? "" : `-${attempt + 1}`;
     const candidateSlug = `${baseSlug}${suffix}`;
-    const existing = await db.builderProject.findFirst({
+    const existing = await client.builderProject.findFirst({
       where: {
         OR: [{ slug: candidateSlug }],
       },
@@ -414,10 +425,10 @@ export async function reconcileBuilderWorkspaceProjects(): Promise<BuilderWorksp
     const byId = existingById.get(scanned.metadata.projectId) ?? null;
     if (byId) {
       if (byId.relativePath !== scanned.relativePath) {
-        const updated = await db.builderProject.update({
+        const updated = await runBuilderTransaction((tx) => tx.builderProject.update({
           where: { id: byId.id },
           data: { relativePath: scanned.relativePath },
-        });
+        }));
         existingById.set(updated.id, updated);
         existingByRelativePath.delete(byId.relativePath);
         existingByRelativePath.set(updated.relativePath, updated);
@@ -458,23 +469,6 @@ export async function reconcileBuilderWorkspaceProjects(): Promise<BuilderWorksp
       continue;
     }
 
-    const conflictingRelativePath = await db.builderProject.findFirst({
-      where: {
-        OR: [{ relativePath: scanned.relativePath }],
-      },
-    });
-    if (conflictingRelativePath) {
-      ignored += 1;
-      entries.push({
-        action: "ignored",
-        projectId: conflictingRelativePath.id,
-        relativePath: scanned.relativePath,
-        metadataProjectId: scanned.metadata.projectId,
-        summary: `Ignored ${scanned.relativePath} because the relative path is already claimed by ${conflictingRelativePath.name}.`,
-      });
-      continue;
-    }
-
     // Skip orphaned metadata-only directories (e.g. stale E2E test artifacts)
     // that have no DB record and no real project files beyond .builder/.
     if (scanned.metadataOnly) {
@@ -489,17 +483,17 @@ export async function reconcileBuilderWorkspaceProjects(): Promise<BuilderWorksp
       continue;
     }
 
-    const importedProject = await db.builderProject.create({
+    const importedProject = await runBuilderTransaction(async (tx) => tx.builderProject.create({
       data: {
         id: scanned.metadata.projectId,
         name: scanned.metadata.name,
-        slug: await resolveUniqueImportedSlug(scanned.metadata.slug || path.posix.basename(scanned.relativePath)),
+        slug: await resolveUniqueImportedSlug(scanned.metadata.slug || path.posix.basename(scanned.relativePath), tx),
         relativePath: scanned.relativePath,
         template: scanned.metadata.template,
         packageManager: scanned.metadata.packageManager,
         gitInitialized: fs.existsSync(path.join(scanned.absolutePath, ".git")),
       },
-    });
+    }));
     existingById.set(importedProject.id, importedProject);
     existingByRelativePath.set(importedProject.relativePath, importedProject);
     writeBuilderProjectMetadata(importedProject);
@@ -540,17 +534,19 @@ export async function deleteBuilderProject(projectId: string, options?: { delete
 }
 
 export async function createBuilderRun(input: CreateBuilderRunInput): Promise<BuilderRun> {
-  await db.builderProject.update({ where: { id: input.projectId }, data: { lastRunStatus: "RUNNING" } });
-  return db.builderRun.create({
-    data: {
-      projectId: input.projectId,
-      taskId: input.taskId,
-      kind: input.kind,
-      title: input.title,
-      command: input.command,
-      args: input.args as never,
-      metadata: input.metadata as never,
-    },
+  return runBuilderTransaction(async (tx) => {
+    await tx.builderProject.update({ where: { id: input.projectId }, data: { lastRunStatus: "RUNNING" } });
+    return tx.builderRun.create({
+      data: {
+        projectId: input.projectId,
+        taskId: input.taskId,
+        kind: input.kind,
+        title: input.title,
+        command: input.command,
+        args: input.args as never,
+        metadata: input.metadata as never,
+      },
+    });
   });
 }
 
@@ -565,23 +561,25 @@ export async function updateBuilderRun(
     }
   }
 
-  const run = await db.builderRun.update({
-    where: { id: runId },
-    data: {
-      ...(result.status !== undefined ? { status: result.status } : {}),
-      ...(result.stdout !== undefined ? { stdout: result.stdout } : {}),
-      ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
-      ...(result.summary !== undefined ? { summary: result.summary } : {}),
-      ...(result.metadata !== undefined ? { metadata: result.metadata as never } : {}),
-      ...(result.finishedAt !== undefined ? { finishedAt: result.finishedAt } : {}),
-    },
+  return runBuilderTransaction(async (tx) => {
+    const run = await tx.builderRun.update({
+      where: { id: runId },
+      data: {
+        ...(result.status !== undefined ? { status: result.status } : {}),
+        ...(result.stdout !== undefined ? { stdout: result.stdout } : {}),
+        ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+        ...(result.summary !== undefined ? { summary: result.summary } : {}),
+        ...(result.metadata !== undefined ? { metadata: result.metadata as never } : {}),
+        ...(result.finishedAt !== undefined ? { finishedAt: result.finishedAt } : {}),
+      },
+    });
+
+    if (result.status && result.status !== "RUNNING") {
+      await tx.builderProject.update({ where: { id: run.projectId }, data: { lastRunStatus: result.status } });
+    }
+
+    return run;
   });
-
-  if (result.status && result.status !== "RUNNING") {
-    await db.builderProject.update({ where: { id: run.projectId }, data: { lastRunStatus: result.status } });
-  }
-
-  return run;
 }
 
 export async function completeBuilderRun(
@@ -593,20 +591,22 @@ export async function completeBuilderRun(
     return existingRun;
   }
 
-  const run = await db.builderRun.update({
-    where: { id: runId },
-    data: {
-      status: result.status,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      summary: result.summary,
-      metadata: result.metadata as never,
-      finishedAt: new Date(),
-    },
-  });
+  return runBuilderTransaction(async (tx) => {
+    const run = await tx.builderRun.update({
+      where: { id: runId },
+      data: {
+        status: result.status,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        summary: result.summary,
+        metadata: result.metadata as never,
+        finishedAt: new Date(),
+      },
+    });
 
-  await db.builderProject.update({ where: { id: run.projectId }, data: { lastRunStatus: result.status } });
-  return run;
+    await tx.builderProject.update({ where: { id: run.projectId }, data: { lastRunStatus: result.status } });
+    return run;
+  });
 }
 
 export async function listBuilderRuns(projectId?: string, limit = 25): Promise<BuilderRun[]> {

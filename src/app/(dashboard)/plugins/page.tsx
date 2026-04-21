@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+const BIZBOT_PLUGINS_CHANGED_EVENT = "bizbot:plugins-changed";
+
 interface PluginCatalogEntry {
   id: string;
   kind: "builtin" | "external";
@@ -278,6 +280,12 @@ export default function PluginsPage() {
   const [formState, setFormState] = useState<ExternalPluginFormState>(EMPTY_EXTERNAL_FORM);
   const [formBusy, setFormBusy] = useState(false);
 
+  function notifyPluginCatalogChanged(): void {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(BIZBOT_PLUGINS_CHANGED_EVENT));
+    }
+  }
+
   async function refresh(): Promise<void> {
     setError(null);
     try {
@@ -336,6 +344,7 @@ export default function PluginsPage() {
       }
 
       setData(payload);
+      notifyPluginCatalogChanged();
       setFormState(EMPTY_EXTERNAL_FORM);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to save external plugin.");
@@ -360,6 +369,7 @@ export default function PluginsPage() {
         throw new Error(payload.error ?? "Failed to update plugin state.");
       }
       setData(payload);
+      notifyPluginCatalogChanged();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to update plugin state.");
     } finally {
@@ -387,6 +397,7 @@ export default function PluginsPage() {
         throw new Error(payload.error ?? "Failed to remove plugin.");
       }
       setData(payload);
+      notifyPluginCatalogChanged();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to remove plugin.");
     } finally {

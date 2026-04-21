@@ -25,19 +25,22 @@ describe("oracle MCP exposure", () => {
     vi.unstubAllGlobals();
   });
 
-  it("stays hidden until explicitly enabled", async () => {
+  it("is enabled by default and can be explicitly disabled", async () => {
     delete process.env.BIZBOT_PLUGIN_ORACLE_ENABLED;
+    const defaultResult = await callMcp("tools/list", {}, "oracle-tools-default");
+    const defaultTools = defaultResult.result.tools.map((tool: { name: string }) => tool.name);
+    expect(defaultTools).toContain("oracle_open_personality_selector");
+    expect(defaultTools).toContain("oracle_analyze_prediction");
+    expect(defaultTools).toContain("oracle_search_markets");
+    expect(defaultTools).toContain("oracle_get_market_verdict");
+
+    process.env.BIZBOT_PLUGIN_ORACLE_ENABLED = "false";
     const disabledResult = await callMcp("tools/list", {}, "oracle-tools-disabled");
     const disabledTools = disabledResult.result.tools.map((tool: { name: string }) => tool.name);
+    expect(disabledTools).not.toContain("oracle_open_personality_selector");
+    expect(disabledTools).not.toContain("oracle_analyze_prediction");
     expect(disabledTools).not.toContain("oracle_search_markets");
-
-    process.env.BIZBOT_PLUGIN_ORACLE_ENABLED = "true";
-    const enabledResult = await callMcp("tools/list", {}, "oracle-tools-enabled");
-    const enabledTools = enabledResult.result.tools.map((tool: { name: string }) => tool.name);
-    expect(enabledTools).toContain("oracle_open_personality_selector");
-    expect(enabledTools).toContain("oracle_analyze_prediction");
-    expect(enabledTools).toContain("oracle_search_markets");
-    expect(enabledTools).toContain("oracle_get_market_verdict");
+    expect(disabledTools).not.toContain("oracle_get_market_verdict");
   });
 
   it("executes a read-only Oracle tool through MCP when enabled", async () => {

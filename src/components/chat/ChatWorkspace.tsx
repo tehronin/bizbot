@@ -39,6 +39,25 @@ interface KnowledgeDashboardResponse {
   files: KnowledgeDashboardFile[];
 }
 
+const CHAT_INPUT_DRAFT_STORAGE_KEY = "bizbot:chat-input-draft";
+const SELECTED_CONVERSATION_STORAGE_KEY = "bizbot:selected-chat-conversation-id";
+
+function getChatInputDraftStorageKey(conversationId: string | null): string {
+  return `${CHAT_INPUT_DRAFT_STORAGE_KEY}:${conversationId ?? "new"}`;
+}
+
+function getActiveDraftConversationId(conversationId: string | null): string | null {
+  if (conversationId) {
+    return conversationId;
+  }
+
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(SELECTED_CONVERSATION_STORAGE_KEY);
+}
+
 function inferCategoryFromText(content: string): MemoryFactCategory {
   const lower = content.toLowerCase();
   if (/name|call me|i am|i'm/.test(lower)) return "identity";
@@ -1481,6 +1500,31 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
     setHistoryFromDraft(chat.historyFilters.from ?? "");
     setHistoryToDraft(chat.historyFilters.to ?? "");
   }, [chat.historyFilters]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const draftConversationId = getActiveDraftConversationId(chat.conversationId);
+    const storedDraft = window.sessionStorage.getItem(getChatInputDraftStorageKey(draftConversationId));
+    setInput(storedDraft ?? "");
+  }, [chat.conversationId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const draftConversationId = getActiveDraftConversationId(chat.conversationId);
+    const storageKey = getChatInputDraftStorageKey(draftConversationId);
+    if (input.trim()) {
+      window.sessionStorage.setItem(storageKey, input);
+      return;
+    }
+
+    window.sessionStorage.removeItem(storageKey);
+  }, [chat.conversationId, input]);
 
   function updateTranscriptPinState(): void {
     const viewport = transcriptViewportRef.current;

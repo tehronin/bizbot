@@ -16,7 +16,7 @@ export const BUILTIN_PLUGIN_TOGGLES: BuiltinPluginToggleDefinition[] = [
     description: "Social publishing, replies, mentions, and analytics.",
     tags: ["social", "publishing"],
     envKey: "BIZBOT_PLUGIN_SOCIAL_ENABLED",
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
   {
     id: "commerce",
@@ -24,7 +24,7 @@ export const BUILTIN_PLUGIN_TOGGLES: BuiltinPluginToggleDefinition[] = [
     description: "Local-first products and orders for sales workflows.",
     tags: ["commerce", "sales"],
     envKey: "BIZBOT_PLUGIN_COMMERCE_ENABLED",
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
   {
     id: "content",
@@ -56,7 +56,7 @@ export const BUILTIN_PLUGIN_TOGGLES: BuiltinPluginToggleDefinition[] = [
     description: "Read-only company data source registration, profiling, and grounded retrieval planning.",
     tags: ["creeper", "data", "research"],
     envKey: "BIZBOT_PLUGIN_CREEPER_ENABLED",
-    defaultEnabled: false,
+    defaultEnabled: true,
   },
   {
     id: "delegation",
@@ -104,7 +104,7 @@ export const BUILTIN_PLUGIN_TOGGLES: BuiltinPluginToggleDefinition[] = [
     description: "Google Business Profile reviews, posts, and hours.",
     tags: ["local-business", "reputation"],
     envKey: "BIZBOT_PLUGIN_LOCAL_BUSINESS_ENABLED",
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
   {
     id: "schedule",
@@ -112,7 +112,7 @@ export const BUILTIN_PLUGIN_TOGGLES: BuiltinPluginToggleDefinition[] = [
     description: "Publishing schedule management.",
     tags: ["schedule", "publishing"],
     envKey: "BIZBOT_PLUGIN_SCHEDULE_ENABLED",
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
   {
     id: "approval",
@@ -144,7 +144,7 @@ export const BUILTIN_PLUGIN_TOGGLES: BuiltinPluginToggleDefinition[] = [
     description: "Read-only Polymarket market search, verdicts, and Sidecar-powered selection flows.",
     tags: ["oracle", "markets", "research"],
     envKey: "BIZBOT_PLUGIN_ORACLE_ENABLED",
-    defaultEnabled: false,
+    defaultEnabled: true,
   },
   {
     id: "conversation-bridge",

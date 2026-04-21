@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChat, type UseChatResult } from "@/hooks/useChat";
 import type { ChatConversationBootstrap } from "@/lib/chat/types";
 
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/chat",
+}));
+
 let latestChat: UseChatResult | null = null;
 
 function ensureLocalStorage(): Storage {
