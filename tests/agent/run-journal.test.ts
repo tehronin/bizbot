@@ -9,6 +9,7 @@ vi.mock("@/lib/files/workspace", () => ({
 }));
 
 import {
+  clearAgentRuns,
   deleteAgentRun,
   deleteUsageLedgerEntry,
   getConversationUsageSummary,
@@ -182,6 +183,34 @@ describe("run journal usage ledger", () => {
     expect(deleted.deletedCount).toBe(1);
     expect(listAgentRuns()).toHaveLength(0);
     expect(getUsageLedgerSnapshot().entries).toHaveLength(0);
+  });
+
+  it("clears all persisted agent runs", () => {
+    const runA = startAgentRun({
+      conversationId: "conversation-1",
+      profile: "general_operator",
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      userMessage: "first",
+      availableTools: [],
+    });
+    const runB = startAgentRun({
+      conversationId: "conversation-2",
+      profile: "content_operator",
+      provider: "openai",
+      model: "gpt-4o",
+      userMessage: "second",
+      availableTools: [],
+    });
+
+    completeAgentRun(runA.runId, { status: "completed", roundsCompleted: 0, reply: "ok" });
+    completeAgentRun(runB.runId, { status: "failed", roundsCompleted: 0, error: "boom" });
+
+    const cleared = clearAgentRuns();
+
+    expect(cleared.deletedCount).toBe(2);
+    expect(cleared.deletedRunIds).toEqual(expect.arrayContaining([runA.runId, runB.runId]));
+    expect(listAgentRuns()).toHaveLength(0);
   });
 
   it("loads legacy run files that do not include usage rounds", () => {

@@ -1016,6 +1016,19 @@ export function deleteUsageLedgerEntry(entryId: string): { entryId: string; dele
   };
 }
 
+export function clearAgentRuns(): { deletedRunIds: string[]; deletedCount: number } {
+  const runs = listAgentRuns();
+
+  for (const run of runs) {
+    fs.unlinkSync(getRunFilePath(run.runId));
+  }
+
+  return {
+    deletedRunIds: runs.map((run) => run.runId),
+    deletedCount: runs.length,
+  };
+}
+
 export function countDelegationDepth(runId: string): number {
   let depth = 0;
   let current = readRunOrNull(runId);

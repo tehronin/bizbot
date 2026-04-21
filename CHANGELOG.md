@@ -2,6 +2,7 @@
 
 ## 2026-04-21
 
+- Added Operations history clear actions for recent agent runs, heartbeat jobs, and MCP jobs, backed by a new `/api/operations/history` route that removes persisted run-journal records and prunes completed or failed BullMQ history without disturbing active work.
 - Restored chat-route continuity by reworking `useChat` bootstrap coordination around route-aware scheduling, one-time initial hydration, and safer cancellation handling, which fixed empty chat returns after navigating away and removed several bootstrap race conditions surfaced by tests.
 - Changed builtin plugin defaults so unfinished social, commerce, local-business, and schedule surfaces stay off by default while Oracle and Creeper are enabled, and tightened dashboard navigation to hide plugin-owned sidebar entries whenever their backing plugin is disabled.
 - Reduced repeated dashboard churn by centralizing approval-count state in a shared shell provider, broadcasting plugin and approval catalog changes across the shell, and narrowing active Builder polling to a lightweight project-summary endpoint plus inspection refresh instead of repeatedly loading the full detail payload.

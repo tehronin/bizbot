@@ -167,6 +167,43 @@ export async function listMcpJobs(
     .slice(0, normalizedLimit);
 }
 
+export async function clearMcpJobHistory(
+  statuses: McpJobStatus[] = ["completed", "failed"],
+  batchSize = 100,
+): Promise<{ deletedCount: number; queueNames: string[]; statuses: McpJobStatus[] }> {
+  if (!(await isBullMqRedisAvailable())) {
+    return { deletedCount: 0, queueNames: [MCP_EMBEDDINGS_QUEUE_NAME, MCP_ONTOLOGY_QUEUE_NAME, MCP_CLEANUP_QUEUE_NAME], statuses };
+  }
+
+  const normalizedBatchSize = Math.max(1, Math.min(Math.trunc(batchSize), 500));
+  const queues = getQueues();
+  let deletedCount = 0;
+
+  for (const queue of queues) {
+    for (const status of statuses) {
+      while (true) {
+        const jobs = await queue.getJobs([status], 0, normalizedBatchSize - 1, false);
+        if (jobs.length === 0) {
+          break;
+        }
+
+        await Promise.all(jobs.map((job) => job.remove()));
+        deletedCount += jobs.length;
+
+        if (jobs.length < normalizedBatchSize) {
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    deletedCount,
+    queueNames: queues.map((queue) => queue.name),
+    statuses,
+  };
+}
+
 function getQueueByName(queueName: string): SupportedMcpQueue {
   switch (queueName) {
     case MCP_EMBEDDINGS_QUEUE_NAME:

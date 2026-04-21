@@ -93,6 +93,7 @@ const EMPTY_COUNTS: Record<string, number> = {
 export default function OperationsPage() {
   const [data, setData] = useState<OperationsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [clearTarget, setClearTarget] = useState<"runs" | "jobs" | "mcpJobs" | null>(null);
 
   async function refresh(): Promise<void> {
     setError(null);
@@ -105,6 +106,28 @@ export default function OperationsPage() {
       setData(payload);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to load operations status.");
+    }
+  }
+
+  async function clearHistory(target: "runs" | "jobs" | "mcpJobs"): Promise<void> {
+    setClearTarget(target);
+    setError(null);
+    try {
+      const response = await fetch("/api/operations/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to clear operations history.");
+      }
+
+      await refresh();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to clear operations history.");
+    } finally {
+      setClearTarget(null);
     }
   }
 
@@ -242,7 +265,16 @@ export default function OperationsPage() {
 
       <section className="space-y-5">
         <section className="border p-4 border-border bg-surface">
-          <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">recent runs</div>
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="text-xs uppercase tracking-[0.24em] text-muted">recent runs</div>
+            <button
+              onClick={() => void clearHistory("runs")}
+              disabled={clearTarget !== null || (data?.runs.length ?? 0) === 0}
+              className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-border-sub text-dim disabled:opacity-50"
+            >
+              {clearTarget === "runs" ? "clearing..." : "clear runs"}
+            </button>
+          </div>
           <div className="space-y-3 text-sm">
             {runsPagination.pageItems.map((run) => (
               <div key={run.runId} className="border p-3 border-border-sub bg-raised">
@@ -271,7 +303,16 @@ export default function OperationsPage() {
         </section>
 
         <section className="border p-4 border-border bg-surface">
-          <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">recent jobs</div>
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="text-xs uppercase tracking-[0.24em] text-muted">recent jobs</div>
+            <button
+              onClick={() => void clearHistory("jobs")}
+              disabled={clearTarget !== null || (data?.jobs.length ?? 0) === 0}
+              className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-border-sub text-dim disabled:opacity-50"
+            >
+              {clearTarget === "jobs" ? "clearing..." : "clear jobs"}
+            </button>
+          </div>
           <div className="space-y-3 text-sm">
             {jobsPagination.pageItems.map((job) => (
               <div key={job.id} className="border p-3 border-border-sub bg-raised">
@@ -290,7 +331,16 @@ export default function OperationsPage() {
         </section>
 
         <section className="border p-4 border-border bg-surface">
-          <div className="text-xs uppercase tracking-[0.24em] mb-4 text-muted">recent mcp jobs</div>
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="text-xs uppercase tracking-[0.24em] text-muted">recent mcp jobs</div>
+            <button
+              onClick={() => void clearHistory("mcpJobs")}
+              disabled={clearTarget !== null || (data?.mcpJobs.length ?? 0) === 0}
+              className="px-3 py-2 border text-xs uppercase tracking-[0.18em] border-border-sub text-dim disabled:opacity-50"
+            >
+              {clearTarget === "mcpJobs" ? "clearing..." : "clear mcp jobs"}
+            </button>
+          </div>
           <div className="space-y-3 text-sm">
             {mcpJobsPagination.pageItems.map((job) => (
               <div key={`${job.queueName}-${job.id}`} className="border p-3 border-border-sub bg-raised">

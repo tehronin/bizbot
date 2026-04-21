@@ -163,6 +163,37 @@ export async function listAgentHeartbeatJobs(
   }));
 }
 
+export async function clearAgentHeartbeatJobHistory(
+  statuses: AgentHeartbeatJobStatus[] = ["completed", "failed"],
+  batchSize = 100,
+): Promise<{ deletedCount: number; statuses: AgentHeartbeatJobStatus[] }> {
+  if (!(await isBullMqRedisAvailable())) {
+    return { deletedCount: 0, statuses };
+  }
+
+  const queue = getAgentHeartbeatQueue();
+  const normalizedBatchSize = Math.max(1, Math.min(Math.trunc(batchSize), 500));
+  let deletedCount = 0;
+
+  for (const status of statuses) {
+    while (true) {
+      const jobs = await queue.getJobs([status], 0, normalizedBatchSize - 1, false);
+      if (jobs.length === 0) {
+        break;
+      }
+
+      await Promise.all(jobs.map((job) => job.remove()));
+      deletedCount += jobs.length;
+
+      if (jobs.length < normalizedBatchSize) {
+        break;
+      }
+    }
+  }
+
+  return { deletedCount, statuses };
+}
+
 export async function retryAgentHeartbeatJob(jobId: string): Promise<{ retried: boolean; jobId: string }> {
   const queue = getAgentHeartbeatQueue();
   const job = await queue.getJob(jobId);
