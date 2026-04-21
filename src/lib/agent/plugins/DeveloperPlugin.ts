@@ -865,7 +865,13 @@ export const developerPlugin = {
           },
           exposure: inspection.exposure,
           currentCatalog: {
-            tools: previewCatalog.listCurrentMcpToolDescriptors().map((tool) => ({ name: tool.name, ownerId: tool.ownerId })),
+            tools: previewCatalog.listCurrentMcpToolDescriptors().map((tool) => ({
+              name: tool.name,
+              ownerId: tool.ownerId,
+              ownerLabel: tool.ownerLabel,
+              ownerKind: tool.ownerKind,
+              provenance: tool.provenance,
+            })),
             prompts: previewCatalog.listBizBotPromptDefinitions().map((prompt) => ({ name: prompt.name, ownerId: prompt.ownerId })),
             resources: previewCatalog.listBizBotResourceDefinitions().map((resource) => ({ uri: resource.uri, ownerId: resource.ownerId })),
           },
@@ -875,7 +881,7 @@ export const developerPlugin = {
           ],
         };
       },
-    } satisfies ToolDefinition<PluginLocatorArgs, { plugin: InspectablePluginShape["metadata"]; exposure: ReturnType<typeof inspectPluginDefinition>["exposure"]; currentCatalog: { tools: Array<{ name: string; ownerId: string }>; prompts: Array<{ name: string; ownerId: string }>; resources: Array<{ uri: string; ownerId: string }> }; notes: string[] }>)),
+    } satisfies ToolDefinition<PluginLocatorArgs, { plugin: InspectablePluginShape["metadata"]; exposure: ReturnType<typeof inspectPluginDefinition>["exposure"]; currentCatalog: { tools: Array<{ name: string; ownerId: string; ownerLabel: string; ownerKind: string; provenance: unknown }>; prompts: Array<{ name: string; ownerId: string }>; resources: Array<{ uri: string; ownerId: string }> }; notes: string[] }>)),
     registerTool(defineTool({
       name: "developer_explain_registry_conflict",
       description: "Explain why a tool or plugin id conflicts, where current ownership lives, and what resolution paths make sense.",

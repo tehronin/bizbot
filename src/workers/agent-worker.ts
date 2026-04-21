@@ -2,6 +2,8 @@ import "dotenv/config";
 import { Worker } from "bullmq";
 import { db } from "@/lib/db";
 import { runAgentHeartbeat } from "@/lib/agent/heartbeat";
+import { CREEPER_INGESTION_QUEUE_NAME } from "@/lib/creeper/jobs";
+import { processCreeperIngestionJob } from "@/lib/creeper/worker-jobs";
 import {
   AGENT_HEARTBEAT_QUEUE_NAME,
   ensureAgentHeartbeatScheduler,
@@ -62,6 +64,22 @@ async function main(): Promise<void> {
       await setWorkerSetting("agent_worker_last_job_finished_at", new Date().toISOString());
       await recordWorkerPulse();
       return summary;
+    },
+    {
+      connection,
+      concurrency: 1,
+    },
+  );
+
+  const creeperIngestionWorker = new Worker(
+    CREEPER_INGESTION_QUEUE_NAME,
+    async (job) => {
+      await setWorkerSetting("creeper_worker_last_job_started_at", new Date().toISOString());
+      await recordWorkerPulse();
+      const result = await processCreeperIngestionJob(job.data);
+      await setWorkerSetting("creeper_worker_last_job_finished_at", new Date().toISOString());
+      await recordWorkerPulse();
+      return result;
     },
     {
       connection,
@@ -133,6 +151,10 @@ async function main(): Promise<void> {
     console.info(`[mcp cleanup worker] completed job ${job.id}`);
   });
 
+  creeperIngestionWorker.on("completed", (job) => {
+    console.info(`[creeper ingestion worker] completed job ${job.id}`);
+  });
+
   worker.on("failed", (job, error) => {
     console.error(`[agent worker] failed job ${job?.id ?? "unknown"}`, error);
   });
@@ -147,6 +169,10 @@ async function main(): Promise<void> {
 
   mcpCleanupWorker.on("failed", (job, error) => {
     console.error(`[mcp cleanup worker] failed job ${job?.id ?? "unknown"}`, error);
+  });
+
+  creeperIngestionWorker.on("failed", (job, error) => {
+    console.error(`[creeper ingestion worker] failed job ${job?.id ?? "unknown"}`, error);
   });
 
   worker.on("error", (error) => {
@@ -165,10 +191,15 @@ async function main(): Promise<void> {
     console.error("[mcp cleanup worker] worker error", error);
   });
 
+  creeperIngestionWorker.on("error", (error) => {
+    console.error("[creeper ingestion worker] worker error", error);
+  });
+
   const shutdown = async (signal: string): Promise<void> => {
     console.info(`[agent worker] shutting down on ${signal}`);
     clearInterval(pulseInterval);
     await closeMcpClients();
+    await creeperIngestionWorker.close();
     await mcpCleanupWorker.close();
     await mcpOntologyWorker.close();
     await mcpEmbeddingsWorker.close();
@@ -190,6 +221,7 @@ async function main(): Promise<void> {
   console.info(`[agent worker] listening on queue ${MCP_EMBEDDINGS_QUEUE_NAME}`);
   console.info(`[agent worker] listening on queue ${MCP_ONTOLOGY_QUEUE_NAME}`);
   console.info(`[agent worker] listening on queue ${MCP_CLEANUP_QUEUE_NAME}`);
+  console.info(`[agent worker] listening on queue ${CREEPER_INGESTION_QUEUE_NAME}`);
 }
 
 void main().catch(async (error) => {

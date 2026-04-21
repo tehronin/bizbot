@@ -8,6 +8,7 @@ import { competitorPlugin } from "./CompetitorPlugin";
 import { conversationBridgePlugin } from "./ConversationBridgePlugin";
 import { commercePlugin } from "./CommercePlugin";
 import { contentPlugin } from "./ContentPlugin";
+import { creeperPlugin } from "./CreeperPlugin";
 import { crmPlugin } from "./CrmPlugin";
 import { delegationPlugin } from "./DelegationPlugin";
 import { developerPlugin } from "./DeveloperPlugin";
@@ -33,6 +34,8 @@ function resolveBuiltinPluginModule(id: string): BizBotPluginModule | null {
       return crmPlugin;
     case "builder":
       return builderPlugin;
+    case "creeper":
+      return creeperPlugin;
     case "delegation":
       return delegationPlugin;
     case "developer":

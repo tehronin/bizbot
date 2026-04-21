@@ -9,6 +9,7 @@ import { listPendingBuilderInteractionCards } from "@/lib/builder/interactions";
 import { listBuilderProjects } from "@/lib/builder/projects";
 import { listBuilderStackPresets } from "@/lib/builder/stacks";
 import { DEFAULT_BUILDER_TEMPLATE_PRESETS } from "@/lib/builder/template-presets";
+import { listCreeperCompanyProfiles } from "@/lib/creeper/profiles";
 import {
   buildChatExecutionCatalog,
   DEFAULT_CHAT_EXECUTION_MODE,
@@ -45,6 +46,12 @@ type ConversationRow = Prisma.ConversationGetPayload<{
         relativePath: true;
       };
     };
+    companyProfile: {
+      select: {
+        id: true;
+        name: true;
+      };
+    };
     _count: {
       select: { messages: true };
     };
@@ -67,6 +74,12 @@ type ConversationSummaryRow = Prisma.ConversationGetPayload<{
         id: true;
         name: true;
         relativePath: true;
+      };
+    };
+    companyProfile: {
+      select: {
+        id: true;
+        name: true;
       };
     };
     _count: {
@@ -228,6 +241,8 @@ function serializeSummary(row: ConversationSummaryRow): ChatConversationSummary 
     builderProjectId: row.builderProject?.id ?? null,
     builderProjectName: row.builderProject?.name ?? null,
     builderProjectRelativePath: row.builderProject?.relativePath ?? null,
+    companyProfileId: row.companyProfile?.id ?? null,
+    companyProfileName: row.companyProfile?.name ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lastMessageAt: row.lastMessageAt ? row.lastMessageAt.toISOString() : null,
@@ -360,6 +375,12 @@ async function fetchConversationRows(
           id: true,
           name: true,
           relativePath: true,
+        },
+      },
+      companyProfile: {
+        select: {
+          id: true,
+          name: true,
         },
       },
       _count: {
@@ -601,6 +622,12 @@ export async function listBuilderProjectConversations(
           relativePath: true,
         },
       },
+      companyProfile: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
       messages: {
         select: {
           content: true,
@@ -644,6 +671,12 @@ export async function getConversationDetail(
           relativePath: true,
         },
       },
+      companyProfile: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
       _count: {
         select: { messages: true },
       },
@@ -667,6 +700,7 @@ export async function resolveChatBootstrap(options?: {
   userId?: string;
   selectedConversationId?: string | null;
   selectedBuilderProjectId?: string | null;
+  selectedCreeperCompanyProfileId?: string | null;
   recentPage?: number;
   archivedPage?: number;
   pageSize?: number;
@@ -675,7 +709,7 @@ export async function resolveChatBootstrap(options?: {
   const userId = resolveAgentUserId(options?.userId);
   await ensureConversationUser(userId);
 
-  const [recentPage, archivedPage, preferredConversation, fallbackConversation, pricingSetting, chatVerbositySetting, builderProjects, builderInbox] = await Promise.all([
+  const [recentPage, archivedPage, preferredConversation, fallbackConversation, pricingSetting, chatVerbositySetting, builderProjects, builderInbox, creeperCompanyProfiles] = await Promise.all([
     fetchConversationPage(userId, "active", {
       page: options?.recentPage,
       pageSize: options?.pageSize,
@@ -700,6 +734,7 @@ export async function resolveChatBootstrap(options?: {
     }),
     listBuilderProjects(),
     listPendingBuilderInteractionCards({ conversationId: options?.selectedConversationId ?? null }),
+    listCreeperCompanyProfiles(24),
   ]);
 
   const builderProjectOptions: ChatBuilderProjectSummary[] = builderProjects
@@ -742,6 +777,14 @@ export async function resolveChatBootstrap(options?: {
       ? currentConversation.builderProjectId
       : builderProjectOptions[0]?.id ?? null;
   const builderProjectConversations = await listBuilderProjectConversations(effectiveBuilderProjectId, userId);
+  const requestedCreeperCompanyProfileId = typeof options?.selectedCreeperCompanyProfileId === "string"
+    ? options.selectedCreeperCompanyProfileId
+    : null;
+  const effectiveCreeperCompanyProfileId = requestedCreeperCompanyProfileId && creeperCompanyProfiles.some((profile) => profile.id === requestedCreeperCompanyProfileId)
+    ? requestedCreeperCompanyProfileId
+    : currentConversation?.companyProfileId && creeperCompanyProfiles.some((profile) => profile.id === currentConversation.companyProfileId)
+      ? currentConversation.companyProfileId
+      : null;
 
   return {
     currentConversationId,
@@ -750,6 +793,8 @@ export async function resolveChatBootstrap(options?: {
     executionCatalog,
     builderProjects: builderProjectOptions,
     builderProjectConversations,
+    creeperCompanyProfiles,
+    selectedCreeperCompanyProfileId: effectiveCreeperCompanyProfileId,
     chatVerbosity: parseChatVerbosity(chatVerbositySetting?.value),
     builderStackPresets,
     builderTemplates,

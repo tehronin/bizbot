@@ -33,6 +33,7 @@ describe("chat execution policy", () => {
     registryMocks.getEnabledBuiltinPlugins.mockReturnValue([
       { metadata: { id: "content" } },
       { metadata: { id: "social" } },
+      { metadata: { id: "creeper" } },
       { metadata: { id: "oracle" } },
     ]);
 
@@ -42,12 +43,14 @@ describe("chat execution policy", () => {
       tools: [
         { name: "content_create_post" },
         { name: "social_create_post" },
+        { name: "creeper_register_source" },
         { name: "oracle_analyze_prediction" },
         { name: "memory_get_facts" },
       ],
       toolToPluginId: new Map([
         ["content_create_post", "content"],
         ["social_create_post", "social"],
+        ["creeper_register_source", "creeper"],
         ["oracle_analyze_prediction", "oracle"],
         ["memory_get_facts", "memory"],
       ]),
@@ -62,6 +65,7 @@ describe("chat execution policy", () => {
       "just-chatting",
       "content",
       "social",
+      "creeper",
       "oracle",
     ]);
   });
@@ -81,6 +85,7 @@ describe("chat execution policy", () => {
   it("maps chat plugins to the intended operator profiles", () => {
     expect(getChatExecutionProfile({ mode: "ask", pluginId: "just-chatting" })).toBe("general_operator");
     expect(getChatExecutionProfile({ mode: "agent", pluginId: "content" })).toBe("content_operator");
+    expect(getChatExecutionProfile({ mode: "agent", pluginId: "creeper" })).toBe("analyst_operator");
     expect(getChatExecutionProfile({ mode: "agent", pluginId: "oracle" })).toBe("research_operator");
   });
 
@@ -88,6 +93,7 @@ describe("chat execution policy", () => {
     expect(resolveChatExecutionToolNames({ mode: "ask", pluginId: "content" })).toEqual([]);
     expect(resolveChatExecutionToolNames({ mode: "agent", pluginId: "just-chatting" })).toEqual([]);
     expect(resolveChatExecutionToolNames({ mode: "agent", pluginId: "content" })).toEqual(["content_create_post"]);
+    expect(resolveChatExecutionToolNames({ mode: "agent", pluginId: "creeper" })).toEqual(["creeper_register_source"]);
     expect(resolveChatExecutionToolNames({ mode: "agent", pluginId: "oracle" })).toEqual(["oracle_analyze_prediction"]);
   });
 

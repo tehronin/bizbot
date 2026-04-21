@@ -118,6 +118,18 @@ const CHAT_PLUGIN_POLICIES: ChatExecutionPluginPolicy[] = [
     ownerPluginIds: ["builder"],
   },
   {
+    id: "creeper",
+    displayName: "Creeper",
+    description: "Read-only company data source setup, profiling, and evidence-grounded investigation.",
+    accentColor: "#0f766e",
+    accentSurface: "rgba(15,118,110,0.14)",
+    accentBorder: "rgba(15,118,110,0.34)",
+    toollessInAsk: true,
+    toollessInAgent: false,
+    preferredProfile: "analyst_operator",
+    ownerPluginIds: ["creeper"],
+  },
+  {
     id: "local-business",
     displayName: "Local Business",
     description: "Reviews, listings, and reputation-facing local operations.",

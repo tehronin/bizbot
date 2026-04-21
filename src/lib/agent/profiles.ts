@@ -230,7 +230,7 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     mission: "Explain performance, pipeline movement, and operating risk with quantified evidence.",
     delegationTargets: ["sales_operator", "content_operator", "research_operator", "platform_operator"],
     toolPolicy: {
-      allowedPrefixes: ["agent_", "crm_", "social_", "memory_", "graph_", "browser_", "competitor_", "developer_", "commerce_", "local_business_", "sidecar_", "oracle_"],
+      allowedPrefixes: ["agent_", "crm_", "social_", "memory_", "graph_", "browser_", "competitor_", "developer_", "commerce_", "local_business_", "sidecar_", "oracle_", "creeper_"],
     },
     prompt: {
       systemInstruction: "Business lane: analyst operator. Quantify claims, inspect systems and pipeline state directly, and prefer structured tool outputs over narrative guesses.",
@@ -260,7 +260,7 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     mission: "Inspect and stabilize the BizBot runtime, tool surfaces, workers, and MCP control loop.",
     delegationTargets: ["analyst_operator", "general_operator", "builder_operator"],
     toolPolicy: {
-      allowedPrefixes: ["agent_", "developer_", "file_", "memory_", "graph_", "browser_", "competitor_", "crm_", "commerce_", "local_business_", "sidecar_", "oracle_"],
+      allowedPrefixes: ["agent_", "developer_", "file_", "memory_", "graph_", "browser_", "competitor_", "crm_", "commerce_", "local_business_", "sidecar_", "oracle_", "creeper_"],
       allowedTools: ["approval_get_pending", "schedule_list"],
     },
     prompt: {
@@ -298,7 +298,7 @@ const PROFILE_DESCRIPTORS: Record<AgentProfile, AgentProfileDescriptor> = {
     mission: "Expose a bounded operator-grade BizBot control surface over MCP without inheriting the full internal platform lane.",
     delegationTargets: [],
     toolPolicy: {
-      allowedPrefixes: ["builder_", "developer_", "file_", "memory_", "graph_", "crm_", "commerce_", "local_business_", "sidecar_", "oracle_"],
+      allowedPrefixes: ["builder_", "developer_", "file_", "memory_", "graph_", "crm_", "commerce_", "local_business_", "sidecar_", "oracle_", "creeper_"],
       allowedTools: ["approval_get_pending", "schedule_list"],
       deniedTools: ["agent_delegate_run"],
     },

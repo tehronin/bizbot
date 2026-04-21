@@ -12,7 +12,7 @@ import { getActiveProvider, getConfiguredProviders, getGenerationConfig, getMode
 import { getAgentCapabilities, getAgentRuntimeConfig, getAutonomyDescription } from "@/lib/agent/runtime";
 import { getEmbeddingConfig } from "@/lib/embeddings/embed";
 import { getBuiltinPlugins, getEnabledBuiltinPlugins } from "@/lib/agent/plugins/registry";
-import { createPluginRegistry } from "@/lib/agent/plugins/registry";
+import { createPluginRegistry, getBuiltinPluginTooling } from "@/lib/agent/plugins/registry";
 import { canProfileUseTool } from "@/lib/agent/profiles";
 import { normalizeBuilderTaskMetadata } from "@/lib/builder/types";
 import { getCurrentBuilderProjectOverview } from "@/lib/builder/orchestrator";
@@ -100,6 +100,29 @@ export interface BizBotResourceMetadata {
 export type ImportedMcpResourceMetadata = ImportedMcpResourceCatalogEntry;
 export type ImportedMcpPromptMetadata = ImportedMcpPromptCatalogEntry;
 
+export interface McpToolProvenance {
+  source: "builtin-plugin" | "imported-mcp" | "mcp-core" | "unknown";
+  pluginId?: string;
+  pluginVersion?: string | null;
+  pluginTags?: string[];
+  pluginInternal?: boolean;
+  envKey?: string;
+  defaultEnabled?: boolean;
+  serverName?: string;
+  originalName?: string;
+  prefixedName?: string;
+}
+
+export interface McpToolDescriptorMetadata extends ToolDescriptor {
+  title: string;
+  annotations: ReturnType<typeof getToolAnnotations>;
+  ownerId: string;
+  ownerKind: "builtin-plugin" | "imported-mcp" | "mcp-core" | "unknown";
+  ownerLabel: string;
+  ownerDescription: string | null;
+  provenance: McpToolProvenance;
+}
+
 export interface McpTaskRecipe {
   recipeId: string;
   title: string;
@@ -118,7 +141,7 @@ export interface McpDiscoveryBundle {
   title: string;
   description: string;
   rationale: string;
-  tools: Array<ToolDescriptor & { title: string; annotations: ReturnType<typeof getToolAnnotations>; ownerId: string; ownerKind: string }>;
+  tools: McpToolDescriptorMetadata[];
   prompts: BizBotPromptMetadata[];
   resources: BizBotResourceMetadata[];
   importedPrompts: ImportedMcpPromptMetadata[];
@@ -214,6 +237,14 @@ const MCP_DISCOVERY_BUNDLE_SPECS: McpDiscoveryBundleSpec[] = [
     description: "Product, order, and commerce pipeline surfaces.",
     rationale: "Use when managing BizBot's local product and order workflows.",
     toolPrefixes: ["commerce_"],
+  },
+  {
+    bundleId: "creeper",
+    title: "Creeper",
+    description: "Company onboarding, source inspection, ingestion planning, and retrieval-grounding surfaces.",
+    rationale: "Use when opening a company profile, connecting a bounded external source, profiling it, or preparing an ingestion plan for grounded investigation.",
+    toolPrefixes: ["creeper_"],
+    ownerIds: ["creeper"],
   },
   {
     bundleId: "local-business",
@@ -662,8 +693,77 @@ function canExposeToolInMcp(name: string): boolean {
   return canProfileUseTool(MCP_AGENT_PROFILE, name);
 }
 
-export function listCurrentMcpToolDescriptors(): Array<ToolDescriptor & { title: string; annotations: ReturnType<typeof getToolAnnotations>; ownerId: string; ownerKind: string }> {
+function resolveToolDescriptorMetadata(
+  tool: ToolDescriptor,
+  registry: ReturnType<typeof createPluginRegistry>,
+  importedCatalog: ReturnType<typeof getMcpClientToolCatalog>,
+): Omit<McpToolDescriptorMetadata, "title" | "description" | "parameters" | "annotations" | "name"> {
+  const ownerId = registry.toolToPluginId.get(tool.name) ?? "unknown";
+
+  if (ownerId === "external-mcp") {
+    const importedTool = importedCatalog.find((entry) => entry.prefixedName === tool.name);
+    return {
+      ownerId: importedTool?.serverName ?? ownerId,
+      ownerKind: "imported-mcp",
+      ownerLabel: importedTool ? `Imported MCP: ${importedTool.serverName}` : "Imported MCP",
+      ownerDescription: importedTool?.description ?? null,
+      provenance: {
+        source: "imported-mcp",
+        ...(importedTool ? {
+          serverName: importedTool.serverName,
+          originalName: importedTool.originalName,
+          prefixedName: importedTool.prefixedName,
+        } : {}),
+      },
+    };
+  }
+
+  if (ownerId === "core-sidecar") {
+    return {
+      ownerId,
+      ownerKind: "mcp-core",
+      ownerLabel: "Core Sidecar",
+      ownerDescription: "BizBot-owned core Sidecar control tools.",
+      provenance: {
+        source: "mcp-core",
+      },
+    };
+  }
+
+  const plugin = registry.plugins.find((entry) => entry.metadata.id === ownerId);
+  const tooling = plugin ? getBuiltinPluginTooling(plugin.metadata.id) : null;
+
+  if (plugin) {
+    return {
+      ownerId: plugin.metadata.id,
+      ownerKind: "builtin-plugin",
+      ownerLabel: plugin.metadata.displayName,
+      ownerDescription: plugin.metadata.description,
+      provenance: {
+        source: "builtin-plugin",
+        pluginId: plugin.metadata.id,
+        pluginVersion: plugin.metadata.version ?? null,
+        pluginTags: plugin.metadata.tags ?? [],
+        pluginInternal: plugin.metadata.internal ?? true,
+        ...(tooling ? { envKey: tooling.envKey, defaultEnabled: tooling.defaultEnabled } : {}),
+      },
+    };
+  }
+
+  return {
+    ownerId,
+    ownerKind: "unknown",
+    ownerLabel: ownerId,
+    ownerDescription: null,
+    provenance: {
+      source: "unknown",
+    },
+  };
+}
+
+export function listCurrentMcpToolDescriptors(): McpToolDescriptorMetadata[] {
   const registry = createPluginRegistry(getEnabledBuiltinPlugins(), getMcpClientTools());
+  const importedCatalog = getMcpClientToolCatalog();
   return registry.tools
     .filter((tool) => canExposeToolInMcp(tool.name))
     .map((tool) => ({
@@ -672,8 +772,7 @@ export function listCurrentMcpToolDescriptors(): Array<ToolDescriptor & { title:
       description: getToolDescription(tool.name, tool.description),
       parameters: tool.parameters,
       annotations: getToolAnnotations(tool.name),
-      ownerId: registry.toolToPluginId.get(tool.name) ?? "unknown",
-      ownerKind: registry.toolToPluginId.get(tool.name) === "external-mcp" ? "imported-mcp" : "builtin-plugin",
+      ...resolveToolDescriptorMetadata(tool, registry, importedCatalog),
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
 }
@@ -1328,19 +1427,63 @@ export function listBizBotResourceDefinitions(): BizBotResourceDefinition[] {
     } },
     { name: "plugins-installed", uri: "bizbot://plugins/installed", title: "Installed Plugins", description: "Builtin plugin metadata plus exposed MCP tool coverage for each plugin", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => {
       const registry = createPluginRegistry(getEnabledBuiltinPlugins(), getMcpClientTools());
-      const allowedToolNames = new Set(listCurrentMcpToolDescriptors().map((tool) => tool.name));
+      const exposedTools = listCurrentMcpToolDescriptors();
+      const exposedToolMap = new Map(exposedTools.map((tool) => [tool.name, tool]));
       const plugins = registry.plugins.map((plugin) => ({
         ...plugin.metadata,
-        tools: plugin.tools.filter((tool) => allowedToolNames.has(tool.name)).map((tool) => ({ name: tool.name, title: getToolTitle(tool.name), description: tool.description, annotations: getToolAnnotations(tool.name) })),
+        tools: plugin.tools.flatMap((tool) => {
+          const descriptor = exposedToolMap.get(tool.name);
+          return descriptor ? [{
+            name: descriptor.name,
+            title: descriptor.title,
+            description: descriptor.description,
+            annotations: descriptor.annotations,
+            ownerId: descriptor.ownerId,
+            ownerLabel: descriptor.ownerLabel,
+            ownerKind: descriptor.ownerKind,
+            provenance: descriptor.provenance,
+          }] : [];
+        }),
       })).filter((plugin) => plugin.tools.length > 0);
-      const externalTools = listCurrentMcpToolDescriptors().filter((tool) => tool.ownerKind === "imported-mcp");
+      const externalTools = exposedTools.filter((tool) => tool.ownerKind === "imported-mcp");
       return { generatedAt: new Date().toISOString(), plugins, externalTools };
     } },
-    { name: "plugins-tool-map", uri: "bizbot://plugins/tool-map", title: "Plugin Tool Map", description: "Resolved mapping from exposed MCP tools to their source plugin ids", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), toolMap: listCurrentMcpToolDescriptors().map((tool) => ({ toolName: tool.name, pluginId: tool.ownerId, title: tool.title, description: tool.description, annotations: tool.annotations })) }) },
+    { name: "plugins-tool-map", uri: "bizbot://plugins/tool-map", title: "Plugin Tool Map", description: "Resolved mapping from exposed MCP tools to their source plugin ids and provenance", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), toolMap: listCurrentMcpToolDescriptors().map((tool) => ({ toolName: tool.name, pluginId: tool.ownerId, ownerLabel: tool.ownerLabel, ownerKind: tool.ownerKind, title: tool.title, description: tool.description, annotations: tool.annotations, provenance: tool.provenance })) }) },
     { name: "plugins-registry-report", uri: "bizbot://plugins/registry-report", title: "Plugin Registry Report", description: "Structured registry report with provenance, warnings, conflicts, and imported MCP origins", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => inspectPluginRegistry({ plugins: getBuiltinPlugins(), importedTools: getMcpClientToolCatalog() }) },
     { name: "plugins-naming-rules", uri: "bizbot://plugins/naming-rules", title: "Plugin Naming Rules", description: "BizBot naming conventions, prefix guidance, and good versus bad tool-name examples", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), ...NAMING_RULES }) },
     { name: "plugins-authoring-checklist", uri: "bizbot://plugins/authoring-checklist", title: "Plugin Authoring Checklist", description: "Checklist for metadata, schemas, tests, registry registration, and MCP contract review", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), checklist: AUTHORING_CHECKLIST }) },
-    { name: "plugins-mcp-surface-preview", uri: "bizbot://plugins/mcp-surface-preview", title: "Plugin MCP Surface Preview", description: "Current MCP tool, prompt, and resource catalogs with ownership and grouping details", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), tools: listCurrentMcpToolDescriptors(), prompts: listBizBotPromptDefinitions().map(toPromptMetadata), resources: listBizBotResourceDefinitions().map(toResourceMetadata), importedPrompts: listImportedMcpPromptCatalog(), importedResources: listImportedMcpResourceCatalog(), bundles: listMcpDiscoveryBundles().map((bundle) => ({ bundleId: bundle.bundleId, title: bundle.title, description: bundle.description, rationale: bundle.rationale, toolCount: bundle.tools.length, promptCount: bundle.prompts.length + bundle.importedPrompts.length, resourceCount: bundle.resources.length + bundle.importedResources.length })), taskRecipes: listMcpTaskRecipes() }) },
+    { name: "plugins-mcp-surface-preview", uri: "bizbot://plugins/mcp-surface-preview", title: "Plugin MCP Surface Preview", description: "Current MCP tool, prompt, and resource catalogs with ownership and grouping details", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => {
+      const tools = listCurrentMcpToolDescriptors();
+      const prompts = listBizBotPromptDefinitions().map(toPromptMetadata);
+      const resources = listBizBotResourceDefinitions().map(toResourceMetadata);
+      const importedPrompts = listImportedMcpPromptCatalog();
+      const importedResources = listImportedMcpResourceCatalog();
+      const creeperBundle = getMcpDiscoveryBundle("creeper");
+      const creeperTools = tools.filter((tool) => tool.ownerId === "creeper");
+
+      return {
+        generatedAt: new Date().toISOString(),
+        tools,
+        prompts,
+        resources,
+        importedPrompts,
+        importedResources,
+        creeper: {
+          pluginId: "creeper",
+          bundleId: creeperBundle?.bundleId ?? null,
+          title: creeperBundle?.title ?? "Creeper",
+          description: creeperBundle?.description ?? "Company onboarding, source inspection, ingestion planning, and retrieval-grounding surfaces.",
+          rationale: creeperBundle?.rationale ?? null,
+          toolCount: creeperTools.length,
+          readOnlyToolNames: creeperTools.filter((tool) => tool.annotations.readOnlyHint).map((tool) => tool.name),
+          mutatingToolNames: creeperTools.filter((tool) => tool.annotations.destructiveHint).map((tool) => tool.name),
+          openWorldToolNames: creeperTools.filter((tool) => tool.annotations.openWorldHint).map((tool) => tool.name),
+          tools: creeperTools,
+        },
+        bundles: listMcpDiscoveryBundles().map((bundle) => ({ bundleId: bundle.bundleId, title: bundle.title, description: bundle.description, rationale: bundle.rationale, toolCount: bundle.tools.length, promptCount: bundle.prompts.length + bundle.importedPrompts.length, resourceCount: bundle.resources.length + bundle.importedResources.length })),
+        taskRecipes: listMcpTaskRecipes(),
+      };
+    } },
     { name: "plugins-mcp-discovery-bundles", uri: "bizbot://plugins/mcp-discovery-bundles", title: "MCP Discovery Bundles", description: "Curated BizBot MCP tool, prompt, and resource bundles for major workflow families", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), bundles: listMcpDiscoveryBundles() }) },
     { name: "plugins-task-recipes", uri: "bizbot://plugins/task-recipes", title: "MCP Task Recipes", description: "Workflow-shaped MCP recipes that turn bundles into repeatable debugging and authoring paths", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), recipes: listMcpTaskRecipes() }) },
     { name: "plugins-imported-mcp-prompts", uri: "bizbot://plugins/imported-mcp-prompts", title: "Imported MCP Prompts", description: "Prompt inventory imported from connected external MCP servers", mimeType: "application/json", ownerId: "developer", group: "plugins", read: async () => ({ generatedAt: new Date().toISOString(), servers: buildImportedMcpServerSummaries(), prompts: listImportedMcpPromptCatalog() }) },
@@ -1362,7 +1505,9 @@ export function listBizBotResourceDefinitions(): BizBotResourceDefinition[] {
           toolDescriptors: listCurrentMcpToolDescriptors().map((tool) => ({
             name: tool.name,
             ownerId: tool.ownerId,
+            ownerLabel: tool.ownerLabel,
             ownerKind: tool.ownerKind,
+            provenance: tool.provenance,
             parameters: tool.parameters,
           })),
           promptDefinitions: listBizBotPromptDefinitions().map((prompt) => ({

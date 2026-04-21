@@ -139,6 +139,7 @@ export interface AgentExecutionParams {
   provider?: LLMProvider;
   mode?: ChatExecutionMode;
   pluginId?: string;
+  companyProfileId?: string;
   attachments?: ChatMessageAttachment[];
   oraclePrediction?: boolean;
   forcedProfile?: AgentProfile;
@@ -389,6 +390,7 @@ export async function executeAgentConversation(
     allowedToolNames: explicitAllowedToolNames,
     resumeRunId,
     builderMcpContext,
+    companyProfileId,
     onEvent,
   } = params;
   const { signal } = params;
@@ -406,11 +408,25 @@ export async function executeAgentConversation(
   if (oraclePrediction && pluginId && !isOracleChatExecutionSelection(executionSelection)) {
     throw new Error("Oracle prediction requires the Oracle chat plugin.");
   }
-  const resolvedConversationId = await getOrCreateConversation(conversationId, resolvedUserId);
+  const conversationOptions = {
+    ...(executionSelection.pluginId === "builder" && builderMcpContext?.projectId ? { builderProjectId: builderMcpContext.projectId } : {}),
+    ...(executionSelection.pluginId === "creeper" ? { companyProfileId: companyProfileId ?? null } : {}),
+  };
+  const resolvedConversationId = Object.keys(conversationOptions).length > 0
+    ? await getOrCreateConversation(conversationId, resolvedUserId, conversationOptions)
+    : await getOrCreateConversation(conversationId, resolvedUserId);
   try {
     const memoryModule = await import("@/lib/agent/memory");
     if ("updateConversationExecutionDefaults" in memoryModule && typeof memoryModule.updateConversationExecutionDefaults === "function") {
       await memoryModule.updateConversationExecutionDefaults(resolvedConversationId, executionSelection);
+    }
+    if (
+      executionSelection.pluginId === "creeper"
+      && companyProfileId !== undefined
+      && "updateConversationCompanyProfile" in memoryModule
+      && typeof memoryModule.updateConversationCompanyProfile === "function"
+    ) {
+      await memoryModule.updateConversationCompanyProfile(resolvedConversationId, companyProfileId || null);
     }
   } catch {
     // Older tests partially mock the memory module without this helper.

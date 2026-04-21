@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
       provider?: unknown;
       mode?: unknown;
       pluginId?: unknown;
+      companyProfileId?: unknown;
       attachments?: unknown;
       stream?: unknown;
       oraclePrediction?: unknown;
@@ -83,6 +84,9 @@ export async function POST(req: NextRequest) {
       mode: body.mode === "ask" || body.mode === "agent" ? body.mode : undefined,
       pluginId: typeof body.pluginId === "string" ? body.pluginId : undefined,
     });
+    const companyProfileId = typeof body.companyProfileId === "string" && body.companyProfileId.trim()
+      ? body.companyProfileId.trim()
+      : undefined;
     const attachments = normalizeChatMessageAttachments(body.attachments);
     const stream = body.stream === true;
     const oraclePrediction = body.oraclePrediction === true;
@@ -116,6 +120,7 @@ export async function POST(req: NextRequest) {
                 provider: provider as LLMProvider | undefined,
                 mode: executionSelection.mode,
                 pluginId: executionSelection.pluginId,
+                companyProfileId,
                 attachments,
                 oraclePrediction,
                 resumeRunId,
@@ -164,6 +169,7 @@ export async function POST(req: NextRequest) {
       provider: provider as LLMProvider | undefined,
       mode: executionSelection.mode,
       pluginId: executionSelection.pluginId,
+      companyProfileId,
       attachments,
       oraclePrediction,
       resumeRunId,

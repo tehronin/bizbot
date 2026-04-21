@@ -46,6 +46,18 @@ export interface ChatBuilderTemplateSummary {
   defaultPackageManager: string;
 }
 
+export interface ChatCreeperCompanyProfileSummary {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  status: string;
+  sourceCount: number;
+  planCount: number;
+  runCount: number;
+  latestRunAt: string | null;
+}
+
 export type BuilderOnboardingStep = "idle" | "naming" | "stack" | "configuring" | "confirming";
 
 export interface BuilderOnboardingSpec {
@@ -192,6 +204,8 @@ export interface ChatConversationSummary {
   builderProjectId: string | null;
   builderProjectName: string | null;
   builderProjectRelativePath: string | null;
+  companyProfileId: string | null;
+  companyProfileName: string | null;
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
@@ -233,6 +247,8 @@ export interface ChatConversationBootstrap {
   executionCatalog: ChatExecutionCatalog;
   builderProjects: ChatBuilderProjectSummary[];
   builderProjectConversations: ChatConversationSummary[];
+  creeperCompanyProfiles: ChatCreeperCompanyProfileSummary[];
+  selectedCreeperCompanyProfileId: string | null;
   builderStackPresets: ChatBuilderStackPresetSummary[];
   builderTemplates: ChatBuilderTemplateSummary[];
   activeRun: ChatConversationUsageSummary;

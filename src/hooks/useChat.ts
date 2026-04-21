@@ -7,6 +7,7 @@ import type {
   BuilderOnboardingSpec,
   BuilderOnboardingStep,
   ChatBuilderProjectSummary,
+  ChatCreeperCompanyProfileSummary,
   ChatBuilderStackPresetSummary,
   ChatBuilderTemplateSummary,
   ChatConversationBootstrap,
@@ -127,10 +128,12 @@ export interface UseChatResult {
   builderInbox: BuilderChatCard[];
   builderProjects: ChatBuilderProjectSummary[];
   builderProjectConversations: ChatConversationSummary[];
+  creeperCompanyProfiles: ChatCreeperCompanyProfileSummary[];
   builderStackPresets: ChatBuilderStackPresetSummary[];
   builderTemplates: ChatBuilderTemplateSummary[];
   builderOnboarding: { step: BuilderOnboardingStep; spec: BuilderOnboardingSpec } | null;
   selectedBuilderProjectId: string | null;
+  selectedCreeperCompanyProfileId: string | null;
   conversationId: string | null;
   currentConversation: ChatConversationDetail | null;
   recentConversations: ChatConversationSummary[];
@@ -154,6 +157,7 @@ export interface UseChatResult {
   setExecutionPluginId: React.Dispatch<React.SetStateAction<string>>;
   setChatVerbosity: (value: ChatVerbosity) => Promise<void>;
   setSelectedBuilderProjectId: React.Dispatch<React.SetStateAction<string | null>>;
+  setSelectedCreeperCompanyProfileId: React.Dispatch<React.SetStateAction<string | null>>;
   startBuilderOnboarding: () => void;
   updateBuilderOnboardingSpec: (updates: Partial<BuilderOnboardingSpec>) => void;
   setBuilderOnboardingStep: (step: BuilderOnboardingStep) => void;
@@ -646,10 +650,12 @@ export function useChat(): UseChatResult {
   const [builderInbox, setBuilderInbox] = useState<BuilderChatCard[]>([]);
   const [builderProjects, setBuilderProjects] = useState<ChatBuilderProjectSummary[]>([]);
   const [builderProjectConversations, setBuilderProjectConversations] = useState<ChatConversationSummary[]>([]);
+  const [creeperCompanyProfiles, setCreeperCompanyProfiles] = useState<ChatCreeperCompanyProfileSummary[]>([]);
   const [builderStackPresets, setBuilderStackPresets] = useState<ChatBuilderStackPresetSummary[]>([]);
   const [builderTemplates, setBuilderTemplates] = useState<ChatBuilderTemplateSummary[]>([]);
   const [builderOnboarding, setBuilderOnboarding] = useState<{ step: BuilderOnboardingStep; spec: BuilderOnboardingSpec } | null>(null);
   const [selectedBuilderProjectId, setSelectedBuilderProjectIdState] = useState<string | null>(null);
+  const [selectedCreeperCompanyProfileId, setSelectedCreeperCompanyProfileIdState] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [currentConversation, setCurrentConversation] = useState<ChatConversationDetail | null>(null);
   const [recentConversations, setRecentConversations] = useState<ChatConversationSummary[]>([]);
@@ -686,6 +692,9 @@ export function useChat(): UseChatResult {
   const selectedBuilderProjectIdRef = useRef(selectedBuilderProjectId);
   selectedBuilderProjectIdRef.current = selectedBuilderProjectId;
   const previousBuilderProjectIdRef = useRef(selectedBuilderProjectId);
+  const selectedCreeperCompanyProfileIdRef = useRef(selectedCreeperCompanyProfileId);
+  selectedCreeperCompanyProfileIdRef.current = selectedCreeperCompanyProfileId;
+  const previousCreeperCompanyProfileIdRef = useRef(selectedCreeperCompanyProfileId);
 
   function applyExecutionSelection(nextSelection: ExecutionSelection, options?: {
     syncConversation?: boolean;
@@ -715,6 +724,10 @@ export function useChat(): UseChatResult {
     setSelectedBuilderProjectIdState(value);
   };
 
+  const setSelectedCreeperCompanyProfileId: React.Dispatch<React.SetStateAction<string | null>> = (value) => {
+    setSelectedCreeperCompanyProfileIdState(value);
+  };
+
   // Trigger bootstrap reload whenever the selected builder project changes (after initial render).
   useEffect(() => {
     if (previousBuilderProjectIdRef.current === selectedBuilderProjectId) {
@@ -727,6 +740,30 @@ export function useChat(): UseChatResult {
     }).catch(() => undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBuilderProjectId]);
+
+  useEffect(() => {
+    if (previousCreeperCompanyProfileIdRef.current === selectedCreeperCompanyProfileId) {
+      return;
+    }
+    previousCreeperCompanyProfileIdRef.current = selectedCreeperCompanyProfileId;
+    const currentConversationId = conversationIdRef.current;
+    if (!currentConversationId) {
+      return;
+    }
+
+    void fetch(`/api/chat/conversations/${currentConversationId}/company`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ companyProfileId: selectedCreeperCompanyProfileId }),
+    })
+      .then(() => loadBootstrap({
+        selectedConversationId: currentConversationId,
+        selectedCreeperCompanyProfileId,
+        replaceCurrent: true,
+      }))
+      .catch(() => undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCreeperCompanyProfileId]);
 
   useEffect(() => () => {
     isMountedRef.current = false;
@@ -844,6 +881,7 @@ export function useChat(): UseChatResult {
   async function loadBootstrap(options?: {
     selectedConversationId?: string | null;
     selectedBuilderProjectId?: string | null;
+    selectedCreeperCompanyProfileId?: string | null;
     replaceCurrent?: boolean;
     recentPage?: number;
     archivedPage?: number;
@@ -860,6 +898,9 @@ export function useChat(): UseChatResult {
     const nextBuilderProjectId = options?.selectedBuilderProjectId !== undefined
       ? options.selectedBuilderProjectId
       : selectedBuilderProjectId;
+    const nextCreeperCompanyProfileId = options?.selectedCreeperCompanyProfileId !== undefined
+      ? options.selectedCreeperCompanyProfileId
+      : selectedCreeperCompanyProfileId;
     const nextRecentPage = options?.recentPage ?? recentPagination.currentPage;
     const nextArchivedPage = options?.archivedPage ?? archivedPagination.currentPage;
     const nextFilters = options?.historyFilters ?? historyFilters;
@@ -869,6 +910,9 @@ export function useChat(): UseChatResult {
     }
     if (nextBuilderProjectId) {
       params.set("selectedBuilderProjectId", nextBuilderProjectId);
+    }
+    if (nextCreeperCompanyProfileId) {
+      params.set("selectedCreeperCompanyProfileId", nextCreeperCompanyProfileId);
     }
     params.set("recentPage", String(nextRecentPage));
     params.set("archivedPage", String(nextArchivedPage));
@@ -914,6 +958,7 @@ export function useChat(): UseChatResult {
       });
       setBuilderProjects(payload.builderProjects);
       setBuilderProjectConversations(payload.builderProjectConversations ?? []);
+      setCreeperCompanyProfiles(payload.creeperCompanyProfiles ?? []);
       setBuilderStackPresets(payload.builderStackPresets ?? []);
       setBuilderTemplates(payload.builderTemplates ?? []);
       setSelectedBuilderProjectIdState((current) => {
@@ -928,6 +973,19 @@ export function useChat(): UseChatResult {
           : current && payload.builderProjects.some((project) => project.id === current)
             ? current
             : payload.builderProjects[0]?.id ?? null;
+      });
+      setSelectedCreeperCompanyProfileIdState((current) => {
+        if (options?.selectedCreeperCompanyProfileId !== undefined) {
+          return options.selectedCreeperCompanyProfileId && payload.creeperCompanyProfiles.some((profile) => profile.id === options.selectedCreeperCompanyProfileId)
+            ? options.selectedCreeperCompanyProfileId
+            : null;
+        }
+
+        return payload.selectedCreeperCompanyProfileId && payload.creeperCompanyProfiles.some((profile) => profile.id === payload.selectedCreeperCompanyProfileId)
+          ? payload.selectedCreeperCompanyProfileId
+          : current && payload.creeperCompanyProfiles.some((profile) => profile.id === current)
+            ? current
+            : null;
       });
       setBuilderInbox(payload.builderInbox);
       setConversationId(payload.currentConversationId);
@@ -1411,6 +1469,7 @@ export function useChat(): UseChatResult {
           conversationId: conversationId ?? undefined,
           mode,
           pluginId,
+          companyProfileId: pluginId === "creeper" ? selectedCreeperCompanyProfileIdRef.current ?? undefined : undefined,
           attachments,
           stream: true,
           ...(options?.oraclePrediction ? { oraclePrediction: true } : {}),
@@ -1662,10 +1721,12 @@ export function useChat(): UseChatResult {
     builderInbox,
     builderProjects,
     builderProjectConversations,
+    creeperCompanyProfiles,
     builderStackPresets,
     builderTemplates,
     builderOnboarding,
     selectedBuilderProjectId,
+    selectedCreeperCompanyProfileId,
     conversationId,
     currentConversation,
     recentConversations,
@@ -1689,6 +1750,7 @@ export function useChat(): UseChatResult {
     setExecutionPluginId,
     setChatVerbosity,
     setSelectedBuilderProjectId,
+    setSelectedCreeperCompanyProfileId,
     startBuilderOnboarding,
     updateBuilderOnboardingSpec,
     setBuilderOnboardingStep,

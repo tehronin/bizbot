@@ -114,6 +114,57 @@ enum ChatExecutionMode {
   AGENT
 }
 
+enum ExternalDataSourceType {
+  POSTGRES
+}
+
+enum ExternalDataSourceStatus {
+  PENDING
+  READY
+  PROFILED
+  DISCONNECTED
+  FAILED
+  ARCHIVED
+}
+
+enum SourceScanStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum CompanyIngestionPlanStatus {
+  DRAFT
+  APPROVED
+  SUPERSEDED
+  ARCHIVED
+}
+
+enum CompanyIngestionRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  PARTIAL
+  CANCELLED
+}
+
+enum CompanyChunkKind {
+  ROW
+  ENTITY
+  EVENT_ROLLUP
+  TEXT_WINDOW
+  JSON_SUMMARY
+  RELATION_SUMMARY
+}
+
+enum CompanyEntityLinkType {
+  EXPLICIT
+  INFERRED
+}
+
 // ─────────────────── CONVERSATIONS ───────────────────
 model Conversation {
   id            String    @id @default(cuid())
@@ -122,6 +173,8 @@ model Conversation {
   userId        String
   builderProject   BuilderProject? @relation(fields: [builderProjectId], references: [id], onDelete: Cascade)
   builderProjectId String?
+  companyProfile CompanyProfile? @relation(fields: [companyProfileId], references: [id], onDelete: SetNull)
+  companyProfileId String?
   defaultMode   ChatExecutionMode @default(ASK)
   defaultPluginId String  @default("just-chatting")
   promptSummary String?
@@ -137,6 +190,7 @@ model Conversation {
 
   @@index([userId, archivedAt, deletedAt, lastMessageAt])
   @@index([builderProjectId, archivedAt, deletedAt, lastMessageAt])
+  @@index([companyProfileId, archivedAt, deletedAt, lastMessageAt])
 }
 
 model OraclePrediction {
@@ -169,6 +223,301 @@ model OraclePrediction {
   @@unique([userId, canonicalQuestion], name: "userId_canonicalQuestion")
   @@index([userId, isWatched, updatedAt])
   @@index([userId, updatedAt])
+}
+
+model CompanyProfile {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  description     String?
+  status          String
+  ontologyConfig  Json?
+  retrievalConfig Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  conversations   Conversation[]
+  sources         CompanyProfileSource[]
+  ingestionPlans  CompanyIngestionPlan[]
+  knowledgeChunks CompanyKnowledgeChunk[]
+  entities        CompanyEntity[]
+  relations       CompanyRelation[]
+  retrievalAudits CompanyRetrievalAudit[]
+
+  @@index([status, updatedAt])
+}
+
+model ExternalDataSource {
+  id                    String                   @id @default(cuid())
+  type                  ExternalDataSourceType
+  label                 String
+  host                  String
+  port                  Int
+  databaseName          String
+  username              String
+  sslMode               String
+  sslRejectUnauthorized Boolean                  @default(true)
+  notes                 String?
+  status                ExternalDataSourceStatus @default(PENDING)
+  lastTestedAt          DateTime?
+  lastProfiledAt        DateTime?
+  metadata              Json?
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  secret                ExternalDataSourceSecret?
+  companyProfiles       CompanyProfileSource[]
+  scans                 SourceScan[]
+  ingestionPlans        CompanyIngestionPlan[]
+  knowledgeChunks       CompanyKnowledgeChunk[]
+
+  @@index([status, updatedAt])
+  @@index([host, databaseName])
+}
+
+model ExternalDataSourceSecret {
+  sourceId              String   @id
+  encryptedPassword     String
+  encryptionKeyVersion  Int
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  source                ExternalDataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+}
+
+model CompanyProfileSource {
+  id               String   @id @default(cuid())
+  companyProfileId String
+  sourceId         String
+  isPrimary        Boolean  @default(false)
+  role             String
+  createdAt        DateTime @default(now())
+
+  companyProfile   CompanyProfile     @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  source           ExternalDataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([companyProfileId, sourceId])
+  @@index([companyProfileId, isPrimary])
+  @@index([sourceId, createdAt])
+}
+
+model SourceScan {
+  id           String           @id @default(cuid())
+  sourceId     String
+  status       SourceScanStatus @default(QUEUED)
+  startedAt    DateTime?        @default(now())
+  completedAt  DateTime?
+  summary      Json?
+  errorText    String?
+  scanConfig   Json?
+  createdAt    DateTime         @default(now())
+
+  source          ExternalDataSource   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  schemaProfiles  SourceSchemaProfile[]
+  tableProfiles   SourceTableProfile[]
+
+  @@index([sourceId, createdAt])
+  @@index([sourceId, status, createdAt])
+}
+
+model SourceSchemaProfile {
+  id         String   @id @default(cuid())
+  scanId      String
+  schemaName  String
+  tableCount  Int
+  viewCount   Int
+  metadata    Json?
+
+  scan        SourceScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@unique([scanId, schemaName])
+  @@index([schemaName])
+}
+
+model SourceTableProfile {
+  id                String   @id @default(cuid())
+  scanId            String
+  schemaName        String
+  tableName         String
+  tableType         String
+  estimatedRowCount Int?
+  exactRowCount     Int?
+  primaryKey        Json?
+  foreignKeys       Json?
+  indexes           Json?
+  sampleSummary     Json?
+  classification    Json?
+  ingestionScore    Float?
+  metadata          Json?
+
+  scan              SourceScan            @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  columns           SourceColumnProfile[]
+
+  @@unique([scanId, schemaName, tableName])
+  @@index([schemaName, tableName])
+  @@index([scanId, ingestionScore])
+}
+
+model SourceColumnProfile {
+  id               String   @id @default(cuid())
+  tableProfileId   String
+  columnName       String
+  dataType         String
+  isNullable       Boolean
+  isArray          Boolean
+  isJson           Boolean
+  distinctEstimate Float?
+  nullFraction     Float?
+  avgWidth         Float?
+  semanticTags     Json?
+  sensitivity      Json?
+  sampleValues     Json?
+  metadata         Json?
+
+  tableProfile     SourceTableProfile @relation(fields: [tableProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([tableProfileId, columnName])
+  @@index([columnName])
+}
+
+model CompanyIngestionPlan {
+  id              String                     @id @default(cuid())
+  companyProfileId String
+  sourceId        String
+  status          CompanyIngestionPlanStatus @default(DRAFT)
+  version         Int
+  businessGoal    String?
+  selectedTables  Json
+  selectedColumns Json
+  redactionPolicy Json
+  chunkingPolicy  Json
+  embeddingPolicy Json
+  ontologyPolicy  Json
+  graphPolicy     Json
+  retrievalPolicy Json
+  plannerNotes    Json?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  companyProfile  CompanyProfile        @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  source          ExternalDataSource    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  runs            CompanyIngestionRun[]
+
+  @@unique([companyProfileId, version])
+  @@index([companyProfileId, status, updatedAt])
+  @@index([sourceId, status, updatedAt])
+}
+
+model CompanyIngestionRun {
+  id          String                    @id @default(cuid())
+  planId      String
+  status      CompanyIngestionRunStatus @default(QUEUED)
+  mode        String
+  stage       String
+  counters    Json
+  errorText   String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  plan        CompanyIngestionPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  knowledgeChunks CompanyKnowledgeChunk[]
+
+  @@index([planId, createdAt])
+  @@index([status, updatedAt])
+  @@index([startedAt, completedAt])
+}
+
+model CompanyKnowledgeChunk {
+  id              String           @id @default(cuid())
+  companyProfileId String
+  sourceId        String
+  runId           String
+  schemaName      String
+  tableName       String
+  sourcePrimaryKey Json?
+  chunkKind       CompanyChunkKind
+  title           String?
+  content         String
+  contentHash     String
+  tokenEstimate   Int?
+  metadata        Json
+  createdAt       DateTime         @default(now())
+
+  companyProfile  CompanyProfile       @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  source          ExternalDataSource   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  run             CompanyIngestionRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  embedding       CompanyKnowledgeEmbedding?
+
+  @@index([companyProfileId, createdAt])
+  @@index([sourceId, schemaName, tableName])
+  @@index([runId, createdAt])
+  @@index([contentHash])
+}
+
+model CompanyKnowledgeEmbedding {
+  id         String   @id @default(cuid())
+  chunkId     String   @unique
+  model       String
+  dimensions  Int
+  createdAt   DateTime @default(now())
+
+  chunk       CompanyKnowledgeChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+}
+
+model CompanyEntity {
+  id              String   @id @default(cuid())
+  companyProfileId String
+  canonicalName   String
+  entityType      String
+  sourceConfidence Float
+  attributes      Json
+  sourceRefs      Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  companyProfile  CompanyProfile     @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  outgoingRelations CompanyRelation[] @relation("CompanyRelationFromEntity")
+  incomingRelations CompanyRelation[] @relation("CompanyRelationToEntity")
+
+  @@index([companyProfileId, entityType, canonicalName])
+  @@index([companyProfileId, updatedAt])
+}
+
+model CompanyRelation {
+  id              String                @id @default(cuid())
+  companyProfileId String
+  fromEntityId    String
+  toEntityId      String
+  relationType    String
+  linkType        CompanyEntityLinkType
+  confidence      Float
+  sourceRefs      Json
+  attributes      Json?
+  createdAt       DateTime              @default(now())
+
+  companyProfile  CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  fromEntity      CompanyEntity  @relation("CompanyRelationFromEntity", fields: [fromEntityId], references: [id], onDelete: Cascade)
+  toEntity        CompanyEntity  @relation("CompanyRelationToEntity", fields: [toEntityId], references: [id], onDelete: Cascade)
+
+  @@index([companyProfileId, relationType, createdAt])
+  @@index([fromEntityId, relationType])
+  @@index([toEntityId, relationType])
+}
+
+model CompanyRetrievalAudit {
+  id               String   @id @default(cuid())
+  companyProfileId String
+  query            String
+  retrievedChunkIds Json
+  retrievedEntityIds Json?
+  answerSummary    String?
+  createdAt        DateTime @default(now())
+
+  companyProfile   CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+
+  @@index([companyProfileId, createdAt])
 }
 
 model Message {

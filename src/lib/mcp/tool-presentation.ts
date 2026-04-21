@@ -28,6 +28,7 @@ export function getToolTitle(name: string): string {
   if (name.startsWith("oracle_")) return `Oracle: ${name.replace("oracle_", "").replaceAll("_", " ")}`;
   if (name.startsWith("developer_")) return `Developer: ${name.replace("developer_", "").replaceAll("_", " ")}`;
   if (name.startsWith("builder_")) return `Builder: ${name.replace("builder_", "").replaceAll("_", " ")}`;
+  if (name.startsWith("creeper_")) return `Creeper: ${name.replace("creeper_", "").replaceAll("_", " ")}`;
   if (name.startsWith("sidecar_")) return `Sidecar: ${name.replace("sidecar_", "").replaceAll("_", " ")}`;
   if (name.startsWith("mcp_")) return `Imported MCP: ${name.replaceAll("_", " ")}`;
   return name.replaceAll("_", " ");
@@ -110,6 +111,11 @@ export function getToolAnnotations(name: string): ToolAnnotations {
     "browser_extract_links",
     "competitor_watch_list",
     "competitor_watch_check",
+    "creeper_list_company_profiles",
+    "creeper_get_company_profile",
+    "creeper_open_company_selector",
+    "creeper_list_source_assets",
+    "creeper_open_source_sidecar",
   ];
 
   const destructive = [
@@ -139,6 +145,15 @@ export function getToolAnnotations(name: string): ToolAnnotations {
     "memory_remember",
     "memory_set_fact",
     "memory_forget_fact",
+    "creeper_prepare_company_brief",
+    "creeper_select_company_profile",
+    "creeper_register_source",
+    "creeper_test_source_connection",
+    "creeper_profile_source",
+    "creeper_draft_ingestion_plan",
+    "creeper_update_ingestion_plan",
+    "creeper_approve_ingestion_plan",
+    "creeper_start_ingestion_run",
   ];
 
   const idempotent = [
@@ -215,6 +230,11 @@ export function getToolAnnotations(name: string): ToolAnnotations {
     "browser_extract_text",
     "browser_extract_links",
     "competitor_watch_list",
+    "creeper_list_company_profiles",
+    "creeper_get_company_profile",
+    "creeper_open_company_selector",
+    "creeper_list_source_assets",
+    "creeper_open_source_sidecar",
   ];
 
   const openWorld = [
@@ -224,6 +244,8 @@ export function getToolAnnotations(name: string): ToolAnnotations {
     "browser_extract_links",
     "competitor_watch_check",
     "developer_invoke_imported_mcp_tool",
+    "creeper_test_source_connection",
+    "creeper_profile_source",
   ];
 
   return {
@@ -257,6 +279,8 @@ export function getToolDescription(name: string, description: string): string {
     hints.push("Use for competitor watch inspection or control.");
   } else if (name.startsWith("developer_")) {
     hints.push("Use for plugin authoring, runtime inspection, validation, or debugging.");
+  } else if (name.startsWith("creeper_")) {
+    hints.push("Use for company profile onboarding, source registration, profiling, ingestion planning, and grounded retrieval preparation.");
   } else if (name.startsWith("sidecar_")) {
     hints.push("Use to control the BizBot-owned transient Sidecar panel.");
   } else if (name.startsWith("oracle_")) {
@@ -271,6 +295,9 @@ export function getToolDescription(name: string, description: string): string {
   }
   if (getToolAnnotations(name).destructiveHint) {
     hints.push("Changes external or persisted state.");
+  }
+  if (name === "creeper_test_source_connection" || name === "creeper_profile_source") {
+    hints.push("Reads an external company source while also persisting local Creeper state and audit artifacts.");
   }
   if (name === "social_post" || name === "social_reply") {
     hints.push("Respect BizBot autonomy and approval rules.");

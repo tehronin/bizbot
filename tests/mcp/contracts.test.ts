@@ -23,10 +23,12 @@ async function callMcp(method: string, params: Record<string, unknown>, id: stri
 describe("MCP contract snapshots", () => {
   beforeEach(() => {
     delete process.env.BIZBOT_PLUGIN_ORACLE_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_CREEPER_ENABLED;
   });
 
   afterEach(() => {
     delete process.env.BIZBOT_PLUGIN_ORACLE_ENABLED;
+    delete process.env.BIZBOT_PLUGIN_CREEPER_ENABLED;
   });
 
   it("matches the stable normalized Builder MCP contract seed", () => {
@@ -533,6 +535,180 @@ describe("MCP contract snapshots", () => {
     `);
   });
 
+  it("matches the stable Creeper MCP tool contract when enabled", async () => {
+    process.env.BIZBOT_PLUGIN_CREEPER_ENABLED = "true";
+
+    const result = await callMcp("tools/list", {}, "tools-contract-creeper");
+    const catalog = result.result.tools
+      .filter((tool: { name: string }) => tool.name.startsWith("creeper_"))
+      .map((tool: {
+        name: string;
+        title: string;
+        description: string;
+        annotations?: {
+          readOnlyHint?: boolean;
+          destructiveHint?: boolean;
+          idempotentHint?: boolean;
+          openWorldHint?: boolean;
+        };
+      }) => ({
+        name: tool.name,
+        title: tool.title,
+        annotations: {
+          readOnlyHint: tool.annotations?.readOnlyHint ?? false,
+          destructiveHint: tool.annotations?.destructiveHint ?? false,
+          idempotentHint: tool.annotations?.idempotentHint ?? false,
+          openWorldHint: tool.annotations?.openWorldHint ?? false,
+        },
+      }))
+      .sort((left: { name: string }, right: { name: string }) => left.name.localeCompare(right.name));
+
+    expect(catalog).toMatchInlineSnapshot(`
+      [
+        {
+          "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false,
+            "readOnlyHint": false,
+          },
+          "name": "creeper_approve_ingestion_plan",
+          "title": "Creeper: approve ingestion plan",
+        },
+        {
+          "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false,
+            "readOnlyHint": false,
+          },
+          "name": "creeper_draft_ingestion_plan",
+          "title": "Creeper: draft ingestion plan",
+        },
+        {
+          "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false,
+            "readOnlyHint": true,
+          },
+          "name": "creeper_get_company_profile",
+          "title": "Creeper: get company profile",
+        },
+        {
+          "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false,
+            "readOnlyHint": true,
+          },
+          "name": "creeper_list_company_profiles",
+          "title": "Creeper: list company profiles",
+        },
+        {
+          "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false,
+            "readOnlyHint": true,
+          },
+          "name": "creeper_list_source_assets",
+          "title": "Creeper: list source assets",
+        },
+        {
+          "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false,
+            "readOnlyHint": true,
+          },
+          "name": "creeper_open_company_selector",
+          "title": "Creeper: open company selector",
+        },
+        {
+          "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false,
+            "readOnlyHint": true,
+          },
+          "name": "creeper_open_source_sidecar",
+          "title": "Creeper: open source sidecar",
+        },
+        {
+          "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false,
+            "readOnlyHint": false,
+          },
+          "name": "creeper_prepare_company_brief",
+          "title": "Creeper: prepare company brief",
+        },
+        {
+          "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true,
+            "readOnlyHint": false,
+          },
+          "name": "creeper_profile_source",
+          "title": "Creeper: profile source",
+        },
+        {
+          "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false,
+            "readOnlyHint": false,
+          },
+          "name": "creeper_register_source",
+          "title": "Creeper: register source",
+        },
+        {
+          "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false,
+            "readOnlyHint": false,
+          },
+          "name": "creeper_select_company_profile",
+          "title": "Creeper: select company profile",
+        },
+        {
+          "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false,
+            "readOnlyHint": false,
+          },
+          "name": "creeper_start_ingestion_run",
+          "title": "Creeper: start ingestion run",
+        },
+        {
+          "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true,
+            "readOnlyHint": false,
+          },
+          "name": "creeper_test_source_connection",
+          "title": "Creeper: test source connection",
+        },
+        {
+          "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false,
+            "readOnlyHint": false,
+          },
+          "name": "creeper_update_ingestion_plan",
+          "title": "Creeper: update ingestion plan",
+        },
+      ]
+    `);
+  });
+
   it("matches the stable prompt catalog", async () => {
     const result = await callMcp("prompts/list", {}, "prompts-contract");
     const catalog = result.result.prompts.map((prompt: {
@@ -702,7 +878,7 @@ describe("MCP contract snapshots", () => {
           "uri": "bizbot://plugins/installed",
         },
         {
-          "description": "Resolved mapping from exposed MCP tools to their source plugin ids",
+          "description": "Resolved mapping from exposed MCP tools to their source plugin ids and provenance",
           "mimeType": "application/json",
           "name": "plugins-tool-map",
           "title": "Plugin Tool Map",

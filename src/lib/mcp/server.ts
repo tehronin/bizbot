@@ -129,6 +129,7 @@ export function createBizBotMcpServer(options?: BizBotMcpServerOptions): McpServ
         "Tools prefixed with approval_ manage the human review queue.",
         "Tools prefixed with memory_ store and recall long-term knowledge.",
         "Tools prefixed with builder_ operate only inside a dedicated external builder workspace and require explicit command allowlisting.",
+        "Tools prefixed with creeper_ manage company profiles, bounded data-source inspection, ingestion planning, and retrieval-grounding setup.",
         "Tools prefixed with browser_ navigate the web via Playwright.",
         "Tools prefixed with sidecar_ control BizBot's transient read-only Sidecar panel.",
       ].join(" "),

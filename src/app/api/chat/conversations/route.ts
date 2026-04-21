@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
   try {
     const selectedConversationId = req.nextUrl.searchParams.get("selectedId");
     const selectedBuilderProjectId = req.nextUrl.searchParams.get("selectedBuilderProjectId");
+    const selectedCreeperCompanyProfileId = req.nextUrl.searchParams.get("selectedCreeperCompanyProfileId");
     const userId = req.nextUrl.searchParams.get("userId") ?? undefined;
     const recentPage = parsePositiveInt(req.nextUrl.searchParams.get("recentPage"), 1);
     const archivedPage = parsePositiveInt(req.nextUrl.searchParams.get("archivedPage"), 1);
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
       userId,
       selectedConversationId,
       selectedBuilderProjectId,
+      ...(selectedCreeperCompanyProfileId ? { selectedCreeperCompanyProfileId } : {}),
       recentPage,
       archivedPage,
       pageSize,

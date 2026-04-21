@@ -1421,6 +1421,7 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
   const setExecutionMode = chat.setExecutionMode ?? (() => undefined);
   const setExecutionPluginId = chat.setExecutionPluginId ?? (() => undefined);
   const setSelectedBuilderProjectId = chat.setSelectedBuilderProjectId ?? (() => undefined);
+  const setSelectedCreeperCompanyProfileId = chat.setSelectedCreeperCompanyProfileId ?? (() => undefined);
   const activePlugin = executionCatalog.plugins.find((plugin) => plugin.id === executionPluginId)
     ?? {
       id: "just-chatting",
@@ -1443,16 +1444,21 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
       + ((chat.activeRun.completionTokens / 1_000_000) * pricing.completionUsdPerMillion);
   }, [chat.activeRun.completionTokens, chat.activeRun.model, chat.activeRun.promptTokens, chat.activeRun.provider, chat.modelPricing]);
   const builderProjects = chat.builderProjects ?? [];
+  const creeperCompanyProfiles = chat.creeperCompanyProfiles ?? [];
   const builderStackPresets = chat.builderStackPresets ?? [];
   const builderTemplates = chat.builderTemplates ?? [];
   const selectedBuilderProjectId = chat.selectedBuilderProjectId;
+  const selectedCreeperCompanyProfileId = chat.selectedCreeperCompanyProfileId;
   const selectedBuilderProject = selectedBuilderProjectId ? (builderProjects.find((p) => p.id === selectedBuilderProjectId) ?? null) : null;
+  const selectedCreeperCompanyProfile = selectedCreeperCompanyProfileId ? (creeperCompanyProfiles.find((profile) => profile.id === selectedCreeperCompanyProfileId) ?? null) : null;
   const builderProjectHistoryConversations = chat.builderProjectConversations ?? [];
   const selectedBuilderHistoryConversationId = currentConversation?.builderProjectId === selectedBuilderProjectId
     ? currentConversation.id
     : "";
   const builderPluginActive = executionPluginId === "builder" && executionMode === "agent";
   const builderAskMode = executionPluginId === "builder" && executionMode === "ask";
+  const creeperPluginActive = executionPluginId === "creeper" && executionMode === "agent";
+  const creeperAskMode = executionPluginId === "creeper" && executionMode === "ask";
   const builderOnboarding = chat.builderOnboarding;
   const builderInboxNeedsInputCount = chat.builderInbox.filter((card) => card.status === "pending" && card.actions.length > 0).length;
   const builderInboxRunningCount = chat.builderInbox.filter((card) => card.status === "running").length;
@@ -1888,6 +1894,20 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                       tone="accent"
                     />
                   ) : null}
+                  {creeperAskMode ? (
+                    <InlineAssistantNotice
+                      title="I can help define the company brief, but I won't investigate a source yet."
+                      body="If you want me to collect company context, open existing profiles, register a Postgres source, and prepare an ingestion plan, switch Creeper from ask to agent mode in the composer."
+                      tone="accent"
+                    />
+                  ) : null}
+                  {creeperPluginActive && chat.messages.length === 0 && !chat.isBootstrapping ? (
+                    <InlineAssistantNotice
+                      title="Start by choosing an existing company or creating a new one."
+                      body="Tell me whether you want to open an existing company profile or start a new one. For a new company, include the company name, what the business does, what you want to learn from the data, and any business-specific areas to include or exclude before we touch the database."
+                      tone="accent"
+                    />
+                  ) : null}
                   {actionableBuilderInboxCards.length > 0 ? (
                     <InlineAssistantNotice
                       title={chat.chatVerbosity === "detailed"
@@ -1971,7 +1991,11 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                     pendingAssistantTurn={chat.pendingAssistantTurn}
                     isStreaming={(chat.isPending && !chat.isBootstrapping) || Boolean(chat.pendingAssistantTurn)}
                     verbosity={chat.chatVerbosity}
-                    emptyHint={builderPluginActive ? "Select a project and describe what to build. Builder will scaffold, generate, and run tasks in the workspace." : undefined}
+                    emptyHint={builderPluginActive
+                      ? "Select a project and describe what to build. Builder will scaffold, generate, and run tasks in the workspace."
+                      : creeperPluginActive
+                        ? "Tell Creeper whether to open an existing company profile or start a new one, then describe the business and what you want to learn before source setup begins."
+                        : undefined}
                     onPromote={(message) => {
                       if (message.role !== "user" && message.role !== "assistant") {
                         return;
@@ -2442,6 +2466,24 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                   </select>
                 </label>
               ) : null}
+              {executionPluginId === "creeper" ? (
+                <label className="space-y-1.5 w-[14rem] md:w-[16rem] shrink-0">
+                  <span className="text-[11px] uppercase tracking-[0.16em] text-muted">company</span>
+                  <select
+                    aria-label="creeper company"
+                    value={selectedCreeperCompanyProfileId ?? ""}
+                    onChange={(event) => setSelectedCreeperCompanyProfileId(event.target.value || null)}
+                    disabled={chat.isPending || creeperCompanyProfiles.length === 0}
+                    className="w-full bg-transparent border px-3 py-2 text-sm border-border text-primary"
+                    title={selectedCreeperCompanyProfile ? `${selectedCreeperCompanyProfile.name} · ${selectedCreeperCompanyProfile.status}` : ""}
+                  >
+                    <option value="">No company selected</option>
+                    {creeperCompanyProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>{profile.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               {executionPluginId === "builder" ? (
                 <label className="space-y-1.5 min-w-[15rem] flex-1">
                   <span className="text-[11px] uppercase tracking-[0.16em] text-muted">project chat</span>
@@ -2480,7 +2522,11 @@ export function ChatWorkspaceContent({ chat, setupOpen, closeSetupHref }: ChatWo
                 el.style.height = "auto";
                 el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
               }}
-              placeholder={builderPluginActive ? "Describe what to build or change in the selected project..." : "Ask BizBot anything..."}
+              placeholder={builderPluginActive
+                ? "Describe what to build or change in the selected project..."
+                : creeperPluginActive
+                  ? "Open an existing company or describe the new company, what it does, and what you want from the data..."
+                  : "Ask BizBot anything..."}
               rows={1}
               className="w-full bg-transparent text-sm resize-none leading-relaxed px-1 py-1 text-primary" style={{ minHeight: "2.5rem", outline: "none", border: "none" }}
               disabled={panelMode === "history"}

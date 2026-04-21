@@ -51,6 +51,14 @@ export const BUILTIN_PLUGIN_TOGGLES: BuiltinPluginToggleDefinition[] = [
     defaultEnabled: true,
   },
   {
+    id: "creeper",
+    displayName: "Creeper",
+    description: "Read-only company data source registration, profiling, and grounded retrieval planning.",
+    tags: ["creeper", "data", "research"],
+    envKey: "BIZBOT_PLUGIN_CREEPER_ENABLED",
+    defaultEnabled: false,
+  },
+  {
     id: "delegation",
     displayName: "Delegation",
     description: "Delegated sub-runs across specialist operator lanes.",

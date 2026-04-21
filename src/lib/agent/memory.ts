@@ -700,17 +700,22 @@ export async function getOrCreateScopedConversation(
 export async function getOrCreateConversation(
   conversationId?: string,
   userId = DEFAULT_USER_ID,
-  options?: { builderProjectId?: string | null },
+  options?: { builderProjectId?: string | null; companyProfileId?: string | null },
 ): Promise<string> {
   if (conversationId) {
     const existing = await db.conversation.findFirst({
       where: { id: conversationId, userId, archivedAt: null, deletedAt: null },
-      select: { id: true, builderProjectId: true },
+      select: { id: true, builderProjectId: true, companyProfileId: true },
     });
     if (existing) {
-      if (!options?.builderProjectId || existing.builderProjectId === options.builderProjectId) {
+      if (
+        (!options?.builderProjectId || existing.builderProjectId === options.builderProjectId)
+        && (!options?.companyProfileId || existing.companyProfileId === options.companyProfileId)
+      ) {
         return existing.id;
       }
+
+      return existing.id;
     }
   }
 
@@ -725,9 +730,20 @@ export async function getOrCreateConversation(
       userId,
       title: `Chat ${new Date().toLocaleString()}`,
       ...(options?.builderProjectId ? { builderProjectId: options.builderProjectId } : {}),
+      ...(options?.companyProfileId ? { companyProfileId: options.companyProfileId } : {}),
     },
   });
   return conversation.id;
+}
+
+export async function updateConversationCompanyProfile(
+  conversationId: string,
+  companyProfileId: string | null,
+): Promise<void> {
+  await db.conversation.update({
+    where: { id: conversationId },
+    data: { companyProfileId },
+  });
 }
 
 export async function updateConversationExecutionDefaults(
