@@ -131,7 +131,7 @@ export function createBizBotMcpServer(options?: BizBotMcpServerOptions): McpServ
         "Tools prefixed with builder_ operate only inside a dedicated external builder workspace and require explicit command allowlisting.",
         "Tools prefixed with creeper_ manage company profiles, bounded data-source inspection, ingestion planning, and retrieval-grounding setup.",
         "Tools prefixed with browser_ navigate the web via Playwright.",
-        "Tools prefixed with sidecar_ control BizBot's transient read-only Sidecar panel.",
+        "Tools prefixed with sidecar_ inspect and drive BizBot's transient Sidecar panel and stack. They are UI-only and do not write database, memory, or filesystem state.",
       ].join(" "),
     },
   );

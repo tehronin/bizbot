@@ -277,6 +277,12 @@ describe("oracle plugin", () => {
       action: "open",
       panel: expect.objectContaining({
         title: "Oracle personality",
+        context: {
+          contextId: "oracle.personality.preferences",
+          readKeys: ["selectedPersonality"],
+          writeKeys: ["selectedPersonality"],
+          selectionKey: "selectedPersonality",
+        },
         content: expect.objectContaining({
           type: "selection",
           interaction: { routeKey: "oracle.personality.select" },
@@ -307,11 +313,18 @@ describe("oracle plugin", () => {
     }));
     expect(interactionResult).toEqual(expect.objectContaining({
       ok: true,
-      action: "update",
+      action: "open",
       panel: expect.objectContaining({
-        panelId: sidecarResult.panel.panelId,
+        panelId: expect.any(String),
+        context: {
+          contextId: "oracle.personality.preferences",
+          readKeys: ["selectedPersonality"],
+        },
         content: expect.objectContaining({
-          type: "markdown",
+          type: "key_value",
+          entries: expect.arrayContaining([
+            expect.objectContaining({ label: "default personality", contextKey: "selectedPersonality" }),
+          ]),
         }),
       }),
     }));
@@ -392,6 +405,32 @@ describe("oracle plugin", () => {
       ok: true,
       action: "open",
       panel: expect.objectContaining({
+        context: {
+          contextId: "oracle.market.selection",
+          readKeys: [
+            "selectedMarketId",
+            "selectedMarketQuestion",
+            "selectedMarketEndDate",
+            "selectedMarketVolumeSummary",
+            "selectedMarketOutcomeSummary",
+            "selectedPersonalityLabel",
+            "selectedVerdictHeadline",
+            "selectedVerdictSummary",
+            "selectedVerdictConfidence",
+          ],
+          writeKeys: [
+            "selectedMarketId",
+            "selectedMarketQuestion",
+            "selectedMarketEndDate",
+            "selectedMarketVolumeSummary",
+            "selectedMarketOutcomeSummary",
+            "selectedPersonalityLabel",
+            "selectedVerdictHeadline",
+            "selectedVerdictSummary",
+            "selectedVerdictConfidence",
+          ],
+          selectionKey: "selectedMarketId",
+        },
         content: expect.objectContaining({
           type: "selection",
           interaction: { routeKey: "oracle.market.select" },
@@ -411,19 +450,54 @@ describe("oracle plugin", () => {
       panelId: sidecarResult.panel.panelId,
       actionId: "oracle_market_apply",
       selectedItemIds: ["market-1"],
+      expectedStackRevision: 1,
+      contextPatch: {
+        contextId: "oracle.market.selection",
+        values: {
+          selectedMarketId: "market-1",
+        },
+      },
       conversationId: "conversation-1",
       userId: "user-1",
     });
 
     expect(interactionResult).toEqual(expect.objectContaining({
       ok: true,
-      action: "update",
+      action: "open",
       panel: expect.objectContaining({
-        panelId: sidecarResult.panel.panelId,
+        panelId: expect.any(String),
+        context: {
+          contextId: "oracle.market.selection",
+          readKeys: [
+            "selectedMarketId",
+            "selectedMarketQuestion",
+            "selectedMarketEndDate",
+            "selectedMarketVolumeSummary",
+            "selectedMarketOutcomeSummary",
+            "selectedPersonalityLabel",
+            "selectedVerdictHeadline",
+            "selectedVerdictSummary",
+            "selectedVerdictConfidence",
+          ],
+        },
         content: expect.objectContaining({
           type: "markdown",
-          markdown: expect.stringContaining("Will BTC hit 150k?"),
+          markdown: expect.stringContaining("{{selectedMarketQuestion}}"),
         }),
+      }),
+      context: expect.objectContaining({
+        contextId: "oracle.market.selection",
+        values: {
+          selectedMarketId: "market-1",
+          selectedMarketQuestion: "Will BTC hit 150k?",
+          selectedMarketEndDate: "2026-12-31",
+          selectedMarketVolumeSummary: "n/a",
+          selectedMarketOutcomeSummary: expect.stringContaining("Yes:"),
+          selectedPersonalityLabel: "Balanced",
+          selectedVerdictHeadline: expect.any(String),
+          selectedVerdictSummary: expect.any(String),
+          selectedVerdictConfidence: expect.any(String),
+        },
       }),
     }));
   });

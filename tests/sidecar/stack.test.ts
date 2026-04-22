@@ -74,6 +74,7 @@ describe("sidecar stack persistence", () => {
         makePanel("workflow-panel", "Workflow", "workflow"),
       ],
       activePanelId: "workflow-panel",
+      stackRevision: 0,
     });
     expect(getRestorableActiveSidecarPanel(panels)).toEqual(makePanel("workflow-panel", "Workflow", "workflow"));
   });

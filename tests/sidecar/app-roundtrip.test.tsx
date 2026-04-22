@@ -22,7 +22,8 @@ function createBootstrap(): ChatConversationBootstrap {
     currentConversationId: "conversation-1",
     currentConversation: null,
     activeSidecarPanel: null,
-    activeSidecarStack: { panels: [], activePanelId: null },
+    activeSidecarStack: { panels: [], activePanelId: null, stackRevision: 0 },
+    activeSidecarContext: null,
     chatVerbosity: "concise",
     executionDefaults: {
       mode: "ask",
@@ -104,8 +105,22 @@ function ChatSidecarHarness() {
 }
 
 describe("sidecar app roundtrip", () => {
+  let authoritativeSidecarState: {
+    conversationId: string;
+    activePanel: unknown;
+    stack: { panels: unknown[]; activePanelId: string | null; stackRevision: number };
+    context: unknown;
+  };
+
   beforeEach(() => {
     const bootstrap = createBootstrap();
+    authoritativeSidecarState = {
+      conversationId: "conversation-1",
+      activePanel: null,
+      stack: { panels: [], activePanelId: null, stackRevision: 0 },
+      context: null,
+    };
+
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/chat/conversations")) {
@@ -115,27 +130,94 @@ describe("sidecar app roundtrip", () => {
         } as Response;
       }
 
+      if (url.includes("/api/sidecar/state")) {
+        return {
+          ok: true,
+          json: async () => authoritativeSidecarState,
+        } as Response;
+      }
+
       if (url.includes("/api/sidecar/interactions")) {
         const payload = JSON.parse(String(init?.body ?? "{}")) as {
           panelId: string;
           actionId: string;
           selectedItemIds: string[];
+          expectedStackRevision: number;
+          contextPatch?: {
+            contextId: string;
+            values: Record<string, unknown>;
+          };
           conversationId: string;
+        };
+
+        authoritativeSidecarState = {
+          conversationId: payload.conversationId,
+          activePanel: {
+            panelId: "oracle-personality-saved",
+            title: "Oracle personality saved",
+            content: {
+              type: "markdown",
+              markdown: `## Saved ${payload.selectedItemIds[0]} for ${payload.conversationId}`,
+            },
+          },
+          stack: {
+            panels: [
+              {
+                panelId: payload.panelId,
+                title: "Oracle personality",
+                context: {
+                  contextId: "oracle.personality.preferences",
+                  readKeys: ["selectedPersonality"],
+                  writeKeys: ["selectedPersonality"],
+                  selectionKey: "selectedPersonality",
+                },
+                content: {
+                  type: "selection",
+                  title: "Choose Oracle personality",
+                  selectionMode: "single",
+                  items: [
+                    { id: "balanced", title: "Balanced" },
+                    { id: "bullish", title: "Bullish" },
+                  ],
+                  actions: [
+                    { id: "oracle_personality_toggle", label: "Choose", kind: "toggle" },
+                    { id: "oracle_personality_apply", label: "Save personality", kind: "apply" },
+                  ],
+                  interaction: { routeKey: "oracle.personality.select" },
+                },
+              },
+              {
+                panelId: "oracle-personality-saved",
+                title: "Oracle personality saved",
+                content: {
+                  type: "markdown",
+                  markdown: `## Saved ${payload.selectedItemIds[0]} for ${payload.conversationId}`,
+                },
+              },
+            ],
+            activePanelId: "oracle-personality-saved",
+            stackRevision: payload.expectedStackRevision + 1,
+          },
+          context: {
+            contextId: "oracle.personality.preferences",
+            conversationId: payload.conversationId,
+            rootPanelId: payload.panelId,
+            activePanelId: "oracle-personality-saved",
+            stackRevision: payload.expectedStackRevision + 1,
+            values: {
+              selectedPersonality: payload.contextPatch?.values.selectedPersonality ?? payload.selectedItemIds[0],
+            },
+          },
         };
 
         return {
           ok: true,
           json: async () => ({
             ok: true,
-            action: "update",
-            panel: {
-              panelId: payload.panelId,
-              title: "Oracle personality",
-              content: {
-                type: "markdown",
-                markdown: `## Saved ${payload.selectedItemIds[0]} for ${payload.conversationId}`,
-              },
-            },
+            action: "open",
+            panel: authoritativeSidecarState.activePanel,
+            stack: authoritativeSidecarState.stack,
+            context: authoritativeSidecarState.context,
           }),
         } as Response;
       }
@@ -154,28 +236,79 @@ describe("sidecar app roundtrip", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    authoritativeSidecarState = {
+      conversationId: "conversation-1",
+      activePanel: {
+        panelId: "oracle-panel",
+        title: "Oracle personality",
+        context: {
+          contextId: "oracle.personality.preferences",
+          readKeys: ["selectedPersonality"],
+          writeKeys: ["selectedPersonality"],
+          selectionKey: "selectedPersonality",
+        },
+        content: {
+          type: "selection",
+          title: "Choose Oracle personality",
+          selectionMode: "single",
+          items: [
+            { id: "balanced", title: "Balanced" },
+            { id: "bullish", title: "Bullish" },
+          ],
+          actions: [
+            { id: "oracle_personality_toggle", label: "Choose", kind: "toggle" },
+            { id: "oracle_personality_apply", label: "Save personality", kind: "apply" },
+          ],
+          interaction: { routeKey: "oracle.personality.select" },
+        },
+      },
+      stack: {
+        panels: [
+          {
+            panelId: "oracle-panel",
+            title: "Oracle personality",
+            context: {
+              contextId: "oracle.personality.preferences",
+              readKeys: ["selectedPersonality"],
+              writeKeys: ["selectedPersonality"],
+              selectionKey: "selectedPersonality",
+            },
+            content: {
+              type: "selection",
+              title: "Choose Oracle personality",
+              selectionMode: "single",
+              items: [
+                { id: "balanced", title: "Balanced" },
+                { id: "bullish", title: "Bullish" },
+              ],
+              actions: [
+                { id: "oracle_personality_toggle", label: "Choose", kind: "toggle" },
+                { id: "oracle_personality_apply", label: "Save personality", kind: "apply" },
+              ],
+              interaction: { routeKey: "oracle.personality.select" },
+            },
+          },
+        ],
+        activePanelId: "oracle-panel",
+        stackRevision: 1,
+      },
+      context: {
+        contextId: "oracle.personality.preferences",
+        conversationId: "conversation-1",
+        rootPanelId: "oracle-panel",
+        activePanelId: "oracle-panel",
+        stackRevision: 1,
+        values: {},
+      },
+    };
+
     window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_EVENT, {
       detail: {
         action: "open",
         conversationId: "conversation-1",
-        panel: {
-          panelId: "oracle-panel",
-          title: "Oracle personality",
-          content: {
-            type: "selection",
-            title: "Choose Oracle personality",
-            selectionMode: "single",
-            items: [
-              { id: "balanced", title: "Balanced" },
-              { id: "bullish", title: "Bullish" },
-            ],
-            actions: [
-              { id: "oracle_personality_toggle", label: "Choose", kind: "toggle" },
-              { id: "oracle_personality_apply", label: "Save personality", kind: "apply" },
-            ],
-            interaction: { routeKey: "oracle.personality.select" },
-          },
-        },
+        panel: authoritativeSidecarState.activePanel,
+        stack: authoritativeSidecarState.stack,
+        context: authoritativeSidecarState.context,
       },
     }));
 
@@ -189,6 +322,24 @@ describe("sidecar app roundtrip", () => {
       expect(fetch).toHaveBeenCalledWith("/api/sidecar/interactions", expect.objectContaining({
         method: "POST",
       }));
+
+      const interactionCall = (fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+        ([request]) => String(request).includes("/api/sidecar/interactions"),
+      );
+
+      expect(JSON.parse(String(interactionCall?.[1]?.body ?? "{}"))).toEqual({
+        panelId: "oracle-panel",
+        actionId: "oracle_personality_toggle",
+        selectedItemIds: ["bullish"],
+        expectedStackRevision: 1,
+        contextPatch: {
+          contextId: "oracle.personality.preferences",
+          values: {
+            selectedPersonality: "bullish",
+          },
+        },
+        conversationId: "conversation-1",
+      });
       expect(screen.getByText("Saved bullish for conversation-1")).toBeTruthy();
     });
   });
@@ -206,7 +357,9 @@ describe("sidecar app roundtrip", () => {
     bootstrap.activeSidecarStack = {
       panels: [bootstrap.activeSidecarPanel],
       activePanelId: "rehydrated-panel",
+      stackRevision: 1,
     };
+    bootstrap.activeSidecarContext = null;
 
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { POST } from "@/app/api/sidecar/state/route";
+import { NextRequest } from "next/server";
+import { GET, POST } from "@/app/api/sidecar/state/route";
 import { getActiveSidecarPanelForConversation, getActiveSidecarStackForConversation, resetActiveSidecarPanelsForTests, syncActiveSidecarPanel } from "@/lib/sidecar/state";
 import { createValidatedSidecarPanel } from "@/lib/sidecar/validation";
 
@@ -34,9 +35,41 @@ describe("sidecar state route", () => {
       stack: {
         panels: [],
         activePanelId: null,
+        stackRevision: 2,
       },
+      context: null,
     });
     expect(getActiveSidecarPanelForConversation("conversation-1")).toBeNull();
+  });
+
+  it("returns the active sidecar state for a conversation", async () => {
+    syncActiveSidecarPanel({
+      action: "open",
+      panel: createValidatedSidecarPanel({
+        panelId: "state-panel",
+        title: "State panel",
+        content: { type: "markdown", markdown: "## Authoritative" },
+      }),
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    const response = await GET(new NextRequest("http://localhost:3000/api/sidecar/state?conversationId=conversation-1"));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      conversationId: "conversation-1",
+      activePanel: expect.objectContaining({
+        panelId: "state-panel",
+        title: "State panel",
+      }),
+      stack: {
+        panels: [expect.objectContaining({ panelId: "state-panel", title: "State panel" })],
+        activePanelId: "state-panel",
+        stackRevision: 1,
+      },
+      context: null,
+    });
   });
 
   it("rejects missing conversation ids", async () => {
@@ -88,7 +121,9 @@ describe("sidecar state route", () => {
       stack: {
         panels: [expect.objectContaining({ panelId: "plan-panel", title: "Plan" })],
         activePanelId: "plan-panel",
+        stackRevision: 3,
       },
+      context: null,
     });
     expect(getActiveSidecarPanelForConversation("conversation-1")).toEqual(expect.objectContaining({
       panel: expect.objectContaining({ panelId: "plan-panel" }),
@@ -96,6 +131,7 @@ describe("sidecar state route", () => {
     expect(getActiveSidecarStackForConversation("conversation-1")).toEqual({
       panels: [expect.objectContaining({ panelId: "plan-panel", title: "Plan" })],
       activePanelId: "plan-panel",
+      stackRevision: 3,
     });
   });
 
@@ -148,7 +184,9 @@ describe("sidecar state route", () => {
           expect.objectContaining({ panelId: "detail-panel", title: "Detail" }),
         ],
         activePanelId: "detail-panel",
+        stackRevision: 4,
       },
+      context: null,
     });
     expect(getActiveSidecarStackForConversation("conversation-1")).toEqual({
       panels: [
@@ -156,6 +194,59 @@ describe("sidecar state route", () => {
         expect.objectContaining({ panelId: "detail-panel", title: "Detail" }),
       ],
       activePanelId: "detail-panel",
+      stackRevision: 4,
+    });
+  });
+
+  it("rejects stale stack mutations with the latest snapshot", async () => {
+    syncActiveSidecarPanel({
+      action: "open",
+      panel: createValidatedSidecarPanel({
+        panelId: "plan-panel",
+        title: "Plan",
+        content: { type: "markdown", markdown: "# Plan" },
+      }),
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+    syncActiveSidecarPanel({
+      action: "open",
+      panel: createValidatedSidecarPanel({
+        panelId: "detail-panel",
+        title: "Detail",
+        content: { type: "markdown", markdown: "# Detail" },
+      }),
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    const response = await POST(new Request("http://localhost:3000/api/sidecar/state", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ conversationId: "conversation-1", operation: "back", expectedStackRevision: 1 }),
+    }) as never);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Sidecar state changed while you were navigating. Review the latest panel stack and retry.",
+      panel: expect.objectContaining({ panelId: "detail-panel", title: "Detail" }),
+      stack: {
+        panels: [
+          expect.objectContaining({ panelId: "plan-panel", title: "Plan" }),
+          expect.objectContaining({ panelId: "detail-panel", title: "Detail" }),
+        ],
+        activePanelId: "detail-panel",
+        stackRevision: 2,
+      },
+      context: null,
+    });
+    expect(getActiveSidecarStackForConversation("conversation-1")).toEqual({
+      panels: [
+        expect.objectContaining({ panelId: "plan-panel", title: "Plan" }),
+        expect.objectContaining({ panelId: "detail-panel", title: "Detail" }),
+      ],
+      activePanelId: "detail-panel",
+      stackRevision: 2,
     });
   });
 });

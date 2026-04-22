@@ -24,6 +24,11 @@ describe("sidecar core tools", () => {
   it("opens, updates, and closes through the shared executor", async () => {
     await expect(executeTool("sidecar_open", {
       title: "Summary",
+      context: {
+        contextId: "release.review",
+        readKeys: ["planId"],
+        writeKeys: ["approved"],
+      },
       content: {
         type: "json",
         value: {
@@ -39,6 +44,11 @@ describe("sidecar core tools", () => {
       panel: expect.objectContaining({
         panelId: expect.any(String),
         title: "Summary",
+        context: {
+          contextId: "release.review",
+          readKeys: ["planId"],
+          writeKeys: ["approved"],
+        },
         content: {
           type: "json",
           value: {
@@ -105,6 +115,9 @@ describe("sidecar core tools", () => {
 
     await expect(executeTool("sidecar_open", {
       title: "Unknown content type",
+      context: {
+        contextId: "invalid context id with spaces",
+      },
       content: {
         type: "chart",
         value: { points: [1, 2, 3] },

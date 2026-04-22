@@ -86,6 +86,41 @@ vi.mock("@/lib/creeper/plans", () => ({
       },
     ],
   })),
+  updateCreeperPlan: vi.fn(async ({ planId, selectedTableIds }: { planId: string; selectedTableIds?: string[] }) => ({
+    id: planId,
+    version: 2,
+    status: "DRAFT",
+    businessGoal: "Find revenue signals",
+    source: { label: "Warehouse" },
+    companyProfile: { name: "Acme" },
+    selectedTables: [
+      {
+        id: (selectedTableIds && selectedTableIds[0]) || "public_orders",
+        estimatedRowCount: 1200,
+        ingestionScore: 0.9,
+        selectedColumns: ["id", "amount"],
+      },
+    ],
+  })),
+  approveCreeperPlan: vi.fn(async (planId: string) => ({
+    id: planId,
+    version: 2,
+    status: "APPROVED",
+    businessGoal: "Find revenue signals",
+    source: { label: "Warehouse" },
+    companyProfile: { name: "Acme" },
+    selectedTables: [
+      {
+        id: "public_orders",
+        estimatedRowCount: 1200,
+        ingestionScore: 0.9,
+        selectedColumns: ["id", "amount"],
+      },
+    ],
+  })),
+  startCreeperIngestionRun: vi.fn(async () => ({
+    id: "run-1",
+  })),
 }));
 
 vi.mock("@/lib/builder/orchestrator", () => ({
@@ -104,7 +139,7 @@ vi.mock("@/lib/builder/orchestrator", () => ({
 import { executeTool } from "@/lib/agent/plugins";
 import { getActiveMemoryFacts } from "@/lib/agent/memory/service";
 import { routeSidecarInteraction } from "@/lib/sidecar/router";
-import { resetActiveSidecarPanelsForTests, syncActiveSidecarPanel } from "@/lib/sidecar/state";
+import { getActiveSidecarContextForConversation, resetActiveSidecarPanelsForTests, syncActiveSidecarPanel } from "@/lib/sidecar/state";
 import {
   buildCreeperCompanyBriefReviewSidecar,
   buildCreeperCompanyProfileSelectorSidecar,
@@ -217,6 +252,88 @@ describe("sidecar persistence contracts", () => {
     }));
     expect(plan).toEqual(expect.objectContaining({
       panel: expect.objectContaining({ persistence: "workflow" }),
+    }));
+  });
+
+  it("opens a context-backed Creeper ingestion summary outside the Oracle workflow", async () => {
+    const result = await buildCreeperPlanReviewSidecar("plan-1");
+
+    expect(result).toEqual(expect.objectContaining({
+      panel: expect.objectContaining({
+        persistence: "workflow",
+        context: expect.objectContaining({
+          contextId: "creeper.plan.review",
+          selectionKey: "selectedTableIds",
+        }),
+      }),
+    }));
+
+    const sidecarResult = result as { panel: SidecarPanel };
+    syncActiveSidecarPanel({
+      action: "open",
+      panel: sidecarResult.panel,
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    const interactionResult = await routeSidecarInteraction({
+      panelId: sidecarResult.panel.panelId,
+      actionId: "creeper_plan_start",
+      selectedItemIds: ["public_orders"],
+      expectedStackRevision: 1,
+      contextPatch: {
+        contextId: "creeper.plan.review",
+        values: {
+          selectedTableIds: ["public_orders"],
+        },
+      },
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    expect(interactionResult).toEqual(expect.objectContaining({
+      ok: true,
+      action: "open",
+      panel: expect.objectContaining({
+        persistence: "ephemeral",
+        context: {
+          contextId: "creeper.plan.review",
+          readKeys: [
+            "selectedTableIds",
+            "selectedTableCount",
+            "selectedTableSummary",
+            "companyName",
+            "sourceLabel",
+            "planVersion",
+            "planStatus",
+            "ingestionRunId",
+          ],
+        },
+        content: expect.objectContaining({
+          type: "markdown",
+          markdown: expect.stringContaining("{{ingestionRunId}}"),
+        }),
+      }),
+      context: expect.objectContaining({
+        contextId: "creeper.plan.review",
+        values: expect.objectContaining({
+          companyName: "Acme",
+          sourceLabel: "Warehouse",
+          planVersion: 2,
+          planStatus: "APPROVED",
+          ingestionRunId: "run-1",
+          selectedTableCount: 1,
+          selectedTableSummary: "public_orders",
+        }),
+      }),
+    }));
+
+    expect(getActiveSidecarContextForConversation("conversation-1")).toEqual(expect.objectContaining({
+      contextId: "creeper.plan.review",
+      values: expect.objectContaining({
+        ingestionRunId: "run-1",
+        selectedTableSummary: "public_orders",
+      }),
     }));
   });
 

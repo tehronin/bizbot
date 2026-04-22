@@ -80,13 +80,13 @@ describe("sidecar validation", () => {
       type: "key_value",
       entries: [
         { label: "branch", value: "main" },
-        { label: "counts", value: { passing: 12, failing: 0 } },
+        { label: "counts", value: { passing: 12, failing: 0 }, contextKey: "release.counts" },
       ],
     })).toEqual({
       type: "key_value",
       entries: [
         { label: "branch", value: "main" },
-        { label: "counts", value: { passing: 12, failing: 0 } },
+        { label: "counts", value: { passing: 12, failing: 0 }, contextKey: "release.counts" },
       ],
     });
 

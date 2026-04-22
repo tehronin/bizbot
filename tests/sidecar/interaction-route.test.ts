@@ -7,7 +7,7 @@ vi.mock("@/lib/agent/memory/service", () => ({
 
 import { POST } from "@/app/api/sidecar/interactions/route";
 import "@/lib/agent/plugins/OraclePlugin";
-import { resetActiveSidecarPanelsForTests, syncActiveSidecarPanel } from "@/lib/sidecar/state";
+import { getActiveSidecarContextForConversation, resetActiveSidecarPanelsForTests, syncActiveSidecarPanel } from "@/lib/sidecar/state";
 import { createValidatedSidecarPanel } from "@/lib/sidecar/validation";
 import { getActiveMemoryFacts, setMemoryFact } from "@/lib/agent/memory/service";
 
@@ -45,6 +45,12 @@ describe("sidecar interaction route", () => {
   it("handles a live Oracle personality selection through the API route", async () => {
     const panel = createValidatedSidecarPanel({
       title: "Oracle personality",
+      context: {
+        contextId: "oracle.personality.preferences",
+        readKeys: ["selectedPersonality"],
+        writeKeys: ["selectedPersonality"],
+        selectionKey: "selectedPersonality",
+      },
       content: {
         type: "selection",
         title: "Choose Oracle personality",
@@ -75,6 +81,13 @@ describe("sidecar interaction route", () => {
         panelId: panel.panelId,
         actionId: "oracle_personality_apply",
         selectedItemIds: ["bullish"],
+        expectedStackRevision: 1,
+        contextPatch: {
+          contextId: "oracle.personality.preferences",
+          values: {
+            selectedPersonality: "bullish",
+          },
+        },
         conversationId: "conversation-1",
         userId: "user-1",
       }),
@@ -88,14 +101,179 @@ describe("sidecar interaction route", () => {
     }));
     await expect(response.json()).resolves.toEqual(expect.objectContaining({
       ok: true,
-      action: "update",
+      action: "open",
       panel: expect.objectContaining({
-        panelId: panel.panelId,
+        panelId: expect.any(String),
+        context: {
+          contextId: "oracle.personality.preferences",
+          readKeys: ["selectedPersonality"],
+        },
         content: expect.objectContaining({
-          type: "markdown",
-          markdown: expect.stringContaining("Oracle personality saved"),
+          type: "key_value",
+          entries: expect.arrayContaining([
+            expect.objectContaining({ label: "default personality", contextKey: "selectedPersonality" }),
+          ]),
         }),
       }),
+      stack: expect.objectContaining({
+        stackRevision: 2,
+      }),
+      context: {
+        contextId: "oracle.personality.preferences",
+        conversationId: "conversation-1",
+        rootPanelId: panel.panelId,
+        activePanelId: expect.any(String),
+        stackRevision: 2,
+        values: {
+          selectedPersonality: "bullish",
+        },
+      },
     }));
+    expect(getActiveSidecarContextForConversation("conversation-1")).toEqual({
+      contextId: "oracle.personality.preferences",
+      conversationId: "conversation-1",
+      rootPanelId: panel.panelId,
+      activePanelId: expect.any(String),
+      stackRevision: 2,
+      values: {
+        selectedPersonality: "bullish",
+      },
+    });
+  });
+
+  it("accepts bounded context patches and returns context with the latest stack snapshot", async () => {
+    const panel = createValidatedSidecarPanel({
+      panelId: "plan-review",
+      title: "Plan review",
+      context: {
+        contextId: "plan.review",
+        writeKeys: ["decision", "reviewer"],
+      },
+      content: {
+        type: "selection",
+        title: "Approve the plan",
+        selectionMode: "single",
+        items: [
+          { id: "approved", title: "Approve" },
+          { id: "rework", title: "Request rework" },
+        ],
+        actions: [
+          { id: "plan_review_toggle", label: "Choose", kind: "toggle" },
+        ],
+        interaction: { routeKey: "sidecar.selection.apply" },
+      },
+    });
+
+    syncActiveSidecarPanel({
+      action: "open",
+      panel,
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    const response = await POST(new Request("http://localhost:3000/api/sidecar/interactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        panelId: panel.panelId,
+        actionId: "plan_review_toggle",
+        selectedItemIds: ["approved"],
+        expectedStackRevision: 1,
+        contextPatch: {
+          contextId: "plan.review",
+          values: {
+            decision: "approved",
+            reviewer: "user-1",
+          },
+        },
+        conversationId: "conversation-1",
+        userId: "user-1",
+      }),
+    }) as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      ok: true,
+      action: "update",
+      panel: expect.objectContaining({ panelId: panel.panelId }),
+      stack: expect.objectContaining({
+        activePanelId: panel.panelId,
+        stackRevision: 2,
+      }),
+      context: {
+        contextId: "plan.review",
+        conversationId: "conversation-1",
+        rootPanelId: "plan-review",
+        activePanelId: "plan-review",
+        stackRevision: 2,
+        values: {
+          decision: "approved",
+          reviewer: "user-1",
+        },
+      },
+    }));
+    expect(getActiveSidecarContextForConversation("conversation-1")).toEqual({
+      contextId: "plan.review",
+      conversationId: "conversation-1",
+      rootPanelId: "plan-review",
+      activePanelId: "plan-review",
+      stackRevision: 2,
+      values: {
+        decision: "approved",
+        reviewer: "user-1",
+      },
+    });
+  });
+
+  it("rejects context patches outside the panel write scope", async () => {
+    const panel = createValidatedSidecarPanel({
+      panelId: "plan-review",
+      title: "Plan review",
+      context: {
+        contextId: "plan.review",
+        writeKeys: ["decision"],
+      },
+      content: {
+        type: "selection",
+        title: "Approve the plan",
+        selectionMode: "single",
+        items: [
+          { id: "approved", title: "Approve" },
+        ],
+        actions: [
+          { id: "plan_review_toggle", label: "Choose", kind: "toggle" },
+        ],
+        interaction: { routeKey: "sidecar.selection.apply" },
+      },
+    });
+
+    syncActiveSidecarPanel({
+      action: "open",
+      panel,
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    const response = await POST(new Request("http://localhost:3000/api/sidecar/interactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        panelId: panel.panelId,
+        actionId: "plan_review_toggle",
+        selectedItemIds: ["approved"],
+        contextPatch: {
+          contextId: "plan.review",
+          values: {
+            reviewer: "user-1",
+          },
+        },
+        conversationId: "conversation-1",
+      }),
+    }) as never);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Error: Sidecar context key 'reviewer' is not writable from this panel.",
+    });
   });
 });

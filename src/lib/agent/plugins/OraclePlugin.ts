@@ -27,9 +27,9 @@ import {
   type OraclePersonalityId,
 } from "@/lib/polymarket/personality";
 import { registerSidecarInteractionHandler } from "@/lib/sidecar/router";
+import { applySidecarContextPatchForConversation } from "@/lib/sidecar/state";
 import { createValidatedSidecarPanel } from "@/lib/sidecar/validation";
 import type {
-  SidecarInteractionResult,
   SidecarPanel,
   SidecarSelectionContent,
   SidecarToolResult,
@@ -109,6 +109,49 @@ function cloneSelectionContent(content: SidecarSelectionContent, selectedItemIds
   };
 }
 
+const ORACLE_MARKET_CONTEXT_ID = "oracle.market.selection";
+const ORACLE_MARKET_CONTEXT_KEYS = [
+  "selectedMarketId",
+  "selectedMarketQuestion",
+  "selectedMarketEndDate",
+  "selectedMarketVolumeSummary",
+  "selectedMarketOutcomeSummary",
+  "selectedPersonalityLabel",
+  "selectedVerdictHeadline",
+  "selectedVerdictSummary",
+  "selectedVerdictConfidence",
+] as const;
+
+function formatOracleMarketVolumeSummary(market: Awaited<ReturnType<typeof getPolymarketMarket>>): string {
+  return typeof market.volume === "number" ? String(market.volume) : "n/a";
+}
+
+function formatOracleOutcomeLabel(outcome: unknown): string {
+  if (typeof outcome === "string") {
+    return outcome;
+  }
+  if (outcome && typeof outcome === "object") {
+    if ("title" in outcome && typeof outcome.title === "string") {
+      return outcome.title;
+    }
+    if ("label" in outcome && typeof outcome.label === "string") {
+      return outcome.label;
+    }
+    if ("value" in outcome && typeof outcome.value === "string") {
+      return outcome.value;
+    }
+  }
+  return String(outcome);
+}
+
+function formatOracleMarketOutcomeSummary(market: Awaited<ReturnType<typeof getPolymarketMarket>>): string {
+  return market.outcomes.map((outcome) => {
+    const rawPrice = outcome.price;
+    const probability = typeof rawPrice === "number" && Number.isFinite(rawPrice) ? `${Math.round(rawPrice * 100)}%` : "n/a";
+    return `${formatOracleOutcomeLabel(outcome)}: ${probability}`;
+  }).join(" | ");
+}
+
 function buildPersonalityPanel(selectedItemIds: string[] = []): SidecarToolResult {
   return {
     ok: true,
@@ -116,6 +159,12 @@ function buildPersonalityPanel(selectedItemIds: string[] = []): SidecarToolResul
     panel: createValidatedSidecarPanel({
       title: "Oracle personality",
       persistence: "sticky",
+      context: {
+        contextId: "oracle.personality.preferences",
+        readKeys: ["selectedPersonality"],
+        writeKeys: ["selectedPersonality"],
+        selectionKey: "selectedPersonality",
+      },
       content: {
         type: "selection",
         title: "Choose Oracle personality",
@@ -353,6 +402,12 @@ function buildMarketSelectionPanel(query: string, markets: Awaited<ReturnType<ty
     panel: createValidatedSidecarPanel({
       title: "Oracle market shortlist",
       persistence: "workflow",
+      context: {
+        contextId: ORACLE_MARKET_CONTEXT_ID,
+        readKeys: [...ORACLE_MARKET_CONTEXT_KEYS],
+        writeKeys: [...ORACLE_MARKET_CONTEXT_KEYS],
+        selectionKey: "selectedMarketId",
+      },
       content: {
         type: "selection",
         title: "Select a market to inspect",
@@ -375,17 +430,20 @@ function buildMarketSelectionPanel(query: string, markets: Awaited<ReturnType<ty
   };
 }
 
-function buildVerdictPanel(panel: SidecarPanel, verdict: ReturnType<typeof buildOracleVerdict>, market: Awaited<ReturnType<typeof getPolymarketMarket>>): SidecarInteractionResult {
+function buildMarketSummaryPanel(market: Awaited<ReturnType<typeof getPolymarketMarket>>): SidecarToolResult {
   return {
     ok: true,
-    action: "update",
+    action: "open",
     panel: createValidatedSidecarPanel({
-      panelId: panel.panelId,
-      title: panel.title,
+      title: `Oracle market summary: ${market.question.slice(0, 36)}`,
       persistence: "ephemeral",
+      context: {
+        contextId: ORACLE_MARKET_CONTEXT_ID,
+        readKeys: [...ORACLE_MARKET_CONTEXT_KEYS],
+      },
       content: {
         type: "markdown",
-        markdown: `## ${verdict.headline}\n\n${verdict.summary}\n\n- Confidence: ${verdict.confidence}\n- Personality: ${getOraclePersonality(verdict.personality).label}\n- Market: ${formatMarketSummary(market)}`,
+        markdown: "## {{selectedMarketQuestion}}\n\n- Market ID: {{selectedMarketId}}\n- Closes: {{selectedMarketEndDate}}\n- Volume: {{selectedMarketVolumeSummary}}\n- Outcomes: {{selectedMarketOutcomeSummary}}\n- Oracle personality: {{selectedPersonalityLabel}}\n\n### Verdict\n**{{selectedVerdictHeadline}}**\n\n{{selectedVerdictSummary}}\n\n- Confidence: {{selectedVerdictConfidence}}",
       },
     }),
   };
@@ -401,7 +459,9 @@ registerSidecarInteractionHandler("oracle.personality.select", async (context) =
       panel: createValidatedSidecarPanel({
         panelId: context.panel.panelId,
         title: context.panel.title,
-        content: cloneSelectionContent(context.panel.content as SidecarSelectionContent, context.selectedItemIds),
+        ...(context.panel.persistence ? { persistence: context.panel.persistence } : {}),
+        ...(context.panel.context ? { context: context.panel.context } : {}),
+        content: cloneSelectionContent(context.panel.content as SidecarSelectionContent, []),
       }),
     };
   }
@@ -413,6 +473,8 @@ registerSidecarInteractionHandler("oracle.personality.select", async (context) =
       panel: createValidatedSidecarPanel({
         panelId: context.panel.panelId,
         title: context.panel.title,
+        ...(context.panel.persistence ? { persistence: context.panel.persistence } : {}),
+        ...(context.panel.context ? { context: context.panel.context } : {}),
         content: cloneSelectionContent(context.panel.content as SidecarSelectionContent, []),
       }),
     };
@@ -431,13 +493,20 @@ registerSidecarInteractionHandler("oracle.personality.select", async (context) =
 
   return {
     ok: true,
-    action: "update",
+    action: "open",
     panel: createValidatedSidecarPanel({
-      panelId: context.panel.panelId,
-      title: context.panel.title,
+      title: "Oracle personality saved",
+      persistence: "ephemeral",
+      context: {
+        contextId: "oracle.personality.preferences",
+        readKeys: ["selectedPersonality"],
+      },
       content: {
-        type: "markdown",
-        markdown: `## Oracle personality saved\n\nDefault personality is now **${getOraclePersonality(selectedPersonality as OraclePersonalityId).label}**. This preference is stored in explicit user memory under oracle_bot_personality.`,
+        type: "key_value",
+        entries: [
+          { label: "default personality", value: "balanced", contextKey: "selectedPersonality" },
+          { label: "stored in", value: "oracle_bot_personality" },
+        ],
       },
     }),
   };
@@ -453,7 +522,9 @@ registerSidecarInteractionHandler("oracle.market.select", async (context) => {
       panel: createValidatedSidecarPanel({
         panelId: context.panel.panelId,
         title: context.panel.title,
-        content: cloneSelectionContent(context.panel.content as SidecarSelectionContent, context.selectedItemIds),
+        ...(context.panel.persistence ? { persistence: context.panel.persistence } : {}),
+        ...(context.panel.context ? { context: context.panel.context } : {}),
+        content: cloneSelectionContent(context.panel.content as SidecarSelectionContent, []),
       }),
     };
   }
@@ -465,6 +536,8 @@ registerSidecarInteractionHandler("oracle.market.select", async (context) => {
       panel: createValidatedSidecarPanel({
         panelId: context.panel.panelId,
         title: context.panel.title,
+        ...(context.panel.persistence ? { persistence: context.panel.persistence } : {}),
+        ...(context.panel.context ? { context: context.panel.context } : {}),
         content: cloneSelectionContent(context.panel.content as SidecarSelectionContent, []),
       }),
     };
@@ -483,7 +556,26 @@ registerSidecarInteractionHandler("oracle.market.select", async (context) => {
   const personality = await resolveOraclePersonality(context.userId);
   const verdict = buildOracleVerdict(market, personality);
 
-  return buildVerdictPanel(context.panel, verdict, market);
+  applySidecarContextPatchForConversation({
+    conversationId: context.conversationId,
+    panel: context.panel,
+    contextPatch: {
+      contextId: ORACLE_MARKET_CONTEXT_ID,
+      values: {
+        selectedMarketId: market.id,
+        selectedMarketQuestion: market.question,
+        selectedMarketEndDate: market.endDate ?? "n/a",
+        selectedMarketVolumeSummary: formatOracleMarketVolumeSummary(market),
+        selectedMarketOutcomeSummary: formatOracleMarketOutcomeSummary(market),
+        selectedPersonalityLabel: getOraclePersonality(personality).label,
+        selectedVerdictHeadline: verdict.headline,
+        selectedVerdictSummary: verdict.summary,
+        selectedVerdictConfidence: verdict.confidence,
+      },
+    },
+  });
+
+  return buildMarketSummaryPanel(market);
 });
 
 export const oraclePlugin = {

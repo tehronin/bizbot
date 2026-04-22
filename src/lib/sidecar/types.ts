@@ -12,6 +12,29 @@ export type SidecarSelectionMode = "single" | "multiple";
 export type SidecarSelectionActionKind = "apply" | "toggle" | "clear" | "close";
 export type SidecarProgressStatus = "pending" | "active" | "done" | "error";
 
+export interface SidecarPanelContextBinding {
+  contextId: string;
+  parentPanelId?: string;
+  readKeys?: string[];
+  writeKeys?: string[];
+  selectionKey?: string;
+  returnChannel?: string;
+}
+
+export interface SidecarContextPatch {
+  contextId: string;
+  values: Record<string, JsonValue>;
+}
+
+export interface SidecarContextSnapshot {
+  contextId: string;
+  conversationId: string;
+  rootPanelId: string;
+  activePanelId: string | null;
+  stackRevision: number;
+  values: Record<string, JsonValue>;
+}
+
 export interface SidecarMarkdownContent {
   type: "markdown";
   markdown: string;
@@ -70,6 +93,7 @@ export interface SidecarTableContent {
 export interface SidecarKeyValueEntry {
   label: string;
   value: JsonValue;
+  contextKey?: string;
 }
 
 export interface SidecarKeyValueContent {
@@ -118,11 +142,13 @@ export interface SidecarPanel {
   title: string;
   content: SidecarContent;
   persistence?: SidecarPanelPersistence;
+  context?: SidecarPanelContextBinding;
 }
 
 export interface SidecarStackSnapshot {
   panels: SidecarPanel[];
   activePanelId: string | null;
+  stackRevision: number;
 }
 
 export interface SidecarToolResult {
@@ -135,6 +161,7 @@ export interface SidecarStreamEventDetail {
   action: SidecarAction;
   panel: SidecarPanel | null;
   stack?: SidecarStackSnapshot;
+  context?: SidecarContextSnapshot | null;
   conversationId?: string;
   source?: "useChat";
 }
@@ -152,6 +179,8 @@ export interface SidecarInteractionEventDetail {
   panelId: string;
   actionId: string;
   selectedItemIds: string[];
+  expectedStackRevision?: number;
+  contextPatch?: SidecarContextPatch;
 }
 
 export interface SidecarInteractionStateEventDetail {
@@ -169,4 +198,6 @@ export interface SidecarInteractionResult {
   ok: true;
   action: SidecarAction;
   panel: SidecarPanel | null;
+  stack: SidecarStackSnapshot;
+  context: SidecarContextSnapshot | null;
 }

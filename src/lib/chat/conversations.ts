@@ -13,6 +13,7 @@ import { listCreeperCompanyProfiles } from "@/lib/creeper/profiles";
 import {
   getActiveSidecarPanelForConversation,
   getActiveSidecarStackForConversation,
+  getRestorableSidecarContextForConversation,
   getRestorableActiveSidecarPanelForConversation,
   getRestorableSidecarStackForConversation,
 } from "@/lib/sidecar/state";
@@ -796,7 +797,8 @@ export async function resolveChatBootstrap(options?: {
     currentConversationId,
     currentConversation,
     activeSidecarPanel: currentConversationId ? getRestorableActiveSidecarPanelForConversation(currentConversationId)?.panel ?? null : null,
-    activeSidecarStack: currentConversationId ? getRestorableSidecarStackForConversation(currentConversationId) : { panels: [], activePanelId: null },
+    activeSidecarStack: currentConversationId ? getRestorableSidecarStackForConversation(currentConversationId) : { panels: [], activePanelId: null, stackRevision: 0 },
+    activeSidecarContext: currentConversationId ? getRestorableSidecarContextForConversation(currentConversationId) : null,
     executionDefaults,
     executionCatalog,
     builderProjects: builderProjectOptions,

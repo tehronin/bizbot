@@ -3,6 +3,7 @@ import { updateConversationCompanyProfile } from "@/lib/agent/memory";
 import { approveCreeperPlan, getCreeperPlan, startCreeperIngestionRun, updateCreeperPlan, type PlannedTableSelection } from "@/lib/creeper/plans";
 import type { JsonValue } from "@/lib/agent/tools";
 import { registerSidecarInteractionHandler } from "@/lib/sidecar/router";
+import { applySidecarContextPatchForConversation } from "@/lib/sidecar/state";
 import { createValidatedSidecarPanel } from "@/lib/sidecar/validation";
 import type { SidecarSelectionContent, SidecarToolResult } from "@/lib/sidecar/types";
 import { buildMaskedConnectionSummary } from "@/lib/creeper/sources";
@@ -24,6 +25,69 @@ function toSidecarJsonValue(value: unknown): JsonValue {
 
 function parsePlannedTableSelections(value: unknown): PlannedTableSelection[] {
   return Array.isArray(value) ? value as unknown as PlannedTableSelection[] : [];
+}
+
+const CREEPER_PLAN_CONTEXT_ID = "creeper.plan.review";
+const CREEPER_PLAN_CONTEXT_KEYS = [
+  "selectedTableIds",
+  "selectedTableCount",
+  "selectedTableSummary",
+  "companyName",
+  "sourceLabel",
+  "planVersion",
+  "planStatus",
+  "ingestionRunId",
+] as const;
+
+function formatSelectedTableSummary(selectedTables: PlannedTableSelection[]): string {
+  if (selectedTables.length === 0) {
+    return "No tables selected";
+  }
+
+  if (selectedTables.length <= 3) {
+    return selectedTables.map((table) => table.id).join(", ");
+  }
+
+  return `${selectedTables.slice(0, 3).map((table) => table.id).join(", ")} +${selectedTables.length - 3} more`;
+}
+
+function buildPlanContextValues(input: {
+  companyName: string;
+  sourceLabel: string;
+  planVersion: number;
+  planStatus: string;
+  selectedTables: PlannedTableSelection[];
+  ingestionRunId?: string;
+}): Record<string, JsonValue> {
+  return {
+    selectedTableIds: input.selectedTables.map((table) => table.id),
+    selectedTableCount: input.selectedTables.length,
+    selectedTableSummary: formatSelectedTableSummary(input.selectedTables),
+    companyName: input.companyName,
+    sourceLabel: input.sourceLabel,
+    planVersion: input.planVersion,
+    planStatus: input.planStatus,
+    ...(input.ingestionRunId ? { ingestionRunId: input.ingestionRunId } : {}),
+  };
+}
+
+function buildCreeperIngestionQueuedSidecar(): SidecarToolResult {
+  return {
+    ok: true,
+    action: "open",
+    panel: createValidatedSidecarPanel({
+      title: "Creeper ingestion queued",
+      persistence: "ephemeral",
+      context: {
+        contextId: CREEPER_PLAN_CONTEXT_ID,
+        readKeys: [...CREEPER_PLAN_CONTEXT_KEYS],
+      },
+      content: {
+        type: "markdown",
+        markdown: "## Ingestion queued for {{companyName}}\n\n- Run: {{ingestionRunId}}\n- Plan version: {{planVersion}}\n- Status: {{planStatus}}\n- Source: {{sourceLabel}}\n- Selected tables: {{selectedTableCount}}\n- Table summary: {{selectedTableSummary}}",
+      },
+    }),
+  };
 }
 
 function formatOverviewMarkdown(input: {
@@ -323,6 +387,12 @@ export async function buildCreeperPlanReviewSidecar(planId: string): Promise<Sid
       panelId: `creeper-plan-${plan.id}`,
       title: `${plan.companyProfile.name} ingestion plan v${plan.version}`,
       persistence: "workflow",
+      context: {
+        contextId: CREEPER_PLAN_CONTEXT_ID,
+        readKeys: [...CREEPER_PLAN_CONTEXT_KEYS],
+        writeKeys: [...CREEPER_PLAN_CONTEXT_KEYS],
+        selectionKey: "selectedTableIds",
+      },
       content: {
         type: "selection",
         title: `${plan.companyProfile.name} ingestion plan`,
@@ -400,7 +470,9 @@ registerSidecarInteractionHandler("creeper.plan.review", async (context) => {
       panel: createValidatedSidecarPanel({
         panelId: context.panel.panelId,
         title: context.panel.title,
-        content: cloneSelectionContent(context.panel.content as SidecarSelectionContent, context.selectedItemIds),
+        ...(context.panel.persistence ? { persistence: context.panel.persistence } : {}),
+        ...(context.panel.context ? { context: context.panel.context } : {}),
+        content: cloneSelectionContent(context.panel.content as SidecarSelectionContent, []),
       }),
     };
   }
@@ -412,6 +484,8 @@ registerSidecarInteractionHandler("creeper.plan.review", async (context) => {
       panel: createValidatedSidecarPanel({
         panelId: context.panel.panelId,
         title: context.panel.title,
+        ...(context.panel.persistence ? { persistence: context.panel.persistence } : {}),
+        ...(context.panel.context ? { context: context.panel.context } : {}),
         content: cloneSelectionContent(context.panel.content as SidecarSelectionContent, []),
       }),
     };
@@ -424,14 +498,43 @@ registerSidecarInteractionHandler("creeper.plan.review", async (context) => {
   const planId = parsePlanPanelId(context.panel.panelId);
   const selectedTableIds = [...context.selectedItemIds];
   const updatedPlan = await updateCreeperPlan({ planId, selectedTableIds });
+  const updatedSelectedTables = parsePlannedTableSelections(updatedPlan.selectedTables);
 
   if (context.action.id === "creeper_plan_save") {
+    applySidecarContextPatchForConversation({
+      conversationId: context.conversationId,
+      panel: context.panel,
+      contextPatch: {
+        contextId: CREEPER_PLAN_CONTEXT_ID,
+        values: buildPlanContextValues({
+          companyName: updatedPlan.companyProfile.name,
+          sourceLabel: updatedPlan.source.label,
+          planVersion: updatedPlan.version,
+          planStatus: String(updatedPlan.status),
+          selectedTables: updatedSelectedTables,
+        }),
+      },
+    });
     const sidecar = await buildCreeperPlanReviewSidecar(updatedPlan.id);
     return { ok: true, action: "update", panel: sidecar.panel };
   }
 
   if (context.action.id === "creeper_plan_approve") {
     const approvedPlan = await approveCreeperPlan(updatedPlan.id);
+    applySidecarContextPatchForConversation({
+      conversationId: context.conversationId,
+      panel: context.panel,
+      contextPatch: {
+        contextId: CREEPER_PLAN_CONTEXT_ID,
+        values: buildPlanContextValues({
+          companyName: approvedPlan.companyProfile.name,
+          sourceLabel: approvedPlan.source.label,
+          planVersion: approvedPlan.version,
+          planStatus: String(approvedPlan.status),
+          selectedTables: parsePlannedTableSelections(approvedPlan.selectedTables),
+        }),
+      },
+    });
     const sidecar = await buildCreeperPlanReviewSidecar(approvedPlan.id);
     return { ok: true, action: "update", panel: sidecar.panel };
   }
@@ -439,18 +542,22 @@ registerSidecarInteractionHandler("creeper.plan.review", async (context) => {
   if (context.action.id === "creeper_plan_start") {
     const planToRun = updatedPlan.status === "APPROVED" ? updatedPlan : await approveCreeperPlan(updatedPlan.id);
     const run = await startCreeperIngestionRun(planToRun.id);
-    return {
-      ok: true,
-      action: "update",
-      panel: createValidatedSidecarPanel({
-        panelId: context.panel.panelId,
-        title: context.panel.title,
-        content: {
-          type: "markdown",
-          markdown: `## Ingestion queued\n\nPlan **v${planToRun.version}** is approved and ingestion run **${run.id}** is queued for ${planToRun.companyProfile.name}.`,
-        },
-      }),
-    };
+    applySidecarContextPatchForConversation({
+      conversationId: context.conversationId,
+      panel: context.panel,
+      contextPatch: {
+        contextId: CREEPER_PLAN_CONTEXT_ID,
+        values: buildPlanContextValues({
+          companyName: planToRun.companyProfile.name,
+          sourceLabel: planToRun.source.label,
+          planVersion: planToRun.version,
+          planStatus: String(planToRun.status),
+          selectedTables: parsePlannedTableSelections(planToRun.selectedTables),
+          ingestionRunId: run.id,
+        }),
+      },
+    });
+    return buildCreeperIngestionQueuedSidecar();
   }
 
   throw new Error(`Unsupported Creeper plan action '${context.action.id}'.`);

@@ -1,6 +1,9 @@
 import { resolveAgentUserId } from "@/lib/agent/user-context";
 import {
+  applySidecarContextPatchForConversation,
+  getActiveSidecarContextForConversation,
   getActiveSidecarPanel,
+  getActiveSidecarStackForConversation,
   syncActiveSidecarPanel,
 } from "@/lib/sidecar/state";
 import type {
@@ -10,6 +13,7 @@ import type {
   SidecarPanel,
   SidecarSelectionActionDefinition,
   SidecarSelectionContent,
+  SidecarToolResult,
 } from "@/lib/sidecar/types";
 import {
   createValidatedSidecarPanel,
@@ -24,7 +28,9 @@ export interface SidecarInteractionContext {
   userId: string;
 }
 
-type SidecarInteractionHandler = (context: SidecarInteractionContext) => Promise<SidecarInteractionResult>;
+type SidecarInteractionHandlerResult = SidecarToolResult;
+
+type SidecarInteractionHandler = (context: SidecarInteractionContext) => Promise<SidecarInteractionHandlerResult>;
 
 const handlerRegistry = new Map<string, SidecarInteractionHandler>();
 
@@ -42,7 +48,7 @@ function applySelectionActionToPanel(
   panel: SidecarPanel,
   selectedItemIds: string[],
   action: SidecarAction,
-): SidecarInteractionResult {
+): SidecarInteractionHandlerResult {
   if (panel.content.type !== "selection") {
     throw new Error("Selection actions require selection content.");
   }
@@ -50,6 +56,8 @@ function applySelectionActionToPanel(
   const nextPanel = createValidatedSidecarPanel({
     panelId: panel.panelId,
     title: panel.title,
+    ...(panel.persistence ? { persistence: panel.persistence } : {}),
+    ...(panel.context ? { context: panel.context } : {}),
     content: cloneSelectionContent(panel.content, selectedItemIds),
   });
 
@@ -136,7 +144,19 @@ export async function routeSidecarInteraction(input: SidecarInteractionRequest):
     toolName: "sidecar_interaction",
   });
 
-  return result;
+  const context = request.contextPatch
+    ? applySidecarContextPatchForConversation({
+        conversationId: request.conversationId,
+        panel: record.panel,
+        contextPatch: request.contextPatch,
+      })
+    : getActiveSidecarContextForConversation(request.conversationId);
+
+  return {
+    ...result,
+    stack: getActiveSidecarStackForConversation(request.conversationId),
+    context,
+  };
 }
 
 export function resetSidecarInteractionHandlersForTests(): void {

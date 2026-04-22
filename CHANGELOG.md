@@ -2,6 +2,10 @@
 
 ## 2026-04-22
 
+- Added authoritative Sidecar stack revisions plus bounded `SidecarContext` state, placeholder-driven context rendering, and write-scoped interaction patches so nested Oracle and Creeper Sidecar workflows can share server-owned state without clobbering parent panels.
+- Expanded the Sidecar MCP surface with `sidecar_get_state`, `sidecar_interact`, and `sidecar_navigate`, made raw MCP Sidecar mutators authoritative for the MCP lane, and aligned tool presentation plus server guidance with the new non-read-only UI control model.
+- Closed the live MCP-to-browser sync gap by exposing `GET /api/sidecar/state`, polling authoritative conversation Sidecar state from the shell, and moving the in-memory Sidecar store onto a `globalThis` singleton so MCP and browser routes observe the same runtime state.
+- Tightened Sidecar regression coverage and CI-facing build safety around route revision conflicts, context patch validation, browser-side authoritative sync, Oracle and Creeper context-backed panels, MCP contract exposure, and Sidecar app roundtrip behavior.
 - Reworked Sidecar into a persistent right-edge split view with an always-available chevron rail, local width and expansion persistence, explicit collapse versus close behavior, and bootstrap-driven rehydration so active panels survive refresh and conversation switches without reopening as popups.
 - Expanded the Sidecar contract and renderer set with stack-aware events plus built-in `table`, `key_value`, `progress`, and `diff` surfaces, then updated the host UI to render those richer content types alongside inline selection pending and error feedback.
 - Added server-backed Sidecar stack state with full conversation stacks, back navigation, clickable stack-chip activation, and a dedicated `/api/sidecar/state` route so the client shell and persisted conversation state stay synchronized while users drill into nested review panels.

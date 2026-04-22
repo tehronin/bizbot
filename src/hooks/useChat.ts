@@ -1127,6 +1127,7 @@ export function useChat(): UseChatResult {
             action: payload.activeSidecarPanel ? "open" : "close",
             panel: payload.activeSidecarPanel,
             stack: payload.activeSidecarStack,
+            context: payload.activeSidecarContext,
             ...(payload.currentConversationId ? { conversationId: payload.currentConversationId } : {}),
           });
         }
@@ -1340,6 +1341,8 @@ export function useChat(): UseChatResult {
           panelId: detail.panelId,
           actionId: detail.actionId,
           selectedItemIds: detail.selectedItemIds,
+          ...(typeof detail.expectedStackRevision === "number" ? { expectedStackRevision: detail.expectedStackRevision } : {}),
+          ...(detail.contextPatch ? { contextPatch: detail.contextPatch } : {}),
           conversationId,
         }),
       })
@@ -1360,6 +1363,8 @@ export function useChat(): UseChatResult {
           publishSidecarEvent({
             action: payload.action,
             panel: payload.panel,
+            ...(payload.stack ? { stack: payload.stack } : {}),
+            ...(payload.context !== undefined ? { context: payload.context } : {}),
             conversationId,
           });
         })

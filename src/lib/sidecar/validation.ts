@@ -2,10 +2,12 @@ import { isJsonValue, type JsonValue } from "@/lib/agent/tools";
 import type {
   SidecarAction,
   SidecarContent,
+  SidecarContextPatch,
   SidecarDiffContent,
   SidecarInteractionRequest,
   SidecarKeyValueContent,
   SidecarPanel,
+  SidecarPanelContextBinding,
   SidecarPanelPersistence,
   SidecarProgressContent,
   SidecarSelectionActionDefinition,
@@ -39,6 +41,14 @@ function normalizeTitle(value: string): string {
     throw new Error("Sidecar title must be 120 characters or fewer.");
   }
   return title;
+}
+
+function validateContextKey(value: string, field: string): string {
+  const normalized = normalizeText(value, field, 120);
+  if (!/^[a-z0-9._:-]{1,120}$/i.test(normalized)) {
+    throw new Error(`${field} must be alphanumeric and 120 characters or fewer.`);
+  }
+  return normalized;
 }
 
 function containsRawHtml(markdown: string): boolean {
@@ -235,6 +245,7 @@ function validateKeyValueContent(input: SidecarKeyValueContent): SidecarKeyValue
     entries: input.entries.map((entry) => ({
       label: normalizeText(entry.label, "Sidecar key_value label", 80),
       value: isJsonValue(entry.value) ? entry.value : null,
+      ...(entry.contextKey ? { contextKey: validateContextKey(entry.contextKey, "Sidecar key_value context key") } : {}),
     })),
   };
 }
@@ -377,6 +388,86 @@ function validatePersistence(value: SidecarPanelPersistence | undefined): Sideca
   return value;
 }
 
+function validatePanelContextBinding(value: SidecarPanelContextBinding | undefined): SidecarPanelContextBinding | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const contextId = validateContextKey(value.contextId, "Sidecar context id");
+  const parentPanelId = value.parentPanelId?.trim();
+  if (parentPanelId !== undefined && !/^[a-z0-9:_-]{1,80}$/i.test(parentPanelId)) {
+    throw new Error("Sidecar parent panel id must be alphanumeric and 80 characters or fewer.");
+  }
+
+  function validateKeys(keys: string[] | undefined, field: string): string[] | undefined {
+    if (keys === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(keys)) {
+      throw new Error(`${field} must be an array.`);
+    }
+    if (keys.length > 24) {
+      throw new Error(`${field} supports at most 24 keys.`);
+    }
+    const seen = new Set<string>();
+    const normalizedKeys = keys.map((key) => validateContextKey(key, field));
+    for (const key of normalizedKeys) {
+      if (seen.has(key)) {
+        throw new Error(`Duplicate Sidecar context key '${key}'.`);
+      }
+      seen.add(key);
+    }
+    return normalizedKeys;
+  }
+
+  const readKeys = validateKeys(value.readKeys, "Sidecar context read key");
+  const writeKeys = validateKeys(value.writeKeys, "Sidecar context write key");
+  const selectionKey = value.selectionKey ? validateContextKey(value.selectionKey, "Sidecar selection context key") : undefined;
+  const returnChannel = value.returnChannel ? validateContextKey(value.returnChannel, "Sidecar return channel") : undefined;
+
+  return {
+    contextId,
+    ...(parentPanelId ? { parentPanelId } : {}),
+    ...(readKeys ? { readKeys } : {}),
+    ...(writeKeys ? { writeKeys } : {}),
+    ...(selectionKey ? { selectionKey } : {}),
+    ...(returnChannel ? { returnChannel } : {}),
+  };
+}
+
+function validateContextPatch(value: SidecarContextPatch | undefined): SidecarContextPatch | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const contextId = validateContextKey(value.contextId, "Sidecar context patch id");
+  if (!value.values || typeof value.values !== "object" || Array.isArray(value.values)) {
+    throw new Error("Sidecar context patch values must be an object.");
+  }
+
+  const entries = Object.entries(value.values);
+  if (entries.length === 0) {
+    throw new Error("Sidecar context patch requires at least one value.");
+  }
+  if (entries.length > 24) {
+    throw new Error("Sidecar context patch supports at most 24 values.");
+  }
+
+  const nextValues: Record<string, JsonValue> = {};
+  for (const [key, entryValue] of entries) {
+    const normalizedKey = validateContextKey(key, "Sidecar context patch key");
+    if (!isJsonValue(entryValue)) {
+      throw new Error(`Sidecar context patch value for '${normalizedKey}' must be valid JSON.`);
+    }
+    nextValues[normalizedKey] = entryValue;
+  }
+
+  return {
+    contextId,
+    values: nextValues,
+  };
+}
+
 export function validateSidecarPanel(input: SidecarPanel): SidecarPanel {
   const panelId = normalizeText(input.panelId, "Sidecar panel id", 80);
   if (!/^[a-z0-9:_-]{1,80}$/i.test(panelId)) {
@@ -388,6 +479,7 @@ export function validateSidecarPanel(input: SidecarPanel): SidecarPanel {
     title: normalizeTitle(input.title),
     content: validateSidecarContent(input.content),
     ...(validatePersistence(input.persistence) ? { persistence: validatePersistence(input.persistence) } : {}),
+    ...(validatePanelContextBinding(input.context) ? { context: validatePanelContextBinding(input.context) } : {}),
   };
 }
 
@@ -397,6 +489,7 @@ export function createValidatedSidecarPanel(input: Omit<SidecarPanel, "panelId">
     title: input.title,
     content: input.content,
     ...(input.persistence ? { persistence: input.persistence } : {}),
+    ...(input.context ? { context: input.context } : {}),
   });
 }
 
@@ -455,12 +548,19 @@ export function validateSidecarInteractionRequest(input: SidecarInteractionReque
   const selectedItemIds = Array.isArray(input.selectedItemIds)
     ? input.selectedItemIds.map((itemId) => normalizeText(itemId, "Sidecar interaction selected item id", 80))
     : [];
+  const expectedStackRevision = input.expectedStackRevision;
+  if (expectedStackRevision !== undefined && (!Number.isInteger(expectedStackRevision) || expectedStackRevision < 0)) {
+    throw new Error("Sidecar expected stack revision must be a non-negative integer.");
+  }
+  const contextPatch = validateContextPatch(input.contextPatch);
 
   return {
     panelId,
     actionId,
     conversationId,
     selectedItemIds,
+    ...(typeof expectedStackRevision === "number" ? { expectedStackRevision } : {}),
+    ...(contextPatch ? { contextPatch } : {}),
     ...(input.userId ? { userId: input.userId.trim() } : {}),
   };
 }

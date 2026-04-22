@@ -11,8 +11,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <Sidebar />
         <div className="flex-1 min-w-0 flex flex-col">
           <Header />
-          <main className="flex-1 px-5 py-4 overflow-auto">{children}</main>
-          <SidecarHost />
+          <div className="flex-1 min-h-0 flex">
+            <main className="flex-1 min-w-0 overflow-auto px-5 py-4">{children}</main>
+            <SidecarHost />
+          </div>
         </div>
       </div>
     </DashboardShellStateProvider>

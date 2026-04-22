@@ -54,6 +54,18 @@ describe("sidecar interaction router", () => {
           selectedItemIds: ["beta"],
         }),
       }),
+      stack: {
+        panels: [expect.objectContaining({
+          panelId: "selection-panel",
+          content: expect.objectContaining({
+            type: "selection",
+            selectedItemIds: ["beta"],
+          }),
+        })],
+        activePanelId: "selection-panel",
+        stackRevision: 2,
+      },
+      context: null,
     });
   });
 

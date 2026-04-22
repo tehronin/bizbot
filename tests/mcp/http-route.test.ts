@@ -4,6 +4,8 @@ import os from "os";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DELETE, GET, POST } from "@/app/api/mcp/route";
+import { resetActiveSidecarPanelsForTests, syncActiveSidecarPanel } from "@/lib/sidecar/state";
+import { createValidatedSidecarPanel } from "@/lib/sidecar/validation";
 
 function createTempBuilderWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "bizbot-mcp-builder-"));
@@ -145,6 +147,10 @@ async function waitForManagedContainerByName(
     }
   }
 
+  afterEach(() => {
+    resetActiveSidecarPanelsForTests();
+  });
+
   return null;
 }
 
@@ -184,6 +190,9 @@ describe("MCP HTTP route", () => {
 
     expect(result.status).toBe(200);
     expect(result.body.result.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "sidecar_get_state" }),
+      expect.objectContaining({ name: "sidecar_interact" }),
+      expect.objectContaining({ name: "sidecar_navigate" }),
       expect.objectContaining({ name: "builder_repo_status" }),
       expect.objectContaining({ name: "builder_git_add" }),
       expect.objectContaining({ name: "builder_git_commit" }),
@@ -224,6 +233,315 @@ describe("MCP HTTP route", () => {
     expect(result.body.result.tools).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "agent_delegate_run" }),
     ]));
+  });
+
+  it("returns live Sidecar state through MCP tools/call", async () => {
+    resetActiveSidecarPanelsForTests();
+
+    syncActiveSidecarPanel({
+      action: "open",
+      panel: createValidatedSidecarPanel({
+        panelId: "mcp-sidecar-panel",
+        title: "MCP panel",
+        context: {
+          contextId: "release.review",
+          readKeys: ["approved"],
+          writeKeys: ["approved"],
+        },
+        content: {
+          type: "key_value",
+          entries: [
+            { label: "approved", value: false, contextKey: "approved" },
+          ],
+        },
+      }),
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    const result = await callMcp("tools/call", {
+      name: "sidecar_get_state",
+      arguments: {
+        conversationId: "conversation-1",
+      },
+    }, "sidecar-state-1");
+
+    expect(result.status).toBe(200);
+    expect(result.body.result.structuredContent).toEqual({
+      conversationId: "conversation-1",
+      activePanel: expect.objectContaining({
+        panelId: "mcp-sidecar-panel",
+        title: "MCP panel",
+      }),
+      stack: {
+        panels: [expect.objectContaining({ panelId: "mcp-sidecar-panel" })],
+        activePanelId: "mcp-sidecar-panel",
+        stackRevision: 1,
+      },
+      context: {
+        contextId: "release.review",
+        conversationId: "conversation-1",
+        rootPanelId: "mcp-sidecar-panel",
+        activePanelId: "mcp-sidecar-panel",
+        stackRevision: 1,
+        values: {},
+      },
+      restorablePanel: expect.objectContaining({
+        panelId: "mcp-sidecar-panel",
+        title: "MCP panel",
+      }),
+      restorableStack: {
+        panels: [expect.objectContaining({ panelId: "mcp-sidecar-panel" })],
+        activePanelId: "mcp-sidecar-panel",
+        stackRevision: 1,
+      },
+      restorableContext: {
+        contextId: "release.review",
+        conversationId: "conversation-1",
+        rootPanelId: "mcp-sidecar-panel",
+        activePanelId: "mcp-sidecar-panel",
+        stackRevision: 1,
+        values: {},
+      },
+    });
+  });
+
+  it("persists raw Sidecar open state through MCP tools/call", async () => {
+    resetActiveSidecarPanelsForTests();
+
+    const openResult = await callMcp("tools/call", {
+      name: "sidecar_open",
+      arguments: {
+        conversationId: "conversation-1",
+        panelId: "mcp-open-panel",
+        title: "MCP open",
+        context: {
+          contextId: "release.review",
+          readKeys: ["status"],
+          writeKeys: ["status"],
+        },
+        content: {
+          type: "markdown",
+          markdown: "Opened directly through MCP.",
+        },
+      },
+    }, "sidecar-open-1");
+
+    expect(openResult.status).toBe(200);
+    expect(openResult.body.result.structuredContent).toEqual({
+      ok: true,
+      action: "open",
+      panel: expect.objectContaining({
+        panelId: "mcp-open-panel",
+        title: "MCP open",
+      }),
+      stack: {
+        panels: [expect.objectContaining({ panelId: "mcp-open-panel" })],
+        activePanelId: "mcp-open-panel",
+        stackRevision: 1,
+      },
+      context: {
+        contextId: "release.review",
+        conversationId: "conversation-1",
+        rootPanelId: "mcp-open-panel",
+        activePanelId: "mcp-open-panel",
+        stackRevision: 1,
+        values: {},
+      },
+    });
+
+    const stateResult = await callMcp("tools/call", {
+      name: "sidecar_get_state",
+      arguments: {
+        conversationId: "conversation-1",
+      },
+    }, "sidecar-open-state-1");
+
+    expect(stateResult.status).toBe(200);
+    expect(stateResult.body.result.structuredContent).toEqual({
+      conversationId: "conversation-1",
+      activePanel: expect.objectContaining({
+        panelId: "mcp-open-panel",
+        title: "MCP open",
+      }),
+      stack: {
+        panels: [expect.objectContaining({ panelId: "mcp-open-panel" })],
+        activePanelId: "mcp-open-panel",
+        stackRevision: 1,
+      },
+      context: {
+        contextId: "release.review",
+        conversationId: "conversation-1",
+        rootPanelId: "mcp-open-panel",
+        activePanelId: "mcp-open-panel",
+        stackRevision: 1,
+        values: {},
+      },
+      restorablePanel: expect.objectContaining({
+        panelId: "mcp-open-panel",
+        title: "MCP open",
+      }),
+      restorableStack: {
+        panels: [expect.objectContaining({ panelId: "mcp-open-panel" })],
+        activePanelId: "mcp-open-panel",
+        stackRevision: 1,
+      },
+      restorableContext: {
+        contextId: "release.review",
+        conversationId: "conversation-1",
+        rootPanelId: "mcp-open-panel",
+        activePanelId: "mcp-open-panel",
+        stackRevision: 1,
+        values: {},
+      },
+    });
+  });
+
+  it("executes a bounded Sidecar interaction through MCP tools/call", async () => {
+    resetActiveSidecarPanelsForTests();
+
+    syncActiveSidecarPanel({
+      action: "open",
+      panel: createValidatedSidecarPanel({
+        panelId: "mcp-selection-panel",
+        title: "Plan review",
+        context: {
+          contextId: "plan.review",
+          writeKeys: ["decision"],
+        },
+        content: {
+          type: "selection",
+          title: "Approve the plan",
+          selectionMode: "single",
+          items: [
+            { id: "approved", title: "Approve" },
+            { id: "rework", title: "Request rework" },
+          ],
+          actions: [
+            { id: "plan_review_toggle", label: "Choose", kind: "toggle" },
+          ],
+          interaction: { routeKey: "sidecar.selection.apply" },
+        },
+      }),
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    const result = await callMcp("tools/call", {
+      name: "sidecar_interact",
+      arguments: {
+        conversationId: "conversation-1",
+        panelId: "mcp-selection-panel",
+        actionId: "plan_review_toggle",
+        selectedItemIds: ["approved"],
+        expectedStackRevision: 1,
+        contextPatch: {
+          contextId: "plan.review",
+          values: {
+            decision: "approved",
+          },
+        },
+      },
+    }, "sidecar-interact-1");
+
+    expect(result.status).toBe(200);
+    expect(result.body.result.structuredContent).toEqual({
+      ok: true,
+      action: "update",
+      panel: expect.objectContaining({ panelId: "mcp-selection-panel" }),
+      stack: {
+        panels: [expect.objectContaining({ panelId: "mcp-selection-panel" })],
+        activePanelId: "mcp-selection-panel",
+        stackRevision: 2,
+      },
+      context: {
+        contextId: "plan.review",
+        conversationId: "conversation-1",
+        rootPanelId: "mcp-selection-panel",
+        activePanelId: "mcp-selection-panel",
+        stackRevision: 2,
+        values: {
+          decision: "approved",
+        },
+      },
+    });
+  });
+
+  it("navigates the Sidecar stack through MCP tools/call", async () => {
+    resetActiveSidecarPanelsForTests();
+
+    syncActiveSidecarPanel({
+      action: "open",
+      panel: createValidatedSidecarPanel({
+        panelId: "mcp-root-panel",
+        title: "Plan review",
+        context: {
+          contextId: "plan.review",
+          writeKeys: ["decision"],
+        },
+        content: {
+          type: "selection",
+          title: "Approve the plan",
+          selectionMode: "single",
+          items: [
+            { id: "approved", title: "Approve" },
+          ],
+          actions: [
+            { id: "plan_review_toggle", label: "Choose", kind: "toggle" },
+          ],
+          interaction: { routeKey: "sidecar.selection.apply" },
+        },
+      }),
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+    syncActiveSidecarPanel({
+      action: "open",
+      panel: createValidatedSidecarPanel({
+        panelId: "mcp-child-panel",
+        title: "Plan summary",
+        context: {
+          contextId: "plan.review",
+          parentPanelId: "mcp-root-panel",
+          readKeys: ["decision"],
+        },
+        content: {
+          type: "markdown",
+          markdown: "Decision captured.",
+        },
+      }),
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    const result = await callMcp("tools/call", {
+      name: "sidecar_navigate",
+      arguments: {
+        conversationId: "conversation-1",
+        operation: "back",
+        expectedStackRevision: 2,
+      },
+    }, "sidecar-navigate-1");
+
+    expect(result.status).toBe(200);
+    expect(result.body.result.structuredContent).toEqual({
+      ok: true,
+      action: "update",
+      panel: expect.objectContaining({ panelId: "mcp-root-panel" }),
+      stack: {
+        panels: [expect.objectContaining({ panelId: "mcp-root-panel" })],
+        activePanelId: "mcp-root-panel",
+        stackRevision: 3,
+      },
+      context: {
+        contextId: "plan.review",
+        conversationId: "conversation-1",
+        rootPanelId: "mcp-root-panel",
+        activePanelId: "mcp-root-panel",
+        stackRevision: 3,
+        values: {},
+      },
+    });
   });
 
   it("executes Builder git tools through JSON-RPC against a temp repo", async () => {

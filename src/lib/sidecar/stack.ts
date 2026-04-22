@@ -53,15 +53,16 @@ function applyOpenPersistencePolicy(currentPanels: SidecarPanel[], incoming: Sid
   return [...withoutIncoming, incoming];
 }
 
-export function buildSidecarStackSnapshot(panels: SidecarPanel[]): SidecarStackSnapshot {
+export function buildSidecarStackSnapshot(panels: SidecarPanel[], stackRevision = 0): SidecarStackSnapshot {
   return {
     panels: panels.map((panel) => ({ ...panel })),
     activePanelId: panels.length > 0 ? panels[panels.length - 1]!.panelId : null,
+    stackRevision,
   };
 }
 
-export function buildRestorableSidecarStackSnapshot(panels: SidecarPanel[]): SidecarStackSnapshot {
-  return buildSidecarStackSnapshot(stripEphemeralPanels(panels));
+export function buildRestorableSidecarStackSnapshot(panels: SidecarPanel[], stackRevision = 0): SidecarStackSnapshot {
+  return buildSidecarStackSnapshot(stripEphemeralPanels(panels), stackRevision);
 }
 
 export function getRestorableActiveSidecarPanel(panels: SidecarPanel[]): SidecarPanel | null {
