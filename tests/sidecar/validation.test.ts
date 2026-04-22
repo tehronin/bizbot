@@ -65,6 +65,68 @@ describe("sidecar validation", () => {
       ],
       interaction: { routeKey: "sidecar.selection.apply" },
     });
+
+    expect(validateSidecarContent({
+      type: "table",
+      columns: ["name", "status"],
+      rows: [["build", "done"], ["test", "pending"]],
+    })).toEqual({
+      type: "table",
+      columns: ["name", "status"],
+      rows: [["build", "done"], ["test", "pending"]],
+    });
+
+    expect(validateSidecarContent({
+      type: "key_value",
+      entries: [
+        { label: "branch", value: "main" },
+        { label: "counts", value: { passing: 12, failing: 0 } },
+      ],
+    })).toEqual({
+      type: "key_value",
+      entries: [
+        { label: "branch", value: "main" },
+        { label: "counts", value: { passing: 12, failing: 0 } },
+      ],
+    });
+
+    expect(validateSidecarContent({
+      type: "progress",
+      title: "Ship checklist",
+      items: [
+        { id: "spec", label: "Write spec", status: "done" },
+        { id: "tests", label: "Run tests", status: "active", detail: "Focused sidecar suite" },
+      ],
+    })).toEqual({
+      type: "progress",
+      title: "Ship checklist",
+      items: [
+        { id: "spec", label: "Write spec", status: "done" },
+        { id: "tests", label: "Run tests", status: "active", detail: "Focused sidecar suite" },
+      ],
+    });
+
+    expect(validateSidecarContent({
+      type: "diff",
+      sections: [
+        {
+          label: "Host update",
+          before: "const open = false;",
+          after: "const open = true;",
+          language: "ts",
+        },
+      ],
+    })).toEqual({
+      type: "diff",
+      sections: [
+        {
+          label: "Host update",
+          before: "const open = false;",
+          after: "const open = true;",
+          language: "ts",
+        },
+      ],
+    });
   });
 
   it("rejects raw HTML in markdown", () => {
@@ -105,5 +167,13 @@ describe("sidecar validation", () => {
       ],
       interaction: { routeKey: "sidecar.selection.apply" },
     })).toThrow("Single-select Sidecar content accepts only one selected item.");
+  });
+
+  it("rejects malformed table payloads", () => {
+    expect(() => validateSidecarContent({
+      type: "table",
+      columns: ["name", "status"],
+      rows: [["build"]],
+    })).toThrow("Sidecar table rows must match the number of columns.");
   });
 });

@@ -28,12 +28,15 @@ import type { UsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
 import {
   BIZBOT_SIDECAR_EVENT,
   BIZBOT_SIDECAR_INTERACTION_EVENT,
+  BIZBOT_SIDECAR_INTERACTION_STATE_EVENT,
 } from "@/lib/sidecar/types";
 import type {
   SidecarAction,
   SidecarInteractionEventDetail,
   SidecarInteractionResult,
+  SidecarInteractionStateEventDetail,
   SidecarPanel,
+  SidecarStreamEventDetail,
 } from "@/lib/sidecar/types";
 
 export interface ChatEntry {
@@ -668,6 +671,22 @@ function mergeBootstrapMessages(
   return [...next, existingPrompt];
 }
 
+function dispatchSidecarEvent(detail: SidecarStreamEventDetail): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_EVENT, { detail }));
+}
+
+function dispatchSidecarInteractionState(detail: SidecarInteractionStateEventDetail): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_INTERACTION_STATE_EVENT, { detail }));
+}
+
 export function useChat(): UseChatResult {
   const pathname = usePathname();
   const [messages, setMessages] = useState<ChatEntry[]>([]);
@@ -718,6 +737,7 @@ export function useChat(): UseChatResult {
   const creeperSelectionAbortControllerRef = useRef<AbortController | null>(null);
   const creeperSelectionRequestIdRef = useRef(0);
   const sidecarInteractionAbortControllerRef = useRef<AbortController | null>(null);
+  const sidecarDispatchVersionRef = useRef(0);
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
   const pendingResumePromptRef = useRef(pendingResumePrompt);
@@ -730,6 +750,28 @@ export function useChat(): UseChatResult {
   selectedCreeperCompanyProfileIdRef.current = selectedCreeperCompanyProfileId;
   const previousCreeperCompanyProfileIdRef = useRef(selectedCreeperCompanyProfileId);
   const [scheduledBootstrapRequest, setScheduledBootstrapRequest] = useState<ScheduledBootstrapRequest | null>(null);
+
+  function publishSidecarEvent(detail: SidecarStreamEventDetail): void {
+    sidecarDispatchVersionRef.current += 1;
+    dispatchSidecarEvent({
+      ...detail,
+      source: "useChat",
+    });
+  }
+
+  useEffect(() => {
+    const handleObservedSidecarEvent = (event: Event) => {
+      const detail = (event as CustomEvent<SidecarStreamEventDetail>).detail;
+      if (detail?.source === "useChat") {
+        return;
+      }
+
+      sidecarDispatchVersionRef.current += 1;
+    };
+
+    window.addEventListener(BIZBOT_SIDECAR_EVENT, handleObservedSidecarEvent as EventListener);
+    return () => window.removeEventListener(BIZBOT_SIDECAR_EVENT, handleObservedSidecarEvent as EventListener);
+  }, []);
 
   function applyExecutionSelection(nextSelection: ExecutionSelection, options?: {
     syncConversation?: boolean;
@@ -993,6 +1035,7 @@ export function useChat(): UseChatResult {
     bootstrapRequestKeyRef.current = requestKey;
 
     let bootstrapPromise: Promise<void> | null = null;
+    const sidecarDispatchVersionAtRequestStart = sidecarDispatchVersionRef.current;
     bootstrapPromise = (async () => {
       try {
         let response: Response;
@@ -1078,6 +1121,15 @@ export function useChat(): UseChatResult {
         setCurrentConversation(payload.currentConversation);
         persistSelectedConversationId(payload.currentConversationId);
         hasLoadedBootstrapRef.current = true;
+
+        if (replaceCurrent && sidecarDispatchVersionAtRequestStart === sidecarDispatchVersionRef.current) {
+          publishSidecarEvent({
+            action: payload.activeSidecarPanel ? "open" : "close",
+            panel: payload.activeSidecarPanel,
+            stack: payload.activeSidecarStack,
+            ...(payload.currentConversationId ? { conversationId: payload.currentConversationId } : {}),
+          });
+        }
 
         if (replaceCurrent) {
           const nextMessages = payload.currentConversation ? mapConversationMessages(payload.currentConversation.messages) : [];
@@ -1175,9 +1227,12 @@ export function useChat(): UseChatResult {
       && !selectedBuilderProjectId
       && !selectedCreeperCompanyProfileId
       && !hasLoadedBootstrapRef.current;
+    const selectedConversationLoaded = !!selectedConversationId
+      && hasLoadedBootstrapRef.current
+      && conversationId === selectedConversationId;
     const currentConversationReady = !selectedConversationId
       ? !initialBootstrapPending
-      : conversationId === selectedConversationId && (currentConversation !== null || messages.length > 0);
+      : selectedConversationLoaded || (conversationId === selectedConversationId && (currentConversation !== null || messages.length > 0));
     const currentBuilderReady = selectedBuilderProjectId === (currentConversation?.builderProjectId ?? selectedBuilderProjectId);
     const currentCreeperReady = selectedCreeperCompanyProfileId === (currentConversation?.companyProfileId ?? selectedCreeperCompanyProfileId);
 
@@ -1268,6 +1323,11 @@ export function useChat(): UseChatResult {
         return;
       }
 
+      dispatchSidecarInteractionState({
+        panelId: detail.panelId,
+        pending: true,
+      });
+
       sidecarInteractionAbortControllerRef.current?.abort();
       const controller = new AbortController();
       sidecarInteractionAbortControllerRef.current = controller;
@@ -1293,17 +1353,26 @@ export function useChat(): UseChatResult {
             return;
           }
 
-          window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_EVENT, {
-            detail: {
-              action: payload.action,
-              panel: payload.panel,
-              conversationId,
-            },
-          }));
+          dispatchSidecarInteractionState({
+            panelId: detail.panelId,
+            pending: false,
+          });
+          publishSidecarEvent({
+            action: payload.action,
+            panel: payload.panel,
+            conversationId,
+          });
         })
         .catch((error: Error) => {
           if (isAbortError(error)) {
             return;
+          }
+          if (sidecarInteractionAbortControllerRef.current === controller && isMountedRef.current) {
+            dispatchSidecarInteractionState({
+              panelId: detail.panelId,
+              pending: false,
+              error: error.message,
+            });
           }
           console.error("[sidecar interaction]", error);
         })
@@ -1329,6 +1398,7 @@ export function useChat(): UseChatResult {
     setConversationId(null);
     setCurrentConversation(null);
     setMessages([]);
+    publishSidecarEvent({ action: "close", panel: null });
     setActiveRun(IDLE_ACTIVE_RUN);
     dispatchPendingAssistantTurn({ type: "clear" });
     setHistoryConversation(null);
@@ -1756,13 +1826,11 @@ export function useChat(): UseChatResult {
                   }));
                 }
               } else if (event.type === "sidecar" && event.action) {
-                window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_EVENT, {
-                  detail: {
-                    action: event.action,
-                    panel: event.panel ?? null,
-                    conversationId: event.conversationId,
-                  },
-                }));
+                publishSidecarEvent({
+                  action: event.action,
+                  panel: event.panel ?? null,
+                  conversationId: event.conversationId,
+                });
               } else if (
                 event.type === "tool_result" &&
                 (event.name === "builder_plan_task" || event.name === "builder_continue_task")

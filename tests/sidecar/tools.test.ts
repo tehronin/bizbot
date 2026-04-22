@@ -13,6 +13,17 @@ describe("sidecar tools", () => {
     expect(sidecarTools[0].parameters.additionalProperties).toBe(false);
     expect(sidecarTools[0].parameters.properties.content?.type).toBe("object");
     expect(sidecarTools[0].parameters.properties.content?.additionalProperties).toBe(false);
+    expect(sidecarTools[0].parameters.properties.content?.properties?.type?.enum).toEqual([
+      "markdown",
+      "code",
+      "json",
+      "image",
+      "selection",
+      "table",
+      "key_value",
+      "progress",
+      "diff",
+    ]);
     expect(sidecarTools[1].parameters.additionalProperties).toBe(false);
     expect(sidecarTools[2].parameters.additionalProperties).toBe(false);
 
@@ -42,6 +53,32 @@ describe("sidecar tools", () => {
       ok: true,
       action: "close",
       panel: null,
+    });
+
+    await expect(sidecarTools[0].execute({
+      title: "Pipeline progress",
+      content: {
+        type: "progress",
+        title: "Deploy",
+        items: [
+          { id: "build", label: "Build", status: "done" },
+          { id: "ship", label: "Ship", status: "active" },
+        ],
+      },
+    }, {})).resolves.toEqual({
+      ok: true,
+      action: "open",
+      panel: expect.objectContaining({
+        title: "Pipeline progress",
+        content: {
+          type: "progress",
+          title: "Deploy",
+          items: [
+            { id: "build", label: "Build", status: "done" },
+            { id: "ship", label: "Ship", status: "active" },
+          ],
+        },
+      }),
     });
   });
 });

@@ -514,6 +514,7 @@ function buildPlanSidecar(overview: Awaited<ReturnType<typeof import("@/lib/buil
     panel: {
       panelId: `builder-plan-${overview.project.id}`,
       title: overview.brief?.title ? `Plan: ${overview.brief.title}` : "Builder Plan",
+      persistence: "workflow",
       content: { type: "markdown", markdown },
     },
   };

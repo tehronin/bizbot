@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-04-22
+
+- Reworked Sidecar into a persistent right-edge split view with an always-available chevron rail, local width and expansion persistence, explicit collapse versus close behavior, and bootstrap-driven rehydration so active panels survive refresh and conversation switches without reopening as popups.
+- Expanded the Sidecar contract and renderer set with stack-aware events plus built-in `table`, `key_value`, `progress`, and `diff` surfaces, then updated the host UI to render those richer content types alongside inline selection pending and error feedback.
+- Added server-backed Sidecar stack state with full conversation stacks, back navigation, clickable stack-chip activation, and a dedicated `/api/sidecar/state` route so the client shell and persisted conversation state stay synchronized while users drill into nested review panels.
+- Implemented persistence-aware Sidecar semantics so `ephemeral` overlays dismiss and avoid bootstrap restore, `sticky` panels act as durable reference context, and `workflow` panels restore as active task context with shared stack-reducer coverage.
+- Preserved producer-selected Sidecar persistence through the shared panel factory, added producer-facing persistence guidance to the Sidecar developer guide, and introduced plugin contract coverage that locks Oracle, Creeper, and Builder sidecar producers to the intended `ephemeral`, `sticky`, and `workflow` choices.
+- Refreshed focused regression coverage for Sidecar state routes, stack reducers, UI flows, chat bootstrap rehydration, Oracle interaction round-trips, and Builder plugin validation so the CI-equivalent local suite is green with the updated Sidecar lifecycle.
+
 ## 2026-04-21
 
 - Added Operations history clear actions for recent agent runs, heartbeat jobs, and MCP jobs, backed by a new `/api/operations/history` route that removes persisted run-journal records and prunes completed or failed BullMQ history without disturbing active work.

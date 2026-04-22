@@ -115,6 +115,7 @@ function buildPersonalityPanel(selectedItemIds: string[] = []): SidecarToolResul
     action: "open",
     panel: createValidatedSidecarPanel({
       title: "Oracle personality",
+      persistence: "sticky",
       content: {
         type: "selection",
         title: "Choose Oracle personality",
@@ -265,6 +266,7 @@ function buildVerdictSidecarPanel(
     action: "open",
     panel: createValidatedSidecarPanel({
       title: `Oracle: ${target.slice(0, 60)}`,
+      persistence: "ephemeral",
       content: {
         type: "markdown",
         markdown: formatVerdictSidecarMarkdown(verdict, impliedProbability, evidenceGaps, evidenceMode),
@@ -350,6 +352,7 @@ function buildMarketSelectionPanel(query: string, markets: Awaited<ReturnType<ty
     action: "open",
     panel: createValidatedSidecarPanel({
       title: "Oracle market shortlist",
+      persistence: "workflow",
       content: {
         type: "selection",
         title: "Select a market to inspect",
@@ -379,6 +382,7 @@ function buildVerdictPanel(panel: SidecarPanel, verdict: ReturnType<typeof build
     panel: createValidatedSidecarPanel({
       panelId: panel.panelId,
       title: panel.title,
+      persistence: "ephemeral",
       content: {
         type: "markdown",
         markdown: `## ${verdict.headline}\n\n${verdict.summary}\n\n- Confidence: ${verdict.confidence}\n- Personality: ${getOraclePersonality(verdict.personality).label}\n- Market: ${formatMarketSummary(market)}`,

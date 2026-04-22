@@ -11,6 +11,12 @@ import { listBuilderStackPresets } from "@/lib/builder/stacks";
 import { DEFAULT_BUILDER_TEMPLATE_PRESETS } from "@/lib/builder/template-presets";
 import { listCreeperCompanyProfiles } from "@/lib/creeper/profiles";
 import {
+  getActiveSidecarPanelForConversation,
+  getActiveSidecarStackForConversation,
+  getRestorableActiveSidecarPanelForConversation,
+  getRestorableSidecarStackForConversation,
+} from "@/lib/sidecar/state";
+import {
   buildChatExecutionCatalog,
   DEFAULT_CHAT_EXECUTION_MODE,
   DEFAULT_CHAT_EXECUTION_PLUGIN_ID,
@@ -789,6 +795,8 @@ export async function resolveChatBootstrap(options?: {
   return {
     currentConversationId,
     currentConversation,
+    activeSidecarPanel: currentConversationId ? getRestorableActiveSidecarPanelForConversation(currentConversationId)?.panel ?? null : null,
+    activeSidecarStack: currentConversationId ? getRestorableSidecarStackForConversation(currentConversationId) : { panels: [], activePanelId: null },
     executionDefaults,
     executionCatalog,
     builderProjects: builderProjectOptions,

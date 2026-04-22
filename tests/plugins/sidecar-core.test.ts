@@ -111,7 +111,7 @@ describe("sidecar core tools", () => {
       },
     } as never, {
       access: { agentProfile: "content_operator" },
-    })).rejects.toThrow("Tool argument content.type must be one of: markdown, code, json, image, selection.");
+    })).rejects.toThrow("Tool argument content.type must be one of: markdown, code, json, image, selection, table, key_value, progress, diff.");
 
     await expect(executeTool("sidecar_open", {
       title: "Malformed json string",

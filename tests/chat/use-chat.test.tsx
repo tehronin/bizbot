@@ -57,6 +57,8 @@ function createBootstrap(overrides: Partial<ChatConversationBootstrap> = {}): Ch
   return {
     currentConversationId: null,
     currentConversation: null,
+    activeSidecarPanel: null,
+    activeSidecarStack: { panels: [], activePanelId: null },
     chatVerbosity: "concise",
     executionDefaults: {
       mode: "ask",

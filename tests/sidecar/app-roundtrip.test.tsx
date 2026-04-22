@@ -21,6 +21,8 @@ function createBootstrap(): ChatConversationBootstrap {
   return {
     currentConversationId: "conversation-1",
     currentConversation: null,
+    activeSidecarPanel: null,
+    activeSidecarStack: { panels: [], activePanelId: null },
     chatVerbosity: "concise",
     executionDefaults: {
       mode: "ask",
@@ -150,6 +152,7 @@ describe("sidecar app roundtrip", () => {
     await waitFor(() => {
       expect(fetch).toHaveBeenCalled();
     });
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     window.dispatchEvent(new CustomEvent(BIZBOT_SIDECAR_EVENT, {
       detail: {
@@ -187,6 +190,41 @@ describe("sidecar app roundtrip", () => {
         method: "POST",
       }));
       expect(screen.getByText("Saved bullish for conversation-1")).toBeTruthy();
+    });
+  });
+
+  it("rehydrates an active sidecar panel from chat bootstrap", async () => {
+    const bootstrap = createBootstrap();
+    bootstrap.activeSidecarPanel = {
+      panelId: "rehydrated-panel",
+      title: "Rehydrated panel",
+      content: {
+        type: "markdown",
+        markdown: "## Restored\n\n- Active after refresh",
+      },
+    };
+    bootstrap.activeSidecarStack = {
+      panels: [bootstrap.activeSidecarPanel],
+      activePanelId: "rehydrated-panel",
+    };
+
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/chat/conversations")) {
+        return {
+          ok: true,
+          json: async () => bootstrap,
+        } as Response;
+      }
+
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    render(<ChatSidecarHarness />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Rehydrated panel")).toBeTruthy();
+      expect(screen.getByText("Active after refresh")).toBeTruthy();
     });
   });
 });

@@ -2,12 +2,17 @@ import { isJsonValue, type JsonValue } from "@/lib/agent/tools";
 import type {
   SidecarAction,
   SidecarContent,
+  SidecarDiffContent,
   SidecarInteractionRequest,
+  SidecarKeyValueContent,
   SidecarPanel,
+  SidecarPanelPersistence,
+  SidecarProgressContent,
   SidecarSelectionActionDefinition,
   SidecarSelectionContent,
   SidecarSelectionItem,
   SidecarStreamEvent,
+  SidecarTableContent,
   SidecarToolResult,
 } from "@/lib/sidecar/types";
 import { SIDECAR_ALLOWED_IMAGE_HOSTS } from "@/lib/sidecar/types";
@@ -181,6 +186,107 @@ function validateSelectionContent(input: SidecarSelectionContent): SidecarSelect
   };
 }
 
+function validateTableContent(input: SidecarTableContent): SidecarTableContent {
+  if (!Array.isArray(input.columns) || input.columns.length === 0) {
+    throw new Error("Sidecar table content requires at least one column.");
+  }
+  if (input.columns.length > 12) {
+    throw new Error("Sidecar table content supports at most 12 columns.");
+  }
+  if (!Array.isArray(input.rows) || input.rows.length === 0) {
+    throw new Error("Sidecar table content requires at least one row.");
+  }
+  if (input.rows.length > 50) {
+    throw new Error("Sidecar table content supports at most 50 rows.");
+  }
+
+  const columns = input.columns.map((column) => normalizeText(column, "Sidecar table column", 80));
+  for (const row of input.rows) {
+    if (!Array.isArray(row)) {
+      throw new Error("Sidecar table rows must be arrays.");
+    }
+    if (row.length !== columns.length) {
+      throw new Error("Sidecar table rows must match the number of columns.");
+    }
+    for (const cell of row) {
+      if (!isJsonValue(cell)) {
+        throw new Error("Sidecar table cells must be valid JSON values.");
+      }
+    }
+  }
+
+  return {
+    type: "table",
+    columns,
+    rows: input.rows,
+  };
+}
+
+function validateKeyValueContent(input: SidecarKeyValueContent): SidecarKeyValueContent {
+  if (!Array.isArray(input.entries) || input.entries.length === 0) {
+    throw new Error("Sidecar key_value content requires at least one entry.");
+  }
+  if (input.entries.length > 24) {
+    throw new Error("Sidecar key_value content supports at most 24 entries.");
+  }
+
+  return {
+    type: "key_value",
+    entries: input.entries.map((entry) => ({
+      label: normalizeText(entry.label, "Sidecar key_value label", 80),
+      value: isJsonValue(entry.value) ? entry.value : null,
+    })),
+  };
+}
+
+function validateProgressContent(input: SidecarProgressContent): SidecarProgressContent {
+  const title = normalizeText(input.title, "Sidecar progress title", 120);
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    throw new Error("Sidecar progress content requires at least one item.");
+  }
+  if (input.items.length > 24) {
+    throw new Error("Sidecar progress content supports at most 24 items.");
+  }
+
+  return {
+    type: "progress",
+    title,
+    items: input.items.map((item) => ({
+      id: normalizeText(item.id, "Sidecar progress item id", 80),
+      label: normalizeText(item.label, "Sidecar progress item label", 120),
+      status: item.status,
+      ...(item.detail?.trim() ? { detail: item.detail.trim().slice(0, 280) } : {}),
+    })),
+  };
+}
+
+function validateDiffContent(input: SidecarDiffContent): SidecarDiffContent {
+  if (!Array.isArray(input.sections) || input.sections.length === 0) {
+    throw new Error("Sidecar diff content requires at least one section.");
+  }
+  if (input.sections.length > 12) {
+    throw new Error("Sidecar diff content supports at most 12 sections.");
+  }
+
+  return {
+    type: "diff",
+    sections: input.sections.map((section) => {
+      const before = section.before;
+      const after = section.after;
+      if (!before.trim() && !after.trim()) {
+        throw new Error("Sidecar diff sections must include before or after content.");
+      }
+
+      return {
+        ...(section.label?.trim() ? { label: section.label.trim().slice(0, 120) } : {}),
+        before,
+        after,
+        ...(validateLanguage(section.language) ? { language: validateLanguage(section.language) } : {}),
+      };
+    }),
+  };
+}
+
 export function validateSidecarContent(input: SidecarContent): SidecarContent {
   switch (input.type) {
     case "markdown": {
@@ -236,6 +342,18 @@ export function validateSidecarContent(input: SidecarContent): SidecarContent {
     case "selection": {
       return validateSelectionContent(input);
     }
+    case "table": {
+      return validateTableContent(input);
+    }
+    case "key_value": {
+      return validateKeyValueContent(input);
+    }
+    case "progress": {
+      return validateProgressContent(input);
+    }
+    case "diff": {
+      return validateDiffContent(input);
+    }
   }
 }
 
@@ -245,6 +363,18 @@ function safelyParseJson(value: string): JsonValue | object | undefined {
   } catch {
     return undefined;
   }
+}
+
+function validatePersistence(value: SidecarPanelPersistence | undefined): SidecarPanelPersistence | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value !== "ephemeral" && value !== "sticky" && value !== "workflow") {
+    throw new Error("Sidecar persistence must be one of: ephemeral, sticky, workflow.");
+  }
+
+  return value;
 }
 
 export function validateSidecarPanel(input: SidecarPanel): SidecarPanel {
@@ -257,6 +387,7 @@ export function validateSidecarPanel(input: SidecarPanel): SidecarPanel {
     panelId,
     title: normalizeTitle(input.title),
     content: validateSidecarContent(input.content),
+    ...(validatePersistence(input.persistence) ? { persistence: validatePersistence(input.persistence) } : {}),
   };
 }
 
@@ -265,6 +396,7 @@ export function createValidatedSidecarPanel(input: Omit<SidecarPanel, "panelId">
     panelId: input.panelId?.trim() || crypto.randomUUID(),
     title: input.title,
     content: input.content,
+    ...(input.persistence ? { persistence: input.persistence } : {}),
   });
 }
 

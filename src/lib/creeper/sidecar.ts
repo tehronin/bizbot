@@ -99,6 +99,7 @@ export async function buildCreeperSourceOverviewSidecar(sourceId: string): Promi
     panel: createValidatedSidecarPanel({
       panelId: `creeper-source-${source.id}`,
       title: `${companyName} source overview`,
+      persistence: "sticky",
       content: {
         type: "markdown",
         markdown: formatOverviewMarkdown({
@@ -141,6 +142,7 @@ export async function buildCreeperSchemaCatalogSidecar(sourceId: string): Promis
     panel: createValidatedSidecarPanel({
       panelId: `creeper-schema-${sourceId}`,
       title: "Creeper schema catalog",
+      persistence: "sticky",
       content: {
         type: "json",
         value: toSidecarJsonValue({
@@ -237,6 +239,7 @@ export async function buildCreeperCompanyProfileSelectorSidecar(): Promise<Sidec
       panel: createValidatedSidecarPanel({
         panelId: "creeper-company-selector-empty",
         title: "Creeper company profiles",
+        persistence: "workflow",
         content: {
           type: "markdown",
           markdown: "## No company profiles yet\n\nStart a new company in chat by telling Creeper the company name, what the business does, and what you want to learn from the data.",
@@ -251,6 +254,7 @@ export async function buildCreeperCompanyProfileSelectorSidecar(): Promise<Sidec
     panel: createValidatedSidecarPanel({
       panelId: "creeper-company-selector",
       title: "Creeper company profiles",
+      persistence: "workflow",
       content: {
         type: "selection",
         title: "Open an existing company or start a new one",
@@ -282,6 +286,7 @@ export async function buildCreeperCompanyBriefReviewSidecar(companyProfileId: st
     panel: createValidatedSidecarPanel({
       panelId: `creeper-company-${profile.id}`,
       title: `${profile.name} brief review`,
+      persistence: "sticky",
       content: {
         type: "markdown",
         markdown: formatCompanyBriefMarkdown(profile),
@@ -317,6 +322,7 @@ export async function buildCreeperPlanReviewSidecar(planId: string): Promise<Sid
     panel: createValidatedSidecarPanel({
       panelId: `creeper-plan-${plan.id}`,
       title: `${plan.companyProfile.name} ingestion plan v${plan.version}`,
+      persistence: "workflow",
       content: {
         type: "selection",
         title: `${plan.companyProfile.name} ingestion plan`,

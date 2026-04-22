@@ -6,6 +6,7 @@ import type {
   ChatExecutionMode,
   ChatMessageAttachment,
 } from "@/lib/chat/execution";
+import type { SidecarPanel, SidecarStackSnapshot } from "@/lib/sidecar/types";
 
 export const CHAT_PREVIEW_MAX_CHARS = 80;
 export const DEFAULT_CHAT_HISTORY_PAGE_SIZE = 6;
@@ -242,6 +243,8 @@ export interface ChatConversationUsageSummary {
 export interface ChatConversationBootstrap {
   currentConversationId: string | null;
   currentConversation: ChatConversationDetail | null;
+  activeSidecarPanel: SidecarPanel | null;
+  activeSidecarStack: SidecarStackSnapshot;
   chatVerbosity: ChatVerbosity;
   executionDefaults: ChatExecutionDefaults;
   executionCatalog: ChatExecutionCatalog;
