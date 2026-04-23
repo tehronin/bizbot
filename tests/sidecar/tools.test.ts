@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getToolAnnotations } from "@/lib/mcp/tool-presentation";
 import { syncActiveSidecarPanel, resetActiveSidecarPanelsForTests } from "@/lib/sidecar/state";
+import { resetThinkingSessionsForTests } from "@/lib/sidecar/thinking-state";
 import { createValidatedSidecarPanel } from "@/lib/sidecar/validation";
 import { sidecarTools } from "@/lib/sidecar/tools";
 
 afterEach(() => {
   resetActiveSidecarPanelsForTests();
+  resetThinkingSessionsForTests();
 });
 
 describe("sidecar tools", () => {
@@ -15,6 +17,11 @@ describe("sidecar tools", () => {
       "sidecar_update",
       "sidecar_close",
       "sidecar_get_state",
+      "sidecar_thinking_start",
+      "sidecar_thinking_append",
+      "sidecar_thinking_complete",
+      "sidecar_thinking_clear",
+      "sidecar_thinking_get_state",
       "sidecar_interact",
       "sidecar_navigate",
     ]);
@@ -38,6 +45,10 @@ describe("sidecar tools", () => {
     expect(sidecarTools[3].parameters.additionalProperties).toBe(false);
     expect(sidecarTools[4].parameters.additionalProperties).toBe(false);
     expect(sidecarTools[5].parameters.additionalProperties).toBe(false);
+    expect(sidecarTools[6].parameters.additionalProperties).toBe(false);
+    expect(sidecarTools[7].parameters.additionalProperties).toBe(false);
+    expect(sidecarTools[8].parameters.additionalProperties).toBe(false);
+    expect(sidecarTools[9].parameters.additionalProperties).toBe(false);
     expect(sidecarTools[0].parameters.properties.context).toEqual(expect.objectContaining({
       type: "object",
       required: ["contextId"],
@@ -50,6 +61,12 @@ describe("sidecar tools", () => {
       openWorldHint: false,
     });
     expect(getToolAnnotations("sidecar_get_state")).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+    expect(getToolAnnotations("sidecar_thinking_get_state")).toEqual({
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -111,6 +128,66 @@ describe("sidecar tools", () => {
       restorableContext: null,
     });
 
+    await expect(sidecarTools[8].execute({
+      conversationId: "conversation-1",
+    }, {})).resolves.toEqual({
+      conversationId: "conversation-1",
+      snapshot: null,
+    });
+
+    await expect(sidecarTools[4].execute({
+      conversationId: "conversation-1",
+      sessionId: "session-1",
+      title: "Agent activity",
+    }, {
+      agentProfile: "mcp_operator",
+    })).resolves.toEqual({
+      conversationId: "conversation-1",
+      sessionId: "session-1",
+      status: "streaming",
+      title: "Agent activity",
+      chunks: [],
+      updatedAt: expect.any(String),
+      revision: 1,
+    });
+
+    await expect(sidecarTools[5].execute({
+      conversationId: "conversation-1",
+      kind: "tool_call",
+      text: "Fetching authoritative Sidecar state.",
+    }, {
+      agentProfile: "mcp_operator",
+    })).resolves.toEqual(expect.objectContaining({
+      conversationId: "conversation-1",
+      sessionId: "session-1",
+      status: "streaming",
+      revision: 2,
+      chunks: [expect.objectContaining({ kind: "tool_call", text: "Fetching authoritative Sidecar state." })],
+    }));
+
+    await expect(sidecarTools[6].execute({
+      conversationId: "conversation-1",
+      summary: "Completed successfully.",
+    }, {
+      agentProfile: "mcp_operator",
+    })).resolves.toEqual(expect.objectContaining({
+      conversationId: "conversation-1",
+      sessionId: "session-1",
+      status: "complete",
+      summary: "Completed successfully.",
+      revision: 3,
+    }));
+
+    await expect(sidecarTools[7].execute({
+      conversationId: "conversation-1",
+    }, {
+      agentProfile: "mcp_operator",
+    })).resolves.toEqual({
+      ok: true,
+      conversationId: "conversation-1",
+      snapshot: null,
+    });
+
     syncActiveSidecarPanel({
       action: "open",
       panel: createValidatedSidecarPanel({
@@ -138,7 +215,7 @@ describe("sidecar tools", () => {
       userId: "user-1",
     });
 
-    await expect(sidecarTools[4].execute({
+    await expect(sidecarTools[9].execute({
       conversationId: "conversation-1",
       panelId: "selection-panel",
       actionId: "plan_review_toggle",
@@ -164,6 +241,8 @@ describe("sidecar tools", () => {
         conversationId: "conversation-1",
         rootPanelId: "selection-panel",
         activePanelId: "selection-panel",
+        contextLineageId: expect.any(String),
+        contextRevision: 1,
         stackRevision: 2,
         values: {
           decision: "approved",
@@ -190,7 +269,7 @@ describe("sidecar tools", () => {
       userId: "user-1",
     });
 
-    await expect(sidecarTools[5].execute({
+    await expect(sidecarTools[10].execute({
       conversationId: "conversation-1",
       operation: "back",
       expectedStackRevision: 3,
@@ -208,6 +287,8 @@ describe("sidecar tools", () => {
         conversationId: "conversation-1",
         rootPanelId: "selection-panel",
         activePanelId: "selection-panel",
+        contextLineageId: expect.any(String),
+        contextRevision: 1,
         stackRevision: 4,
         values: {
           decision: "approved",
@@ -271,6 +352,8 @@ describe("sidecar tools", () => {
         conversationId: "conversation-mcp",
         rootPanelId: "mcp-open-panel",
         activePanelId: "mcp-open-panel",
+        contextLineageId: expect.any(String),
+        contextRevision: 0,
         stackRevision: 1,
         values: {},
       },

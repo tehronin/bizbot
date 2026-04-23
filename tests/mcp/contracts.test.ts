@@ -355,6 +355,11 @@ describe("MCP contract snapshots", () => {
           "sidecar_interact",
           "sidecar_navigate",
           "sidecar_open",
+          "sidecar_thinking_append",
+          "sidecar_thinking_clear",
+          "sidecar_thinking_complete",
+          "sidecar_thinking_get_state",
+          "sidecar_thinking_start",
           "sidecar_update",
         ],
       }
@@ -560,6 +565,11 @@ describe("MCP contract snapshots", () => {
         "sidecar_interact",
         "sidecar_navigate",
         "sidecar_open",
+        "sidecar_thinking_append",
+        "sidecar_thinking_clear",
+        "sidecar_thinking_complete",
+        "sidecar_thinking_get_state",
+        "sidecar_thinking_start",
         "sidecar_update",
       ]
     `);

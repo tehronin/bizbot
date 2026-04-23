@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SidecarHost from "@/components/layout/SidecarHost";
-import { BIZBOT_SIDECAR_EVENT, BIZBOT_SIDECAR_INTERACTION_EVENT } from "@/lib/sidecar/types";
+import { BIZBOT_SELECTED_CONVERSATION_EVENT, BIZBOT_SIDECAR_EVENT, BIZBOT_SIDECAR_INTERACTION_EVENT } from "@/lib/sidecar/types";
 
 afterEach(() => {
   cleanup();
@@ -21,6 +21,25 @@ describe("sidecar host", () => {
     render(<SidecarHost />);
 
     expect(screen.getByRole("button", { name: "Expand sidecar" })).toBeTruthy();
+  });
+
+  it("shows a collapsed thinking rail by default inside the expanded sidecar", async () => {
+    render(<SidecarHost />);
+
+    dispatchSidecar({
+      action: "open",
+      conversationId: "conversation-1",
+      panel: {
+        panelId: "launch-brief",
+        title: "Launch brief",
+        content: { type: "markdown", markdown: "# Launch\n\n- One panel only" },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Collapse sidecar" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Expand thinking dock" })).toBeTruthy();
+    });
   });
 
   it("opens, updates, and closes the transient panel", async () => {
@@ -140,6 +159,26 @@ describe("sidecar host", () => {
     dispatchSidecar({
       action: "update",
       panel: {
+        panelId: "escaped-panel",
+        title: "Escaped placeholders",
+        context: {
+          contextId: "release.summary",
+          readKeys: ["owner", "artifact", "status"],
+        },
+        content: {
+          type: "markdown",
+          markdown: "Literal owner: \\{{owner}}",
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Literal owner: {{owner}}")).toBeTruthy();
+    });
+
+    dispatchSidecar({
+      action: "update",
+      panel: {
         panelId: "summary-panel",
         title: "Release summary",
         context: {
@@ -177,6 +216,27 @@ describe("sidecar host", () => {
 
     await waitFor(() => {
       expect(screen.getByText("export const artifactPath = \"dist/main.js\";")).toBeTruthy();
+    });
+
+    dispatchSidecar({
+      action: "update",
+      panel: {
+        panelId: "escaped-code-panel",
+        title: "Escaped code snippet",
+        context: {
+          contextId: "release.summary",
+          readKeys: ["artifact"],
+        },
+        content: {
+          type: "code",
+          language: "ts",
+          code: "export const literal = \"\\{{artifact}}\";",
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("export const literal = \"{{artifact}}\";")).toBeTruthy();
     });
 
     dispatchSidecar({
@@ -243,6 +303,174 @@ describe("sidecar host", () => {
       expect(screen.getByText("Config")).toBeTruthy();
       expect(screen.getByText("const enabled = false;")).toBeTruthy();
       expect(screen.getByText("const enabled = true;")).toBeTruthy();
+    });
+
+    dispatchSidecar({
+      action: "update",
+      panel: {
+        panelId: "escaped-table-panel",
+        title: "Escaped table",
+        context: {
+          contextId: "release.summary",
+          readKeys: ["status"],
+        },
+        content: {
+          type: "table",
+          columns: ["label", "value"],
+          rows: [["status", "\\{{status}}"]],
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("{{status}}")).toBeTruthy();
+    });
+  });
+
+  it("refreshes on explicit lifecycle triggers without a fixed polling loop", async () => {
+    window.localStorage.setItem("bizbot:selected-chat-conversation-id", "conversation-1");
+
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/sidecar/state?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            activePanel: {
+              panelId: "authoritative-panel",
+              title: "Authoritative panel",
+              content: { type: "markdown", markdown: "# Server synced\n\n- Visible without a local event" },
+            },
+            stack: {
+              panels: [
+                {
+                  panelId: "authoritative-panel",
+                  title: "Authoritative panel",
+                  content: { type: "markdown", markdown: "# Server synced\n\n- Visible without a local event" },
+                },
+              ],
+              activePanelId: "authoritative-panel",
+              stackRevision: 3,
+            },
+            context: null,
+          }),
+        });
+      }
+
+      if (url.includes("/api/sidecar/thinking?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            snapshot: null,
+          }),
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch ${url}`));
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SidecarHost />);
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/sidecar/state?conversationId=conversation-1"))).toHaveLength(1);
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/sidecar/state?conversationId=conversation-1", { cache: "no-store" });
+
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/sidecar/state?conversationId=conversation-1"))).toHaveLength(2);
+    });
+  });
+
+  it("refreshes immediately when the selected conversation changes in the same tab", async () => {
+    window.localStorage.setItem("bizbot:selected-chat-conversation-id", "conversation-1");
+
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/sidecar/state?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            activePanel: null,
+            stack: { panels: [], activePanelId: null, stackRevision: 0 },
+            context: null,
+          }),
+        });
+      }
+
+      if (url.includes("/api/sidecar/thinking?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            snapshot: null,
+          }),
+        });
+      }
+
+      if (url.includes("/api/sidecar/state?conversationId=conversation-2")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-2",
+            activePanel: {
+              panelId: "conversation-two-panel",
+              title: "Conversation two",
+              content: { type: "markdown", markdown: "# Conversation two\n\n- Refreshed from event" },
+            },
+            stack: {
+              panels: [
+                {
+                  panelId: "conversation-two-panel",
+                  title: "Conversation two",
+                  content: { type: "markdown", markdown: "# Conversation two\n\n- Refreshed from event" },
+                },
+              ],
+              activePanelId: "conversation-two-panel",
+              stackRevision: 2,
+            },
+            context: null,
+          }),
+        });
+      }
+
+      if (url.includes("/api/sidecar/thinking?conversationId=conversation-2")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-2",
+            snapshot: null,
+          }),
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch ${url}`));
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SidecarHost />);
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/sidecar/state?conversationId=conversation-1"))).toHaveLength(1);
+    });
+
+    window.localStorage.setItem("bizbot:selected-chat-conversation-id", "conversation-2");
+    window.dispatchEvent(new CustomEvent(BIZBOT_SELECTED_CONVERSATION_EVENT, {
+      detail: { conversationId: "conversation-2" },
+    }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/sidecar/state?conversationId=conversation-2"))).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledWith("/api/sidecar/state?conversationId=conversation-2", { cache: "no-store" });
+      expect(screen.getAllByText("Conversation two").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText("Refreshed from event")).toBeTruthy();
     });
   });
 
@@ -474,8 +702,10 @@ describe("sidecar host", () => {
     fireEvent.click(screen.getByRole("button", { name: "back" }));
 
     await waitFor(() => {
+      expect(screen.getByText("conflict detected")).toBeTruthy();
+      expect(screen.getByText("Sidecar conflict detected")).toBeTruthy();
       expect(screen.getByText("Agent reopened")).toBeTruthy();
-      expect(screen.getByText("Sidecar state changed while you were navigating. Review the latest panel stack and retry.")).toBeTruthy();
+      expect(screen.getAllByText("Sidecar state changed while you were navigating. Review the latest panel stack and retry.").length).toBeGreaterThanOrEqual(1);
       expect(screen.queryByText("Nested panel")).toBeNull();
     });
   });
@@ -537,6 +767,148 @@ describe("sidecar host", () => {
         },
       },
     });
+
+    window.removeEventListener(BIZBOT_SIDECAR_INTERACTION_EVENT, listener as EventListener);
+  });
+
+  it("includes expectedContextRevision for selection events backed by authoritative context", async () => {
+    const listener = vi.fn();
+    window.addEventListener(BIZBOT_SIDECAR_INTERACTION_EVENT, listener as EventListener);
+    render(<SidecarHost />);
+
+    dispatchSidecar({
+      action: "open",
+      conversationId: "conversation-1",
+      context: {
+        contextId: "oracle.personality.preferences",
+        conversationId: "conversation-1",
+        rootPanelId: "oracle-choice",
+        activePanelId: "oracle-choice",
+        contextLineageId: "lineage-1",
+        contextRevision: 4,
+        stackRevision: 1,
+        values: {
+          selectedPersonality: "bullish",
+        },
+      },
+      stack: {
+        panels: [
+          {
+            panelId: "oracle-choice",
+            title: "Oracle personality",
+            context: {
+              contextId: "oracle.personality.preferences",
+              readKeys: ["selectedPersonality"],
+              writeKeys: ["selectedPersonality"],
+              selectionKey: "selectedPersonality",
+            },
+            content: {
+              type: "selection",
+              title: "Choose personality",
+              selectionMode: "single",
+              items: [
+                { id: "balanced", title: "Balanced" },
+                { id: "bullish", title: "Bullish" },
+              ],
+              actions: [
+                { id: "oracle_toggle", label: "Choose", kind: "toggle" },
+              ],
+              interaction: { routeKey: "oracle.personality.select" },
+            },
+          },
+        ],
+        activePanelId: "oracle-choice",
+        stackRevision: 1,
+      },
+      panel: {
+        panelId: "oracle-choice",
+        title: "Oracle personality",
+        context: {
+          contextId: "oracle.personality.preferences",
+          readKeys: ["selectedPersonality"],
+          writeKeys: ["selectedPersonality"],
+          selectionKey: "selectedPersonality",
+        },
+        content: {
+          type: "selection",
+          title: "Choose personality",
+          selectionMode: "single",
+          items: [
+            { id: "balanced", title: "Balanced" },
+            { id: "bullish", title: "Bullish" },
+          ],
+          actions: [
+            { id: "oracle_toggle", label: "Choose", kind: "toggle" },
+          ],
+          interaction: { routeKey: "oracle.personality.select" },
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Choose personality")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Balanced").closest("button") as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(listener).toHaveBeenCalled();
+    });
+
+    const event = listener.mock.calls[0][0] as CustomEvent;
+    expect(event.detail).toEqual({
+      panelId: "oracle-choice",
+      actionId: "oracle_toggle",
+      selectedItemIds: ["balanced"],
+      expectedStackRevision: 1,
+      expectedContextRevision: 4,
+      contextPatch: {
+        contextId: "oracle.personality.preferences",
+        values: {
+          selectedPersonality: "balanced",
+        },
+      },
+    });
+
+    window.removeEventListener(BIZBOT_SIDECAR_INTERACTION_EVENT, listener as EventListener);
+  });
+
+  it("disables clear when it would be a no-op", async () => {
+    const listener = vi.fn();
+    window.addEventListener(BIZBOT_SIDECAR_INTERACTION_EVENT, listener as EventListener);
+    render(<SidecarHost />);
+
+    dispatchSidecar({
+      action: "open",
+      panel: {
+        panelId: "clear-choice",
+        title: "Clear choice",
+        context: {
+          contextId: "clear.preferences",
+          writeKeys: ["selectedValue"],
+          selectionKey: "selectedValue",
+        },
+        content: {
+          type: "selection",
+          title: "Clear choice",
+          selectionMode: "single",
+          items: [
+            { id: "alpha", title: "Alpha" },
+          ],
+          actions: [
+            { id: "clear-choice-clear", label: "Clear", kind: "clear" },
+          ],
+          interaction: { routeKey: "sidecar.selection.apply" },
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Clear" })).toHaveProperty("disabled", true);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(listener).not.toHaveBeenCalled();
 
     window.removeEventListener(BIZBOT_SIDECAR_INTERACTION_EVENT, listener as EventListener);
   });
@@ -713,6 +1085,218 @@ describe("sidecar host", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/sidecar/state?conversationId=conversation-1", { cache: "no-store" });
       expect(screen.getByText("Authoritative panel")).toBeTruthy();
       expect(screen.getByText("Visible without a local event")).toBeTruthy();
+    });
+  });
+
+  it("shows a dev sync indicator and debug drawer", async () => {
+    render(<SidecarHost />);
+
+    dispatchSidecar({
+      action: "open",
+      conversationId: "conversation-1",
+      context: {
+        contextId: "release.summary",
+        conversationId: "conversation-1",
+        rootPanelId: "debug-panel",
+        activePanelId: "debug-panel",
+        contextLineageId: "lineage-debug",
+        contextRevision: 7,
+        stackRevision: 5,
+        values: {
+          owner: "agent",
+        },
+      },
+      stack: {
+        panels: [
+          {
+            panelId: "debug-panel",
+            title: "Debug panel",
+            context: {
+              contextId: "release.summary",
+              readKeys: ["owner"],
+            },
+            content: {
+              type: "markdown",
+              markdown: "Owner {{owner}}",
+            },
+          },
+        ],
+        activePanelId: "debug-panel",
+        stackRevision: 5,
+      },
+      panel: {
+        panelId: "debug-panel",
+        title: "Debug panel",
+        context: {
+          contextId: "release.summary",
+          readKeys: ["owner"],
+        },
+        content: {
+          type: "markdown",
+          markdown: "Owner {{owner}}",
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("synced")).toBeTruthy();
+      expect(screen.getByText("stack rev 5")).toBeTruthy();
+      expect(screen.getByText("context rev 7")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "show debug" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Sidecar debug drawer")).toBeTruthy();
+      expect(screen.getByText("lineage: lineage-debug")).toBeTruthy();
+      expect(screen.getByText(/"contextLineageId": "lineage-debug"/)).toBeTruthy();
+      expect(screen.getByText(/"syncState": "synced"/)).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "close debug" }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Sidecar debug drawer")).toBeNull();
+    });
+  });
+
+  it("auto-expands the thinking dock for a new streamed session and respects manual collapse until the next session", async () => {
+    window.localStorage.setItem("bizbot:sidecar:expanded", "true");
+    window.localStorage.setItem("bizbot:selected-chat-conversation-id", "conversation-1");
+
+    const thinkingResponses = [
+      {
+        conversationId: "conversation-1",
+        snapshot: {
+          conversationId: "conversation-1",
+          sessionId: "session-1",
+          status: "streaming",
+          title: "Agent activity",
+          chunks: [
+            {
+              id: "chunk-1",
+              kind: "note",
+              text: "Planning next action.",
+              timestamp: "2026-04-23T12:00:00.000Z",
+            },
+          ],
+          updatedAt: "2026-04-23T12:00:00.000Z",
+          revision: 1,
+        },
+      },
+      {
+        conversationId: "conversation-1",
+        snapshot: {
+          conversationId: "conversation-1",
+          sessionId: "session-1",
+          status: "streaming",
+          title: "Agent activity",
+          chunks: [
+            {
+              id: "chunk-1",
+              kind: "note",
+              text: "Planning next action.",
+              timestamp: "2026-04-23T12:00:00.000Z",
+            },
+            {
+              id: "chunk-2",
+              kind: "tool_result",
+              text: "Still working inside the same session.",
+              timestamp: "2026-04-23T12:00:02.000Z",
+            },
+          ],
+          updatedAt: "2026-04-23T12:00:02.000Z",
+          revision: 2,
+        },
+      },
+      {
+        conversationId: "conversation-1",
+        snapshot: {
+          conversationId: "conversation-1",
+          sessionId: "session-2",
+          status: "streaming",
+          title: "Agent activity",
+          chunks: [
+            {
+              id: "chunk-3",
+              kind: "note",
+              text: "New session opened.",
+              timestamp: "2026-04-23T12:00:05.000Z",
+            },
+          ],
+          updatedAt: "2026-04-23T12:00:05.000Z",
+          revision: 1,
+        },
+      },
+    ];
+
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/sidecar/state?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            activePanel: {
+              panelId: "launch-brief",
+              title: "Launch brief",
+              content: { type: "markdown", markdown: "# Launch\n\n- One panel only" },
+            },
+            stack: {
+              panels: [
+                {
+                  panelId: "launch-brief",
+                  title: "Launch brief",
+                  content: { type: "markdown", markdown: "# Launch\n\n- One panel only" },
+                },
+              ],
+              activePanelId: "launch-brief",
+              stackRevision: 1,
+            },
+            context: null,
+          }),
+        });
+      }
+
+      if (url.includes("/api/sidecar/thinking?conversationId=conversation-1")) {
+        const nextPayload = thinkingResponses.shift() ?? thinkingResponses.at(-1);
+        return Promise.resolve({
+          ok: true,
+          json: async () => nextPayload,
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch ${url}`));
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SidecarHost />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Collapse thinking dock" })).toBeTruthy();
+      expect(screen.getByText("Planning next action.")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse thinking dock" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Expand thinking dock" })).toBeTruthy();
+      expect(screen.queryByText("Planning next action.")).toBeNull();
+    });
+
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Expand thinking dock" })).toBeTruthy();
+      expect(screen.queryByText("Still working inside the same session.")).toBeNull();
+    });
+
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Collapse thinking dock" })).toBeTruthy();
+      expect(screen.getByText("New session opened.")).toBeTruthy();
     });
   });
 });

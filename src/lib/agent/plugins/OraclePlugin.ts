@@ -27,7 +27,6 @@ import {
   type OraclePersonalityId,
 } from "@/lib/polymarket/personality";
 import { registerSidecarInteractionHandler } from "@/lib/sidecar/router";
-import { applySidecarContextPatchForConversation } from "@/lib/sidecar/state";
 import { createValidatedSidecarPanel } from "@/lib/sidecar/validation";
 import type {
   SidecarPanel,
@@ -556,10 +555,9 @@ registerSidecarInteractionHandler("oracle.market.select", async (context) => {
   const personality = await resolveOraclePersonality(context.userId);
   const verdict = buildOracleVerdict(market, personality);
 
-  applySidecarContextPatchForConversation({
-    conversationId: context.conversationId,
-    panel: context.panel,
-    contextPatch: {
+  return {
+    ...buildMarketSummaryPanel(market),
+    resolvedContextPatch: {
       contextId: ORACLE_MARKET_CONTEXT_ID,
       values: {
         selectedMarketId: market.id,
@@ -573,9 +571,7 @@ registerSidecarInteractionHandler("oracle.market.select", async (context) => {
         selectedVerdictConfidence: verdict.confidence,
       },
     },
-  });
-
-  return buildMarketSummaryPanel(market);
+  };
 });
 
 export const oraclePlugin = {

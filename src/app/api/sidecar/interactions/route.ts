@@ -1,5 +1,11 @@
 import { NextRequest } from "next/server";
-import { getActiveSidecarContextForConversation, getActiveSidecarStackForConversation, getActiveSidecarStackRevisionForConversation } from "@/lib/sidecar/state";
+import {
+  getActiveSidecarContextForConversation,
+  getActiveSidecarContextRevisionForConversation,
+  getActiveSidecarStackForConversation,
+  getActiveSidecarStackRevisionForConversation,
+  SidecarContextConflictError,
+} from "@/lib/sidecar/state";
 import { routeSidecarInteraction } from "@/lib/sidecar/router";
 
 export async function POST(request: NextRequest) {
@@ -11,6 +17,7 @@ export async function POST(request: NextRequest) {
       conversationId?: unknown;
       userId?: unknown;
       expectedStackRevision?: unknown;
+      expectedContextRevision?: unknown;
       contextPatch?: unknown;
     };
 
@@ -18,6 +25,10 @@ export async function POST(request: NextRequest) {
     const expectedStackRevision = body.expectedStackRevision;
     if (expectedStackRevision !== undefined && (typeof expectedStackRevision !== "number" || !Number.isInteger(expectedStackRevision) || expectedStackRevision < 0)) {
       throw new Error("Sidecar expected stack revision must be a non-negative integer.");
+    }
+    const expectedContextRevision = body.expectedContextRevision;
+    if (expectedContextRevision !== undefined && (typeof expectedContextRevision !== "number" || !Number.isInteger(expectedContextRevision) || expectedContextRevision < 0)) {
+      throw new Error("Sidecar expected context revision must be a non-negative integer.");
     }
 
     const currentStackRevision = getActiveSidecarStackRevisionForConversation(conversationId);
@@ -30,19 +41,43 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    const result = await routeSidecarInteraction({
-      panelId: typeof body.panelId === "string" ? body.panelId : "",
-      actionId: typeof body.actionId === "string" ? body.actionId : "",
-      selectedItemIds: Array.isArray(body.selectedItemIds)
-        ? body.selectedItemIds.filter((value): value is string => typeof value === "string")
-        : [],
-      conversationId,
-      ...(typeof expectedStackRevision === "number" ? { expectedStackRevision } : {}),
-      ...(body.contextPatch && typeof body.contextPatch === "object" && !Array.isArray(body.contextPatch) ? { contextPatch: body.contextPatch as never } : {}),
-      ...(typeof body.userId === "string" ? { userId: body.userId } : {}),
-    });
+    const currentContextRevision = getActiveSidecarContextRevisionForConversation(conversationId);
+    if (typeof expectedContextRevision === "number" && expectedContextRevision !== currentContextRevision) {
+      return Response.json({
+        error: "Sidecar context changed while you were interacting. Review the latest context and retry.",
+        panel: getActiveSidecarStackForConversation(conversationId).panels.at(-1) ?? null,
+        stack: getActiveSidecarStackForConversation(conversationId),
+        context: getActiveSidecarContextForConversation(conversationId),
+      }, { status: 409 });
+    }
 
-    return Response.json(result);
+    try {
+      const result = await routeSidecarInteraction({
+        panelId: typeof body.panelId === "string" ? body.panelId : "",
+        actionId: typeof body.actionId === "string" ? body.actionId : "",
+        selectedItemIds: Array.isArray(body.selectedItemIds)
+          ? body.selectedItemIds.filter((value): value is string => typeof value === "string")
+          : [],
+        conversationId,
+        ...(typeof expectedStackRevision === "number" ? { expectedStackRevision } : {}),
+        ...(typeof expectedContextRevision === "number" ? { expectedContextRevision } : {}),
+        ...(body.contextPatch && typeof body.contextPatch === "object" && !Array.isArray(body.contextPatch) ? { contextPatch: body.contextPatch as never } : {}),
+        ...(typeof body.userId === "string" ? { userId: body.userId } : {}),
+      });
+
+      return Response.json(result);
+    } catch (error) {
+      if (error instanceof SidecarContextConflictError) {
+        return Response.json({
+          error: error.message,
+          panel: getActiveSidecarStackForConversation(conversationId).panels.at(-1) ?? null,
+          stack: getActiveSidecarStackForConversation(conversationId),
+          context: getActiveSidecarContextForConversation(conversationId),
+        }, { status: 409 });
+      }
+
+      throw error;
+    }
   } catch (error) {
     return Response.json({ error: String(error) }, { status: 400 });
   }

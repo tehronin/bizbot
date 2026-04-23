@@ -3,6 +3,7 @@ import type { JsonValue } from "@/lib/agent/tools";
 export const BIZBOT_SIDECAR_EVENT = "bizbot:sidecar";
 export const BIZBOT_SIDECAR_INTERACTION_EVENT = "bizbot:sidecar:interaction";
 export const BIZBOT_SIDECAR_INTERACTION_STATE_EVENT = "bizbot:sidecar:interaction-state";
+export const BIZBOT_SELECTED_CONVERSATION_EVENT = "bizbot:chat:selected-conversation";
 export const SIDECAR_ALLOWED_IMAGE_HOSTS = new Set<string>([]);
 
 export type SidecarContentType = "markdown" | "code" | "json" | "image" | "selection" | "table" | "key_value" | "progress" | "diff";
@@ -11,6 +12,8 @@ export type SidecarPanelPersistence = "ephemeral" | "sticky" | "workflow";
 export type SidecarSelectionMode = "single" | "multiple";
 export type SidecarSelectionActionKind = "apply" | "toggle" | "clear" | "close";
 export type SidecarProgressStatus = "pending" | "active" | "done" | "error";
+export type SidecarThinkingStatus = "idle" | "streaming" | "complete" | "error";
+export type SidecarThinkingChunkKind = "status" | "note" | "plan" | "tool_call" | "tool_result" | "warning" | "error";
 
 export interface SidecarPanelContextBinding {
   contextId: string;
@@ -31,8 +34,29 @@ export interface SidecarContextSnapshot {
   conversationId: string;
   rootPanelId: string;
   activePanelId: string | null;
+  contextLineageId: string;
+  contextRevision: number;
   stackRevision: number;
   values: Record<string, JsonValue>;
+}
+
+export interface SidecarThinkingChunk {
+  id: string;
+  kind: SidecarThinkingChunkKind;
+  text: string;
+  timestamp: string;
+  metadata?: Record<string, JsonValue>;
+}
+
+export interface SidecarThinkingSnapshot {
+  conversationId: string;
+  sessionId: string;
+  status: SidecarThinkingStatus;
+  title?: string;
+  summary?: string;
+  chunks: SidecarThinkingChunk[];
+  updatedAt: string;
+  revision: number;
 }
 
 export interface SidecarMarkdownContent {
@@ -180,6 +204,7 @@ export interface SidecarInteractionEventDetail {
   actionId: string;
   selectedItemIds: string[];
   expectedStackRevision?: number;
+  expectedContextRevision?: number;
   contextPatch?: SidecarContextPatch;
 }
 

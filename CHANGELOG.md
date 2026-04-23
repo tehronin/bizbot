@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-04-23
+
+- Hardened authoritative Sidecar context concurrency with `contextRevision` and `contextLineageId`, stale-write rejection on the interaction route and MCP path, merged transport plus handler context patches in the router reducer, and updated Oracle or Creeper Sidecar handlers to return resolved context patches instead of mutating shared state ad hoc.
+- Reworked the Sidecar host sync path around explicit lifecycle refreshes plus same-tab selected-conversation events, added a dev sync-status indicator and debug drawer, tightened placeholder escaping and no-op clear handling, and documented the now-implemented server-owned context model in the Sidecar guide.
+- Added a separate runtime-authoritative Sidecar thinking state store, a `GET /api/sidecar/thinking` route, a bottom-dock renderer in the shell, and a bounded `sidecar_thinking_*` MCP surface so safe execution progress can be inspected without turning thinking into a regular Sidecar panel type.
+- Wired agent executor status, tool-call, and tool-result checkpoints into the new thinking state with strict safe summarization, including allowlisted bounded summaries for selected Developer, Oracle, Creeper, Builder, and Sidecar tools instead of copying raw tool payloads into the dock.
+- Expanded regression and MCP contract coverage for context conflicts, merged context patches, thinking-route and thinking-store behavior, host sync and dock UX, authoritative MCP Sidecar responses, and the exposed tool catalog so local CI-equivalent app, MCP, build, template, and Builder e2e verification all pass again.
+
 ## 2026-04-22
 
 - Added authoritative Sidecar stack revisions plus bounded `SidecarContext` state, placeholder-driven context rendering, and write-scoped interaction patches so nested Oracle and Creeper Sidecar workflows can share server-owned state without clobbering parent panels.

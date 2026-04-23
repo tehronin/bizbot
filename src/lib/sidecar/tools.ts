@@ -1,8 +1,10 @@
 import { defineTool, registerTool, type ToolDefinition, type ToolPropertySchema } from "@/lib/agent/tools";
+import { appendThinkingChunk, clearThinkingSession, completeThinkingSession, getThinkingSnapshotForConversation, startThinkingSession } from "@/lib/sidecar/thinking-state";
 import {
   activateSidecarPanelForConversation,
   closeActiveSidecarPanelForConversation,
   getActiveSidecarContextForConversation,
+  getActiveSidecarContextRevisionForConversation,
   getActiveSidecarPanelForConversation,
   getActiveSidecarStackRevisionForConversation,
   getActiveSidecarStackForConversation,
@@ -10,11 +12,12 @@ import {
   getRestorableActiveSidecarPanelForConversation,
   getRestorableSidecarContextForConversation,
   getRestorableSidecarStackForConversation,
+  SidecarContextConflictError,
   syncActiveSidecarPanel,
 } from "@/lib/sidecar/state";
 import { routeSidecarInteraction } from "@/lib/sidecar/router";
 import { createValidatedSidecarPanel } from "@/lib/sidecar/validation";
-import type { SidecarContent, SidecarInteractionResult, SidecarPanel, SidecarPanelContextBinding, SidecarPanelPersistence, SidecarToolResult } from "@/lib/sidecar/types";
+import type { SidecarContent, SidecarInteractionResult, SidecarPanel, SidecarPanelContextBinding, SidecarPanelPersistence, SidecarThinkingChunkKind, SidecarToolResult } from "@/lib/sidecar/types";
 
 interface SidecarPanelArgs {
   panelId?: string;
@@ -34,6 +37,7 @@ interface SidecarInteractArgs {
   actionId: string;
   selectedItemIds?: string[];
   expectedStackRevision?: number;
+  expectedContextRevision?: number;
   contextPatch?: {
     contextId: string;
     values: Record<string, unknown>;
@@ -46,6 +50,32 @@ interface SidecarNavigateArgs {
   operation: "back" | "activate" | "close";
   panelId?: string;
   expectedStackRevision?: number;
+  conversationId?: string;
+}
+
+interface SidecarThinkingStartArgs {
+  conversationId?: string;
+  sessionId?: string;
+  title?: string;
+}
+
+interface SidecarThinkingAppendArgs {
+  conversationId?: string;
+  kind: SidecarThinkingChunkKind;
+  text: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface SidecarThinkingCompleteArgs {
+  conversationId?: string;
+  summary?: string;
+}
+
+interface SidecarThinkingClearArgs {
+  conversationId?: string;
+}
+
+interface SidecarThinkingGetStateArgs {
   conversationId?: string;
 }
 
@@ -201,6 +231,19 @@ function shouldPersistAuthoritativeSidecarState(context: { agentProfile?: string
 
 function resolveConversationId(providedConversationId: string | undefined, context: { conversationId?: string }): string {
   return providedConversationId?.trim() || context.conversationId?.trim() || "";
+}
+
+function resolveAuthoritativeConversationId(providedConversationId: string | undefined, context: { conversationId?: string; agentProfile?: string }, action: string): string {
+  if (!shouldPersistAuthoritativeSidecarState(context)) {
+    throw new Error(`Sidecar thinking ${action} requires authoritative MCP execution.`);
+  }
+
+  const resolvedConversationId = resolveConversationId(providedConversationId, context);
+  if (!resolvedConversationId) {
+    throw new Error(`A conversation id is required to ${action} Sidecar thinking state.`);
+  }
+
+  return resolvedConversationId;
 }
 
 function buildResult(action: "open" | "update", input: SidecarPanel): SidecarToolResult {
@@ -382,6 +425,123 @@ export const sidecarTools = [
     restorableContext: ReturnType<typeof getRestorableSidecarContextForConversation>;
   }>)),
   registerTool(defineTool({
+    name: "sidecar_thinking_start",
+    description: "Start or replace the current authoritative BizBot Sidecar thinking session for a conversation.",
+    parameters: {
+      type: "object",
+      properties: {
+        conversationId: { type: "string", description: "Optional conversation id. Defaults to the active tool execution conversation." },
+        sessionId: { type: "string", description: "Optional stable session id. Generated automatically when omitted." },
+        title: { type: "string", description: "Optional thinking session title shown in the dock header." },
+      },
+      additionalProperties: false,
+    },
+    execute: async ({ conversationId, sessionId, title }: SidecarThinkingStartArgs, context) => {
+      const resolvedConversationId = resolveAuthoritativeConversationId(conversationId, context, "start");
+      return startThinkingSession({
+        conversationId: resolvedConversationId,
+        ...(sessionId?.trim() ? { sessionId: sessionId.trim() } : {}),
+        ...(title?.trim() ? { title: title.trim() } : {}),
+      });
+    },
+  } satisfies ToolDefinition<SidecarThinkingStartArgs, ReturnType<typeof startThinkingSession>>)),
+  registerTool(defineTool({
+    name: "sidecar_thinking_append",
+    description: "Append a bounded safe thinking chunk to the authoritative BizBot Sidecar thinking session.",
+    parameters: {
+      type: "object",
+      properties: {
+        conversationId: { type: "string", description: "Optional conversation id. Defaults to the active tool execution conversation." },
+        kind: {
+          type: "string",
+          enum: ["status", "note", "plan", "tool_call", "tool_result", "warning", "error"],
+          description: "Structured safe chunk type for the thinking dock.",
+        },
+        text: { type: "string", description: "Concise user-display-safe chunk text." },
+        metadata: {
+          type: "object",
+          properties: {},
+          additionalProperties: true,
+          description: "Optional structured chunk metadata for future renderers.",
+        },
+      },
+      required: ["kind", "text"],
+      additionalProperties: false,
+    },
+    execute: async ({ conversationId, kind, text, metadata }: SidecarThinkingAppendArgs, context) => {
+      const resolvedConversationId = resolveAuthoritativeConversationId(conversationId, context, "append");
+      const normalizedText = text.trim();
+      if (!normalizedText) {
+        throw new Error("Sidecar thinking chunk text is required.");
+      }
+
+      return appendThinkingChunk({
+        conversationId: resolvedConversationId,
+        kind,
+        text: normalizedText,
+        ...(metadata ? { metadata: metadata as Record<string, never> } : {}),
+      });
+    },
+  } satisfies ToolDefinition<SidecarThinkingAppendArgs, ReturnType<typeof appendThinkingChunk>>)),
+  registerTool(defineTool({
+    name: "sidecar_thinking_complete",
+    description: "Mark the authoritative BizBot Sidecar thinking session complete and optionally store a short summary.",
+    parameters: {
+      type: "object",
+      properties: {
+        conversationId: { type: "string", description: "Optional conversation id. Defaults to the active tool execution conversation." },
+        summary: { type: "string", description: "Optional final user-display-safe thinking summary." },
+      },
+      additionalProperties: false,
+    },
+    execute: async ({ conversationId, summary }: SidecarThinkingCompleteArgs, context) => {
+      const resolvedConversationId = resolveAuthoritativeConversationId(conversationId, context, "complete");
+      return completeThinkingSession(resolvedConversationId, summary);
+    },
+  } satisfies ToolDefinition<SidecarThinkingCompleteArgs, ReturnType<typeof completeThinkingSession>>)),
+  registerTool(defineTool({
+    name: "sidecar_thinking_clear",
+    description: "Clear the current authoritative BizBot Sidecar thinking session for a conversation.",
+    parameters: {
+      type: "object",
+      properties: {
+        conversationId: { type: "string", description: "Optional conversation id. Defaults to the active tool execution conversation." },
+      },
+      additionalProperties: false,
+    },
+    execute: async ({ conversationId }: SidecarThinkingClearArgs, context) => {
+      const resolvedConversationId = resolveAuthoritativeConversationId(conversationId, context, "clear");
+      clearThinkingSession(resolvedConversationId);
+      return {
+        ok: true,
+        conversationId: resolvedConversationId,
+        snapshot: null,
+      };
+    },
+  } satisfies ToolDefinition<SidecarThinkingClearArgs, { ok: true; conversationId: string; snapshot: null }>)),
+  registerTool(defineTool({
+    name: "sidecar_thinking_get_state",
+    description: "Return the current authoritative BizBot Sidecar thinking snapshot for a conversation.",
+    parameters: {
+      type: "object",
+      properties: {
+        conversationId: { type: "string", description: "Optional conversation id. Defaults to the active tool execution conversation." },
+      },
+      additionalProperties: false,
+    },
+    execute: async ({ conversationId }: SidecarThinkingGetStateArgs, context) => {
+      const resolvedConversationId = resolveConversationId(conversationId, context);
+      if (!resolvedConversationId) {
+        throw new Error("A conversation id is required to inspect Sidecar thinking state.");
+      }
+
+      return {
+        conversationId: resolvedConversationId,
+        snapshot: getThinkingSnapshotForConversation(resolvedConversationId),
+      };
+    },
+  } satisfies ToolDefinition<SidecarThinkingGetStateArgs, { conversationId: string; snapshot: ReturnType<typeof getThinkingSnapshotForConversation> }>)),
+  registerTool(defineTool({
     name: "sidecar_interact",
     description: "Execute a bounded BizBot Sidecar selection interaction and return the authoritative stack and context snapshot.",
     parameters: {
@@ -391,6 +551,7 @@ export const sidecarTools = [
         actionId: { type: "string", description: "Stable Sidecar action id to invoke." },
         selectedItemIds: { type: "array", items: { type: "string" }, description: "Selection item ids representing the intended next selection state." },
         expectedStackRevision: { type: "number", description: "Optional optimistic concurrency key for rejecting stale interactions." },
+        expectedContextRevision: { type: "number", description: "Optional optimistic concurrency key for rejecting stale context writes." },
         contextPatch: contextPatchSchema,
         conversationId: { type: "string", description: "Optional conversation id. Defaults to the active tool execution conversation." },
         userId: { type: "string", description: "Optional explicit user id override for the interaction." },
@@ -398,7 +559,7 @@ export const sidecarTools = [
       required: ["panelId", "actionId"],
       additionalProperties: false,
     },
-    execute: async ({ panelId, actionId, selectedItemIds, expectedStackRevision, contextPatch, conversationId, userId }: SidecarInteractArgs, context) => {
+    execute: async ({ panelId, actionId, selectedItemIds, expectedStackRevision, expectedContextRevision, contextPatch, conversationId, userId }: SidecarInteractArgs, context) => {
       const resolvedConversationId = conversationId?.trim() || context.conversationId?.trim() || "";
       if (!resolvedConversationId) {
         throw new Error("A conversation id is required to execute a Sidecar interaction.");
@@ -417,17 +578,47 @@ export const sidecarTools = [
         };
       }
 
-      const result = await routeSidecarInteraction({
-        panelId,
-        actionId,
-        selectedItemIds: [...(selectedItemIds ?? [])],
-        ...(typeof expectedStackRevision === "number" ? { expectedStackRevision } : {}),
-        ...(contextPatch ? { contextPatch: contextPatch as { contextId: string; values: Record<string, never> } } : {}),
-        conversationId: resolvedConversationId,
-        ...(userId?.trim() || context.userId?.trim() ? { userId: userId?.trim() || context.userId?.trim() } : {}),
-      });
+      const currentContextRevision = getActiveSidecarContextRevisionForConversation(resolvedConversationId);
+      if (typeof expectedContextRevision === "number" && expectedContextRevision !== currentContextRevision) {
+        const stack = getActiveSidecarStackForConversation(resolvedConversationId);
+        return {
+          ok: false,
+          conflict: true,
+          error: "Sidecar context changed while you were interacting. Review the latest context and retry.",
+          panel: stack.panels.at(-1) ?? null,
+          stack,
+          context: getActiveSidecarContextForConversation(resolvedConversationId),
+        };
+      }
 
-      return result satisfies SidecarInteractionResult;
+      try {
+        const result = await routeSidecarInteraction({
+          panelId,
+          actionId,
+          selectedItemIds: [...(selectedItemIds ?? [])],
+          ...(typeof expectedStackRevision === "number" ? { expectedStackRevision } : {}),
+          ...(typeof expectedContextRevision === "number" ? { expectedContextRevision } : {}),
+          ...(contextPatch ? { contextPatch: contextPatch as { contextId: string; values: Record<string, never> } } : {}),
+          conversationId: resolvedConversationId,
+          ...(userId?.trim() || context.userId?.trim() ? { userId: userId?.trim() || context.userId?.trim() } : {}),
+        });
+
+        return result satisfies SidecarInteractionResult;
+      } catch (error) {
+        if (error instanceof SidecarContextConflictError) {
+          const stack = getActiveSidecarStackForConversation(resolvedConversationId);
+          return {
+            ok: false,
+            conflict: true,
+            error: error.message,
+            panel: stack.panels.at(-1) ?? null,
+            stack,
+            context: getActiveSidecarContextForConversation(resolvedConversationId),
+          };
+        }
+
+        throw error;
+      }
     },
   } satisfies ToolDefinition<SidecarInteractArgs, ({ ok: true } & SidecarInteractionResult) | {
     ok: false;

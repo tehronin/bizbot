@@ -552,6 +552,10 @@ export function validateSidecarInteractionRequest(input: SidecarInteractionReque
   if (expectedStackRevision !== undefined && (!Number.isInteger(expectedStackRevision) || expectedStackRevision < 0)) {
     throw new Error("Sidecar expected stack revision must be a non-negative integer.");
   }
+  const expectedContextRevision = input.expectedContextRevision;
+  if (expectedContextRevision !== undefined && (!Number.isInteger(expectedContextRevision) || expectedContextRevision < 0)) {
+    throw new Error("Sidecar expected context revision must be a non-negative integer.");
+  }
   const contextPatch = validateContextPatch(input.contextPatch);
 
   return {
@@ -560,6 +564,7 @@ export function validateSidecarInteractionRequest(input: SidecarInteractionReque
     conversationId,
     selectedItemIds,
     ...(typeof expectedStackRevision === "number" ? { expectedStackRevision } : {}),
+    ...(typeof expectedContextRevision === "number" ? { expectedContextRevision } : {}),
     ...(contextPatch ? { contextPatch } : {}),
     ...(input.userId ? { userId: input.userId.trim() } : {}),
   };

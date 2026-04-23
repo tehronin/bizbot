@@ -123,6 +123,8 @@ describe("sidecar interaction route", () => {
         conversationId: "conversation-1",
         rootPanelId: panel.panelId,
         activePanelId: expect.any(String),
+        contextLineageId: expect.any(String),
+        contextRevision: 1,
         stackRevision: 2,
         values: {
           selectedPersonality: "bullish",
@@ -134,6 +136,8 @@ describe("sidecar interaction route", () => {
       conversationId: "conversation-1",
       rootPanelId: panel.panelId,
       activePanelId: expect.any(String),
+      contextLineageId: expect.any(String),
+      contextRevision: 1,
       stackRevision: 2,
       values: {
         selectedPersonality: "bullish",
@@ -205,6 +209,8 @@ describe("sidecar interaction route", () => {
         conversationId: "conversation-1",
         rootPanelId: "plan-review",
         activePanelId: "plan-review",
+        contextLineageId: expect.any(String),
+        contextRevision: 1,
         stackRevision: 2,
         values: {
           decision: "approved",
@@ -217,10 +223,104 @@ describe("sidecar interaction route", () => {
       conversationId: "conversation-1",
       rootPanelId: "plan-review",
       activePanelId: "plan-review",
+      contextLineageId: expect.any(String),
+      contextRevision: 1,
       stackRevision: 2,
       values: {
         decision: "approved",
         reviewer: "user-1",
+      },
+    });
+  });
+
+  it("rejects stale context writes with the latest authoritative snapshot", async () => {
+    const panel = createValidatedSidecarPanel({
+      panelId: "plan-review",
+      title: "Plan review",
+      context: {
+        contextId: "plan.review",
+        writeKeys: ["decision"],
+      },
+      content: {
+        type: "selection",
+        title: "Approve the plan",
+        selectionMode: "single",
+        items: [
+          { id: "approved", title: "Approve" },
+          { id: "rework", title: "Request rework" },
+        ],
+        actions: [
+          { id: "plan_review_toggle", label: "Choose", kind: "toggle" },
+        ],
+        interaction: { routeKey: "sidecar.selection.apply" },
+      },
+    });
+
+    syncActiveSidecarPanel({
+      action: "open",
+      panel,
+      conversationId: "conversation-1",
+      userId: "user-1",
+    });
+
+    const firstResponse = await POST(new Request("http://localhost:3000/api/sidecar/interactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        panelId: panel.panelId,
+        actionId: "plan_review_toggle",
+        selectedItemIds: ["approved"],
+        expectedContextRevision: 0,
+        contextPatch: {
+          contextId: "plan.review",
+          values: {
+            decision: "approved",
+          },
+        },
+        conversationId: "conversation-1",
+      }),
+    }) as never);
+
+    expect(firstResponse.status).toBe(200);
+
+    const staleResponse = await POST(new Request("http://localhost:3000/api/sidecar/interactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        panelId: panel.panelId,
+        actionId: "plan_review_toggle",
+        selectedItemIds: ["rework"],
+        expectedContextRevision: 0,
+        contextPatch: {
+          contextId: "plan.review",
+          values: {
+            decision: "rework",
+          },
+        },
+        conversationId: "conversation-1",
+      }),
+    }) as never);
+
+    expect(staleResponse.status).toBe(409);
+    await expect(staleResponse.json()).resolves.toEqual({
+      error: "Sidecar context changed while you were interacting. Review the latest context and retry.",
+      panel: expect.objectContaining({ panelId: "plan-review", title: "Plan review" }),
+      stack: {
+        panels: [expect.objectContaining({ panelId: "plan-review", title: "Plan review" })],
+        activePanelId: "plan-review",
+        stackRevision: 2,
+      },
+      context: {
+        contextId: "plan.review",
+        conversationId: "conversation-1",
+        rootPanelId: "plan-review",
+        activePanelId: "plan-review",
+        contextLineageId: expect.any(String),
+        contextRevision: 1,
+        stackRevision: 2,
+        values: {
+          decision: "approved",
+        },
       },
     });
   });

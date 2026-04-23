@@ -138,7 +138,7 @@ Concurrency notes:
 
 ## SidecarContext Design
 
-The current runtime does not yet implement a first-class `SidecarContext`, but nested panels now create enough structural pressure that the design should be explicit before plugin-specific ad hoc state passing spreads.
+The current runtime implements a first-class server-owned `SidecarContextSnapshot` per conversation. It is authoritative within the running process, returned alongside the stack from Sidecar routes and tools, and used for bounded parent-child workflow state.
 
 ### Why A Context Object Exists
 
@@ -148,21 +148,22 @@ Once panels can open child panels or react to interactions across multiple stack
 - child to parent updates without letting children replace arbitrary parent payloads
 - stack-level shared state that survives panel replacement and truncation more cleanly than hidden renderer content
 
-`stackRevision` solves stale navigation. It does not solve cross-panel authority. `SidecarContext` is the missing authority model.
+`stackRevision` solves stale navigation. `contextRevision` now solves stale context writes. Together they form the authoritative Sidecar concurrency model.
 
-### Proposed Contract
+### Current Contract
 
-The smallest useful design is:
+The active contract is:
 
 ```ts
-interface SidecarContext {
+interface SidecarContextSnapshot {
   contextId: string;
   conversationId: string;
-  stackRevision: number;
   rootPanelId: string;
   activePanelId: string | null;
+  contextLineageId: string;
+  contextRevision: number;
+  stackRevision: number;
   values: Record<string, JsonValue>;
-  capabilities?: string[];
 }
 
 interface SidecarPanelContextBinding {
@@ -170,25 +171,28 @@ interface SidecarPanelContextBinding {
   parentPanelId?: string;
   readKeys?: string[];
   writeKeys?: string[];
+  selectionKey?: string;
   returnChannel?: string;
 }
 ```
 
-And `SidecarPanel` would eventually grow an optional field such as:
+`SidecarPanel` now carries an optional binding:
 
 ```ts
 context?: SidecarPanelContextBinding;
 ```
 
-This keeps context state separate from renderer payloads while still letting each panel declare what it can read and what it is allowed to write.
+This keeps context state separate from renderer payloads while letting each panel declare what it can read and what it is allowed to write.
 
 ### Authority Model
 
 - The server owns `SidecarContext`, not the client.
-- Context is scoped to a conversation and anchored to a stack lineage, not to a single renderer payload.
+- Context is scoped to a conversation and anchored to a lineage, not to a single renderer payload.
 - A child panel may read inherited keys but should only write keys explicitly allowlisted in its binding.
-- A child panel should never replace its parent panel payload directly. It should submit a bounded context patch or a named return action.
+- A child panel should never replace its parent panel payload directly. It should submit a bounded transport patch or return a resolved patch intent through the Sidecar router.
 - Parent panels remain responsible for re-rendering themselves from authoritative context values.
+
+The current implementation centralizes context writes in one reducer path. UI-originated transport patches and handler-originated resolved patches are merged there, validated there, and persisted there with a single `contextRevision` increment.
 
 ### Parent To Child Flow
 
@@ -228,8 +232,8 @@ Recommended producer rules for placeholders:
 Recommended pattern:
 
 1. Child interaction posts a named action or a context patch through the Sidecar interaction route.
-2. The server validates `contextId`, `stackRevision`, and `writeKeys`.
-3. The server applies a bounded update to `SidecarContext.values`.
+2. The server validates `contextId`, `expectedContextRevision`, and `writeKeys`.
+3. The router merges the transport patch and any handler-resolved patch through the authoritative reducer.
 4. The server returns a fresh panel or stack snapshot derived from the updated authoritative context.
 
 This keeps child panels from becoming implicit parent renderers.
@@ -249,14 +253,24 @@ Values that belong purely to one renderer and never need to outlive that panel s
 
 ### Revision Interaction
 
-`SidecarContext` should ride on the same revision model as the stack:
+Context now uses its own revision model in parallel with the stack:
 
-- every context mutation should either increment `stackRevision` or carry a separate `contextRevision`
-- child writes should include the expected revision they were based on
-- stale writes should be rejected with the same conflict pattern used by `/api/sidecar/state`
-- the server should return a latest authoritative snapshot after conflict so the client can reconcile instead of guessing
+- every successful context mutation increments `contextRevision`
+- child writes may include `expectedContextRevision`
+- stale context writes are rejected with `409` and the latest authoritative stack and context snapshot
+- stack and context conflicts follow the same reconcile-to-latest pattern
 
-If context and stack start diverging independently, split them into `stackRevision` and `contextRevision`. Until then, using the same revision boundary keeps the concurrency model simpler.
+`stackRevision` still governs navigation and stack topology. `contextRevision` now governs shared workflow state.
+
+### Lineage Interaction
+
+Context snapshots now carry `contextLineageId`.
+
+- a continued workflow lineage keeps the same `contextLineageId`
+- a new root context gets a new lineage id
+- child panels inherit the active lineage through their bound `contextId`
+
+This keeps unrelated roots in the same conversation from reusing workflow context accidentally while preserving nested workflow continuity.
 
 ### Recommended Producer Rules
 
@@ -267,15 +281,13 @@ If context and stack start diverging independently, split them into `stackRevisi
 - If a child result is purely transient, keep it `ephemeral` even when it depends on shared context.
 - If a child edits a durable task state, it should usually live in a `workflow` branch backed by context.
 
-### What To Implement Next
+### Current Limits
 
-The next concrete implementation slice after the current `stackRevision` work should be:
+- the authoritative Sidecar state is runtime-memory only; it is not yet durable across process restarts
+- restorable stack and context semantics are conversation-scoped within the current process lifetime
+- polling remains the browser sync bridge today; it is not yet governed by activity tiers or a richer event channel
 
-1. add `SidecarContext` and `SidecarPanelContextBinding` types
-2. persist a per-conversation context object in server-side Sidecar state
-3. teach the interaction route to accept bounded context patches
-4. return updated stack and context snapshots together from server-side Sidecar mutations
-5. add focused tests for stale child writes, bounded write-key enforcement, and parent re-render after child patch application
+Those limits are acceptable for the current runtime, but they should be named explicitly because "authoritative" here means runtime-authoritative, not durable persistence.
 
 ## Triggers And Close Semantics
 

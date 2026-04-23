@@ -1,6 +1,6 @@
 import { resolveAgentUserId } from "@/lib/agent/user-context";
 import {
-  applySidecarContextPatchForConversation,
+  applySidecarContextMutationForConversation,
   getActiveSidecarContextForConversation,
   getActiveSidecarPanel,
   getActiveSidecarStackForConversation,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/sidecar/state";
 import type {
   SidecarAction,
+  SidecarContextPatch,
   SidecarInteractionRequest,
   SidecarInteractionResult,
   SidecarPanel,
@@ -28,7 +29,9 @@ export interface SidecarInteractionContext {
   userId: string;
 }
 
-type SidecarInteractionHandlerResult = SidecarToolResult;
+type SidecarInteractionHandlerResult = SidecarToolResult & {
+  resolvedContextPatch?: SidecarContextPatch;
+};
 
 type SidecarInteractionHandler = (context: SidecarInteractionContext) => Promise<SidecarInteractionHandlerResult>;
 
@@ -144,11 +147,13 @@ export async function routeSidecarInteraction(input: SidecarInteractionRequest):
     toolName: "sidecar_interaction",
   });
 
-  const context = request.contextPatch
-    ? applySidecarContextPatchForConversation({
+  const context = request.contextPatch || result.resolvedContextPatch
+    ? applySidecarContextMutationForConversation({
         conversationId: request.conversationId,
         panel: record.panel,
-        contextPatch: request.contextPatch,
+        ...(typeof request.expectedContextRevision === "number" ? { expectedContextRevision: request.expectedContextRevision } : {}),
+        ...(request.contextPatch ? { transportContextPatch: request.contextPatch } : {}),
+        ...(result.resolvedContextPatch ? { resolvedContextPatch: result.resolvedContextPatch } : {}),
       })
     : getActiveSidecarContextForConversation(request.conversationId);
 

@@ -62,6 +62,7 @@ import { summarizeSwarmExecution, summarizeSwarmPlan, summarizeSwarmWorkerResult
 import { validateSwarmResults } from "@/lib/swarm/validation";
 import { getToolResultFailure, normalizeFailure, type FailureEnvelope } from "@/lib/failures";
 import { createToolCallResumeSignature, isToolExecutionResumeSafe } from "@/lib/agent/resume";
+import { appendThinkingChunk, completeThinkingSession, failThinkingSession, startThinkingSession } from "@/lib/sidecar/thinking-state";
 
 export type AgentExecutionEvent =
   | {
@@ -199,6 +200,144 @@ async function emitStatus(
   await emit(onEvent, { type: "status", message, ...(round !== undefined ? { round } : {}) });
 }
 
+function normalizeThinkingText(input: string, maxChars = 220): string {
+  const normalized = input.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxChars - 3).trimEnd()}...`;
+}
+
+function summarizeThinkingToolCall(toolName: string): string {
+  return `Running tool ${toolName}.`;
+}
+
+function summarizeAllowlistedThinkingToolResult(toolName: string, result: ToolExecutionResult): string | null {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return null;
+  }
+
+  const record = result as Record<string, unknown>;
+
+  if (toolName === "developer_list_agent_runs" && Array.isArray(record.runs)) {
+    const count = record.runs.length;
+    return `Found ${count} agent run${count === 1 ? "" : "s"}.`;
+  }
+
+  if (toolName === "oracle_search_markets" && Array.isArray(record.markets)) {
+    const count = record.markets.length;
+    return `Found ${count} market${count === 1 ? "" : "s"} for the Oracle search.`;
+  }
+
+  if (toolName === "oracle_get_market_verdict" && record.verdict && typeof record.verdict === "object" && !Array.isArray(record.verdict)) {
+    const verdict = record.verdict as { confidence?: unknown; personality?: unknown };
+    const confidence = typeof verdict.confidence === "string" ? verdict.confidence : null;
+    const personality = typeof verdict.personality === "string" ? verdict.personality : null;
+    const summaryParts = [
+      confidence ? `${confidence} confidence` : null,
+      personality ? `${personality} mode` : null,
+    ].filter((value): value is string => Boolean(value));
+
+    if (summaryParts.length > 0) {
+      return `Oracle verdict returned ${summaryParts.join(" in ")}.`;
+    }
+  }
+
+  if ((toolName === "builder_plan_task" || toolName === "builder_continue_task" || toolName === "builder_run_agentic_task") && typeof record.status === "string") {
+    const taskId = typeof record.taskId === "string" && record.taskId.trim() ? ` ${record.taskId.trim()}` : "";
+    return `Builder task${taskId} is ${record.status.toLowerCase()}.`;
+  }
+
+  if (toolName === "creeper_draft_ingestion_plan" && record.plan && typeof record.plan === "object" && !Array.isArray(record.plan)) {
+    const plan = record.plan as { status?: unknown; version?: unknown };
+    const version = typeof plan.version === "number" ? ` v${plan.version}` : "";
+    const status = typeof plan.status === "string" ? plan.status.toLowerCase() : "drafted";
+    return `Prepared ${status} ingestion plan${version}.`;
+  }
+
+  if (toolName === "creeper_start_ingestion_run" && record.run && typeof record.run === "object" && !Array.isArray(record.run)) {
+    const run = record.run as { id?: unknown; status?: unknown; stage?: unknown };
+    const runId = typeof run.id === "string" && run.id.trim() ? ` ${run.id.trim()}` : "";
+    const status = typeof run.status === "string" ? run.status.toLowerCase() : "queued";
+    const stage = typeof run.stage === "string" ? ` at stage ${run.stage.toLowerCase()}` : "";
+    return `Started ingestion run${runId} with status ${status}${stage}.`;
+  }
+
+  if (toolName === "oracle_analyze_prediction") {
+    const impliedProbability = typeof record.impliedProbability === "number"
+      ? `${(record.impliedProbability * 100).toFixed(1)}%`
+      : null;
+    const confidence = typeof record.confidence === "string" ? record.confidence : null;
+    const evidenceMode = typeof record.evidenceMode === "string" ? record.evidenceMode.replaceAll("_", " ") : null;
+    const summaryParts = [
+      impliedProbability ? `implied probability ${impliedProbability}` : null,
+      confidence ? `${confidence} confidence` : null,
+      evidenceMode ? `using ${evidenceMode}` : null,
+    ].filter((value): value is string => Boolean(value));
+
+    if (summaryParts.length > 0) {
+      return `Oracle analysis returned ${summaryParts.join(", ")}.`;
+    }
+  }
+
+  if ((toolName === "sidecar_open" || toolName === "sidecar_update" || toolName === "sidecar_close" || toolName === "sidecar_navigate") && typeof record.action === "string") {
+    const title = record.panel && typeof record.panel === "object" && !Array.isArray(record.panel) && typeof (record.panel as { title?: unknown }).title === "string"
+      ? (record.panel as { title: string }).title
+      : null;
+    if (record.action === "close") {
+      return "Closed the Sidecar panel.";
+    }
+    if (title) {
+      return `${record.action === "open" ? "Opened" : "Updated"} the Sidecar panel ${title}.`;
+    }
+    return `${record.action === "open" ? "Opened" : "Updated"} the Sidecar panel.`;
+  }
+
+  return null;
+}
+
+function summarizeThinkingToolResult(toolName: string, result?: ToolExecutionResult, failure?: FailureEnvelope): string {
+  if (failure) {
+    const nextAction = failure.suggestedNextAction ? ` Next action: ${failure.suggestedNextAction.replaceAll("_", " ")}.` : "";
+    return normalizeThinkingText(`Tool ${toolName} failed with ${failure.kind}.${nextAction}`);
+  }
+
+  if (result !== undefined) {
+    const allowlistedSummary = summarizeAllowlistedThinkingToolResult(toolName, result);
+    if (allowlistedSummary) {
+      return normalizeThinkingText(allowlistedSummary);
+    }
+  }
+
+  return `Tool ${toolName} completed.`;
+}
+
+function safeAppendThinkingChunk(input: {
+  conversationId: string;
+  kind: "status" | "tool_call" | "tool_result" | "error";
+  text: string;
+}): void {
+  const normalizedText = normalizeThinkingText(input.text);
+  if (!normalizedText) {
+    return;
+  }
+
+  try {
+    appendThinkingChunk({
+      conversationId: input.conversationId,
+      kind: input.kind,
+      text: normalizedText,
+    });
+  } catch {
+    // Thinking is additive UI state; it must never block the agent run.
+  }
+}
+
 async function recordAndEmitUsage(args: {
   runId: string;
   conversationId: string;
@@ -303,6 +442,7 @@ async function finalizeAssistantReply({
     reply,
     roundsCompleted: round,
   });
+  completeThinkingSession(resolvedConversationId, "Run completed.");
 
   await emit(onEvent, { type: "assistant_message", content: reply });
   await emit(onEvent, {
@@ -554,6 +694,11 @@ export async function executeAgentConversation(
     ...(delegatedByProfile ? { delegatedByProfile } : {}),
     ...(resumeSourceRun ? { resumedFromRunId: resumeSourceRun.runId } : {}),
   });
+  startThinkingSession({
+    conversationId: resolvedConversationId,
+    sessionId: run.runId,
+    title: profilePrompt.streamLabel,
+  });
   await emitStatus(onEvent, `Agent run ${run.runId} created.`);
   const delegationDepth = parentRunId ? countDelegationDepth(parentRunId) + 1 : 0;
   const delegationChain = parentRunId
@@ -633,6 +778,11 @@ export async function executeAgentConversation(
   await emit(onEvent, {
     type: "status",
     message: `Routed to ${profilePrompt.streamLabel}. ${profileDecision.reason}.`,
+  });
+  safeAppendThinkingChunk({
+    conversationId: resolvedConversationId,
+    kind: "status",
+    text: `Routed to ${profilePrompt.streamLabel}.`,
   });
 
   let round = resumeSnapshot?.lastStableRound ?? 0;
@@ -729,6 +879,11 @@ export async function executeAgentConversation(
           name: toolName,
           result: resultText,
           ...(normalizedResult.failure ? { failure: normalizedResult.failure } : {}),
+        });
+        safeAppendThinkingChunk({
+          conversationId: resolvedConversationId,
+          kind: normalizedResult.failure ? "error" : "tool_result",
+          text: summarizeThinkingToolResult(toolName, normalizedResult.result, normalizedResult.failure ?? undefined),
         });
 
         return normalizedResult.result;
@@ -1096,6 +1251,11 @@ export async function executeAgentConversation(
         message: `Planning step ${round} with ${tools.length} available tools.`,
         round,
       });
+      safeAppendThinkingChunk({
+        conversationId: resolvedConversationId,
+        kind: "status",
+        text: `Planning step ${round} with ${tools.length} available tools.`,
+      });
 
       const requestOptions: ChatRequestOptions = {
         enableGoogleSearch: profilePrompt.googleSearch,
@@ -1125,6 +1285,11 @@ export async function executeAgentConversation(
           message: `Grounded with Google Search: ${String(response.metadata.googleSearchQueries)}.`,
           round,
         });
+        safeAppendThinkingChunk({
+          conversationId: resolvedConversationId,
+          kind: "status",
+          text: `Grounded with Google Search during step ${round}.`,
+        });
       }
 
       if (response.metadata?.codeExecutionResult) {
@@ -1132,6 +1297,11 @@ export async function executeAgentConversation(
           type: "status",
           message: "Gemini used code execution during this step.",
           round,
+        });
+        safeAppendThinkingChunk({
+          conversationId: resolvedConversationId,
+          kind: "status",
+          text: `Used code execution during step ${round}.`,
         });
       }
 
@@ -1161,6 +1331,11 @@ export async function executeAgentConversation(
               name: toolCall.name,
               args: toolCall.arguments,
             });
+            safeAppendThinkingChunk({
+              conversationId: resolvedConversationId,
+              kind: "tool_call",
+              text: summarizeThinkingToolCall(toolCall.name),
+            });
             recordAgentRunToolCall(run.runId, {
               round,
               toolCallId: toolCall.id,
@@ -1170,7 +1345,7 @@ export async function executeAgentConversation(
 
             const signature = createToolCallResumeSignature(toolCall.name, toolCall.arguments);
             const cachedToolResult = resumeToolCache.get(signature);
-            let result: ToolExecutionResult;
+            let result: ToolExecutionResult | undefined;
             let toolFailure: FailureEnvelope | null = null;
             let isError = false;
             let resultText: string;
@@ -1275,6 +1450,11 @@ export async function executeAgentConversation(
               name: toolCall.name,
               result: resultText,
               ...(toolFailure ? { failure: toolFailure } : {}),
+            });
+            safeAppendThinkingChunk({
+              conversationId: resolvedConversationId,
+              kind: toolFailure ? "error" : "tool_result",
+              text: summarizeThinkingToolResult(toolCall.name, result, toolFailure ?? undefined),
             });
 
             return {
@@ -1385,6 +1565,7 @@ export async function executeAgentConversation(
       roundsCompleted: maxToolRounds,
       failure,
     });
+    completeThinkingSession(resolvedConversationId, "Run completed without a final answer before reaching the tool round limit.");
     await emit(onEvent, { type: "assistant_message", content: fallback });
     await emit(onEvent, { type: "done", conversationId: resolvedConversationId, reply: fallback });
 
@@ -1418,6 +1599,7 @@ export async function executeAgentConversation(
       roundsCompleted: round,
       failure,
     });
+    failThinkingSession(resolvedConversationId, normalizeThinkingText(aborted ? "Run cancelled." : `Run failed with ${failure.kind}.`));
     await emit(onEvent, { type: "error", error: failure.raw, failure });
     throw error;
   }

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageMarkdown } from "@/components/chat/MessageMarkdown";
+import SidecarThinkingDock from "@/components/layout/SidecarThinkingDock";
 import type { JsonValue } from "@/lib/agent/tools";
 import { applySidecarActionToPanels } from "@/lib/sidecar/stack";
+import type { SidecarThinkingSnapshot } from "@/lib/sidecar/types";
 import type {
   SidecarContent,
   SidecarContextSnapshot,
@@ -19,6 +21,7 @@ import type {
   SidecarTableContent,
 } from "@/lib/sidecar/types";
 import {
+  BIZBOT_SELECTED_CONVERSATION_EVENT,
   BIZBOT_SIDECAR_EVENT,
   BIZBOT_SIDECAR_INTERACTION_EVENT,
   BIZBOT_SIDECAR_INTERACTION_STATE_EVENT,
@@ -27,13 +30,24 @@ import {
 const DEFAULT_WIDTH = 420;
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 720;
+const DEFAULT_THINKING_DOCK_HEIGHT = 180;
+const MIN_THINKING_DOCK_HEIGHT = 120;
+const MAX_THINKING_DOCK_HEIGHT = 320;
 const SIDECAR_WIDTH_STORAGE_KEY = "bizbot:sidecar:width";
 const SIDECAR_EXPANDED_STORAGE_KEY = "bizbot:sidecar:expanded";
+const SIDECAR_THINKING_EXPANDED_STORAGE_KEY = "bizbot:sidecar:thinking:expanded";
+const SIDECAR_THINKING_HEIGHT_STORAGE_KEY = "bizbot:sidecar:thinking:height";
 const SELECTED_CONVERSATION_STORAGE_KEY = "bizbot:selected-chat-conversation-id";
-const SIDECAR_STATE_SYNC_INTERVAL_MS = 2000;
+const IS_DEV_MODE = process.env.NODE_ENV !== "production";
+
+type SidecarSyncState = "synced" | "updating" | "conflict" | "error";
 
 function clampWidth(value: number): number {
   return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, value));
+}
+
+function clampThinkingDockHeight(value: number): number {
+  return Math.max(MIN_THINKING_DOCK_HEIGHT, Math.min(MAX_THINKING_DOCK_HEIGHT, value));
 }
 
 function readStoredWidth(): number {
@@ -54,6 +68,24 @@ function readStoredExpanded(): boolean {
   return window.localStorage?.getItem(SIDECAR_EXPANDED_STORAGE_KEY) === "true";
 }
 
+function readStoredThinkingExpanded(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.localStorage?.getItem(SIDECAR_THINKING_EXPANDED_STORAGE_KEY) === "true";
+}
+
+function readStoredThinkingHeight(): number {
+  if (typeof window === "undefined") {
+    return DEFAULT_THINKING_DOCK_HEIGHT;
+  }
+
+  const stored = window.localStorage?.getItem(SIDECAR_THINKING_HEIGHT_STORAGE_KEY);
+  const parsed = stored ? Number.parseInt(stored, 10) : Number.NaN;
+  return Number.isFinite(parsed) ? clampThinkingDockHeight(parsed) : DEFAULT_THINKING_DOCK_HEIGHT;
+}
+
 function persistWidth(width: number): void {
   if (typeof window === "undefined" || typeof window.localStorage?.setItem !== "function") {
     return;
@@ -68,6 +100,22 @@ function persistExpanded(isExpanded: boolean): void {
   }
 
   window.localStorage.setItem(SIDECAR_EXPANDED_STORAGE_KEY, String(isExpanded));
+}
+
+function persistThinkingExpanded(isExpanded: boolean): void {
+  if (typeof window === "undefined" || typeof window.localStorage?.setItem !== "function") {
+    return;
+  }
+
+  window.localStorage.setItem(SIDECAR_THINKING_EXPANDED_STORAGE_KEY, String(isExpanded));
+}
+
+function persistThinkingHeight(height: number): void {
+  if (typeof window === "undefined" || typeof window.localStorage?.setItem !== "function") {
+    return;
+  }
+
+  window.localStorage.setItem(SIDECAR_THINKING_HEIGHT_STORAGE_KEY, String(height));
 }
 
 function readSelectedConversationId(): string | null {
@@ -88,6 +136,37 @@ function dispatchSidecarEvent(detail: SidecarStreamEventDetail): void {
 }
 
 const CONTEXT_PLACEHOLDER_PATTERN = /\{\{\s*([a-z0-9._:-]{1,120})\s*\}\}/gi;
+const CONTEXT_PLACEHOLDER_OR_ESCAPE_PATTERN = /(\\)?\{\{\s*([a-z0-9._:-]{1,120})\s*\}\}/gi;
+
+function classifySyncState(message: string): SidecarSyncState {
+  return /changed while/i.test(message) ? "conflict" : "error";
+}
+
+function getSyncStateTone(syncState: SidecarSyncState): string {
+  switch (syncState) {
+    case "synced":
+      return "bg-emerald-500";
+    case "updating":
+      return "bg-amber-500";
+    case "conflict":
+      return "bg-rose-500";
+    case "error":
+      return "bg-rose-500";
+  }
+}
+
+function getSyncStateLabel(syncState: SidecarSyncState): string {
+  switch (syncState) {
+    case "synced":
+      return "synced";
+    case "updating":
+      return "updating";
+    case "conflict":
+      return "conflict detected";
+    case "error":
+      return "sync error";
+  }
+}
 
 function getReadableContextValue(
   contextBinding: SidecarPanel["context"],
@@ -120,26 +199,13 @@ function interpolateContextString(
   contextBinding: SidecarPanel["context"],
   contextSnapshot: SidecarContextSnapshot | null,
 ): string {
-  return template.replace(CONTEXT_PLACEHOLDER_PATTERN, (_match, contextKey: string) => formatContextValue(getReadableContextValue(contextBinding, contextSnapshot, contextKey)));
-}
+  return template.replace(CONTEXT_PLACEHOLDER_OR_ESCAPE_PATTERN, (_match, escapePrefix: string | undefined, contextKey: string) => {
+    if (escapePrefix) {
+      return `{{${contextKey}}}`;
+    }
 
-function resolveContextJsonValue(
-  value: JsonValue,
-  contextBinding: SidecarPanel["context"],
-  contextSnapshot: SidecarContextSnapshot | null,
-): JsonValue {
-  if (typeof value === "string") {
-    return interpolateContextString(value, contextBinding, contextSnapshot);
-  }
-  if (Array.isArray(value)) {
-    return value.map((entry) => resolveContextJsonValue(entry, contextBinding, contextSnapshot));
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entryValue]) => [key, resolveContextJsonValue(entryValue, contextBinding, contextSnapshot)]),
-    ) as Record<string, JsonValue>;
-  }
-  return value;
+    return formatContextValue(getReadableContextValue(contextBinding, contextSnapshot, contextKey));
+  });
 }
 
 function getContextSelectedItemIds(
@@ -159,6 +225,17 @@ function getContextSelectedItemIds(
   return Array.isArray(contextValue)
     ? contextValue.filter((value): value is string => typeof value === "string")
     : [];
+}
+
+function getExpectedContextRevision(
+  contextBinding: SidecarPanel["context"],
+  contextSnapshot: SidecarContextSnapshot | null,
+): number | undefined {
+  if (!contextBinding || !contextSnapshot || contextSnapshot.contextId !== contextBinding.contextId) {
+    return undefined;
+  }
+
+  return contextSnapshot.contextRevision;
 }
 
 function buildSelectionContextPatch(
@@ -332,7 +409,7 @@ function SidecarContentView({
         ...content,
         columns: content.columns.map((column) => interpolateContextString(column, contextBinding, contextSnapshot)),
         rows: content.rows.map((row) => Array.isArray(row)
-          ? row.map((cell) => resolveContextJsonValue(cell, contextBinding, contextSnapshot))
+          ? row.map((cell) => typeof cell === "string" ? interpolateContextString(cell, contextBinding, contextSnapshot) : cell)
           : row),
       }} />;
     case "key_value":
@@ -368,6 +445,7 @@ function SidecarSelectionView({
   const currentSelectionLabel = effectiveSelectedItemIds
     .map((itemId) => content.items.find((item) => item.id === itemId)?.title ?? itemId)
     .join(", ");
+  const expectedContextRevision = getExpectedContextRevision(contextBinding, contextSnapshot);
 
   function getNextSelectedIds(itemId: string): string[] {
     if (content.selectionMode === "single") {
@@ -393,6 +471,7 @@ function SidecarSelectionView({
       actionId: toggleAction.id,
       selectedItemIds: getNextSelectedIds(itemId),
       expectedStackRevision: stackRevision,
+      ...(typeof expectedContextRevision === "number" ? { expectedContextRevision } : {}),
       contextPatch: buildSelectionContextPatch(content, contextBinding, getNextSelectedIds(itemId)),
     });
   }
@@ -402,11 +481,16 @@ function SidecarSelectionView({
       return;
     }
 
+    if (action.kind === "clear" && effectiveSelectedItemIds.length === 0) {
+      return;
+    }
+
     dispatchSidecarInteraction({
       panelId,
       actionId: action.id,
       selectedItemIds: effectiveSelectedItemIds,
       expectedStackRevision: stackRevision,
+      ...(typeof expectedContextRevision === "number" ? { expectedContextRevision } : {}),
       contextPatch: buildSelectionContextPatch(content, contextBinding, effectiveSelectedItemIds),
     });
   }
@@ -456,7 +540,7 @@ function SidecarSelectionView({
               key={action.id}
               type="button"
               onClick={() => onFooterAction(action)}
-              disabled={pending || (action.kind === "apply" && selectedIds.size === 0)}
+              disabled={pending || (action.kind === "apply" && selectedIds.size === 0) || (action.kind === "clear" && selectedIds.size === 0)}
               className="px-3 py-2 border border-border text-primary text-xs uppercase tracking-[0.18em] disabled:opacity-50"
             >
               {action.label}
@@ -510,12 +594,159 @@ export default function SidecarHost() {
   const [closeError, setCloseError] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [hasHydratedPersistence, setHasHydratedPersistence] = useState(false);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<SidecarSyncState>("synced");
+  const [lastRefreshReason, setLastRefreshReason] = useState<string | null>(null);
+  const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<string | null>(null);
+  const [lastConflictReason, setLastConflictReason] = useState<string | null>(null);
+  const [showInspector, setShowInspector] = useState(false);
+  const [thinkingSnapshot, setThinkingSnapshot] = useState<SidecarThinkingSnapshot | null>(null);
+  const [thinkingExpanded, setThinkingExpanded] = useState(false);
+  const [thinkingDockHeight, setThinkingDockHeight] = useState(DEFAULT_THINKING_DOCK_HEIGHT);
 
   const activePanel = useMemo(() => panels[panels.length - 1] ?? null, [panels]);
+  const mountedRef = useRef(true);
+  const refreshInFlightRef = useRef(false);
+  const thinkingRefreshInFlightRef = useRef(false);
+  const activeConversationIdRef = useRef<string | null>(null);
+  const activePanelIdRef = useRef<string | null>(null);
+  const panelsLengthRef = useRef(0);
+  const stackRevisionRef = useRef(0);
+  const contextRevisionRef = useRef(0);
+  const selectedConversationIdRef = useRef<string | null>(null);
+  const thinkingSnapshotRef = useRef<SidecarThinkingSnapshot | null>(null);
+  const manuallyCollapsedThinkingSessionIdRef = useRef<string | null>(null);
+  const autoOpenedThinkingSessionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+    activePanelIdRef.current = activePanel?.panelId ?? null;
+    panelsLengthRef.current = panels.length;
+    stackRevisionRef.current = stackRevision;
+    contextRevisionRef.current = activeContext?.contextRevision ?? 0;
+    selectedConversationIdRef.current = selectedConversationId;
+    thinkingSnapshotRef.current = thinkingSnapshot;
+  }, [activeConversationId, activeContext?.contextRevision, activePanel?.panelId, panels.length, selectedConversationId, stackRevision, thinkingSnapshot]);
+
+  async function refreshAuthoritativeState(reason: string): Promise<void> {
+    const nextSelectedConversationId = readSelectedConversationId();
+    if (nextSelectedConversationId !== selectedConversationIdRef.current) {
+      selectedConversationIdRef.current = nextSelectedConversationId;
+      if (mountedRef.current) {
+        setSelectedConversationId(nextSelectedConversationId);
+      }
+    }
+
+    if (!nextSelectedConversationId || refreshInFlightRef.current) {
+      return;
+    }
+
+    refreshInFlightRef.current = true;
+    if (mountedRef.current) {
+      setSyncState("updating");
+      setLastRefreshReason(reason);
+    }
+
+    try {
+      const response = await fetch(`/api/sidecar/state?conversationId=${encodeURIComponent(nextSelectedConversationId)}`, {
+        cache: "no-store",
+      });
+      const payload = await response.json() as {
+        error?: string;
+        activePanel: SidecarPanel | null;
+        stack: { panels: SidecarPanel[]; activePanelId: string | null; stackRevision: number };
+        context?: SidecarContextSnapshot | null;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to refresh authoritative Sidecar state.");
+      }
+
+      const nextPanelId = payload.activePanel?.panelId ?? null;
+      const nextContextRevision = payload.context?.contextRevision ?? 0;
+      const hasChanged = activeConversationIdRef.current !== nextSelectedConversationId
+        || stackRevisionRef.current !== payload.stack.stackRevision
+        || activePanelIdRef.current !== nextPanelId
+        || panelsLengthRef.current !== payload.stack.panels.length
+        || contextRevisionRef.current !== nextContextRevision;
+
+      if (hasChanged) {
+        dispatchSidecarEvent({
+          action: payload.activePanel ? "open" : "close",
+          panel: payload.activePanel,
+          stack: payload.stack,
+          ...(payload.context !== undefined ? { context: payload.context } : {}),
+          conversationId: nextSelectedConversationId,
+        });
+      }
+
+      if (mountedRef.current) {
+        setSyncState("synced");
+        setLastSuccessfulSyncAt(new Date().toISOString());
+        setLastConflictReason(null);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (mountedRef.current) {
+        setSyncState(classifySyncState(message));
+        if (classifySyncState(message) === "conflict") {
+          setLastConflictReason(message);
+        }
+      }
+    } finally {
+      refreshInFlightRef.current = false;
+    }
+  }
+
+  async function refreshThinkingState(reason: string): Promise<void> {
+    const nextSelectedConversationId = readSelectedConversationId();
+    if (!nextSelectedConversationId || thinkingRefreshInFlightRef.current) {
+      return;
+    }
+
+    thinkingRefreshInFlightRef.current = true;
+    if (mountedRef.current) {
+      setLastRefreshReason((current) => current ?? reason);
+    }
+
+    try {
+      const response = await fetch(`/api/sidecar/thinking?conversationId=${encodeURIComponent(nextSelectedConversationId)}`, {
+        cache: "no-store",
+      });
+      const payload = await response.json() as { error?: string; snapshot: SidecarThinkingSnapshot | null };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to refresh Sidecar thinking state.");
+      }
+
+      const previousSnapshot = thinkingSnapshotRef.current;
+      const nextSnapshot = payload.snapshot;
+      setThinkingSnapshot(nextSnapshot);
+
+      if (nextSnapshot?.sessionId && nextSnapshot.sessionId !== previousSnapshot?.sessionId) {
+        if (manuallyCollapsedThinkingSessionIdRef.current !== nextSnapshot.sessionId && autoOpenedThinkingSessionIdRef.current !== nextSnapshot.sessionId) {
+          setThinkingExpanded(true);
+          autoOpenedThinkingSessionIdRef.current = nextSnapshot.sessionId;
+        }
+      }
+    } catch {
+      // Thinking is additive UI state; refresh failures must not disrupt the main Sidecar flow.
+    } finally {
+      thinkingRefreshInFlightRef.current = false;
+    }
+  }
 
   useEffect(() => {
     setWidth(readStoredWidth());
     setIsExpanded(readStoredExpanded());
+    setThinkingExpanded(readStoredThinkingExpanded());
+    setThinkingDockHeight(readStoredThinkingHeight());
+    setSelectedConversationId(readSelectedConversationId());
     setHasHydratedPersistence(true);
   }, []);
 
@@ -540,60 +771,108 @@ export default function SidecarHost() {
       return;
     }
 
-    let cancelled = false;
+    persistThinkingExpanded(thinkingExpanded);
+  }, [hasHydratedPersistence, thinkingExpanded]);
 
-    const pollAuthoritativeState = async () => {
-      const selectedConversationId = readSelectedConversationId();
-      if (!selectedConversationId) {
+  useEffect(() => {
+    if (!hasHydratedPersistence) {
+      return;
+    }
+
+    persistThinkingHeight(thinkingDockHeight);
+  }, [hasHydratedPersistence, thinkingDockHeight]);
+
+  useEffect(() => {
+    if (!hasHydratedPersistence) {
+      return;
+    }
+
+    void refreshAuthoritativeState("hydrate");
+    void refreshThinkingState("hydrate-thinking");
+  }, [hasHydratedPersistence]);
+
+  useEffect(() => {
+    if (!hasHydratedPersistence || !isExpanded) {
+      return;
+    }
+
+    void refreshAuthoritativeState("expand");
+    void refreshThinkingState("expand-thinking");
+  }, [hasHydratedPersistence, isExpanded]);
+
+  useEffect(() => {
+    if (!hasHydratedPersistence || !selectedConversationId) {
+      return;
+    }
+
+    void refreshAuthoritativeState("conversation-change");
+    void refreshThinkingState("thinking-conversation-change");
+  }, [hasHydratedPersistence, selectedConversationId]);
+
+  useEffect(() => {
+    if (!hasHydratedPersistence || !isExpanded || !selectedConversationId) {
+      return;
+    }
+
+    const shouldPoll = typeof document === "undefined" || document.visibilityState === "visible";
+    if (!shouldPoll) {
+      return;
+    }
+
+    const pollIntervalMs = thinkingSnapshot?.status === "streaming" ? 1500 : 3000;
+    const intervalId = window.setInterval(() => {
+      void refreshThinkingState("thinking-poll");
+    }, pollIntervalMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [hasHydratedPersistence, isExpanded, selectedConversationId, thinkingSnapshot?.status]);
+
+  useEffect(() => {
+    if (!hasHydratedPersistence) {
+      return;
+    }
+
+    const handleFocus = () => {
+      void refreshAuthoritativeState("window-focus");
+      void refreshThinkingState("thinking-window-focus");
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshAuthoritativeState("document-visible");
+        void refreshThinkingState("thinking-document-visible");
+      }
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== SELECTED_CONVERSATION_STORAGE_KEY) {
         return;
       }
 
-      try {
-        const response = await fetch(`/api/sidecar/state?conversationId=${encodeURIComponent(selectedConversationId)}`, {
-          cache: "no-store",
-        });
-        const payload = await response.json() as {
-          error?: string;
-          activePanel: SidecarPanel | null;
-          stack: { panels: SidecarPanel[]; activePanelId: string | null; stackRevision: number };
-          context?: SidecarContextSnapshot | null;
-        };
-
-        if (!response.ok || cancelled) {
-          return;
-        }
-
-        const nextPanelId = payload.activePanel?.panelId ?? null;
-        const currentPanelId = activePanel?.panelId ?? null;
-        const currentConversationKey = activeConversationId ?? null;
-        const hasChanged = currentConversationKey !== selectedConversationId
-          || stackRevision !== payload.stack.stackRevision
-          || currentPanelId !== nextPanelId
-          || panels.length !== payload.stack.panels.length;
-
-        if (!hasChanged) {
-          return;
-        }
-
-        dispatchSidecarEvent({
-          action: payload.activePanel ? "open" : "close",
-          panel: payload.activePanel,
-          stack: payload.stack,
-          ...(payload.context !== undefined ? { context: payload.context } : {}),
-          conversationId: selectedConversationId,
-        });
-      } catch {
-        // Ignore transient poll failures; local interaction paths stay authoritative.
+      const nextConversationId = readSelectedConversationId();
+      setSelectedConversationId(nextConversationId);
+      if (document.visibilityState === "visible") {
+        void refreshAuthoritativeState("storage-change");
+        void refreshThinkingState("thinking-storage-change");
       }
     };
-
-    void pollAuthoritativeState();
-    const intervalId = window.setInterval(() => void pollAuthoritativeState(), SIDECAR_STATE_SYNC_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
+    const handleSelectedConversation = (event: Event) => {
+      const detail = (event as CustomEvent<{ conversationId: string | null }>).detail;
+      const nextConversationId = detail?.conversationId?.trim() || null;
+      setSelectedConversationId(nextConversationId);
+      void refreshAuthoritativeState("selected-conversation-event");
+      void refreshThinkingState("thinking-selected-conversation-event");
     };
-  }, [activeConversationId, activePanel?.panelId, hasHydratedPersistence, panels.length, stackRevision]);
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(BIZBOT_SELECTED_CONVERSATION_EVENT, handleSelectedConversation as EventListener);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(BIZBOT_SELECTED_CONVERSATION_EVENT, handleSelectedConversation as EventListener);
+    };
+  }, [hasHydratedPersistence]);
 
   useEffect(() => {
     const handleSidecarEvent = (event: Event) => {
@@ -604,6 +883,7 @@ export default function SidecarHost() {
 
       if (detail.conversationId) {
         setActiveConversationId(detail.conversationId);
+        setSelectedConversationId(detail.conversationId);
       }
 
       setCloseError(null);
@@ -629,6 +909,8 @@ export default function SidecarHost() {
       if (detail.action === "close") {
         setInteractionPending(false);
         setInteractionError(null);
+        setSyncState("synced");
+        setLastSuccessfulSyncAt(new Date().toISOString());
         setIsExpanded(false);
         return;
       }
@@ -636,6 +918,9 @@ export default function SidecarHost() {
       if (detail.panel || (detail.stack && detail.stack.panels.length > 0)) {
         setInteractionPending(false);
         setInteractionError(null);
+        setSyncState("synced");
+        setLastSuccessfulSyncAt(new Date().toISOString());
+        setLastConflictReason(null);
         setIsExpanded(true);
       }
     };
@@ -653,6 +938,18 @@ export default function SidecarHost() {
 
       setInteractionPending(detail.pending);
       setInteractionError(detail.error ?? null);
+      if (detail.pending) {
+        setSyncState("updating");
+        return;
+      }
+
+      if (detail.error) {
+        const nextSyncState = classifySyncState(detail.error);
+        setSyncState(nextSyncState);
+        if (nextSyncState === "conflict") {
+          setLastConflictReason(detail.error);
+        }
+      }
     };
 
     window.addEventListener(BIZBOT_SIDECAR_INTERACTION_STATE_EVENT, handleInteractionState as EventListener);
@@ -661,6 +958,16 @@ export default function SidecarHost() {
 
   function toggleExpanded(): void {
     setIsExpanded((current) => !current);
+  }
+
+  function toggleThinkingExpanded(): void {
+    setThinkingExpanded((current) => {
+      const nextValue = !current;
+      if (!nextValue && thinkingSnapshotRef.current?.sessionId) {
+        manuallyCollapsedThinkingSessionIdRef.current = thinkingSnapshotRef.current.sessionId;
+      }
+      return nextValue;
+    });
   }
 
   function collapsePanel(): void {
@@ -694,7 +1001,11 @@ export default function SidecarHost() {
           ...(payload.context !== undefined ? { context: payload.context } : {}),
           conversationId: activeConversationId,
         });
-        setCloseError(payload.error ?? "Sidecar state changed while you were navigating. Review the latest stack and retry.");
+        const errorMessage = payload.error ?? "Sidecar state changed while you were navigating. Review the latest stack and retry.";
+        setCloseError(errorMessage);
+        setSyncState("conflict");
+        setLastConflictReason(errorMessage);
+        void refreshAuthoritativeState("navigation-conflict");
         return;
       }
 
@@ -711,8 +1022,13 @@ export default function SidecarHost() {
         ...(payload.context !== undefined ? { context: payload.context } : {}),
         conversationId: activeConversationId,
       });
+      setSyncState("synced");
+      setLastSuccessfulSyncAt(new Date().toISOString());
+      setLastConflictReason(null);
     } catch (error) {
-      setCloseError(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setCloseError(message);
+      setSyncState(classifySyncState(message));
     } finally {
       setIsClosing(false);
     }
@@ -770,6 +1086,25 @@ export default function SidecarHost() {
     window.addEventListener("pointerup", onUp, { once: true });
   }
 
+  const inspectorSnapshot = useMemo(() => ({
+    selectedConversationId,
+    activeConversationId,
+    activePanelId: activePanel?.panelId ?? null,
+    stackRevision,
+    contextRevision: activeContext?.contextRevision ?? null,
+    contextLineageId: activeContext?.contextLineageId ?? null,
+    syncState,
+    lastRefreshReason,
+    lastSuccessfulSyncAt,
+    lastConflictReason,
+    isExpanded,
+    thinkingExpanded,
+    thinkingDockHeight,
+    thinking: thinkingSnapshot,
+    panels,
+    context: activeContext,
+  }), [activeContext, activeConversationId, activePanel?.panelId, isExpanded, lastConflictReason, lastRefreshReason, lastSuccessfulSyncAt, panels, selectedConversationId, stackRevision, syncState, thinkingDockHeight, thinkingExpanded, thinkingSnapshot]);
+
   return (
     <div className="relative z-40 flex h-full max-w-full shrink-0" aria-label="Sidecar split view">
       {isExpanded ? (
@@ -792,8 +1127,28 @@ export default function SidecarHost() {
                 {panels.length > 1 ? (
                   <div className="text-[11px] uppercase tracking-[0.16em] text-dim">stack {panels.length}</div>
                 ) : null}
+                {IS_DEV_MODE ? (
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-dim">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-border px-2 py-1">
+                      <span className={`h-2 w-2 rounded-full ${getSyncStateTone(syncState)}`} aria-hidden="true" />
+                      {getSyncStateLabel(syncState)}
+                    </span>
+                    <span className="rounded-full border border-border px-2 py-1">stack rev {stackRevision}</span>
+                    <span className="rounded-full border border-border px-2 py-1">context rev {activeContext?.contextRevision ?? 0}</span>
+                    <span className="rounded-full border border-border px-2 py-1">{activeContext ? "context bound" : "context unbound"}</span>
+                  </div>
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
+                {IS_DEV_MODE ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowInspector((current) => !current)}
+                    className="px-3 py-2 border border-border text-primary text-xs uppercase tracking-[0.18em]"
+                  >
+                    {showInspector ? "hide debug" : "show debug"}
+                  </button>
+                ) : null}
                 {panels.length > 1 ? (
                   <button
                     type="button"
@@ -822,10 +1177,59 @@ export default function SidecarHost() {
                 ))}
               </div>
             ) : null}
+            {IS_DEV_MODE && syncState === "conflict" ? (
+              <div className="mt-3 rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm leading-6 text-rose-800">
+                <div className="font-medium uppercase tracking-[0.12em]">Sidecar conflict detected</div>
+                <div>{lastConflictReason ?? "The browser reconciled to a newer authoritative Sidecar state."}</div>
+              </div>
+            ) : null}
+            {IS_DEV_MODE && syncState === "error" && !closeError ? (
+              <div className="mt-3 rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm leading-6 text-rose-800">
+                <div className="font-medium uppercase tracking-[0.12em]">Sidecar sync error</div>
+                <div>{lastConflictReason ?? "Refreshing authoritative Sidecar state failed."}</div>
+              </div>
+            ) : null}
             {closeError ? <div className="pt-3 text-sm leading-6 text-danger">{closeError}</div> : null}
           </div>
-          <div className="min-h-0 flex-1 overflow-auto p-5">
-            {activePanel ? <SidecarPanelContentView panel={activePanel} contextSnapshot={activeContext} stackRevision={stackRevision} pending={interactionPending} error={interactionError} /> : <SidecarEmptyState />}
+          <div className="min-h-0 flex flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-auto p-5">
+              {activePanel ? <SidecarPanelContentView panel={activePanel} contextSnapshot={activeContext} stackRevision={stackRevision} pending={interactionPending} error={interactionError} /> : <SidecarEmptyState />}
+            </div>
+            <SidecarThinkingDock
+              snapshot={thinkingSnapshot}
+              expanded={thinkingExpanded}
+              height={thinkingDockHeight}
+              onToggle={toggleThinkingExpanded}
+            />
+          </div>
+        </aside>
+      ) : null}
+
+      {IS_DEV_MODE && showInspector ? (
+        <aside className="hidden lg:flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-raised/95 backdrop-blur" aria-label="Sidecar debug drawer">
+          <div className="border-b border-border px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="text-sm font-medium text-primary">Sidecar debug drawer</div>
+                <div className="text-[11px] uppercase tracking-[0.16em] text-dim">authoritative snapshot</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInspector(false)}
+                className="px-3 py-2 border border-border text-primary text-xs uppercase tracking-[0.18em]"
+              >
+                close debug
+              </button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto p-4 space-y-3 text-xs text-primary">
+            <div className="flex flex-wrap gap-2 uppercase tracking-[0.16em] text-dim">
+              <span>last refresh: {lastRefreshReason ?? "n/a"}</span>
+              <span>last sync: {lastSuccessfulSyncAt ?? "n/a"}</span>
+              <span>lineage: {activeContext?.contextLineageId ?? "n/a"}</span>
+            </div>
+            {lastConflictReason ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-rose-800">{lastConflictReason}</div> : null}
+            <pre className="overflow-auto whitespace-pre-wrap break-words border border-border-sub bg-surface p-3 leading-6"><code>{JSON.stringify(inspectorSnapshot, null, 2)}</code></pre>
           </div>
         </aside>
       ) : null}

@@ -26,6 +26,7 @@ import type {
 import { CHAT_VERBOSITY_SETTING_KEY } from "@/lib/chat/types";
 import type { UsageLedgerModelPricing } from "@/lib/agent/usage-ledger-pricing";
 import {
+  BIZBOT_SELECTED_CONVERSATION_EVENT,
   BIZBOT_SIDECAR_EVENT,
   BIZBOT_SIDECAR_INTERACTION_EVENT,
   BIZBOT_SIDECAR_INTERACTION_STATE_EVENT,
@@ -325,10 +326,16 @@ function persistSelectedConversationId(nextConversationId: string | null): void 
 
   if (nextConversationId) {
     window.localStorage.setItem(SELECTED_CONVERSATION_STORAGE_KEY, nextConversationId);
+    window.dispatchEvent(new CustomEvent(BIZBOT_SELECTED_CONVERSATION_EVENT, {
+      detail: { conversationId: nextConversationId },
+    }));
     return;
   }
 
   window.localStorage.removeItem(SELECTED_CONVERSATION_STORAGE_KEY);
+  window.dispatchEvent(new CustomEvent(BIZBOT_SELECTED_CONVERSATION_EVENT, {
+    detail: { conversationId: null },
+  }));
 }
 
 function getStoredExecutionPreference(): { mode: ChatExecutionMode; pluginId: string } | null {

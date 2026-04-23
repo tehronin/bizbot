@@ -2,6 +2,18 @@ import { applySidecarActionToPanels, buildRestorableSidecarStackSnapshot, buildS
 import type { JsonValue } from "@/lib/agent/tools";
 import type { SidecarAction, SidecarContextPatch, SidecarContextSnapshot, SidecarPanel, SidecarStackSnapshot } from "@/lib/sidecar/types";
 
+export class SidecarContextConflictError extends Error {
+  readonly currentRevision: number;
+  readonly expectedRevision: number;
+
+  constructor(expectedRevision: number, currentRevision: number) {
+    super("Sidecar context changed while you were interacting. Review the latest context and retry.");
+    this.name = "SidecarContextConflictError";
+    this.expectedRevision = expectedRevision;
+    this.currentRevision = currentRevision;
+  }
+}
+
 export interface ActiveSidecarPanelRecord {
   panel: SidecarPanel;
   conversationId: string;
@@ -76,6 +88,69 @@ function cloneContextSnapshot(snapshot: SidecarContextSnapshot): SidecarContextS
   };
 }
 
+function jsonValueEquals(left: JsonValue | undefined, right: JsonValue | undefined): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function getContextRevision(conversationId: string): number {
+  return contextByConversation.get(conversationId)?.contextRevision ?? 0;
+}
+
+function buildContextBaseline(input: {
+  conversationId: string;
+  panel: SidecarPanel;
+  existing?: SidecarContextSnapshot;
+  stackRevision: number;
+}): SidecarContextSnapshot {
+  const binding = input.panel.context;
+  if (!binding) {
+    throw new Error("Sidecar panel does not declare a context binding.");
+  }
+
+  const reusesContext = input.existing?.contextId === binding.contextId;
+  const existingContext = reusesContext ? input.existing : undefined;
+
+  return {
+    contextId: binding.contextId,
+    conversationId: input.conversationId,
+    rootPanelId: reusesContext
+      ? existingContext!.rootPanelId
+      : binding.parentPanelId ?? input.panel.panelId,
+    activePanelId: getActiveSidecarPanelForConversation(input.conversationId)?.panel.panelId ?? input.panel.panelId,
+    contextLineageId: reusesContext
+      ? existingContext!.contextLineageId
+      : crypto.randomUUID(),
+    contextRevision: reusesContext
+      ? existingContext!.contextRevision
+      : 0,
+    stackRevision: input.stackRevision,
+    values: reusesContext
+      ? cloneContextValues(existingContext!.values)
+      : deriveInitialContextValues(input.panel),
+  };
+}
+
+function assertContextPatchWritable(panel: SidecarPanel, contextPatch: SidecarContextPatch): void {
+  const binding = panel.context;
+  if (!binding) {
+    throw new Error("Sidecar panel does not declare a context binding.");
+  }
+  if (binding.contextId !== contextPatch.contextId) {
+    throw new Error("Sidecar context patch does not match the active panel context.");
+  }
+
+  const writableKeys = new Set(binding.writeKeys ?? []);
+  if (writableKeys.size === 0) {
+    throw new Error("Sidecar panel does not allow context writes.");
+  }
+
+  for (const key of Object.keys(contextPatch.values)) {
+    if (!writableKeys.has(key)) {
+      throw new Error(`Sidecar context key '${key}' is not writable from this panel.`);
+    }
+  }
+}
+
 function getStackRevision(conversationId: string): number {
   return stackRevisionByConversation.get(conversationId) ?? 0;
 }
@@ -116,6 +191,12 @@ function syncContextSnapshotWithStack(conversationId: string, panels: SidecarPan
           ? retainedContext.rootPanelId
           : binding.parentPanelId ?? activePanel.panelId,
         activePanelId: activePanel.panelId,
+        contextLineageId: retainedContext?.contextId === binding.contextId
+          ? retainedContext.contextLineageId
+          : crypto.randomUUID(),
+        contextRevision: retainedContext?.contextId === binding.contextId
+          ? retainedContext.contextRevision
+          : 0,
         stackRevision,
         values: retainedContext?.contextId === binding.contextId
           ? cloneContextValues(retainedContext.values)
@@ -232,48 +313,79 @@ export function getActiveSidecarContextForConversation(conversationId: string): 
   return snapshot ? cloneContextSnapshot(snapshot) : null;
 }
 
+export function getActiveSidecarContextRevisionForConversation(conversationId: string): number {
+  return getContextRevision(conversationId);
+}
+
+export function applySidecarContextMutationForConversation(input: {
+  conversationId: string;
+  panel: SidecarPanel;
+  expectedContextRevision?: number;
+  transportContextPatch?: SidecarContextPatch;
+  resolvedContextPatch?: SidecarContextPatch;
+}): SidecarContextSnapshot {
+  const currentRevision = getContextRevision(input.conversationId);
+  if (typeof input.expectedContextRevision === "number" && input.expectedContextRevision !== currentRevision) {
+    throw new SidecarContextConflictError(input.expectedContextRevision, currentRevision);
+  }
+
+  const patches = [input.transportContextPatch, input.resolvedContextPatch].filter((patch): patch is SidecarContextPatch => Boolean(patch));
+  if (patches.length === 0) {
+    const existing = contextByConversation.get(input.conversationId);
+    if (!existing) {
+      throw new Error("Sidecar context mutation requires an active context snapshot.");
+    }
+
+    return cloneContextSnapshot(existing);
+  }
+
+  for (const patch of patches) {
+    assertContextPatchWritable(input.panel, patch);
+  }
+
+  const stackRevision = getStackRevision(input.conversationId);
+  const existing = contextByConversation.get(input.conversationId);
+  const baseContext = buildContextBaseline({
+    conversationId: input.conversationId,
+    panel: input.panel,
+    existing,
+    stackRevision,
+  });
+  const nextValues = cloneContextValues(baseContext.values);
+  let hasMeaningfulChange = !existing || existing.contextId !== baseContext.contextId;
+
+  for (const patch of patches) {
+    for (const [key, value] of Object.entries(patch.values)) {
+      if (!jsonValueEquals(nextValues[key], value)) {
+        hasMeaningfulChange = true;
+      }
+      nextValues[key] = structuredClone(value);
+    }
+  }
+
+  const nextContext: SidecarContextSnapshot = {
+    ...baseContext,
+    stackRevision,
+    values: nextValues,
+    contextRevision: hasMeaningfulChange
+      ? baseContext.contextRevision + 1
+      : baseContext.contextRevision,
+  };
+
+  contextByConversation.set(input.conversationId, nextContext);
+  return cloneContextSnapshot(nextContext);
+}
+
 export function applySidecarContextPatchForConversation(input: {
   conversationId: string;
   panel: SidecarPanel;
   contextPatch: SidecarContextPatch;
 }): SidecarContextSnapshot {
-  const binding = input.panel.context;
-  if (!binding) {
-    throw new Error("Sidecar panel does not declare a context binding.");
-  }
-  if (binding.contextId !== input.contextPatch.contextId) {
-    throw new Error("Sidecar context patch does not match the active panel context.");
-  }
-
-  const writableKeys = new Set(binding.writeKeys ?? []);
-  if (writableKeys.size === 0) {
-    throw new Error("Sidecar panel does not allow context writes.");
-  }
-
-  for (const key of Object.keys(input.contextPatch.values)) {
-    if (!writableKeys.has(key)) {
-      throw new Error(`Sidecar context key '${key}' is not writable from this panel.`);
-    }
-  }
-
-  const stackRevision = getStackRevision(input.conversationId);
-  const existing = contextByConversation.get(input.conversationId);
-  const nextContext: SidecarContextSnapshot = {
-    contextId: binding.contextId,
+  return applySidecarContextMutationForConversation({
     conversationId: input.conversationId,
-    rootPanelId: existing?.contextId === binding.contextId
-      ? existing.rootPanelId
-      : binding.parentPanelId ?? input.panel.panelId,
-    activePanelId: getActiveSidecarPanelForConversation(input.conversationId)?.panel.panelId ?? input.panel.panelId,
-    stackRevision,
-    values: {
-      ...(existing?.contextId === binding.contextId ? cloneContextValues(existing.values) : {}),
-      ...cloneContextValues(input.contextPatch.values),
-    },
-  };
-
-  contextByConversation.set(input.conversationId, nextContext);
-  return cloneContextSnapshot(nextContext);
+    panel: input.panel,
+    resolvedContextPatch: input.contextPatch,
+  });
 }
 
 export function popActiveSidecarPanelForConversation(conversationId: string): SidecarStackSnapshot {

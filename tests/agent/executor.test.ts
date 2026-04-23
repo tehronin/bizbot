@@ -102,6 +102,7 @@ vi.mock("@/lib/agent/run-journal", () => ({
 
 import { executeAgentConversation } from "@/lib/agent/executor";
 import { createToolCallResumeSignature } from "@/lib/agent/resume";
+import { getThinkingSnapshotForConversation, resetThinkingSessionsForTests } from "@/lib/sidecar/thinking-state";
 
 describe("agent executor explicit memory", () => {
   beforeEach(() => {
@@ -211,6 +212,7 @@ describe("agent executor explicit memory", () => {
 
   afterEach(() => {
     delete process.env.BIZBOT_PLUGIN_ORACLE_ENABLED;
+    resetThinkingSessionsForTests();
   });
 
   it("injects a separate user memory block before Context when facts exist", async () => {
@@ -715,6 +717,221 @@ describe("agent executor explicit memory", () => {
     }));
     expect(toolResultEvent).not.toHaveProperty("action");
     expect(toolResultEvent).not.toHaveProperty("panel");
+  });
+
+  it("writes safe thinking summaries for executor status and tool lifecycle events", async () => {
+    pluginMocks.getAllToolDefinitions.mockReturnValue([
+      {
+        name: "developer_list_agent_runs",
+        description: "List agent runs.",
+        parameters: { type: "object", properties: {} },
+      },
+    ]);
+    kernelMocks.chatComplete
+      .mockResolvedValueOnce({
+        content: "",
+        toolCalls: [
+          {
+            id: "tool-1",
+            name: "developer_list_agent_runs",
+            arguments: {},
+          },
+        ],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      })
+      .mockResolvedValueOnce({
+        content: "reply",
+        toolCalls: [],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      });
+    pluginMocks.executeTool.mockResolvedValueOnce({
+      runs: [{ id: "run-a", secret: "SECRET_PAYLOAD" }],
+    });
+
+    await executeAgentConversation({
+      message: "Check recent runs",
+      forcedProfile: "general_operator",
+    });
+
+    const snapshot = getThinkingSnapshotForConversation("conversation-1");
+    expect(snapshot).toEqual(expect.objectContaining({
+      conversationId: "conversation-1",
+      sessionId: "run-1",
+      status: "complete",
+      summary: "Run completed.",
+    }));
+    expect(snapshot?.chunks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "status", text: expect.stringContaining("Planning step 1") }),
+      expect.objectContaining({ kind: "tool_call", text: "Running tool developer_list_agent_runs." }),
+      expect.objectContaining({ kind: "tool_result", text: "Found 1 agent run." }),
+    ]));
+    expect(snapshot?.chunks.some((chunk) => chunk.text.includes("SECRET_PAYLOAD"))).toBe(false);
+  });
+
+  it("writes an allowlisted Oracle analysis summary instead of a generic completion message", async () => {
+    pluginMocks.executeTool.mockResolvedValueOnce({
+      target: { canonicalQuestion: "Will BTC trade over 150k by 2026-12-31?" },
+      personality: "balanced",
+      personalityLabel: "Balanced",
+      evidenceMode: "adjacent_inference",
+      impliedProbability: 0.34,
+      confidence: "medium",
+      sentiment: "bearish",
+      exactMatch: null,
+      adjacentMatches: [{ question: "Will Bitcoin hit 150k by Dec 31 2026?" }],
+      summaryPacket: "Oracle personality: Balanced",
+      fallbackReply: "Oracle is inferring from adjacent Polymarket markets for this target.",
+      webResearch: [],
+      trendSignals: [],
+      swarmTrace: { planId: "plan-1", durationMs: 500, workerCount: 3, completedCount: 3, failedCount: 0 },
+    });
+    kernelMocks.chatComplete.mockResolvedValueOnce({
+      content: "Oracle sees BTC over 150k this year as a low-probability upside case.",
+      toolCalls: [],
+      provider: "ollama",
+      model: "model-1",
+      metadata: undefined,
+      usage: undefined,
+    });
+
+    await executeAgentConversation({
+      message: "oracle predict btc 150k",
+      oraclePrediction: true,
+    });
+
+    const snapshot = getThinkingSnapshotForConversation("conversation-1");
+    expect(snapshot?.chunks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "tool_result",
+        text: "Oracle analysis returned implied probability 34.0%, medium confidence, using adjacent inference.",
+      }),
+    ]));
+  });
+
+  it("writes an allowlisted Oracle search summary from bounded market results", async () => {
+    pluginMocks.getAllToolDefinitions.mockReturnValue([
+      {
+        name: "oracle_search_markets",
+        description: "Search markets.",
+        parameters: { type: "object", properties: {} },
+      },
+    ]);
+    kernelMocks.chatComplete
+      .mockResolvedValueOnce({
+        content: "",
+        toolCalls: [
+          {
+            id: "tool-1",
+            name: "oracle_search_markets",
+            arguments: { query: "btc 150k" },
+          },
+        ],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      })
+      .mockResolvedValueOnce({
+        content: "reply",
+        toolCalls: [],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      });
+    pluginMocks.executeTool.mockResolvedValueOnce({
+      query: "btc 150k",
+      markets: [
+        { source: "polymarket", sourceMarketId: "m1", title: "Will BTC hit 150k?" },
+        { source: "kalshi", sourceMarketId: "m2", title: "BTC above 150k by year end" },
+      ],
+      summary: "ignored free-form summary",
+    });
+
+    await executeAgentConversation({
+      message: "Search Oracle markets",
+      forcedProfile: "general_operator",
+    });
+
+    const snapshot = getThinkingSnapshotForConversation("conversation-1");
+    expect(snapshot?.chunks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "tool_result",
+        text: "Found 2 markets for the Oracle search.",
+      }),
+    ]));
+  });
+
+  it("writes an allowlisted Creeper ingestion run summary from stable run fields", async () => {
+    pluginMocks.getAllToolDefinitions.mockReturnValue([
+      {
+        name: "creeper_start_ingestion_run",
+        description: "Start ingestion.",
+        parameters: { type: "object", properties: {} },
+      },
+    ]);
+    kernelMocks.chatComplete
+      .mockResolvedValueOnce({
+        content: "",
+        toolCalls: [
+          {
+            id: "tool-1",
+            name: "creeper_start_ingestion_run",
+            arguments: { planId: "plan-1" },
+          },
+        ],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      })
+      .mockResolvedValueOnce({
+        content: "reply",
+        toolCalls: [],
+        provider: "ollama",
+        model: "model-1",
+        metadata: undefined,
+        usage: undefined,
+      });
+    pluginMocks.executeTool.mockResolvedValueOnce({
+      run: {
+        id: "run-creeper-1",
+        status: "QUEUED",
+        stage: "queued",
+      },
+      plan: {
+        id: "plan-1",
+        status: "APPROVED",
+      },
+      _sidecar: {
+        ok: true,
+        action: "open",
+        panel: {
+          panelId: "creeper-panel",
+          title: "Creeper plan review",
+          content: { type: "markdown", markdown: "# Creeper" },
+        },
+      },
+    });
+
+    await executeAgentConversation({
+      message: "Start Creeper ingestion",
+      forcedProfile: "general_operator",
+    });
+
+    const snapshot = getThinkingSnapshotForConversation("conversation-1");
+    expect(snapshot?.chunks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "tool_result",
+        text: "Started ingestion run run-creeper-1 with status queued at stage queued.",
+      }),
+    ]));
   });
 
   it("normalizes thrown tool failures into structured envelopes", async () => {
