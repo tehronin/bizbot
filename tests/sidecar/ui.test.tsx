@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SidecarHost from "@/components/layout/SidecarHost";
 import { BIZBOT_SELECTED_CONVERSATION_EVENT, BIZBOT_SIDECAR_EVENT, BIZBOT_SIDECAR_INTERACTION_EVENT } from "@/lib/sidecar/types";
+
+const STREAMING_THINKING_INTERVAL_MS = 1500;
+const STABLE_THINKING_INTERVAL_MS = 15_000;
 
 afterEach(() => {
   cleanup();
@@ -385,6 +388,163 @@ describe("sidecar host", () => {
     await waitFor(() => {
       expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/sidecar/state?conversationId=conversation-1"))).toHaveLength(2);
     });
+  });
+
+  it("clears stale thinking state when the selected conversation becomes null", async () => {
+    window.localStorage.setItem("bizbot:selected-chat-conversation-id", "conversation-1");
+    window.localStorage.setItem("bizbot:sidecar:expanded", "true");
+
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/sidecar/state?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            activePanel: {
+              panelId: "conversation-one-panel",
+              title: "Conversation one",
+              content: { type: "markdown", markdown: "# Conversation one\n\n- Thinking shell visible" },
+            },
+            stack: {
+              panels: [
+                {
+                  panelId: "conversation-one-panel",
+                  title: "Conversation one",
+                  content: { type: "markdown", markdown: "# Conversation one\n\n- Thinking shell visible" },
+                },
+              ],
+              activePanelId: "conversation-one-panel",
+              stackRevision: 1,
+            },
+            context: null,
+          }),
+        });
+      }
+
+      if (url.includes("/api/sidecar/thinking?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            snapshot: {
+              sessionId: "session-1",
+              status: "complete",
+              title: "Research Operator",
+              summary: "Run completed.",
+              revision: 4,
+              chunks: [
+                { id: "chunk-1", kind: "tool_result", text: "Oracle analysis returned implied probability 4.3%, medium confidence, using adjacent inference." },
+              ],
+            },
+          }),
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch ${url}`));
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SidecarHost />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Research Operator")).toBeTruthy();
+      expect(screen.queryByText("Run completed.")).toBeNull();
+      expect(screen.getByText("Oracle analysis returned implied probability 4.3%, medium confidence, using adjacent inference.")).toBeTruthy();
+    });
+
+    window.localStorage.removeItem("bizbot:selected-chat-conversation-id");
+    window.dispatchEvent(new CustomEvent(BIZBOT_SELECTED_CONVERSATION_EVENT, {
+      detail: { conversationId: null },
+    }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Research Operator")).toBeNull();
+      expect(screen.queryByText("Oracle analysis returned implied probability 4.3%, medium confidence, using adjacent inference.")).toBeNull();
+    });
+  });
+
+  it("stops fixed polling after a stable thinking snapshot until a focus re-arms it", async () => {
+    window.localStorage.setItem("bizbot:selected-chat-conversation-id", "conversation-1");
+    window.localStorage.setItem("bizbot:sidecar:expanded", "true");
+    vi.useFakeTimers();
+
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/sidecar/state?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            activePanel: {
+              panelId: "conversation-one-panel",
+              title: "Conversation one",
+              content: { type: "markdown", markdown: "# Conversation one\n\n- Thinking shell visible" },
+            },
+            stack: {
+              panels: [
+                {
+                  panelId: "conversation-one-panel",
+                  title: "Conversation one",
+                  content: { type: "markdown", markdown: "# Conversation one\n\n- Thinking shell visible" },
+                },
+              ],
+              activePanelId: "conversation-one-panel",
+              stackRevision: 1,
+            },
+            context: null,
+          }),
+        });
+      }
+
+      if (url.includes("/api/sidecar/thinking?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            snapshot: {
+              sessionId: "session-1",
+              status: "complete",
+              title: "Research Operator",
+              summary: "Run completed.",
+              revision: 4,
+              chunks: [
+                { id: "chunk-1", kind: "tool_result", text: "Oracle analysis returned implied probability 4.3%, medium confidence, using adjacent inference." },
+              ],
+            },
+          }),
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch ${url}`));
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SidecarHost />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/sidecar/thinking?conversationId=conversation-1"))).toHaveLength(1);
+    expect(screen.getByText("Research Operator")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STREAMING_THINKING_INTERVAL_MS + STABLE_THINKING_INTERVAL_MS);
+    });
+
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/sidecar/thinking?conversationId=conversation-1"))).toHaveLength(1);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/sidecar/thinking?conversationId=conversation-1"))).toHaveLength(2);
   });
 
   it("refreshes immediately when the selected conversation changes in the same tab", async () => {
@@ -1088,7 +1248,7 @@ describe("sidecar host", () => {
     });
   });
 
-  it("shows a dev sync indicator and debug drawer", async () => {
+  it("shows a compact dev sync indicator", async () => {
     render(<SidecarHost />);
 
     dispatchSidecar({
@@ -1140,23 +1300,79 @@ describe("sidecar host", () => {
 
     await waitFor(() => {
       expect(screen.getByText("synced")).toBeTruthy();
-      expect(screen.getByText("stack rev 5")).toBeTruthy();
-      expect(screen.getByText("context rev 7")).toBeTruthy();
+      expect(screen.queryByText("stack rev 5")).toBeNull();
+      expect(screen.queryByText("context rev 7")).toBeNull();
+      expect(screen.queryByText("context bound")).toBeNull();
+      expect(screen.queryByRole("button", { name: "show debug" })).toBeNull();
+    });
+  });
+
+  it("suppresses redundant routed-to status text in the thinking dock while keeping other statuses", async () => {
+    window.localStorage.setItem("bizbot:sidecar:expanded", "true");
+    window.localStorage.setItem("bizbot:selected-chat-conversation-id", "conversation-1");
+
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/sidecar/state?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            activePanel: {
+              panelId: "launch-brief",
+              title: "Launch brief",
+              content: { type: "markdown", markdown: "# Launch\n\n- One panel only" },
+            },
+            stack: {
+              panels: [
+                {
+                  panelId: "launch-brief",
+                  title: "Launch brief",
+                  content: { type: "markdown", markdown: "# Launch\n\n- One panel only" },
+                },
+              ],
+              activePanelId: "launch-brief",
+              stackRevision: 1,
+            },
+            context: null,
+          }),
+        });
+      }
+
+      if (url.includes("/api/sidecar/thinking?conversationId=conversation-1")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            conversationId: "conversation-1",
+            snapshot: {
+              sessionId: "session-1",
+              status: "complete",
+              title: "Research Operator",
+              summary: "Run completed.",
+              revision: 4,
+              chunks: [
+                { id: "chunk-1", kind: "status", text: "Routed to Research Operator." },
+                { id: "chunk-2", kind: "status", text: "Queued final persistence." },
+                { id: "chunk-3", kind: "tool_result", text: "Oracle analysis returned implied probability 4.3%." },
+              ],
+            },
+          }),
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch ${url}`));
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "show debug" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SidecarHost />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Sidecar debug drawer")).toBeTruthy();
-      expect(screen.getByText("lineage: lineage-debug")).toBeTruthy();
-      expect(screen.getByText(/"contextLineageId": "lineage-debug"/)).toBeTruthy();
-      expect(screen.getByText(/"syncState": "synced"/)).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "close debug" }));
-
-    await waitFor(() => {
-      expect(screen.queryByLabelText("Sidecar debug drawer")).toBeNull();
+      expect(screen.getByText("Research Operator")).toBeTruthy();
+      expect(screen.queryByText("Routed to Research Operator.")).toBeNull();
+      expect(screen.queryByText("Run completed.")).toBeNull();
+      expect(screen.getByText("Queued final persistence.")).toBeTruthy();
+      expect(screen.getByText("Oracle analysis returned implied probability 4.3%." )).toBeTruthy();
     });
   });
 

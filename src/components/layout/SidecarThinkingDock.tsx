@@ -49,6 +49,14 @@ function getChunkClasses(chunk: SidecarThinkingChunk): string {
   }
 }
 
+function isRedundantRoutingStatusChunk(chunk: SidecarThinkingChunk, title: string): boolean {
+  return chunk.kind === "status" && chunk.text.trim() === `Routed to ${title}.`;
+}
+
+function isRedundantSummary(snapshot: SidecarThinkingSnapshot): boolean {
+  return snapshot.status === "complete" && snapshot.summary?.trim() === "Run completed.";
+}
+
 export interface SidecarThinkingDockProps {
   snapshot: SidecarThinkingSnapshot | null;
   expanded: boolean;
@@ -58,6 +66,8 @@ export interface SidecarThinkingDockProps {
 
 export default function SidecarThinkingDock({ snapshot, expanded, height, onToggle }: SidecarThinkingDockProps) {
   const title = snapshot?.title?.trim() || "thinking";
+  const visibleChunks = snapshot?.chunks.filter((chunk) => !isRedundantRoutingStatusChunk(chunk, title)) ?? [];
+  const visibleSummary = snapshot && !isRedundantSummary(snapshot) ? snapshot.summary : null;
 
   return (
     <div className="border-t border-border bg-raised/70 backdrop-blur">
@@ -82,16 +92,15 @@ export default function SidecarThinkingDock({ snapshot, expanded, height, onTogg
             </span>
           ) : null}
         </div>
-        {snapshot ? <div className="text-[11px] uppercase tracking-[0.16em] text-dim">rev {snapshot.revision}</div> : null}
       </div>
       {expanded ? (
         <div className="min-h-0 overflow-auto border-t border-border px-4 py-3" style={{ height: `${height}px` }}>
           {snapshot ? (
             <div className="space-y-2">
-              {snapshot.summary ? <div className="text-xs leading-6 text-dim">{snapshot.summary}</div> : null}
-              {snapshot.chunks.length > 0 ? (
+              {visibleSummary ? <div className="text-xs leading-6 text-dim">{visibleSummary}</div> : null}
+              {visibleChunks.length > 0 ? (
                 <div className="space-y-2">
-                  {snapshot.chunks.map((chunk) => (
+                  {visibleChunks.map((chunk) => (
                     <div key={chunk.id} className={`rounded border px-3 py-2 ${getChunkClasses(chunk)}`}>
                       <div className="mb-1 text-[10px] uppercase tracking-[0.16em] opacity-75">{chunk.kind.replaceAll("_", " ")}</div>
                       <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6">{chunk.text}</pre>

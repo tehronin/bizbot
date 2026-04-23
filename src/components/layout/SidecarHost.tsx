@@ -39,6 +39,8 @@ const SIDECAR_THINKING_EXPANDED_STORAGE_KEY = "bizbot:sidecar:thinking:expanded"
 const SIDECAR_THINKING_HEIGHT_STORAGE_KEY = "bizbot:sidecar:thinking:height";
 const SELECTED_CONVERSATION_STORAGE_KEY = "bizbot:selected-chat-conversation-id";
 const IS_DEV_MODE = process.env.NODE_ENV !== "production";
+const THINKING_POLL_STREAMING_INTERVAL_MS = 1500;
+const THINKING_POLL_STABLE_INTERVAL_MS = 15_000;
 
 type SidecarSyncState = "synced" | "updating" | "conflict" | "error";
 
@@ -599,10 +601,10 @@ export default function SidecarHost() {
   const [lastRefreshReason, setLastRefreshReason] = useState<string | null>(null);
   const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<string | null>(null);
   const [lastConflictReason, setLastConflictReason] = useState<string | null>(null);
-  const [showInspector, setShowInspector] = useState(false);
   const [thinkingSnapshot, setThinkingSnapshot] = useState<SidecarThinkingSnapshot | null>(null);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [thinkingDockHeight, setThinkingDockHeight] = useState(DEFAULT_THINKING_DOCK_HEIGHT);
+  const [thinkingPollingEnabled, setThinkingPollingEnabled] = useState(false);
 
   const activePanel = useMemo(() => panels[panels.length - 1] ?? null, [panels]);
   const mountedRef = useRef(true);
@@ -615,8 +617,19 @@ export default function SidecarHost() {
   const contextRevisionRef = useRef(0);
   const selectedConversationIdRef = useRef<string | null>(null);
   const thinkingSnapshotRef = useRef<SidecarThinkingSnapshot | null>(null);
+  const thinkingSnapshotConversationIdRef = useRef<string | null>(null);
   const manuallyCollapsedThinkingSessionIdRef = useRef<string | null>(null);
   const autoOpenedThinkingSessionIdRef = useRef<string | null>(null);
+
+  function clearThinkingState(): void {
+    setThinkingSnapshot(null);
+    setThinkingPollingEnabled(false);
+    thinkingSnapshotConversationIdRef.current = null;
+  }
+
+  function armThinkingPolling(): void {
+    setThinkingPollingEnabled(true);
+  }
 
   useEffect(() => {
     return () => {
@@ -706,7 +719,12 @@ export default function SidecarHost() {
 
   async function refreshThinkingState(reason: string): Promise<void> {
     const nextSelectedConversationId = readSelectedConversationId();
-    if (!nextSelectedConversationId || thinkingRefreshInFlightRef.current) {
+    if (!nextSelectedConversationId) {
+      clearThinkingState();
+      return;
+    }
+
+    if (thinkingRefreshInFlightRef.current) {
       return;
     }
 
@@ -727,12 +745,19 @@ export default function SidecarHost() {
       const previousSnapshot = thinkingSnapshotRef.current;
       const nextSnapshot = payload.snapshot;
       setThinkingSnapshot(nextSnapshot);
+      thinkingSnapshotConversationIdRef.current = nextSnapshot ? nextSelectedConversationId : null;
 
       if (nextSnapshot?.sessionId && nextSnapshot.sessionId !== previousSnapshot?.sessionId) {
         if (manuallyCollapsedThinkingSessionIdRef.current !== nextSnapshot.sessionId && autoOpenedThinkingSessionIdRef.current !== nextSnapshot.sessionId) {
           setThinkingExpanded(true);
           autoOpenedThinkingSessionIdRef.current = nextSnapshot.sessionId;
         }
+      }
+
+      if (nextSnapshot?.status === "streaming") {
+        armThinkingPolling();
+      } else {
+        setThinkingPollingEnabled(false);
       }
     } catch {
       // Thinking is additive UI state; refresh failures must not disrupt the main Sidecar flow.
@@ -810,7 +835,24 @@ export default function SidecarHost() {
   }, [hasHydratedPersistence, selectedConversationId]);
 
   useEffect(() => {
-    if (!hasHydratedPersistence || !isExpanded || !selectedConversationId) {
+    if (!hasHydratedPersistence) {
+      return;
+    }
+
+    const snapshotConversationId = thinkingSnapshotConversationIdRef.current;
+    if (!selectedConversationId) {
+      clearThinkingState();
+      return;
+    }
+
+    if (snapshotConversationId && snapshotConversationId !== selectedConversationId) {
+      clearThinkingState();
+      armThinkingPolling();
+    }
+  }, [hasHydratedPersistence, selectedConversationId]);
+
+  useEffect(() => {
+    if (!hasHydratedPersistence || !isExpanded || !selectedConversationId || !thinkingPollingEnabled) {
       return;
     }
 
@@ -819,13 +861,15 @@ export default function SidecarHost() {
       return;
     }
 
-    const pollIntervalMs = thinkingSnapshot?.status === "streaming" ? 1500 : 3000;
+    const pollIntervalMs = thinkingSnapshot?.status === "streaming"
+      ? THINKING_POLL_STREAMING_INTERVAL_MS
+      : THINKING_POLL_STABLE_INTERVAL_MS;
     const intervalId = window.setInterval(() => {
       void refreshThinkingState("thinking-poll");
     }, pollIntervalMs);
 
     return () => window.clearInterval(intervalId);
-  }, [hasHydratedPersistence, isExpanded, selectedConversationId, thinkingSnapshot?.status]);
+  }, [hasHydratedPersistence, isExpanded, selectedConversationId, thinkingPollingEnabled, thinkingSnapshot?.status]);
 
   useEffect(() => {
     if (!hasHydratedPersistence) {
@@ -833,11 +877,13 @@ export default function SidecarHost() {
     }
 
     const handleFocus = () => {
+      armThinkingPolling();
       void refreshAuthoritativeState("window-focus");
       void refreshThinkingState("thinking-window-focus");
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
+        armThinkingPolling();
         void refreshAuthoritativeState("document-visible");
         void refreshThinkingState("thinking-document-visible");
       }
@@ -850,6 +896,7 @@ export default function SidecarHost() {
       const nextConversationId = readSelectedConversationId();
       setSelectedConversationId(nextConversationId);
       if (document.visibilityState === "visible") {
+        armThinkingPolling();
         void refreshAuthoritativeState("storage-change");
         void refreshThinkingState("thinking-storage-change");
       }
@@ -858,6 +905,7 @@ export default function SidecarHost() {
       const detail = (event as CustomEvent<{ conversationId: string | null }>).detail;
       const nextConversationId = detail?.conversationId?.trim() || null;
       setSelectedConversationId(nextConversationId);
+      armThinkingPolling();
       void refreshAuthoritativeState("selected-conversation-event");
       void refreshThinkingState("thinking-selected-conversation-event");
     };
@@ -1086,25 +1134,6 @@ export default function SidecarHost() {
     window.addEventListener("pointerup", onUp, { once: true });
   }
 
-  const inspectorSnapshot = useMemo(() => ({
-    selectedConversationId,
-    activeConversationId,
-    activePanelId: activePanel?.panelId ?? null,
-    stackRevision,
-    contextRevision: activeContext?.contextRevision ?? null,
-    contextLineageId: activeContext?.contextLineageId ?? null,
-    syncState,
-    lastRefreshReason,
-    lastSuccessfulSyncAt,
-    lastConflictReason,
-    isExpanded,
-    thinkingExpanded,
-    thinkingDockHeight,
-    thinking: thinkingSnapshot,
-    panels,
-    context: activeContext,
-  }), [activeContext, activeConversationId, activePanel?.panelId, isExpanded, lastConflictReason, lastRefreshReason, lastSuccessfulSyncAt, panels, selectedConversationId, stackRevision, syncState, thinkingDockHeight, thinkingExpanded, thinkingSnapshot]);
-
   return (
     <div className="relative z-40 flex h-full max-w-full shrink-0" aria-label="Sidecar split view">
       {isExpanded ? (
@@ -1128,27 +1157,15 @@ export default function SidecarHost() {
                   <div className="text-[11px] uppercase tracking-[0.16em] text-dim">stack {panels.length}</div>
                 ) : null}
                 {IS_DEV_MODE ? (
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-dim">
-                    <span className="inline-flex items-center gap-2 rounded-full border border-border px-2 py-1">
-                      <span className={`h-2 w-2 rounded-full ${getSyncStateTone(syncState)}`} aria-hidden="true" />
+                  <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-dim">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border-sub px-1.5 py-0.5">
+                      <span className={`h-1.5 w-1.5 rounded-full ${getSyncStateTone(syncState)}`} aria-hidden="true" />
                       {getSyncStateLabel(syncState)}
                     </span>
-                    <span className="rounded-full border border-border px-2 py-1">stack rev {stackRevision}</span>
-                    <span className="rounded-full border border-border px-2 py-1">context rev {activeContext?.contextRevision ?? 0}</span>
-                    <span className="rounded-full border border-border px-2 py-1">{activeContext ? "context bound" : "context unbound"}</span>
                   </div>
                 ) : null}
               </div>
               <div className="flex items-center gap-2">
-                {IS_DEV_MODE ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowInspector((current) => !current)}
-                    className="px-3 py-2 border border-border text-primary text-xs uppercase tracking-[0.18em]"
-                  >
-                    {showInspector ? "hide debug" : "show debug"}
-                  </button>
-                ) : null}
                 {panels.length > 1 ? (
                   <button
                     type="button"
@@ -1201,35 +1218,6 @@ export default function SidecarHost() {
               height={thinkingDockHeight}
               onToggle={toggleThinkingExpanded}
             />
-          </div>
-        </aside>
-      ) : null}
-
-      {IS_DEV_MODE && showInspector ? (
-        <aside className="hidden lg:flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-raised/95 backdrop-blur" aria-label="Sidecar debug drawer">
-          <div className="border-b border-border px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-primary">Sidecar debug drawer</div>
-                <div className="text-[11px] uppercase tracking-[0.16em] text-dim">authoritative snapshot</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowInspector(false)}
-                className="px-3 py-2 border border-border text-primary text-xs uppercase tracking-[0.18em]"
-              >
-                close debug
-              </button>
-            </div>
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto p-4 space-y-3 text-xs text-primary">
-            <div className="flex flex-wrap gap-2 uppercase tracking-[0.16em] text-dim">
-              <span>last refresh: {lastRefreshReason ?? "n/a"}</span>
-              <span>last sync: {lastSuccessfulSyncAt ?? "n/a"}</span>
-              <span>lineage: {activeContext?.contextLineageId ?? "n/a"}</span>
-            </div>
-            {lastConflictReason ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-rose-800">{lastConflictReason}</div> : null}
-            <pre className="overflow-auto whitespace-pre-wrap break-words border border-border-sub bg-surface p-3 leading-6"><code>{JSON.stringify(inspectorSnapshot, null, 2)}</code></pre>
           </div>
         </aside>
       ) : null}
