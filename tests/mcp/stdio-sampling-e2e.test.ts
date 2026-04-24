@@ -191,6 +191,12 @@ describe("stdio MCP sampling e2e", () => {
         clientSupportsSamplingTools: true,
       }),
       result: expect.objectContaining({
+        session: expect.objectContaining({
+          sessionId: null,
+          traceId: expect.any(String),
+          requestId: expect.any(String),
+          toolInvocationId: expect.any(String),
+        }),
         diagnosisSource: "sampled",
         status: "warning",
         likelyRootCause: "The Builder MCP snapshot baseline is stale.",

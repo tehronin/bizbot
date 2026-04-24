@@ -56,6 +56,14 @@ export interface ToolExecutionContext {
 
 export interface McpSamplingSession {
   transportKind: McpTransportKind;
+  sessionId?: string;
+  traceId?: string;
+  requestId?: string;
+  toolInvocationId?: string;
+  samplingIntent?: string;
+  idempotencyKey?: string;
+  requestStartedAt?: string;
+  toolBudgetAllowed?: boolean;
   createMessage: (params: CreateMessageRequest["params"]) => Promise<CreateMessageResult | CreateMessageResultWithTools>;
   getClientCapabilities: () => ClientCapabilities | undefined;
 }

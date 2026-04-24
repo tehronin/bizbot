@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-04-24
+
+- Promoted the local stdio MCP path from a thin bootstrap script to a session-aware runtime wrapper that owns session ids, startup and shutdown coordination, capability-sync tracing, heartbeat checkpoints, stale-session recovery, and opt-in stderr debug logging while keeping protocol stdout clean.
+- Extended persisted MCP trace coverage to include local stdio session lifecycle, initialize and capability-sync events, transport or protocol faults, and stdio-backed tool-call provenance so the app-side debug resources can inspect the standalone stdio server after the fact.
+- Added structured stdio tool-error envelopes with typed categories and trace ids, threaded sampling session metadata through `developer_vscode_loop_assist`, and expanded focused MCP tests and docs for the new runtime, observability, and debug workflow.
+
 ## 2026-04-23
 
 - Hardened authoritative Sidecar context concurrency with `contextRevision` and `contextLineageId`, stale-write rejection on the interaction route and MCP path, merged transport plus handler context patches in the router reducer, and updated Oracle or Creeper Sidecar handlers to return resolved context patches instead of mutating shared state ad hoc.

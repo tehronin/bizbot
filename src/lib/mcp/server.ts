@@ -10,8 +10,12 @@ import { getAllToolDefinitions, executeTool } from "@/lib/agent/plugins";
 import { getActiveProvider } from "@/lib/agent/kernel";
 import { getAgentRuntimeConfig, getAutonomyDescription } from "@/lib/agent/runtime";
 import type { JsonObject, ToolParametersSchema, ToolPropertySchema } from "@/lib/agent/tools";
+import type { FailureEnvelope } from "@/lib/failures";
+import { normalizeFailure } from "@/lib/failures";
 import { buildBizBotMcpCapabilities, resolveBizBotMcpServerOptions, type BizBotMcpServerOptions } from "@/lib/mcp/policy";
 import { listBizBotPromptDefinitions, listBizBotResourceDefinitions } from "@/lib/mcp/preview-catalog";
+import { LOCAL_STDIO_MCP_SERVER_NAME } from "@/lib/mcp/stdio-runtime";
+import { createMcpTraceCorrelationId, recordMcpTraceEvent } from "@/lib/mcp/trace";
 import { BIZBOT_PLATFORM_CONTRACT_VERSION } from "@/lib/platform/contract";
 import { getToolAnnotations, getToolDescription, getToolTitle, MCP_AGENT_PROFILE, MCP_BLOCKED_TOOLS } from "@/lib/mcp/tool-presentation";
 import { z } from "zod/v4";
@@ -107,6 +111,50 @@ function buildToolResponse(result: unknown) {
   };
 }
 
+function summarizeToolResult(result: unknown): string {
+  if (result === null || result === undefined) {
+    return "empty result";
+  }
+  if (Array.isArray(result)) {
+    return `${result.length} item(s)`;
+  }
+  if (typeof result === "object") {
+    return `${Object.keys(result as Record<string, unknown>).length} field(s)`;
+  }
+  return typeof result;
+}
+
+function classifyMcpErrorCategory(failure: FailureEnvelope, toolName: string): "TransportError" | "ToolError" | "SchemaError" | "SamplingError" | "InternalError" {
+  if (toolName === "developer_vscode_loop_assist" && /sampling/i.test(failure.raw)) {
+    return "SamplingError";
+  }
+  if (failure.layer === "validation") {
+    return "SchemaError";
+  }
+  if (failure.layer === "network") {
+    return "TransportError";
+  }
+  if (failure.layer === "tool" || failure.layer === "policy" || failure.layer === "semantic") {
+    return "ToolError";
+  }
+  return "InternalError";
+}
+
+function buildToolErrorResponse(failure: FailureEnvelope, category: string, traceId: string) {
+  return {
+    content: [{ type: "text" as const, text: failure.raw }],
+    structuredContent: {
+      ok: false,
+      error: {
+        category,
+        traceId,
+        failure,
+      },
+    },
+    isError: true,
+  };
+}
+
 /**
  * Creates a fresh McpServer with all BizBot tools, resources, and prompts
  * registered. Returns a new instance each time (needed for stateless HTTP).
@@ -148,7 +196,14 @@ export function createBizBotMcpServer(options?: BizBotMcpServerOptions): McpServ
         inputSchema: parametersSchemaToZod(tool.parameters),
         annotations: getToolAnnotations(tool.name),
       },
-      async (args) => {
+      async (args, extra) => {
+        const traceId = createMcpTraceCorrelationId();
+        const startedAt = Date.now();
+        const requestId = extra?.requestId === undefined || extra?.requestId === null ? undefined : String(extra.requestId);
+        const sessionId = extra?.sessionId;
+        const toolInvocationId = `mcp-tool-${tool.name}-${requestId ?? traceId}`;
+        const requestStartedAt = new Date().toISOString();
+
         try {
           const result = await executeTool(tool.name, args as JsonObject, {
             config,
@@ -158,17 +213,73 @@ export function createBizBotMcpServer(options?: BizBotMcpServerOptions): McpServ
               provider: getActiveProvider(),
               mcpSamplingSession: {
                 transportKind: resolvedOptions.transportKind,
+                sessionId,
+                traceId,
+                requestId,
+                toolInvocationId,
+                samplingIntent: tool.name === "developer_vscode_loop_assist" ? "developer_devloop_status" : undefined,
+                idempotencyKey: `mcp:${tool.name}:${requestId ?? traceId}`,
+                requestStartedAt,
+                toolBudgetAllowed: resolvedOptions.transportKind === "stdio",
                 createMessage: server.server.createMessage.bind(server.server),
                 getClientCapabilities: server.server.getClientCapabilities.bind(server.server),
               },
             },
           });
+
+          if (resolvedOptions.transportKind === "stdio") {
+            recordMcpTraceEvent({
+              correlationId: traceId,
+              serverName: LOCAL_STDIO_MCP_SERVER_NAME,
+              operation: "tool_call",
+              target: tool.name,
+              success: true,
+              durationMs: Date.now() - startedAt,
+              requestKeys: Object.keys((args as JsonObject) ?? {}),
+              resultSummary: summarizeToolResult(result),
+              transportKind: "stdio",
+              direction: "inbound",
+              sessionId,
+              requestId,
+              toolInvocationId,
+              trustLevel: "local",
+              sampled: tool.name === "developer_vscode_loop_assist",
+            });
+          }
+
           return buildToolResponse(result);
         } catch (error) {
-          return {
-            content: [{ type: "text" as const, text: String(error) }],
-            isError: true,
-          };
+          const failure = normalizeFailure(error, {
+            component: "mcp_server",
+            operation: "tool_call",
+            toolName: tool.name,
+            target: tool.name,
+            layer: resolvedOptions.transportKind === "stdio" ? "tool" : "unknown",
+          });
+          const category = classifyMcpErrorCategory(failure, tool.name);
+
+          if (resolvedOptions.transportKind === "stdio") {
+            recordMcpTraceEvent({
+              correlationId: traceId,
+              serverName: LOCAL_STDIO_MCP_SERVER_NAME,
+              operation: "tool_call",
+              target: tool.name,
+              success: false,
+              durationMs: Date.now() - startedAt,
+              requestKeys: Object.keys((args as JsonObject) ?? {}),
+              error: failure.raw,
+              resultSummary: failure.operatorSummary,
+              transportKind: "stdio",
+              direction: "inbound",
+              sessionId,
+              requestId,
+              toolInvocationId,
+              trustLevel: "local",
+              sampled: tool.name === "developer_vscode_loop_assist",
+            });
+          }
+
+          return buildToolErrorResponse(failure, category, traceId);
         }
       },
     );

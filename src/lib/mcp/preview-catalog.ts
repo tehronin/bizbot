@@ -34,7 +34,7 @@ import {
 } from "@/lib/mcp/imported-catalog";
 import { inspectPluginRegistry } from "@/lib/agent/plugins/inspection";
 import { getMcpSamplingPolicy, listMcpSamplingIntents, listSamplingEnabledTransports } from "@/lib/mcp/policy";
-import { buildMcpHealthSnapshot } from "@/lib/mcp/health";
+import { buildLocalStdioTraceSummary, buildMcpHealthSnapshot } from "@/lib/mcp/health";
 import { getDevLoopSamplingTelemetrySnapshot, getDevLoopSamplingToolDescriptors } from "@/lib/mcp/sampling";
 import { getMcpTracePersistenceInfo, listMcpTraceEvents, listMcpTraceServerSummaries } from "@/lib/mcp/trace";
 import { getToolAnnotations, getToolDescription, getToolTitle, MCP_AGENT_PROFILE, MCP_BLOCKED_TOOLS } from "@/lib/mcp/tool-presentation";
@@ -924,6 +924,8 @@ async function buildDebugMcpTraceResource() {
     generatedAt: new Date().toISOString(),
     persistence: getMcpTracePersistenceInfo(),
     servers: listMcpTraceServerSummaries(),
+    localStdio: buildLocalStdioTraceSummary(),
+    recentStdioEvents: listMcpTraceEvents({ limit: 40, serverName: "bizbot-local-stdio", transportKind: "stdio" }),
     recentEvents: listMcpTraceEvents({ limit: 80 }),
   };
 }

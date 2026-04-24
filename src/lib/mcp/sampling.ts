@@ -175,6 +175,15 @@ export interface DevLoopSamplingAvailability {
 
 export interface DevLoopSamplingResult {
   availability: DevLoopSamplingAvailability;
+  session: {
+    sessionId: string | null;
+    traceId: string | null;
+    requestId: string | null;
+    toolInvocationId: string | null;
+    idempotencyKey: string | null;
+    requestStartedAt: string | null;
+    toolBudgetAllowed: boolean;
+  };
   diagnosisSource: "sampled" | "deterministic_fallback";
   summary: string;
   status: "ok" | "warning" | "blocked" | "unknown" | "unavailable" | "error";
@@ -190,6 +199,18 @@ export interface DevLoopSamplingResult {
   model: string | null;
   stopReason: string | null;
   rawText: string | null;
+}
+
+function buildSessionMetadata(session: McpSamplingSession | null | undefined) {
+  return {
+    sessionId: session?.sessionId ?? null,
+    traceId: session?.traceId ?? null,
+    requestId: session?.requestId ?? null,
+    toolInvocationId: session?.toolInvocationId ?? null,
+    idempotencyKey: session?.idempotencyKey ?? null,
+    requestStartedAt: session?.requestStartedAt ?? null,
+    toolBudgetAllowed: session?.toolBudgetAllowed === true,
+  };
 }
 
 function readState(value: unknown): string {
@@ -412,7 +433,11 @@ export function getDevLoopSamplingToolDescriptors() {
 
 export function buildDevLoopSamplingRequest(
   context: BuilderDevLoopContext,
-  options?: { allowTools?: boolean; clientSupportsSamplingTools?: boolean },
+  options?: {
+    allowTools?: boolean;
+    clientSupportsSamplingTools?: boolean;
+    session?: McpSamplingSession | null;
+  },
 ): CreateMessageRequest["params"] {
   const policy = getMcpSamplingPolicy(DEV_LOOP_SAMPLING_INTENT, "stdio", true);
   const contextPayload = trimSerializedContext(context, policy.maxContextChars);
@@ -445,6 +470,13 @@ export function buildDevLoopSamplingRequest(
       bizbotIntent: DEV_LOOP_SAMPLING_INTENT,
       analysisMode: "read_only",
       toolsAllowed: includeTools,
+      sessionId: options?.session?.sessionId ?? null,
+      traceId: options?.session?.traceId ?? null,
+      parentRequestId: options?.session?.requestId ?? null,
+      toolInvocationId: options?.session?.toolInvocationId ?? null,
+      idempotencyKey: options?.session?.idempotencyKey ?? null,
+      requestStartedAt: options?.session?.requestStartedAt ?? null,
+      toolBudgetAllowed: options?.session?.toolBudgetAllowed === true,
     },
   };
 }
@@ -516,6 +548,7 @@ export async function requestDevLoopSampling(serverOrSession: McpSamplingSession
     recordDevLoopSamplingAttempt(buildAvailability(serverOrSession));
     return {
       availability: buildAvailability(serverOrSession),
+      session: buildSessionMetadata(serverOrSession),
       diagnosisSource: "deterministic_fallback",
       summary: fallback.summary,
       status: "error",
@@ -542,6 +575,7 @@ export async function requestDevLoopSampling(serverOrSession: McpSamplingSession
     });
     return {
       availability,
+      session: buildSessionMetadata(serverOrSession),
       diagnosisSource: "deterministic_fallback",
       summary: fallback.summary,
       status: fallback.status === "unknown" ? "unavailable" : fallback.status,
@@ -564,6 +598,7 @@ export async function requestDevLoopSampling(serverOrSession: McpSamplingSession
     const request = buildDevLoopSamplingRequest(context, {
       allowTools: availability.allowTools,
       clientSupportsSamplingTools: availability.clientSupportsSamplingTools,
+      session: serverOrSession,
     });
     return serverOrSession.createMessage(request);
   });
@@ -574,6 +609,7 @@ export async function requestDevLoopSampling(serverOrSession: McpSamplingSession
 
   return {
     availability,
+    session: buildSessionMetadata(serverOrSession),
     diagnosisSource: "sampled",
     summary: parsed.result.summary,
     status: parsed.result.status,

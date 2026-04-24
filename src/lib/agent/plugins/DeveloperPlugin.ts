@@ -617,6 +617,15 @@ export const developerPlugin = {
               transportKind: context.mcpSamplingSession?.transportKind ?? "http",
             },
             result: {
+              session: {
+                sessionId: null,
+                traceId: null,
+                requestId: null,
+                toolInvocationId: null,
+                idempotencyKey: null,
+                requestStartedAt: null,
+                toolBudgetAllowed: false,
+              },
               diagnosisSource: "deterministic_fallback",
               summary: "No current Builder project overview is available.",
               status: "unavailable",
@@ -652,6 +661,7 @@ export const developerPlugin = {
           },
           context: devLoopContext,
           result: {
+            session: result.session,
             diagnosisSource: result.diagnosisSource,
             summary: result.summary,
             status: result.status,
@@ -681,6 +691,15 @@ export const developerPlugin = {
       };
       context?: Awaited<ReturnType<typeof buildCurrentBuilderDevLoopContext>>;
       result: {
+        session: {
+          sessionId: string | null;
+          traceId: string | null;
+          requestId: string | null;
+          toolInvocationId: string | null;
+          idempotencyKey: string | null;
+          requestStartedAt: string | null;
+          toolBudgetAllowed: boolean;
+        };
         diagnosisSource: string;
         summary: string;
         status: string;

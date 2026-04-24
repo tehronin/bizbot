@@ -12,6 +12,20 @@
       "env": {
         "BIZBOT_DISABLE_QUERY_LOGS": "true"
       }
+    },
+    "bizbot-debug": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "--enable-source-maps",
+        "./node_modules/tsx/dist/cli.mjs",
+        "scripts/mcp-stdio.mjs"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "BIZBOT_DISABLE_QUERY_LOGS": "true",
+        "BIZBOT_MCP_STDIO_DEBUG": "true"
+      }
     }
   }
 }

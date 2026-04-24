@@ -19,7 +19,6 @@
  */
 
 import { Console } from "node:console";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadLocalEnv } from "./load-local-env.mjs";
 
 loadLocalEnv();
@@ -38,10 +37,16 @@ const [{ closeMcpClients }, { db }] = await Promise.all([
 
 // We need to dynamically import the server factory because it depends on
 // Prisma and other app modules that need env vars loaded first.
-const { createBizBotMcpServer } = await import("../src/lib/mcp/server.ts");
+const [{ createBizBotMcpServer }, { createInstrumentedStdioServerTransport }] = await Promise.all([
+	import("../src/lib/mcp/server.ts"),
+	import("../src/lib/mcp/stdio-runtime.ts"),
+]);
 
 const server = createBizBotMcpServer(getStdioMcpServerOptions());
-const transport = new StdioServerTransport();
+const transport = createInstrumentedStdioServerTransport({
+	debug: process.env.BIZBOT_MCP_STDIO_DEBUG === "true",
+	logger: console,
+});
 
 let shuttingDown = false;
 let runtimeReady = false;
@@ -51,6 +56,7 @@ async function shutdown(reason, exitCode = 0) {
 		return;
 	}
 	shuttingDown = true;
+	transport.markShutdownReason(reason);
 
 	process.stderr.write(`[bizbot-mcp] shutting down (${reason})\n`);
 
@@ -85,11 +91,13 @@ process.stdin.on("close", () => {
 
 process.on("uncaughtException", (error) => {
 	process.stderr.write(`[bizbot-mcp] uncaught exception\n${error instanceof Error ? `${error.stack ?? error.message}\n` : `${String(error)}\n`}`);
+	transport.markProtocolError(error, { target: "uncaught_exception" });
 	void shutdown("uncaughtException", 1);
 });
 
 process.on("unhandledRejection", (error) => {
 	process.stderr.write(`[bizbot-mcp] unhandled rejection\n${error instanceof Error ? `${error.stack ?? error.message}\n` : `${String(error)}\n`}`);
+	transport.markProtocolError(error, { target: "unhandled_rejection" });
 	void shutdown("unhandledRejection", 1);
 });
 

@@ -5,6 +5,7 @@ import { getMcpQueueStatus } from "@/lib/mcp/job-status";
 import { getMcpSamplingPolicy } from "@/lib/mcp/policy";
 import { getDevLoopSamplingToolDescriptors, getDevLoopSamplingTelemetrySnapshot } from "@/lib/mcp/sampling";
 import { getMcpTracePersistenceInfo, listMcpTraceEvents, listMcpTraceServerSummaries } from "@/lib/mcp/trace";
+import { LOCAL_STDIO_MCP_SERVER_NAME } from "@/lib/mcp/stdio-runtime";
 import { normalizeFailure, type FailureEnvelope } from "@/lib/failures";
 
 export interface McpHealthSnapshot {
@@ -40,6 +41,27 @@ export interface McpHealthSnapshot {
     recentFailures: Array<{ correlationId: string; serverName: string; operation: string; target: string; error: string | null; timestamp: string; failure: FailureEnvelope | null }>;
     servers: ReturnType<typeof listMcpTraceServerSummaries>;
   };
+  localStdio: {
+    available: boolean;
+    sessionsStarted: number;
+    sessionsEnded: number;
+    uncleanExits: number;
+    initializeCount: number;
+    capabilitySyncCount: number;
+    toolCallCount: number;
+    samplingRequestCount: number;
+    protocolErrorCount: number;
+    transportErrorCount: number;
+    malformedFrameCount: number;
+    droppedMessageCount: number;
+    averageToolCallDurationMs: number | null;
+    lastSeenAt: string | null;
+    lastActiveSessionId: string | null;
+    lastShutdownReason: string | null;
+    lastClientName: string | null;
+    lastClientVersion: string | null;
+    lastCapabilitySyncSummary: string | null;
+  };
   sampling: {
     allowTools: boolean;
     toolCount: number;
@@ -56,6 +78,57 @@ export interface McpHealthSnapshot {
 
 function sumQueueMetric(counts: Record<string, { waiting: number; active: number; delayed: number; completed: number; failed: number }>, key: "waiting" | "active" | "delayed" | "failed"): number {
   return Object.values(counts).reduce((total, entry) => total + (entry[key] ?? 0), 0);
+}
+
+function parseShutdownReason(summary: string | null): string | null {
+  if (!summary) {
+    return null;
+  }
+
+  const match = summary.match(/shutdownReason=([^;]+)/i);
+  return match?.[1]?.trim() ?? null;
+}
+
+export function buildLocalStdioTraceSummary() {
+  const events = listMcpTraceEvents({
+    limit: 250,
+    serverName: LOCAL_STDIO_MCP_SERVER_NAME,
+    transportKind: "stdio",
+  });
+  const toolCalls = events.filter((event) => event.operation === "tool_call");
+  const sessionStarts = events.filter((event) => event.operation === "session_start");
+  const sessionEnds = events.filter((event) => event.operation === "session_end");
+  const capabilitySyncEvents = events.filter((event) => event.operation === "capability_sync");
+  const transportErrors = events.filter((event) => event.operation === "transport_error");
+  const protocolErrors = events.filter((event) => event.operation === "protocol_error");
+  const openSession = sessionStarts.find((start) => start.sessionId && !sessionEnds.some((end) => end.sessionId === start.sessionId));
+  const durationValues = toolCalls
+    .map((event) => event.durationMs)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+  return {
+    available: events.length > 0,
+    sessionsStarted: sessionStarts.length,
+    sessionsEnded: sessionEnds.length,
+    uncleanExits: sessionEnds.filter((event) => event.success === false).length,
+    initializeCount: events.filter((event) => event.operation === "initialize_received").length,
+    capabilitySyncCount: capabilitySyncEvents.length,
+    toolCallCount: toolCalls.length,
+    samplingRequestCount: toolCalls.filter((event) => event.sampled === true).length,
+    protocolErrorCount: protocolErrors.length,
+    transportErrorCount: transportErrors.length,
+    malformedFrameCount: sessionEnds.reduce((total, event) => total + (event.malformedFrameCount ?? 0), 0),
+    droppedMessageCount: sessionEnds.reduce((total, event) => total + (event.droppedMessageCount ?? 0), 0),
+    averageToolCallDurationMs: durationValues.length > 0
+      ? Math.round(durationValues.reduce((sum, value) => sum + value, 0) / durationValues.length)
+      : null,
+    lastSeenAt: events[0]?.timestamp ?? null,
+    lastActiveSessionId: openSession?.sessionId ?? null,
+    lastShutdownReason: parseShutdownReason(sessionEnds[0]?.resultSummary ?? null),
+    lastClientName: events.find((event) => event.clientName)?.clientName ?? null,
+    lastClientVersion: events.find((event) => event.clientVersion)?.clientVersion ?? null,
+    lastCapabilitySyncSummary: capabilitySyncEvents[0]?.resultSummary ?? null,
+  };
 }
 
 export async function buildMcpHealthSnapshot(): Promise<McpHealthSnapshot> {
@@ -93,6 +166,7 @@ export async function buildMcpHealthSnapshot(): Promise<McpHealthSnapshot> {
   const failedJobs = sumQueueMetric(queueStatus.counts, "failed");
   const stdioPolicy = getMcpSamplingPolicy("developer_devloop_status", "stdio", true);
   const samplingTools = getDevLoopSamplingToolDescriptors();
+  const localStdio = buildLocalStdioTraceSummary();
 
   const recommendations: string[] = [];
   let status: McpHealthSnapshot["status"] = "ok";
@@ -137,6 +211,14 @@ export async function buildMcpHealthSnapshot(): Promise<McpHealthSnapshot> {
     recommendations.push("Inspect the latest MCP trace correlation ids to separate transport failures from tool or prompt failures.");
   }
 
+  if (localStdio.uncleanExits > 0 || localStdio.protocolErrorCount > 0 || localStdio.transportErrorCount > 0) {
+    markWarning();
+    if (summary === "MCP loop looks healthy.") {
+      summary = "Local stdio MCP sessions need review.";
+    }
+    recommendations.push("Inspect the local stdio lifecycle summary and trace to confirm the last session shut down cleanly and did not drop protocol messages.");
+  }
+
   if (builderContext && (builderContext.diagnosticSummary.contracts.mcpSnapshotState === "drifted" || builderContext.diagnosticSummary.validation.passed === false)) {
     markWarning();
     if (summary === "MCP loop looks healthy.") {
@@ -177,6 +259,7 @@ export async function buildMcpHealthSnapshot(): Promise<McpHealthSnapshot> {
       recentFailures,
       servers: traceServers,
     },
+    localStdio,
     sampling: {
       allowTools: stdioPolicy.allowTools,
       toolCount: samplingTools.length,

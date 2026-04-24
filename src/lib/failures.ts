@@ -146,7 +146,7 @@ function classifyFailure(
 
   if (
     options.kind === "policy_blocked"
-    || /not allowed|blocked tool|approval queue|permission denied|policy/i.test(raw)
+    || /not allowed|blocked tool|approval queue|permission denied|policy|allowlisted|allowlist/i.test(raw)
     || statusCode === 403
   ) {
     return {

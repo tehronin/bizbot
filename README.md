@@ -466,6 +466,9 @@ The MCP surface now doubles as a plugin authoring lab for power users:
 - Local stdio entry point is `npm run mcp:stdio`
 - HTTP endpoint is `/api/mcp`
 - VS Code stdio config now enables source maps and quiets query logs by default for a cleaner local debugging loop
+- Local stdio MCP now runs through a session-aware runtime wrapper that records session start/end, initialize posture, capability sync, tool-call trace, and transport or protocol faults into the persisted MCP trace store
+- Local stdio lifecycle and health are inspectable through `bizbot://debug/mcp-trace` and `bizbot://debug/mcp-health`, including unclean shutdown detection for the previous session on the next startup
+- Optional stdio debug mode is available through `BIZBOT_MCP_STDIO_DEBUG=true` and keeps protocol stdout clean while emitting parsed lifecycle and capability-sync diagnostics to stderr
 - Exposes tools, resources, and prompts
 - Exposes core `sidecar_open`, `sidecar_update`, and `sidecar_close` tools as part of the BizBot MCP surface
 - Includes runtime-oriented resources for inspection and debugging
@@ -482,6 +485,7 @@ The MCP surface now doubles as a plugin authoring lab for power users:
 - The HTTP MCP route stays stateless and does not advertise sampling.
 - BizBot uses sampling only for one bounded intent today: Builder dev-loop diagnosis through `developer_vscode_loop_assist`.
 - For local stdio clients that advertise `sampling.tools`, BizBot now allows tool-capable sampling for that bounded dev-loop assist path.
+- Sampling requests now carry stdio session, trace, request, and idempotency metadata so the dev-loop diagnosis path is traceable across the transport boundary.
 - Nested sampling is blocked by policy.
 - The current sampling policy is inspectable through `bizbot://debug/mcp-sampling-policy`.
 
@@ -491,6 +495,8 @@ Current verification commands:
 - `npm run mcp:stdio:smoke`: Run a real stdio smoke test with a sampling-capable SDK client against the local BizBot MCP server.
 
 The stdio smoke command will reuse the current Builder project overview when one exists and will seed a temporary Builder project only when the local database has no active overview to sample against.
+
+For local VS Code diagnosis, the checked-in workspace MCP config now includes a `bizbot-debug` stdio entry that enables the same runtime plus stderr debug logging without changing the default server definition.
 
 #### Sidecar Event Contract
 
@@ -902,6 +908,7 @@ The intended production split is Google for embeddings and MiniMax M2.7 for the 
 - `npm run worker`: Start only the worker. On Windows this automatically uses `PRISMA_CLIENT_ENGINE_TYPE=binary` unless you explicitly override it.
 - `npm run mcp:stdio`: Start BizBot as a stdio MCP server
 - `npm run mcp:stdio:smoke`: Run the manual stdio MCP sampling smoke test against the local server
+- `BIZBOT_MCP_STDIO_DEBUG=true npm run mcp:stdio`: Start the stdio MCP server with lifecycle, capability-sync, and parsed transport diagnostics written to stderr
 - `npm run plugin:new -- <name>`: Scaffold a plugin file and matching starter test
 - `npm run test:app`: Run non-MCP Vitest coverage
 - `npm run test:mcp`: Run MCP transport, contract, and plugin integration tests
@@ -919,7 +926,7 @@ The intended production split is Google for embeddings and MiniMax M2.7 for the 
 ## Known Gaps
 
 - Social integrations still need real credentials and live production validation
-- MCP stdio mode now suppresses verbose database query logging, but live external-server compatibility still needs broader matrix coverage
+- MCP stdio mode now suppresses verbose database query logging and persists local session trace, but live external-server compatibility still needs broader matrix coverage
 - Google Business support assumes a single configured account/location
 - Multi-account tenant separation is not implemented
 - Browser-based social adapters remain secondary to API-backed flows

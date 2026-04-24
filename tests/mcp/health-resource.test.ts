@@ -30,6 +30,7 @@ describe("MCP health resource", () => {
       status: string;
       summary: string;
       trace: { persistence: { path: string; version: number; limit: number } };
+      localStdio: { sessionsStarted: number; toolCallCount: number; available: boolean };
       sampling: { toolCount: number; toolNames: string[] };
       queues: { activeQueueNames: string[] };
     };
@@ -43,6 +44,11 @@ describe("MCP health resource", () => {
       limit: 250,
     }));
     expect(sample.trace.recentFailures.every((entry) => entry.failure === null || typeof entry.failure.kind === "string")).toBe(true);
+    expect(sample.localStdio).toEqual(expect.objectContaining({
+      available: expect.any(Boolean),
+      sessionsStarted: expect.any(Number),
+      toolCallCount: expect.any(Number),
+    }));
     expect(sample.sampling.toolCount).toBeGreaterThan(0);
     expect(sample.sampling.toolNames).toContain("developer_list_agent_runs");
     expect(sample.queues.activeQueueNames).toEqual(expect.arrayContaining([

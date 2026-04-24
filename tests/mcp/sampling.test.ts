@@ -201,6 +201,13 @@ describe("MCP sampling bridge", () => {
       getClientCapabilities: () => ({}),
     }, buildContext());
 
+    expect(result.session).toEqual(expect.objectContaining({
+      sessionId: null,
+      traceId: null,
+      requestId: null,
+      toolInvocationId: null,
+      toolBudgetAllowed: false,
+    }));
     expect(result.diagnosisSource).toBe("deterministic_fallback");
     expect(result.status).toBe("warning");
     expect(result.summary).toContain("did not advertise sampling support");
@@ -238,6 +245,13 @@ describe("MCP sampling bridge", () => {
 
     const result = await requestDevLoopSampling({
       transportKind: "stdio",
+      sessionId: "session-1",
+      traceId: "trace-1",
+      requestId: "request-1",
+      toolInvocationId: "tool-1",
+      idempotencyKey: "idempotent-1",
+      requestStartedAt: "2026-04-24T10:00:00.000Z",
+      toolBudgetAllowed: true,
       createMessage,
       getClientCapabilities: () => ({ sampling: { tools: {} } }),
     }, buildContext());
@@ -248,7 +262,23 @@ describe("MCP sampling bridge", () => {
         expect.objectContaining({ name: "developer_list_agent_runs" }),
       ]),
       toolChoice: { mode: "auto" },
-      metadata: expect.objectContaining({ toolsAllowed: true }),
+      metadata: expect.objectContaining({
+        toolsAllowed: true,
+        sessionId: "session-1",
+        traceId: "trace-1",
+        parentRequestId: "request-1",
+        toolInvocationId: "tool-1",
+        idempotencyKey: "idempotent-1",
+        toolBudgetAllowed: true,
+      }),
+    }));
+    expect(result.session).toEqual(expect.objectContaining({
+      sessionId: "session-1",
+      traceId: "trace-1",
+      requestId: "request-1",
+      toolInvocationId: "tool-1",
+      idempotencyKey: "idempotent-1",
+      toolBudgetAllowed: true,
     }));
     expect(result.status).toBe("warning");
     expect(result.diagnosisSource).toBe("sampled");
